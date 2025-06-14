@@ -1,7 +1,4 @@
-use cxs::codec::provider::*;
-use cxs::codec::receiver::*;
-use cxs::xdr::construct::Construct;
-use cxs::xdr::deconstruct::Deconstruct;
+use cxs::{encode, decode};
 
 macro_rules! enc_test {
     { $([$name:ident, $ty:ty, $val:expr, $expected_hex:expr]),* } => {
@@ -10,20 +7,15 @@ macro_rules! enc_test {
         #[test]
         fn $name() {
             let expected_encoding = hex::decode($expected_hex).unwrap();
-            let val = $val;
+            let val: $ty = $val;
 
-            // Encode value and check encoding
-            let mut receiver = BufReceiver::new();
-            let _acc = val.deconstruct(&mut receiver).unwrap();
-            let encoded: &[u8] = receiver.as_ref();
+            let encoded = encode(&val);
             assert_eq!(encoded, expected_encoding);
 
             // Decode value from buffer and check equal to orig
-            let mut input = BufProvider::new(&expected_encoding);
-            let mut x: $ty = Default::default();
-            x.construct(&mut input).unwrap();
-            assert_eq!(x, $val);
-
+            let mut val2: $ty = Default::default();
+            decode(&encoded, &mut val2);
+            assert_eq!(val2, val);
         }
 
         )*

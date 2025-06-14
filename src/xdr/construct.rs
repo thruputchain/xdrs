@@ -1,12 +1,12 @@
-use crate::codec::provider::*;
+use crate::codec::read::*;
 
 pub trait Construct<'p> {
-    fn construct(&mut self, provider: &mut dyn Provider<'p>) -> Result<()>;
+    fn construct(&mut self, r: &mut dyn Read<'p>) -> Result<()>;
 }
 
 impl<'p> Construct<'p> for i32 {
-    fn construct(&mut self, provider: &mut dyn Provider<'p>) -> Result<()> {
-        *self = provider.provide_i32()?;
+    fn construct(&mut self, r: &mut dyn Read<'p>) -> Result<()> {
+        *self = r.read_i32()?;
         Ok(())
     }
 }

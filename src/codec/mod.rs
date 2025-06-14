@@ -1,2 +1,2 @@
-pub mod provider;
-pub mod receiver;
+pub mod read;
+pub mod write;
