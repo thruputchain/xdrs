@@ -1,3 +1,5 @@
+#![feature(maybe_uninit_array_assume_init)]
+
 use cxs::*;
 
 use core::mem::MaybeUninit as MU;
@@ -12,14 +14,17 @@ impl<'p> Construct<'p> for Foo {
     fn construct(foo: &mut MU<Foo>, r: &mut dyn Read<'p>) -> ReadResult<()> {
         let foo_ptr = foo.as_mut_ptr();
 
+        let bytes = r.read_byte_array(3)?.try_into().unwrap();
         unsafe {
             let foo_bytes = &raw mut (*foo_ptr).bytes;
+
+            foo_bytes.write(bytes);
+        }
+
+        let blerg = r.read_i32()?;
+        unsafe {
             let foo_blerg = &raw mut (*foo_ptr).blerg;
 
-            let bytes = r.read_byte_array(3)?.try_into().unwrap();
-            foo_bytes.write(bytes);
-
-            let blerg = r.read_i32()?;
             foo_blerg.write(blerg);
         }
 
@@ -40,34 +45,53 @@ impl Deconstruct for Foo {
 
 #[test]
 fn struct_foo() {
+    // Given: a value and its expected encoding
     let val: Foo = Foo { blerg: 7, bytes: [0xAA, 0xBB, 0xCC] };
     let expected_hex = "aabbcc07000000";
-    let expected = hex::decode(expected_hex).unwrap();
+    let expected = &hex::decode(expected_hex).unwrap();
 
-    let min_space;
+    check_encode_into_static(&val, expected);
+
     #[cfg(feature = "alloc")]
-    {
-        let encoded = cxs::encode(&val);
-        let encoded_hex = hex::encode(&encoded);
-        assert_eq!(&encoded_hex, &expected_hex);
-        min_space = encoded.len();
-    }
-    #[cfg(not(feature = "alloc"))]
-    {
-        min_space = 1000;
-    }
+    check_encode_into_alloc(&val, expected);
 
-    let encoded = do_encode_into(&val, min_space);
-    assert_eq!(&encoded, &expected);
-
-    let val2: Foo = cxs::decode(&encoded);
+    let val2: Foo = cxs::decode(expected);
     assert_eq!(val2, val);
 }
 
-fn do_encode_into<T>(value: &T, min_space: usize) -> Vec<u8>
+fn check_encode_into_static<T>(value: &T, expected: &[u8])
+where
+    T: cxs::Deconstruct
+{
+    const BUFSZ: usize = 1000;
+    assert!(expected.len() <= BUFSZ);
+
+    // An "uninitialized" buffer that has actually been zeroed
+    let mut buf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
+
+    let written = encode_into(value, &mut buf);
+    let buf = unsafe { MU::array_assume_init(buf) };
+    let encoded = &buf[..written];
+
+    assert_eq!(encoded, expected);
+}
+
+#[cfg(feature = "alloc")]
+fn check_encode_into_alloc<T>(value: &T, expected: &[u8])
 where T: cxs::Deconstruct
 {
-    let mut encoded = Vec::with_capacity(min_space);
+    let encoded = encode_into_alloc(value, expected.len());
+
+    assert_eq!(&encoded, expected);
+}
+
+#[cfg(feature = "alloc")]
+// Allocate a buffer of the expected size and encode
+// the value into it
+fn encode_into_alloc<T>(value: &T, expected_len: usize) -> Vec<u8>
+where T: cxs::Deconstruct
+{
+    let mut encoded = Vec::with_capacity(expected_len);
     let written = cxs::encode_into(value, encoded.spare_capacity_mut());
 
     // SAFETY:
@@ -77,5 +101,6 @@ where T: cxs::Deconstruct
     unsafe {
         encoded.set_len(written);
     }
+
     encoded
 }
