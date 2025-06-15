@@ -1,3 +1,5 @@
+#![feature(maybe_uninit_write_slice)]
+
 pub mod codec;
 pub mod xdr;
 

@@ -1,4 +1,4 @@
-//! Receive XDR values
+//! Write XDR values in some format
 
 use core::mem::MaybeUninit;
 use thiserror::Error;
@@ -16,10 +16,12 @@ pub type Acc = u32;
 pub trait Write {
     // type Acc;
 
+    fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc>;
     fn write_i32(&mut self, n: i32) -> Result<Acc>;
+    fn write_u32(&mut self, n: u32) -> Result<Acc>;
 }
 
-// ---------------------------------------------------------
+// ------------ CXS format implementation ---------------------------------------
 
 pub struct BufWriter(Vec<u8>);
 
@@ -32,11 +34,22 @@ impl BufWriter {
 impl Write for BufWriter {
     // type Acc = u32;
 
+    fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc> {
+        assert!(bytes.len() < u32::MAX as usize);
+
+        self.0.extend_from_slice(bytes);
+
+        Ok(bytes.len() as u32)
+    }
+
     fn write_i32(&mut self, n: i32) -> Result<Acc> {
         let int_bytes = n.to_le_bytes();
-        self.0.extend_from_slice(&int_bytes);
+        self.write_byte_array(&int_bytes)
+    }
 
-        Ok(4)
+    fn write_u32(&mut self, n: u32) -> Result<Acc> {
+        let int_bytes = n.to_le_bytes();
+        self.write_byte_array(&int_bytes)
     }
 }
 
@@ -68,6 +81,19 @@ impl<'a> IntoBufWriter<'a> {
     {
         &mut self.buf[self.written..]
     }
+
+    fn reserve<'s>(&'s mut self, len: usize) -> Result<&'s mut [Mu8]>
+    where
+        'a: 's
+    {
+        let buf = self.cursor();
+
+        if len > buf.len() {
+            return Err(Error::SpaceExhausted);
+        }
+
+        Ok(&mut buf[..len])
+    }
 }
 
 impl<'a> IntoBufWriter<'a> {
@@ -81,36 +107,25 @@ impl<'a> IntoBufWriter<'a> {
 }
 
 impl<'a> Write for IntoBufWriter<'a> {
+    fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc> {
+        let len = bytes.len();
+        let buf = self.reserve(len)?;
+
+        // unstable feature maybe_uninit_write_slice
+        buf.write_copy_of_slice(bytes);
+
+        self.written += len;
+
+        Ok(len as u32)
+    }
+
     fn write_i32(&mut self, n: i32) -> Result<Acc> {
-        let buf = self.cursor();
+        let int_bytes: [u8; 4] = n.to_le_bytes();
+        self.write_byte_array(&int_bytes)
+    }
 
-        if buf.len() < 4 {
-            return Err(Error::SpaceExhausted)
-        }
-
-        let int_bytes: &mut [Mu8; 4] = buf.try_into().map_err(|_e|
-            Error::SpaceExhausted)?;
-
-        for (i, b) in n.to_le_bytes().into_iter().enumerate() {
-            int_bytes[i].write(b);
-        }
-
-        self.written += 4;
-
-        Ok(4)
+    fn write_u32(&mut self, n: u32) -> Result<Acc> {
+        let int_bytes: [u8; 4] = n.to_le_bytes();
+        self.write_byte_array(&int_bytes)
     }
 }
-
-/*
-impl AsRef<[u8]> for BufWriter {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
-    }
-}
-
-impl Into<Vec<u8>> for BufWriter {
-    fn into(self) -> Vec<u8> {
-        self.0
-    }
-}
-*/

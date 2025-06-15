@@ -10,3 +10,10 @@ impl<'p> Construct<'p> for i32 {
         Ok(())
     }
 }
+
+impl<'p> Construct<'p> for u32 {
+    fn construct(&mut self, r: &mut dyn Read<'p>) -> Result<()> {
+        *self = r.read_u32()?;
+        Ok(())
+    }
+}

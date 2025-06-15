@@ -12,3 +12,9 @@ impl Deconstruct for i32 {
         w.write_i32(*self)
     }
 }
+
+impl Deconstruct for u32 {
+    fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc> {
+        w.write_u32(*self)
+    }
+}

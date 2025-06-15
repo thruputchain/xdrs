@@ -1,5 +1,5 @@
-//! Read CXS primitives
-//! 
+//! Read XDR values from some format
+//!
 //! Primitives:
 //! - i32
 //! - byte_array (size known by decoder)
@@ -9,6 +9,7 @@ use thiserror::Error;
 pub trait Read<'p> {
     fn read_byte_array(&mut self, len: usize) -> Result<&'p [u8]>;
     fn read_i32(&mut self) -> Result<i32>;
+    fn read_u32(&mut self) -> Result<u32>;
 }
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
@@ -19,7 +20,7 @@ pub enum Error {
     SourceEmpty,
 }
 
-// -------------------------------------------------------------
+// ---------- CXS format implementation -----------------------------------------------
 
 pub struct BufReader<'a> {
     data: &'a [u8],
@@ -48,5 +49,10 @@ impl<'r> Read<'r> for BufReader<'r> {
     fn read_i32(&mut self) -> Result<i32> {
         let int_bytes = self.read_byte_array(4)?.try_into().unwrap();
         Ok(i32::from_le_bytes(int_bytes))
+    }
+
+    fn read_u32(&mut self) -> Result<u32> {
+        let int_bytes = self.read_byte_array(4)?.try_into().unwrap();
+        Ok(u32::from_le_bytes(int_bytes))
     }
 }
