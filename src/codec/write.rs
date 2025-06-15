@@ -28,6 +28,7 @@ pub use buf_writer::*;
 #[cfg(feature = "alloc")]
 mod buf_writer {
     use super::*;
+    use alloc::{vec, vec::Vec};
 
     pub struct BufWriter(Vec<u8>);
 

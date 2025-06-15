@@ -1,5 +1,3 @@
-#![cfg(feature = "alloc")]
-
 use cxs::*;
 
 use core::mem::MaybeUninit as MU;
@@ -39,28 +37,38 @@ impl Deconstruct for Foo {
 fn struct_foo() {
     let val: Foo = Foo { blerg: 7, bytes: [0xAA, 0xBB, 0xCC] };
     let expected_hex = "aabbcc07000000";
+    let expected = hex::decode(expected_hex).unwrap();
 
-    let encoded = cxs::encode(&val);
-    let encoded_hex = hex::encode(&encoded);
-    assert_eq!(&encoded_hex, &expected_hex);
+    let min_space;
+    #[cfg(feature = "alloc")]
+    {
+        let encoded = cxs::encode(&val);
+        let encoded_hex = hex::encode(&encoded);
+        assert_eq!(&encoded_hex, &expected_hex);
+        min_space = encoded.len();
+    }
+    #[cfg(not(feature = "alloc"))]
+    {
+        min_space = 1000;
+    }
 
-    let encoded_into = do_encode_into(&val, encoded.len());
-    assert_eq!(encoded_into.as_slice(), encoded);
+    let encoded = do_encode_into(&val, min_space);
+    assert_eq!(&encoded, &expected);
 
     let val2: Foo = cxs::decode(&encoded);
     assert_eq!(val2, val);
 }
 
-fn do_encode_into<T>(value: &T, encoded_len: usize) -> Vec<u8>
+fn do_encode_into<T>(value: &T, min_space: usize) -> Vec<u8>
 where T: cxs::Deconstruct
 {
-    let mut encoded = Vec::with_capacity(encoded_len);
+    let mut encoded = Vec::with_capacity(min_space);
     let written = cxs::encode_into(value, encoded.spare_capacity_mut());
 
     // SAFETY:
     // - the new len must be less than or equal to capacity().
     // - the elements at old_len..new_len must be initialized.
-    assert!(written == encoded.capacity());
+    assert!(written <= encoded.capacity());
     unsafe {
         encoded.set_len(written);
     }

@@ -1,5 +1,12 @@
+#![no_std]
 #![feature(maybe_uninit_write_slice)]
 #![allow(ambiguous_glob_reexports)]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 
 pub mod codec;
 pub mod xdr;
