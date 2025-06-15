@@ -19,9 +19,12 @@ impl<'r> Construct<'r> for u32 {
     }
 }
 
-pub fn construct<'r, T: Construct<'r>>(
+pub fn construct<'r, T>(
     this: &mut MU<T>,
     r: &mut dyn Read<'r>
-) -> Result<()> {
+) -> Result<()>
+where
+    T: Construct<'r>
+{
     Construct::construct(this, r)
 }

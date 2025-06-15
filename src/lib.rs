@@ -21,19 +21,20 @@ pub fn encode_into<T: Deconstruct>(value: &T, buf: &mut [MU<u8>]) -> usize {
     writer.written()
 }
 
-
-// Allocating
-
+#[cfg(feature = "alloc")]
 pub fn encode<T: Deconstruct>(value: &T) -> Vec<u8> {
     let mut writer = BufWriter::new();
     let _acc = value.deconstruct(&mut writer).unwrap();
     writer.into()
 }
 
-pub fn decode<'c, T: Construct<'c>>(
+pub fn decode<'c, T: Construct<'c>> (
     buf: &'c [u8],
-    value: &'c mut MU<T>,
-) {
+) -> T {
     let mut reader = BufReader::new(buf);
-    construct(value, &mut reader).unwrap();
+    let mut value: MU<T> = MU::uninit();
+    construct(&mut value, &mut reader).unwrap();
+
+    // SAFETY: if it doesn't panic, construct() has initialized the value
+    unsafe { value.assume_init() }
 }

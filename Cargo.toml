@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 hex = "0.4.3"
 thiserror = "2.0.12"
+
+[features]
+alloc = []

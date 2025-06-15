@@ -1,32 +1,4 @@
-/*
-macro_rules! enc_test {
-    { $([$name:ident, $ty:ty, $val:expr, $expected_hex:expr]),* $(,)? } => {
-        $(
-
-        #[test]
-        fn $name() {
-            let expected_hex = $expected_hex;
-            let expected = hex::decode(expected_hex).unwrap();
-            let val: $ty = $val;
-
-            let encoded = cxs::encode(&val);
-            let encoded_hex = hex::encode(&encoded);
-            assert_eq!(&encoded_hex, &expected_hex);
-
-            let encoded = do_encode_into(&val, encoded.len());
-            assert_eq!(encoded.as_slice(), expected.as_slice());
-
-            let mut val2: $ty = Default::default();
-            cxs::decode(&encoded, &mut val2);
-            assert_eq!(val2, val);
-        }
-
-        )*
-    };
-}
-*/
-
-use core::mem::MaybeUninit as MU;
+#![cfg(feature = "alloc")]
 
 macro_rules! enc_test_int {
     { $([$name:ident, $ty:ty, $val:expr]),* $(,)? } => {
@@ -46,9 +18,7 @@ macro_rules! enc_test_int {
             let encoded = do_encode_into(&val, encoded.len());
             assert_eq!(encoded.as_slice(), expected);
 
-            let mut val2: MU<$ty> = MU::uninit();
-            cxs::decode(&encoded, &mut val2);
-            let val2 = unsafe { val2.assume_init() };
+            let val2: $ty = cxs::decode(&encoded);
             assert_eq!(val2, val);
         }
 
@@ -66,7 +36,6 @@ enc_test_int! {
     [u32_zero, u32, 0],
     [u32_max, u32, u32::MAX],
 }
-
 
 fn do_encode_into<T>(value: &T, encoded_len: usize) -> Vec<u8>
 where T: cxs::Deconstruct

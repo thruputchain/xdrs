@@ -1,3 +1,5 @@
+#![cfg(feature = "alloc")]
+
 use cxs::*;
 
 use core::mem::MaybeUninit as MU;
@@ -45,9 +47,7 @@ fn struct_foo() {
     let encoded_into = do_encode_into(&val, encoded.len());
     assert_eq!(encoded_into.as_slice(), encoded);
 
-    let mut val2: MU<Foo> = MU::uninit();
-    cxs::decode(&encoded, &mut val2);
-    let val2 = unsafe { val2.assume_init() };
+    let val2: Foo = cxs::decode(&encoded);
     assert_eq!(val2, val);
 }
 
