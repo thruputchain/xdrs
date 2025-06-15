@@ -37,12 +37,14 @@ impl<'a> BufReader<'a> {
 impl<'r> Read<'r> for BufReader<'r> {
     fn read_byte_array(&mut self, len: usize) -> Result<&'r [u8]>
     {
-        if len > self.data.len() - self.pos {
+        let extent = self.pos + len;
+        if extent > self.data.len() {
             return Err(Error::SourceEmpty);
         }
 
-        let shared = &self.data[self.pos .. len];
+        let shared = &self.data[self.pos .. extent];
         self.pos += len;
+
         Ok(shared)
     }
 

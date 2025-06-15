@@ -26,6 +26,8 @@ macro_rules! enc_test {
 }
 */
 
+use core::mem::MaybeUninit as MU;
+
 macro_rules! enc_test_int {
     { $([$name:ident, $ty:ty, $val:expr]),* $(,)? } => {
         $(
@@ -44,8 +46,9 @@ macro_rules! enc_test_int {
             let encoded = do_encode_into(&val, encoded.len());
             assert_eq!(encoded.as_slice(), expected);
 
-            let mut val2: $ty = Default::default();
+            let mut val2: MU<$ty> = MU::uninit();
             cxs::decode(&encoded, &mut val2);
+            let val2 = unsafe { val2.assume_init() };
             assert_eq!(val2, val);
         }
 

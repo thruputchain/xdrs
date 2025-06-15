@@ -1,19 +1,27 @@
 use crate::codec::read::*;
+use core::mem::MaybeUninit as MU;
 
-pub trait Construct<'p> {
-    fn construct(&mut self, r: &mut dyn Read<'p>) -> Result<()>;
+pub trait Construct<'r>: Sized {
+    fn construct(this: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()>;
 }
 
-impl<'p> Construct<'p> for i32 {
-    fn construct(&mut self, r: &mut dyn Read<'p>) -> Result<()> {
-        *self = r.read_i32()?;
+impl<'r> Construct<'r> for i32 {
+    fn construct(this: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+        this.write(r.read_i32()?);
         Ok(())
     }
 }
 
-impl<'p> Construct<'p> for u32 {
-    fn construct(&mut self, r: &mut dyn Read<'p>) -> Result<()> {
-        *self = r.read_u32()?;
+impl<'r> Construct<'r> for u32 {
+    fn construct(this: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+        this.write(r.read_u32()?);
         Ok(())
     }
+}
+
+pub fn construct<'r, T: Construct<'r>>(
+    this: &mut MU<T>,
+    r: &mut dyn Read<'r>
+) -> Result<()> {
+    Construct::construct(this, r)
 }

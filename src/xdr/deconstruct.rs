@@ -3,6 +3,8 @@
 use crate::codec::write::*;
 use crate::codec::write::Result;
 
+pub use crate::codec::write::Acc;
+
 pub trait Deconstruct {
     fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc>;
 }

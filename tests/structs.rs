@@ -1,0 +1,68 @@
+use cxs::*;
+
+use core::mem::MaybeUninit as MU;
+use core::ptr::addr_of_mut;
+
+#[derive(Debug, Clone, PartialEq)]
+struct Foo {
+    bytes: [u8; 3],
+    blerg: i32,
+}
+
+impl<'p> Construct<'p> for Foo {
+    fn construct(this: &mut MU<Foo>, r: &mut dyn Read<'p>) -> ReadResult<()> {
+        let ptr = this.as_mut_ptr();
+
+        unsafe {
+            addr_of_mut!((*ptr).bytes).write(r.read_byte_array(3)?.try_into().unwrap());
+            addr_of_mut!((*ptr).blerg).write(r.read_i32()?);
+        }
+
+        Ok(())
+    }
+}
+
+impl Deconstruct for Foo {
+    fn deconstruct(&self, w: &mut dyn Write) -> WriteResult<Acc> {
+        let mut acc = 0;
+
+        acc += w.write_byte_array(&self.bytes)?;
+        acc += w.write_i32(self.blerg)?;
+
+        Ok(acc)
+    }
+}
+
+#[test]
+fn struct_foo() {
+    let val: Foo = Foo { blerg: 7, bytes: [0xAA, 0xBB, 0xCC] };
+    let expected_hex = "aabbcc07000000";
+
+    let encoded = cxs::encode(&val);
+    let encoded_hex = hex::encode(&encoded);
+    assert_eq!(&encoded_hex, &expected_hex);
+
+    let encoded_into = do_encode_into(&val, encoded.len());
+    assert_eq!(encoded_into.as_slice(), encoded);
+
+    let mut val2: MU<Foo> = MU::uninit();
+    cxs::decode(&encoded, &mut val2);
+    let val2 = unsafe { val2.assume_init() };
+    assert_eq!(val2, val);
+}
+
+fn do_encode_into<T>(value: &T, encoded_len: usize) -> Vec<u8>
+where T: cxs::Deconstruct
+{
+    let mut encoded = Vec::with_capacity(encoded_len);
+    let written = cxs::encode_into(value, encoded.spare_capacity_mut());
+
+    // SAFETY:
+    // - the new len must be less than or equal to capacity().
+    // - the elements at old_len..new_len must be initialized.
+    assert!(written == encoded.capacity());
+    unsafe {
+        encoded.set_len(written);
+    }
+    encoded
+}
