@@ -1,7 +1,6 @@
 use cxs::*;
 
 use core::mem::MaybeUninit as MU;
-use core::ptr::addr_of_mut;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Foo {
@@ -10,12 +9,18 @@ struct Foo {
 }
 
 impl<'p> Construct<'p> for Foo {
-    fn construct(this: &mut MU<Foo>, r: &mut dyn Read<'p>) -> ReadResult<()> {
-        let ptr = this.as_mut_ptr();
+    fn construct(foo: &mut MU<Foo>, r: &mut dyn Read<'p>) -> ReadResult<()> {
+        let foo_ptr = foo.as_mut_ptr();
 
         unsafe {
-            addr_of_mut!((*ptr).bytes).write(r.read_byte_array(3)?.try_into().unwrap());
-            addr_of_mut!((*ptr).blerg).write(r.read_i32()?);
+            let foo_bytes = &raw mut (*foo_ptr).bytes;
+            let foo_blerg = &raw mut (*foo_ptr).blerg;
+
+            let bytes = r.read_byte_array(3)?.try_into().unwrap();
+            foo_bytes.write(bytes);
+
+            let blerg = r.read_i32()?;
+            foo_blerg.write(blerg);
         }
 
         Ok(())
