@@ -4,13 +4,21 @@ use cxs::*;
 use core::mem::MaybeUninit as MU;
 use core::fmt::Debug;
 
+pub fn check_codec<'r, T>(val: &T, expected: &'r [u8])
+where
+    T: Debug + Eq + cxs::Construct<'r> + cxs::Deconstruct
+{
+    check_encode(val, expected);
+    check_decode(val, expected);
+}
+
 pub fn check_decode<'r, T>(val: &T, expected: &'r [u8])
 where
     T: Debug + Eq + cxs::Construct<'r>
 {
-    let val2 = decode(expected).unwrap();
+    let val2: T = decode(expected).unwrap();
 
-    assert_eq!(val, &val2);
+    assert_eq!(&val2, val);
 }
 
 pub fn check_encode<T>(val: &T, expected: &[u8])
@@ -82,11 +90,11 @@ where T: cxs::Deconstruct
 }
 
 // panic with readable output
-pub fn check_eq(a: &[u8], b: &[u8]) {
-    assert!(a.len() == b.len());
+pub fn check_eq(encoded: &[u8], expected: &[u8]) {
+    // assert!(a.len() == b.len());
 
-    let a_hex = hex::encode(a);
-    let b_hex = hex::encode(b);
+    let a_hex = hex::encode(encoded);
+    let b_hex = hex::encode(expected);
 
     assert_eq!(a_hex, b_hex);
 }

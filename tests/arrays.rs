@@ -7,7 +7,7 @@ use common::*;
 fn arrays() {
     let arr = [0u8, 1, 2];
     let buf: &[u8] = &arr;
-    let expected_hex = "03000000000102";
+    let expected_hex = "03000102";
     let expected = &hex::decode(expected_hex).unwrap();
 
     // check_encode(&buf, expected);

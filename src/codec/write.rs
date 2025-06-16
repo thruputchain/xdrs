@@ -12,13 +12,66 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 pub type Acc = u32;
 
-pub trait Write {
+pub trait Write: WriteByte {
     // type Acc;
 
     fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc>;
-    fn write_i32(&mut self, n: i32) -> Result<Acc>;
-    fn write_u32(&mut self, n: u32) -> Result<Acc>;
+
+    fn write_i32(&mut self, n: i32) -> Result<Acc> {
+        let mut h;
+        if n < 0 {
+            let nu: u32 = n.unsigned_abs() - 1;
+
+            if nu == 0 {
+                self.write_u32(0)
+            } else if nu < 32 {
+                // fits in header byte
+                h = nu as u8;
+                // negate with two's complement
+                h = !h;
+                h += 1;
+                h &= 0x3f;
+                self.write_byte(h)
+            } else {
+                unimplemented!();
+            }
+        } else {
+            self.write_u32(n as u32)
+        }
+    }
+
+    fn write_u32(&mut self, n: u32) -> Result<Acc> {
+        if n <= 62 {
+            self.write_byte(n as u8)
+        } else {
+            let mut h: u8 = 63;
+            match n {
+                i if i <= u8::MAX as u32 => {
+                    self.write_byte(h)?;
+                    self.write_byte(n as u8)
+                },
+                i if i <= u16::MAX as u32 => {
+                    h |= 1 << 6;
+                    self.write_byte(h)?;
+                    let buf = (n as u16).to_le_bytes();
+                    self.write_byte_array(&buf)
+                },
+                i if i <= u32::MAX as u32 => {
+                    h |= 2 << 6;
+                    self.write_byte(h)?;
+                    let buf = (n as u32).to_le_bytes();
+                    self.write_byte_array(&buf)
+                },
+                _ => unreachable!()
+            }
+        }
+    }
 }
+
+pub trait WriteByte {
+    fn write_byte(&mut self, b: u8) -> Result<Acc>;
+}
+
 
 // ------------ CXS format implementations ---------------------------------------
 
@@ -38,6 +91,13 @@ mod buf_writer {
         }
     }
 
+    impl WriteByte for BufWriter {
+        fn write_byte(&mut self, b: u8) -> Result<Acc> {
+            self.0.push(b);
+            Ok(1)
+        }
+    }
+
     impl Write for BufWriter {
         // type Acc = u32;
 
@@ -47,16 +107,6 @@ mod buf_writer {
             self.0.extend_from_slice(bytes);
 
             Ok(bytes.len() as u32)
-        }
-
-        fn write_i32(&mut self, n: i32) -> Result<Acc> {
-            let int_bytes = n.to_le_bytes();
-            self.write_byte_array(&int_bytes)
-        }
-
-        fn write_u32(&mut self, n: u32) -> Result<Acc> {
-            let int_bytes = n.to_le_bytes();
-            self.write_byte_array(&int_bytes)
         }
     }
 
@@ -89,24 +139,21 @@ mod into_buf_writer {
     }
 
     impl<'a> IntoBufWriter<'a> {
-        fn cursor<'s>(&'s mut self) -> &'s mut [Mu8]
-        where
-            'a: 's
-        {
-            &mut self.buf[self.written..]
-        }
-
         fn reserve<'s>(&'s mut self, len: usize) -> Result<&'s mut [Mu8]>
         where
             'a: 's
         {
-            let buf = self.cursor();
-
-            if len > buf.len() {
+            let extent = self.written + len;
+            if extent > self.buf.len() {
                 return Err(Error::SpaceExhausted);
             }
 
-            Ok(&mut buf[..len])
+            let start = self.written;
+            self.written += len;
+
+            let reserved = &mut self.buf[start..extent];
+
+            Ok(reserved)
         }
     }
 
@@ -120,6 +167,14 @@ mod into_buf_writer {
         }
     }
 
+    impl<'a> WriteByte for IntoBufWriter<'a> {
+        fn write_byte(&mut self, b: u8) -> Result<Acc> {
+            let p = self.reserve(1)?;
+            p[0].write(b);
+            Ok(1)
+        }
+    }
+
     impl<'a> Write for IntoBufWriter<'a> {
         fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc> {
             let len = bytes.len();
@@ -128,19 +183,7 @@ mod into_buf_writer {
             // unstable feature maybe_uninit_write_slice
             buf.write_copy_of_slice(bytes);
 
-            self.written += len;
-
             Ok(len as u32)
-        }
-
-        fn write_i32(&mut self, n: i32) -> Result<Acc> {
-            let int_bytes: [u8; 4] = n.to_le_bytes();
-            self.write_byte_array(&int_bytes)
-        }
-
-        fn write_u32(&mut self, n: u32) -> Result<Acc> {
-            let int_bytes: [u8; 4] = n.to_le_bytes();
-            self.write_byte_array(&int_bytes)
         }
     }
 } // mod into_buf_writer
