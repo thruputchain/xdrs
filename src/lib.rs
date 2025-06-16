@@ -37,11 +37,13 @@ pub fn encode<T: Deconstruct>(value: &T) -> Vec<u8> {
 
 pub fn decode<'c, T: Construct<'c>> (
     buf: &'c [u8],
-) -> T {
+) -> ReadResult<T> {
     let mut reader = BufReader::new(buf);
     let mut value: MU<T> = MU::uninit();
-    construct(&mut value, &mut reader).unwrap();
+    construct(&mut value, &mut reader)?;
 
     // SAFETY: if it doesn't panic, construct() has initialized the value
-    unsafe { value.assume_init() }
+    let value = unsafe { value.assume_init() };
+
+    Ok(value)
 }

@@ -6,9 +6,18 @@
 
 use thiserror::Error;
 
-pub trait Read<'p> {
-    fn read_byte_array(&mut self, len: usize) -> Result<&'p [u8]>;
+/// Objects that can source XDR values
+pub trait Read<'r> {
+    /// Read an array of known length
+    /// borrowing the contents from the reader
+    fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]>;
+
+    /// Read a byte-sequence of unknown length,
+    /// borrowing the contents from the reader
+    fn read_bytes(&mut self) -> Result<&'r [u8]>;
+
     fn read_i32(&mut self) -> Result<i32>;
+
     fn read_u32(&mut self) -> Result<u32>;
 }
 
@@ -16,8 +25,11 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Copy, Clone, Debug, Error)]
 pub enum Error {
-    #[error("provider source is empty")]
-    SourceEmpty,
+    #[error("source is empty (req: {requested}, rem: {remaining}")]
+    SourceEmpty {
+        requested: usize,
+        remaining: usize,
+    }
 }
 
 // ---------- CXS format implementation -----------------------------------------------
@@ -35,17 +47,24 @@ impl<'a> BufReader<'a> {
 }
 
 impl<'r> Read<'r> for BufReader<'r> {
-    fn read_byte_array(&mut self, len: usize) -> Result<&'r [u8]>
+    fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]>
     {
-        let extent = self.pos + len;
+        let extent = self.pos + len as usize;
         if extent > self.data.len() {
-            return Err(Error::SourceEmpty);
+            let requested = len as usize;
+            let remaining = self.data.len() - self.pos;
+            return Err(Error::SourceEmpty { requested, remaining });
         }
 
         let shared = &self.data[self.pos .. extent];
-        self.pos += len;
+        self.pos += len as usize;
 
         Ok(shared)
+    }
+
+    fn read_bytes(&mut self) -> Result<&'r [u8]> {
+        let len = self.read_u32()?;
+        self.read_byte_array(len)
     }
 
     fn read_i32(&mut self) -> Result<i32> {

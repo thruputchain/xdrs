@@ -2,6 +2,9 @@
 
 use cxs::*;
 
+mod common;
+use common::*;
+
 use core::mem::MaybeUninit as MU;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,14 +20,12 @@ impl<'p> Construct<'p> for Foo {
         let bytes = r.read_byte_array(3)?.try_into().unwrap();
         unsafe {
             let foo_bytes = &raw mut (*foo_ptr).bytes;
-
             foo_bytes.write(bytes);
         }
 
         let blerg = r.read_i32()?;
         unsafe {
             let foo_blerg = &raw mut (*foo_ptr).blerg;
-
             foo_blerg.write(blerg);
         }
 
@@ -50,15 +51,13 @@ fn struct_foo() {
     let expected_hex = "aabbcc07000000";
     let expected = &hex::decode(expected_hex).unwrap();
 
-    check_encode_into_static(&val, expected);
+    check_encode(&val, expected);
 
-    #[cfg(feature = "alloc")]
-    check_encode_into_alloc(&val, expected);
-
-    let val2: Foo = cxs::decode(expected);
+    let val2: Foo = cxs::decode(expected).unwrap();
     assert_eq!(val2, val);
 }
 
+/*
 fn check_encode_into_static<T>(value: &T, expected: &[u8])
 where
     T: cxs::Deconstruct
@@ -104,3 +103,4 @@ where T: cxs::Deconstruct
 
     encoded
 }
+*/

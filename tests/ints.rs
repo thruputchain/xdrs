@@ -19,7 +19,7 @@ macro_rules! enc_test_int {
             let encoded = do_encode_into(&val, 1000);
             assert_eq!(encoded.as_slice(), expected);
 
-            let val2: $ty = cxs::decode(&encoded);
+            let val2: $ty = cxs::decode(&encoded).unwrap();
             assert_eq!(val2, val);
         }
 
