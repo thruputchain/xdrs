@@ -4,6 +4,9 @@
 //! - i32
 //! - byte_array (size known by decoder)
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use thiserror::Error;
 
 /// Objects that can source XDR values
@@ -11,6 +14,12 @@ pub trait Read<'r> {
     /// Read an array of known length
     /// borrowing the contents from the reader
     fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]>;
+
+    #[cfg(feature = "alloc")]
+    fn read_byte_array_owned(&mut self, len: u32) -> Result<Vec<u8>> {
+        let bytes = self.read_byte_array(len)?;
+        Ok(Vec::from(bytes))
+    }
 
     /// Read a byte-sequence of unknown length,
     /// borrowing the contents from the reader
@@ -107,8 +116,8 @@ impl<'a> BufReader<'a> {
 
             let n: i64;
             if v & 0x20 != 0 {
-                // the sign-bit (for i6) is set, so the remaining five bits
-                // are one's complement; invert all six and negate:
+                // the sign-bit (for i6) is set, so v is encoded
+                // with one's-complement; invert and negate:
                 n = -(((!v) & 0x3f) as i64);
             } else {
                 n = v as i64;

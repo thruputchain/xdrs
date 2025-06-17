@@ -7,6 +7,10 @@ pub trait Construct<'r>: Sized {
     fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()>;
 }
 
+pub trait ConstructOwned: for<'r> Construct<'r> {}
+
+impl<T> ConstructOwned for T where T: for<'r> Construct<'r> {}
+
 impl<'r> Construct<'r> for i32 {
     fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
         value.write(r.read_i32()?);
@@ -21,7 +25,7 @@ impl<'r> Construct<'r> for u32 {
     }
 }
 
-impl<'r> Construct<'r> for &'r [u8] {
+impl<'a, 'r: 'a> Construct<'r> for &'a [u8] {
     fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
         value.write(r.read_bytes()?);
         Ok(())

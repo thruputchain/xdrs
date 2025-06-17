@@ -110,6 +110,12 @@ mod buf_writer {
         }
     }
 
+    impl From<Vec<u8>> for BufWriter {
+        fn from(vec: Vec<u8>) -> Self {
+            Self(vec)
+        }
+    }
+
     impl WriteByte for BufWriter {
         fn write_byte(&mut self, b: u8) -> Result<Acc> {
             self.0.push(b);

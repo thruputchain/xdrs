@@ -35,9 +35,17 @@ pub fn encode<T: Deconstruct>(value: &T) -> Vec<u8> {
     writer.into()
 }
 
-pub fn decode<'c, T: Construct<'c>> (
-    buf: &'c [u8],
-) -> ReadResult<T> {
+#[cfg(feature = "alloc")]
+pub fn encode_into_vec<T: Deconstruct>(value: &T, vec: Vec<u8>) -> Vec<u8> {
+    let mut writer = BufWriter::from(vec);
+    let _acc = value.deconstruct(&mut writer).unwrap();
+    writer.into()
+}
+
+pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
+where
+    T: Construct<'r>
+{
     let mut reader = BufReader::new(buf);
     let mut value: MU<T> = MU::uninit();
     construct(&mut value, &mut reader)?;

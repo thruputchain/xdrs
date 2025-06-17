@@ -98,3 +98,17 @@ pub fn check_eq(encoded: &[u8], expected: &[u8]) {
 
     assert_eq!(a_hex, b_hex);
 }
+
+/*
+pub fn check_roundtrip<'r, T>(value: &T)
+where
+    T: Debug + Eq + cxs::Deconstruct + cxs::Construct<'r>
+{
+    let vec = vec![];
+    let vec = encode_into_vec(value, vec);
+
+    let value2: T = decode(&vec).unwrap();
+
+    assert_eq!(&value2, value);
+}
+*/
