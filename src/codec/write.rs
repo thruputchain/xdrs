@@ -18,30 +18,49 @@ pub trait Write: WriteByte {
     fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc>;
 
     fn write_i32(&mut self, n: i32) -> Result<Acc> {
-        let mut h;
-        if n < 0 {
-            let nu: u32 = n.unsigned_abs() - 1;
+        assert_eq!(i16::MAX as u32 as i32, i16::MAX as i32);
 
-            if nu == 0 {
-                self.write_u32(0)
-            } else if nu < 32 {
-                // fits in header byte
-                h = nu as u8;
-                // negate with two's complement
-                h = !h;
-                h += 1;
-                h &= 0x3f;
-                self.write_byte(h)
+        let nu: u32 = n.unsigned_abs();
+        if nu < 32 {
+            let h;
+            if n < 0 {
+                // A small negative number: this can be represented as 1's complement in the
+                // header byte; i.e., inverted with the sign bit set
+                h = (!(nu as u8) & 0x1f) | 0b0010_0000;
             } else {
-                unimplemented!();
+                h = n as u8;
             }
+            self.write_byte(h)
         } else {
-            self.write_u32(n as u32)
+            // Otherwise we'll use the header byte plus 1 to 4 bytes
+            let v = 63;
+            if n > i16::MAX as i32 || n < i16::MIN as i32{
+                // use 4-byte repr
+                let s = 2 << 6;
+                let h = v | s; 
+                self.write_byte(h)?;
+                let buf = n.to_le_bytes();
+                self.write_byte_array(&buf)
+            } else if n > i8::MAX as i32 || n < i8::MIN as i32 {
+                // use 2-byte repr
+                let s = 1 << 6;
+                let h = v | s; 
+                self.write_byte(h)?;
+                let buf = (n as i16).to_le_bytes();
+                self.write_byte_array(&buf)
+            } else {
+                // use 1-byte repr
+                let s = 0;
+                let h = v | s;
+                self.write_byte(h)?;
+                self.write_byte(n as u8)
+            }
         }
     }
 
     fn write_u32(&mut self, n: u32) -> Result<Acc> {
-        if n <= 62 {
+        if n <= 32 {
+            // This can be represented in the header byte
             self.write_byte(n as u8)
         } else {
             let mut h: u8 = 63;

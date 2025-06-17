@@ -85,12 +85,21 @@ impl<'a> BufReader<'a> {
             let input = self.read_byte_array(n_bytes as u32)?;
 
             let mut int_bytes = [0u8; 8];
+
+            // copy in the bytes sent
             let int_dest = &mut int_bytes[0..n_bytes];
             int_dest.copy_from_slice(input);
 
-            let int = i64::from_le_bytes(int_bytes);
+            if input[n_bytes - 1] & 0x80 != 0 {
+                // high bit set ... so sign-extend remaining bytes
+                for i in n_bytes .. 8 {
+                    int_bytes[i] = 0xff;
+                }
+            }
 
-            Ok(int)
+            let n = i64::from_le_bytes(int_bytes);
+
+            Ok(n)
         } else {
             if s != 0 {
                 return Err(Error::InvalidHeaderByte { h })
@@ -98,10 +107,9 @@ impl<'a> BufReader<'a> {
 
             let n: i64;
             if v & 0x20 != 0 {
-                // the sign-bit (for i6) is set, so
-                // sign-extend to 8 bits and add one,
-                // per the encoding
-                n = (v | 0xc0) as i8 as i64 + 1;
+                // the sign-bit (for i6) is set, so the remaining five bits
+                // are one's complement; invert all six and negate:
+                n = -(((!v) & 0x3f) as i64);
             } else {
                 n = v as i64;
             }
