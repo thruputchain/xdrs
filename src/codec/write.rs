@@ -12,9 +12,12 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 pub type Acc = u32;
 
-pub trait Write: WriteByte {
+pub trait Write {
     // type Acc;
 
+    fn write_byte(&mut self, b: u8) -> Result<Acc>;
+
+    /// Write a byte array of length known to a decoder
     fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc>;
 
     fn write_i32(&mut self, n: i32) -> Result<Acc> {
@@ -87,11 +90,6 @@ pub trait Write: WriteByte {
     }
 }
 
-pub trait WriteByte {
-    fn write_byte(&mut self, b: u8) -> Result<Acc>;
-}
-
-
 // ------------ CXS format implementations ---------------------------------------
 
 #[cfg(feature = "alloc")]
@@ -116,15 +114,13 @@ mod buf_writer {
         }
     }
 
-    impl WriteByte for BufWriter {
+    impl Write for BufWriter {
+        // type Acc = u32;
+
         fn write_byte(&mut self, b: u8) -> Result<Acc> {
             self.0.push(b);
             Ok(1)
         }
-    }
-
-    impl Write for BufWriter {
-        // type Acc = u32;
 
         fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc> {
             assert!(bytes.len() < u32::MAX as usize);
@@ -164,6 +160,14 @@ mod into_buf_writer {
     }
 
     impl<'a> IntoBufWriter<'a> {
+        pub fn new(buf: &'a mut [Mu8]) -> Self {
+            Self { buf, written: 0 }
+        }
+
+        pub fn written(&self) -> usize {
+            self.written
+        }
+
         fn reserve<'s>(&'s mut self, len: usize) -> Result<&'s mut [Mu8]>
         where
             'a: 's
@@ -182,25 +186,13 @@ mod into_buf_writer {
         }
     }
 
-    impl<'a> IntoBufWriter<'a> {
-        pub fn new(buf: &'a mut [Mu8]) -> Self {
-            Self { buf, written: 0 }
-        }
-
-        pub fn written(&self) -> usize {
-            self.written
-        }
-    }
-
-    impl<'a> WriteByte for IntoBufWriter<'a> {
+    impl<'a> Write for IntoBufWriter<'a> {
         fn write_byte(&mut self, b: u8) -> Result<Acc> {
             let p = self.reserve(1)?;
             p[0].write(b);
             Ok(1)
         }
-    }
 
-    impl<'a> Write for IntoBufWriter<'a> {
         fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc> {
             let len = bytes.len();
             let buf = self.reserve(len)?;

@@ -11,29 +11,31 @@ use thiserror::Error;
 
 /// Objects that can source XDR values
 pub trait Read<'r> {
-    /// Read an array of known length
-    /// borrowing the contents from the reader
+    fn read_i32(&mut self) -> Result<i32>;
+
+    fn read_u32(&mut self) -> Result<u32>;
+
+    /// Read a byte-array of known length, borrowing the contents from the reader
     fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]>;
+
+    /// Read a byte-sequence of unknown length, borrowing the contents from the reader
+    fn read_bytes(&mut self) -> Result<&'r [u8]>;
+
+    // Provided methods
 
     #[cfg(feature = "alloc")]
     fn read_byte_array_owned(&mut self, len: u32) -> Result<Vec<u8>> {
         let bytes = self.read_byte_array(len)?;
-        Ok(Vec::from(bytes))
+        let buf = Vec::from(bytes); // copy from input
+        Ok(buf)
     }
-
-    /// Read a byte-sequence of unknown length,
-    /// borrowing the contents from the reader
-    fn read_bytes(&mut self) -> Result<&'r [u8]>;
-
-    fn read_i32(&mut self) -> Result<i32>;
-    fn read_u32(&mut self) -> Result<u32>;
 }
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Copy, Clone, Debug, Error)]
 pub enum Error {
-    #[error("source is empty (req: {requested}, rem: {remaining}")]
+    #[error("unexpected end of input (requested: {requested}, remaining: {remaining}")]
     SourceEmpty {
         requested: u32,
         remaining: u32,
@@ -48,7 +50,7 @@ pub enum Error {
     BadU32,
 }
 
-// ---------- CXS format implementation -----------------------------------------------
+// ---------- a CXS format implementation -----------------------------------------------
 
 pub struct BufReader<'a> {
     data: &'a [u8],
@@ -95,12 +97,11 @@ impl<'a> BufReader<'a> {
 
             let mut int_bytes = [0u8; 8];
 
-            // copy in the bytes sent
             let int_dest = &mut int_bytes[0..n_bytes];
             int_dest.copy_from_slice(input);
 
             if input[n_bytes - 1] & 0x80 != 0 {
-                // high bit set ... so sign-extend remaining bytes
+                // the high bit is set, so sign-extend remaining bytes
                 for i in n_bytes .. 8 {
                     int_bytes[i] = 0xff;
                 }
@@ -158,6 +159,18 @@ impl<'a> BufReader<'a> {
 }
 
 impl<'r> Read<'r> for BufReader<'r> {
+    fn read_i32(&mut self) -> Result<i32> {
+        let n = self.read_signed()?;
+        let n = n.try_into().map_err(|_| Error::BadU32)?;
+        Ok(n)
+    }
+
+    fn read_u32(&mut self) -> Result<u32> {
+        let n = self.read_unsigned()?;
+        let n = n.try_into().map_err(|_| Error::BadU32)?;
+        Ok(n)
+    }
+
     fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]> {
         let extent = self.reserve_extent(len)?;
         let shared = &self.data[self.pos .. extent];
@@ -170,17 +183,5 @@ impl<'r> Read<'r> for BufReader<'r> {
     fn read_bytes(&mut self) -> Result<&'r [u8]> {
         let len = self.read_u32()?;
         self.read_byte_array(len)
-    }
-
-    fn read_i32(&mut self) -> Result<i32> {
-        let n = self.read_signed()?;
-        let n = n.try_into().map_err(|_| Error::BadU32)?;
-        Ok(n)
-    }
-
-    fn read_u32(&mut self) -> Result<u32> {
-        let n = self.read_unsigned()?;
-        let n = n.try_into().map_err(|_| Error::BadU32)?;
-        Ok(n)
     }
 }

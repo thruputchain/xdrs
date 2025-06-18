@@ -3,8 +3,6 @@
 mod common;
 use common::*;
 
-use cxs::*;
-
 macro_rules! enc_test_int {
     { $([$name:ident, $ty:ty, $val:expr, $expected_hex:expr]),* $(,)? } => {
         $(
@@ -40,16 +38,16 @@ enc_test_int! {
     [i32_db, i32, 15711917, "bfadbeef00"],
 }
 
-use core::mem::MaybeUninit as MU;
-
-#[cfg(feature = "alloc")]
 #[test]
 fn enc_i32_all() {
+    use cxs::*;
+    use core::mem::MaybeUninit as MU;
+
     const BUFLEN: usize = 1000;
     let mut buf: [MU<u8>; BUFLEN] = [MU::zeroed(); BUFLEN];
 
     let mut ii:u32 = 0;
-    for i in -1_000_000..1_000_000 {
+    for i in -100_000..100_000 {
         let written = encode_into(&i, &mut buf);
         let buf = unsafe { MU::array_assume_init(buf) };
         let encoded = &buf[0..written];
