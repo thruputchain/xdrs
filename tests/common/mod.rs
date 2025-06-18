@@ -4,6 +4,13 @@ use cxs::*;
 use core::mem::MaybeUninit as MU;
 use core::fmt::Debug;
 
+#[macro_export]
+macro_rules! hex {
+    ($hstr:expr) => {
+        ::hex::decode($hstr).unwrap()
+    };
+}
+
 pub fn check_codec<'r, T>(val: &T, expected: &'r [u8])
 where
     T: Debug + Eq + cxs::Construct<'r> + cxs::Deconstruct
@@ -44,6 +51,21 @@ where
     let mut buf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
 
     let written = encode_into(value, &mut buf);
+    let buf = unsafe { MU::array_assume_init(buf) };
+    let encoded = &buf[..written];
+
+    check_eq(encoded, expected);
+}
+
+pub fn check_encode_into_static_with<T>(value: &T, expected: &[u8], deconstruct: DeconstructFn<T>)
+{
+    const BUFSZ: usize = 1000;
+    assert!(expected.len() <= BUFSZ);
+
+    // An "uninitialized" buffer that has actually been zeroed
+    let mut buf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
+
+    let written = encode_into_with(value, &mut buf, deconstruct);
     let buf = unsafe { MU::array_assume_init(buf) };
     let encoded = &buf[..written];
 

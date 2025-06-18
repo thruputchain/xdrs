@@ -1,4 +1,5 @@
 use crate::codec::read::*;
+use crate::bytes::*;
 use core::mem::MaybeUninit as MU;
 
 /// Types that can be constructed by reading XDR data,
@@ -25,9 +26,17 @@ impl<'r> Construct<'r> for u32 {
     }
 }
 
-impl<'a, 'r: 'a> Construct<'r> for &'a [u8] {
+impl<'a, 'r: 'a> Construct<'r> for Bytes<'a> {
     fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
-        value.write(r.read_bytes()?);
+        value.write(Bytes::from(r.read_bytes()?));
+        Ok(())
+    }
+}
+
+impl<'a, 'r: 'a, const N: usize> Construct<'r> for ByteArray<'a, N> {
+    fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+        let bytes: &[u8; N] = (r.read_byte_array(N as u32)?).try_into().unwrap();
+        value.write(ByteArray::from(bytes));
         Ok(())
     }
 }

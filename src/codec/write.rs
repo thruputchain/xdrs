@@ -5,7 +5,10 @@ use thiserror::Error;
 #[derive(Copy, Clone, Debug, Error)]
 pub enum Error {
     #[error("space exhausted")]
-    SpaceExhausted
+    SpaceExhausted,
+
+    #[error("invalid array length (too large)")]
+    InvalidArrayLength,
 }
 
 pub type Result<T, E = Error> = core::result::Result<T, E>;
@@ -17,8 +20,18 @@ pub trait Write {
 
     fn write_byte(&mut self, b: u8) -> Result<Acc>;
 
-    /// Write a byte array of length known to a decoder
+    /// Write a byte array of specified length
     fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc>;
+
+    /// Write a byte sequence of unspecified length
+    fn write_bytes(&mut self, bytes: &[u8]) -> Result<Acc> {
+        if bytes.len() > u32::MAX as usize {
+            return Err(Error::InvalidArrayLength);
+        }
+
+        self.write_u32(bytes.len() as u32)?;
+        self.write_byte_array(bytes)
+    }
 
     fn write_i32(&mut self, n: i32) -> Result<Acc> {
         assert_eq!(i16::MAX as u32 as i32, i16::MAX as i32);
@@ -123,7 +136,9 @@ mod buf_writer {
         }
 
         fn write_byte_array(&mut self, bytes: &[u8]) -> Result<Acc> {
-            assert!(bytes.len() < u32::MAX as usize);
+            if bytes.len() > u32::MAX as usize {
+                return Err(Error::InvalidArrayLength);
+            }
 
             self.0.extend_from_slice(bytes);
 

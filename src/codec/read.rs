@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 
 use thiserror::Error;
 
-/// Objects that can source XDR values
+/// Objects that can source XDR values, some borrowed with lifetime 'r
 pub trait Read<'r> {
     fn read_i32(&mut self) -> Result<i32>;
 
