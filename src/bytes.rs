@@ -7,6 +7,12 @@ impl<'a> From<&'a [u8]> for Bytes<'a> {
     }
 }
 
+impl<'a, const N: usize> From<&'a [u8; N]> for Bytes<'a> {
+    fn from(array: &'a [u8; N]) -> Self {
+        Self(&array[..])
+    }
+}
+
 impl<'a> AsRef<[u8]> for Bytes<'a> {
     fn as_ref(&self) -> &[u8] {
         self.0

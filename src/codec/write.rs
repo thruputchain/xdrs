@@ -38,17 +38,18 @@ pub trait Write {
 
         let nu: u32 = n.unsigned_abs();
         if nu < 32 {
+            // This small, signed number will be represented
+            // in the header-byte with 6-bit, one's-complement encoding
             let h;
             if n < 0 {
-                // A small negative number: this can be represented as 1's complement in the
-                // header byte; i.e., inverted with the sign bit set
-                h = (!(nu as u8) & 0x1f) | 0b0010_0000;
+                // invert and set the high bit
+                h = (!(nu as u8) & 0b01_1111) | 0b0010_0000;
             } else {
                 h = n as u8;
             }
             self.write_byte(h)
         } else {
-            // Otherwise we'll use the header byte plus 1 to 4 bytes
+            // Otherwise we'll write a header byte plus 1 to 4 bytes
             let v = 63;
             if n > i16::MAX as i32 || n < i16::MIN as i32{
                 // use 4-byte repr

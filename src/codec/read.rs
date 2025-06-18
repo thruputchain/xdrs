@@ -1,8 +1,4 @@
 //! Read XDR values from some format
-//!
-//! Primitives:
-//! - i32
-//! - byte_array (size known by decoder)
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
@@ -35,7 +31,10 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Copy, Clone, Debug, Error)]
 pub enum Error {
-    #[error("unexpected end of input (requested: {requested}, remaining: {remaining}")]
+    #[error("unexpected end of input (requested: {}, remaining: {})",
+        requested,
+        remaining,
+        )]
     SourceEmpty {
         requested: u32,
         remaining: u32,
@@ -50,7 +49,7 @@ pub enum Error {
     BadU32,
 }
 
-// ---------- a CXS format implementation -----------------------------------------------
+// ---------- a CXS format implementation ---------------------------------
 
 pub struct BufReader<'a> {
     data: &'a [u8],
@@ -86,8 +85,11 @@ impl<'a> BufReader<'a> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
         let v = h & !0xc0;
+        let n: i64;
 
         if v == 63 {
+            // The number is encoded in the following bytes
+
             if s > 3 {
                 return Err(Error::InvalidHeaderByte { h })
             }
@@ -107,25 +109,27 @@ impl<'a> BufReader<'a> {
                 }
             }
 
-            let n = i64::from_le_bytes(int_bytes);
+            n = i64::from_le_bytes(int_bytes);
 
-            Ok(n)
+            // TODO: validate that the smallest possible encoding was used
         } else {
+            // The number is the 6-bit, one's-complement signed
+            // integer in `v`
+
             if s != 0 {
                 return Err(Error::InvalidHeaderByte { h })
             }
 
-            let n: i64;
-            if v & 0x20 != 0 {
-                // the sign-bit (for i6) is set, so v is encoded
-                // with one's-complement; invert and negate:
-                n = -(((!v) & 0x3f) as i64);
+            if v & 0b10_0000 != 0 {
+                // The sign-bit is set, so obtain the number by inverting
+                // and negating:
+                n = -(((!v) & 0b11_1111) as i64);
             } else {
                 n = v as i64;
             }
-
-            Ok(n)
         }
+
+        Ok(n)
     }
 
     fn read_unsigned(&mut self) -> Result<u64> {
@@ -134,6 +138,8 @@ impl<'a> BufReader<'a> {
         let v = h & !0xc0;
 
         if v == 63 {
+            // The number is encoded in the following bytes
+
             if s > 3 {
                 return Err(Error::InvalidHeaderByte { h })
             }
@@ -149,6 +155,8 @@ impl<'a> BufReader<'a> {
 
             Ok(uint)
         } else {
+            // The number is the 6-bit unsigned integer in `v`
+
             if s != 0 {
                 return Err(Error::InvalidHeaderByte { h });
             }
