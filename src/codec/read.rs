@@ -8,9 +8,15 @@ use thiserror::Error;
 
 /// Objects that can source XDR values, some borrowed with lifetime 'r
 pub trait Read<'r> {
+    fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;
+    fn read_i16(&mut self) -> Result<i16>;
+    fn read_i8(&mut self) -> Result<i8>;
 
+    fn read_u64(&mut self) -> Result<u64>;
     fn read_u32(&mut self) -> Result<u32>;
+    fn read_u16(&mut self) -> Result<u16>;
+    fn read_u8(&mut self) -> Result<u8>;
 
     /// Read a byte-array of known length, borrowing the contents from the reader
     fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]>;
@@ -49,8 +55,8 @@ pub enum Error {
         h: u8
     },
 
-    #[error("bad U32 encoding")]
-    BadU32,
+    #[error("encoded integer out of range")]
+    IntegerOutOfRange,
 }
 
 // ---------- a CXS format implementation ---------------------------------
@@ -158,6 +164,8 @@ impl<'a> BufReader<'a> {
             int_dest.copy_from_slice(input);
             let uint = u64::from_le_bytes(int_bytes);
 
+            // TODO: validate that the smallest possible encoding was used
+
             Ok(uint)
         } else {
             // The number is the 6-bit unsigned integer in `v`
@@ -171,17 +179,44 @@ impl<'a> BufReader<'a> {
     }
 }
 
+macro_rules! read_signed {
+    { $( [$f:ident, $ty:ty] ),* $(,)? } => { $(
+
+        fn $f(&mut self) -> Result<$ty> {
+            let n = self.read_signed()?;
+            let n = n.try_into().map_err(|_| Error::IntegerOutOfRange)?;
+            Ok(n)
+        }
+
+    )* };
+}
+
+macro_rules! read_unsigned {
+    { $( [$f:ident, $ty:ty] ),* $(,)? } => { $(
+
+        fn $f(&mut self) -> Result<$ty> {
+            let n = self.read_unsigned()?;
+            let n = n.try_into().map_err(|_| Error::IntegerOutOfRange)?;
+            Ok(n)
+        }
+
+    )* };
+}
+
+
 impl<'r> Read<'r> for BufReader<'r> {
-    fn read_i32(&mut self) -> Result<i32> {
-        let n = self.read_signed()?;
-        let n = n.try_into().map_err(|_| Error::BadU32)?;
-        Ok(n)
+    read_unsigned! {
+        [read_u64, u64],
+        [read_u32, u32],
+        [read_u16, u16],
+        [read_u8, u8],
     }
 
-    fn read_u32(&mut self) -> Result<u32> {
-        let n = self.read_unsigned()?;
-        let n = n.try_into().map_err(|_| Error::BadU32)?;
-        Ok(n)
+    read_signed! {
+        [read_i64, i64],
+        [read_i32, i32],
+        [read_i16, i16],
+        [read_i8, i8],
     }
 
     fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]> {

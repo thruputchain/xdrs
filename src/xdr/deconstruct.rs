@@ -17,16 +17,28 @@ where
     this.deconstruct(w)
 }
 
-impl Deconstruct for i32 {
-    fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc> {
-        w.write_i32(*self)
-    }
+macro_rules! deconstruct_int_impls {
+    { $( $write_method:ident for $int_ty:ty ),* $(,)? } => { $(
+
+        impl Deconstruct for $int_ty {
+            fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc> {
+                w.$write_method(*self)
+            }
+        }
+
+    )* };
 }
 
-impl Deconstruct for u32 {
-    fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc> {
-        w.write_u32(*self)
-    }
+deconstruct_int_impls! {
+    write_i64 for i64,
+    write_i32 for i32,
+    write_i16 for i16,
+    write_i8 for i8,
+
+    write_u64 for u64,
+    write_u32 for u32,
+    write_u16 for u16,
+    write_u8 for u8,
 }
 
 impl<'a> Deconstruct for Bytes<'a> {

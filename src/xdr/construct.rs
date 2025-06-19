@@ -22,18 +22,29 @@ pub trait ConstructOwned: for<'r> Construct<'r> {}
 
 impl<T> ConstructOwned for T where T: for<'r> Construct<'r> {}
 
-impl<'r> Construct<'r> for i32 {
-    fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
-        value.write(r.read_i32()?);
-        Ok(())
-    }
+macro_rules! construct_int_impls {
+    { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
+
+        impl<'r> Construct<'r> for $int_ty {
+            fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+                value.write(r.$read_method()?);
+                Ok(())
+            }
+        }
+
+    )* };
 }
 
-impl<'r> Construct<'r> for u32 {
-    fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
-        value.write(r.read_u32()?);
-        Ok(())
-    }
+construct_int_impls! {
+    read_i64 for i64,
+    read_i32 for i32,
+    read_i16 for i16,
+    read_i8 for i8,
+
+    read_u64 for u64,
+    read_u32 for u32,
+    read_u16 for u16,
+    read_u8 for u8,
 }
 
 impl<'a, 'r: 'a> Construct<'r> for Bytes<'a> {
