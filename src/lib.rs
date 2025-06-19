@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(maybe_uninit_write_slice)]
+#![feature(maybe_uninit_as_bytes)]
 #![allow(ambiguous_glob_reexports)]
 
 #[cfg(feature = "alloc")]

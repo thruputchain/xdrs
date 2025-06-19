@@ -10,6 +10,13 @@ pub trait Deconstruct {
     fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc>;
 }
 
+pub fn deconstruct<T>(this: &T, w: &mut dyn Write) -> Result<Acc>
+where
+    T: Deconstruct
+{
+    this.deconstruct(w)
+}
+
 impl Deconstruct for i32 {
     fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc> {
         w.write_i32(*self)
@@ -29,6 +36,12 @@ impl<'a> Deconstruct for Bytes<'a> {
 }
 
 impl<'a, const N: usize> Deconstruct for ByteArray<'a, N> {
+    fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc> {
+        w.write_byte_array(self.as_ref())
+    }
+}
+
+impl<const N: usize> Deconstruct for OwnedByteArray<N> {
     fn deconstruct(&self, w: &mut dyn Write) -> Result<Acc> {
         w.write_byte_array(self.as_ref())
     }

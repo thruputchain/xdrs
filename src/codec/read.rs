@@ -3,6 +3,7 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+use core::mem::MaybeUninit as MU;
 use thiserror::Error;
 
 /// Objects that can source XDR values, some borrowed with lifetime 'r
@@ -13,6 +14,9 @@ pub trait Read<'r> {
 
     /// Read a byte-array of known length, borrowing the contents from the reader
     fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]>;
+
+    /// Read a byte-array of known length into a provided buffer
+    fn read_byte_array_into(&mut self, dst: &mut [MU<u8>], len: u32) -> Result<()>;
 
     /// Read a byte-sequence of unknown length, borrowing the contents from the reader
     fn read_bytes(&mut self) -> Result<&'r [u8]>;
@@ -40,7 +44,7 @@ pub enum Error {
         remaining: u32,
     },
 
-    #[error("invalid header byte: {h:02x}")]
+    #[error("invalid header byte: 0x{h:02x}")]
     InvalidHeaderByte {
         h: u8
     },
@@ -62,23 +66,24 @@ impl<'a> BufReader<'a> {
         Self { data, pos }
     }
 
-    fn reserve_extent(&self, requested: u32) -> Result<usize> {
+    fn reserve_extent(&mut self, requested: u32) -> Result<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
             let remaining = (self.data.len() - self.pos).try_into().unwrap();
-            Err(Error::SourceEmpty { requested, remaining })
-        } else {
-            Ok(extent)
+            return Err(Error::SourceEmpty { requested, remaining });
         }
+
+        let buf = &self.data[self.pos .. extent];
+
+        self.pos += extent;
+
+        Ok(buf)
     }
 
     fn read_byte(&mut self) -> Result<u8> {
-        let _ = self.reserve_extent(1)?;
-        let byte = self.data[self.pos];
+        let byte = self.reserve_extent(1)?;
 
-        self.pos += 1;
-
-        Ok(byte)
+        Ok(byte[0])
     }
 
     fn read_signed(&mut self) -> Result<i64> {
@@ -180,12 +185,17 @@ impl<'r> Read<'r> for BufReader<'r> {
     }
 
     fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]> {
-        let extent = self.reserve_extent(len)?;
-        let shared = &self.data[self.pos .. extent];
-
-        self.pos += len as usize;
+        let shared = self.reserve_extent(len)?;
 
         Ok(shared)
+    }
+
+    fn read_byte_array_into(&mut self, dst: &mut [MU<u8>], len: u32) -> Result<()> {
+        let data = self.reserve_extent(len)?;
+
+        let _init_slice = dst.write_copy_of_slice(data);
+
+        Ok(())
     }
 
     fn read_bytes(&mut self) -> Result<&'r [u8]> {

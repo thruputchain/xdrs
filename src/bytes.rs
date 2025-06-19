@@ -1,3 +1,8 @@
+// Newtypes for various kinds of byte sequences,
+// allowing specialized Construct/Deconstuct implementations
+
+use core::ops::Deref;
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Bytes<'a>(&'a [u8]);
 
@@ -39,3 +44,34 @@ impl<'a, const N: usize> AsRef<[u8]> for ByteArray<'a, N> {
         &self.0[..]
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnedByteArray<const N: usize>([u8; N]);
+
+impl<const N: usize> From<[u8; N]> for OwnedByteArray<N> {
+    fn from(array: [u8; N]) -> Self {
+        Self(array)
+    }
+}
+
+impl<const N: usize> Deref for OwnedByteArray<N> {
+    type Target = [u8; N];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/*
+impl<const N: usize> AsRef<[u8; N]> for OwnedByteArray<N> {
+    fn as_ref(&self) -> &[u8; N] {
+        &self.0
+    }
+}
+
+impl<const N: usize> AsRef<[u8]> for OwnedByteArray<N> {
+    fn as_ref(&self) -> &[u8] {
+        &self.0[..]
+    }
+}
+*/

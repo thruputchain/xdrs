@@ -2,6 +2,16 @@ use crate::codec::read::*;
 use crate::bytes::*;
 use core::mem::MaybeUninit as MU;
 
+pub fn construct<'r, T>(
+    value: &mut MU<T>,
+    r: &mut dyn Read<'r>
+) -> Result<()>
+where
+    T: Construct<'r>
+{
+    Construct::construct(value, r)
+}
+
 /// Types that can be constructed by reading XDR data,
 /// possibly sharing data from the input
 pub trait Construct<'r>: Sized {
@@ -41,12 +51,8 @@ impl<'a, 'r: 'a, const N: usize> Construct<'r> for ByteArray<'a, N> {
     }
 }
 
-pub fn construct<'r, T>(
-    value: &mut MU<T>,
-    r: &mut dyn Read<'r>
-) -> Result<()>
-where
-    T: Construct<'r>
-{
-    Construct::construct(value, r)
+impl<'r, const N: usize> Construct<'r> for OwnedByteArray<N> {
+    fn construct(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+        r.read_byte_array_into(value.as_bytes_mut(), N as u32)
+    }
 }
