@@ -1,10 +1,10 @@
-use crate::codec::read::*;
+use crate::codec::reader::*;
 use crate::bytes::*;
 use core::mem::MaybeUninit as MU;
 
 pub fn read_xdr<'r, T>(
     value: &mut MU<T>,
-    r: &mut dyn Read<'r>
+    r: &mut dyn Reader<'r>
 ) -> Result<()>
 where
     T: ReadXDR<'r>
@@ -15,14 +15,14 @@ where
 /// Types that can be constructed by reading XDR data,
 /// possibly sharing data from the input
 pub trait ReadXDR<'r>: Sized {
-    fn read_xdr(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()>;
+    fn read_xdr(value: &mut MU<Self>, r: &mut dyn Reader<'r>) -> Result<()>;
 }
 
 macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
         impl<'r> ReadXDR<'r> for $int_ty {
-            fn read_xdr(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+            fn read_xdr(value: &mut MU<Self>, r: &mut dyn Reader<'r>) -> Result<()> {
                 value.write(r.$read_method()?);
                 Ok(())
             }
@@ -44,14 +44,14 @@ construct_int_impls! {
 }
 
 impl<'a, 'r: 'a> ReadXDR<'r> for Bytes<'a> {
-    fn read_xdr(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+    fn read_xdr(value: &mut MU<Self>, r: &mut dyn Reader<'r>) -> Result<()> {
         value.write(Bytes::from(r.read_bytes()?));
         Ok(())
     }
 }
 
 impl<'a, 'r: 'a, const N: usize> ReadXDR<'r> for ByteArray<'a, N> {
-    fn read_xdr(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+    fn read_xdr(value: &mut MU<Self>, r: &mut dyn Reader<'r>) -> Result<()> {
         let bytes: &[u8; N] = (r.read_byte_array(N as u32)?).try_into().unwrap();
         value.write(ByteArray::from(bytes));
         Ok(())
@@ -59,7 +59,7 @@ impl<'a, 'r: 'a, const N: usize> ReadXDR<'r> for ByteArray<'a, N> {
 }
 
 impl<'r, const N: usize> ReadXDR<'r> for OwnedByteArray<N> {
-    fn read_xdr(value: &mut MU<Self>, r: &mut dyn Read<'r>) -> Result<()> {
+    fn read_xdr(value: &mut MU<Self>, r: &mut dyn Reader<'r>) -> Result<()> {
         r.read_byte_array_into(value.as_bytes_mut(), N as u32)
     }
 }

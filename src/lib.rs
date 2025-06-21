@@ -20,8 +20,8 @@ pub mod cxs;
 
 pub mod prelude {
     pub use crate::bytes::*;
-    pub use crate::codec::read::*;
-    pub use crate::codec::read::Result as ReadResult;
+    pub use crate::codec::reader::*;
+    pub use crate::codec::reader::Result as ReadResult;
     pub use crate::codec::writer::*;
     pub use crate::codec::writer::Result as WriteResult;
     pub use crate::read_xdr::*;
@@ -33,6 +33,7 @@ mod cxs_utils {
     use core::mem::MaybeUninit as MU;
     use crate::prelude::*;
     use crate::cxs::into_buf_writer::*;
+    use crate::cxs::buf_reader::*;
 
     pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
     where

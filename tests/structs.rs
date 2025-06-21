@@ -17,7 +17,7 @@ struct Foo {
 
 // derive this
 impl<'p> ReadXDR<'p> for Foo {
-    fn read_xdr(foo: &mut MU<Foo>, r: &mut dyn Read<'p>) -> ReadResult<()> {
+    fn read_xdr(foo: &mut MU<Foo>, r: &mut dyn Reader<'p>) -> ReadResult<()> {
         let foo_ptr = foo.as_mut_ptr();
 
         let foo_bytes: &mut MU<OwnedByteArray<3>> = unsafe {
