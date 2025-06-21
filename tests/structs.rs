@@ -1,6 +1,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 
-use cxs::*;
+use ::cxs::*;
+use ::cxs::codec::writer::Result as WriteResult;
 
 mod common;
 use common::*;
@@ -15,33 +16,33 @@ struct Foo {
 }
 
 // derive this
-impl<'p> Construct<'p> for Foo {
-    fn construct(foo: &mut MU<Foo>, r: &mut dyn Read<'p>) -> ReadResult<()> {
+impl<'p> ReadXDR<'p> for Foo {
+    fn read_xdr(foo: &mut MU<Foo>, r: &mut dyn Read<'p>) -> ReadResult<()> {
         let foo_ptr = foo.as_mut_ptr();
 
         let foo_bytes: &mut MU<OwnedByteArray<3>> = unsafe {
             transmute(&raw mut (*foo_ptr).bytes)
         };
-        construct(foo_bytes, r)?;
+        read_xdr(foo_bytes, r)?;
 
         let foo_blerg: &mut MU<i32> = unsafe {
             transmute(&raw mut (*foo_ptr).blerg)
         };
-        construct(foo_blerg, r)?;
+        read_xdr(foo_blerg, r)?;
 
         Ok(())
     }
 }
 
 // derive this
-impl Deconstruct for Foo {
-    fn deconstruct(&self, w: &mut dyn Write) -> WriteResult<Acc> {
-        let mut acc = 0;
+impl WriteXDR for Foo {
+    fn write_xdr<W: Writer>(&self, w: W) -> WriteResult {
+        let mut s = w.write_struct()?;
 
-        acc += deconstruct(&self.bytes, w)?;
-        acc += deconstruct(&self.blerg, w)?;
+        s.write_field(&self.bytes)?;
+        s.write_field(&self.blerg)?;
 
-        Ok(acc)
+        Ok(())
     }
 }
 
@@ -54,6 +55,6 @@ fn struct_foo() {
 
     check_encode(&val, expected);
 
-    let val2: Foo = cxs::decode(expected).unwrap();
+    let val2: Foo = decode(expected).unwrap();
     assert_eq!(val2, val);
 }

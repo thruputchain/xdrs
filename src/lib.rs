@@ -6,69 +6,77 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
-
 pub mod bytes;
+
+// Traits for translating Rust values to and from XDR
+pub mod write_xdr;
+pub mod read_xdr;
+
+// The abstract interface for serialization formats
 pub mod codec;
-pub mod xdr;
 
-pub use bytes::*;
-pub use codec::read::*;
-pub use codec::read::Result as ReadResult;
-pub use codec::write::*;
-pub use codec::write::Result as WriteResult;
-pub use xdr::construct::*;
-pub use xdr::deconstruct::*;
+// An implementation of CXS serialization
+pub mod cxs;
 
-// Utilities
-
-use core::mem::MaybeUninit as MU;
-
-pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
-where
-    T: Construct<'r>
-{
-    let mut reader = BufReader::new(buf);
-    let mut value: MU<T> = MU::uninit();
-    construct(&mut value, &mut reader)?;
-
-    // SAFETY: if it doesn't panic, construct() has initialized the value
-    let value = unsafe { value.assume_init() };
-
-    Ok(value)
+pub mod prelude {
+    pub use crate::bytes::*;
+    pub use crate::codec::read::*;
+    pub use crate::codec::read::Result as ReadResult;
+    pub use crate::codec::writer::*;
+    pub use crate::codec::writer::Result as WriteResult;
+    pub use crate::read_xdr::*;
+    pub use crate::write_xdr::*;
 }
+pub use prelude::*;
 
-pub fn encode_into<T: Deconstruct>(value: &T, buf: &mut [MU<u8>]) -> usize {
-    let mut writer = IntoBufWriter::new(buf);
-    let _acc = value.deconstruct(&mut writer).unwrap();
-    writer.written()
+mod cxs_utils {
+    use core::mem::MaybeUninit as MU;
+    use crate::prelude::*;
+    use crate::cxs::into_buf_writer::*;
+
+    pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
+    where
+        T: ReadXDR<'r>
+    {
+        let mut reader = BufReader::new(buf);
+        let mut value: MU<T> = MU::uninit();
+        read_xdr(&mut value, &mut reader)?;
+
+        // SAFETY: if it doesn't panic, construct() has initialized the value
+        let value = unsafe { value.assume_init() };
+
+        Ok(value)
+    }
+
+    pub fn encode_into<T: WriteXDR>(value: &T, buf: &mut [MU<u8>]) -> usize {
+        let mut writer = IntoBufWriter::new(buf);
+        let _acc = value.write_xdr(&mut writer).unwrap();
+        writer.written()
+    }
+
 }
+pub use cxs_utils::*;
 
-pub fn encode_into_with<T>(value: &T, buf: &mut [MU<u8>], deconstruct: DeconstructFn<T>) -> usize {
-    let mut writer = IntoBufWriter::new(buf);
-    let _acc = deconstruct(value, &mut writer).unwrap();
-    writer.written()
-}
+#[cfg(feature = "alloc")]
+mod cxs_utils_alloc {
+    use alloc::vec::Vec;
+    use crate::prelude::*;
+    use crate::cxs::buf_writer::*;
 
-pub fn encode_bytes_into(value: &[u8], buf: &mut [MU<u8>]) -> usize {
-    encode_into_with(&value, buf, deconstruct_byte_slice)
-}
+    #[cfg(feature = "alloc")]
+    pub fn encode<T: WriteXDR>(value: &T) -> Vec<u8> {
+        let mut writer = BufWriter::new();
+        let _acc = value.write_xdr(&mut writer).unwrap();
+        writer.into()
+    }
 
-pub fn encode_byte_array_into(value: &[u8], buf: &mut [MU<u8>]) -> usize {
-    encode_into_with(&value, buf, deconstruct_byte_array)
+    #[cfg(feature = "alloc")]
+    pub fn encode_into_vec<T: WriteXDR>(value: &T, vec: Vec<u8>) -> Vec<u8> {
+        let mut writer = BufWriter::from(vec);
+        let _acc = value.write_xdr(&mut writer).unwrap();
+        writer.into()
+    }
 }
 
 #[cfg(feature = "alloc")]
-pub fn encode<T: Deconstruct>(value: &T) -> Vec<u8> {
-    let mut writer = BufWriter::new();
-    let _acc = value.deconstruct(&mut writer).unwrap();
-    writer.into()
-}
-
-#[cfg(feature = "alloc")]
-pub fn encode_into_vec<T: Deconstruct>(value: &T, vec: Vec<u8>) -> Vec<u8> {
-    let mut writer = BufWriter::from(vec);
-    let _acc = value.deconstruct(&mut writer).unwrap();
-    writer.into()
-}
+pub use cxs_utils_alloc::*;

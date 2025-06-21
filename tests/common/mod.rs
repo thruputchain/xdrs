@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use cxs::*;
+use ::cxs;
 use core::mem::MaybeUninit as MU;
 use core::fmt::Debug;
 
@@ -13,7 +13,7 @@ macro_rules! hex {
 
 pub fn check_codec<'r, T>(val: &T, expected: &'r [u8])
 where
-    T: Debug + Eq + cxs::Construct<'r> + cxs::Deconstruct
+    T: Debug + Eq + cxs::ReadXDR<'r> + cxs::WriteXDR
 {
     check_encode(val, expected);
     check_decode(val, expected);
@@ -21,16 +21,16 @@ where
 
 pub fn check_decode<'r, T>(val: &T, expected: &'r [u8])
 where
-    T: Debug + Eq + cxs::Construct<'r>
+    T: Debug + Eq + cxs::ReadXDR<'r>
 {
-    let val2: T = decode(expected).unwrap();
+    let val2: T = cxs::decode(expected).unwrap();
 
     assert_eq!(&val2, val);
 }
 
 pub fn check_encode<T>(val: &T, expected: &[u8])
 where
-    T: cxs::Deconstruct
+    T: cxs::WriteXDR
 {
     // Check the allocating encoder
     #[cfg(feature = "alloc")]
@@ -42,7 +42,7 @@ where
 
 pub fn check_encode_into_static<T>(value: &T, expected: &[u8])
 where
-    T: cxs::Deconstruct
+    T: cxs::WriteXDR
 {
     const BUFSZ: usize = 1000;
     assert!(expected.len() <= BUFSZ);
@@ -50,22 +50,7 @@ where
     // An "uninitialized" buffer that has actually been zeroed
     let mut buf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
 
-    let written = encode_into(value, &mut buf);
-    let buf = unsafe { MU::array_assume_init(buf) };
-    let encoded = &buf[..written];
-
-    check_eq(encoded, expected);
-}
-
-pub fn check_encode_into_static_with<T>(value: &T, expected: &[u8], deconstruct: DeconstructFn<T>)
-{
-    const BUFSZ: usize = 1000;
-    assert!(expected.len() <= BUFSZ);
-
-    // An "uninitialized" buffer that has actually been zeroed
-    let mut buf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
-
-    let written = encode_into_with(value, &mut buf, deconstruct);
+    let written = cxs::encode_into(value, &mut buf);
     let buf = unsafe { MU::array_assume_init(buf) };
     let encoded = &buf[..written];
 
@@ -75,16 +60,16 @@ pub fn check_encode_into_static_with<T>(value: &T, expected: &[u8], deconstruct:
 #[cfg(feature = "alloc")]
 pub fn check_encode_alloc<T>(value: &T, expected: &[u8])
 where
-    T: cxs::Deconstruct
+    T: cxs::WriteXDR
 {
-    let encoded = encode(value);
+    let encoded = cxs::encode(value);
 
     check_eq(&encoded, expected);
 }
 
 #[cfg(feature = "alloc")]
 pub fn check_encode_into_alloc<T>(value: &T, expected: &[u8])
-where T: cxs::Deconstruct
+where T: cxs::WriteXDR
 {
     let encoded = encode_into_alloc(value, expected.len());
 
@@ -95,7 +80,7 @@ where T: cxs::Deconstruct
 // Allocate a buffer of the expected size and encode
 // the value into it
 pub fn encode_into_alloc<T>(value: &T, expected_len: usize) -> Vec<u8>
-where T: cxs::Deconstruct
+where T: cxs::WriteXDR
 {
     let mut encoded = Vec::with_capacity(expected_len);
     let written = cxs::encode_into(value, encoded.spare_capacity_mut());
@@ -124,7 +109,7 @@ pub fn check_eq(encoded: &[u8], expected: &[u8]) {
 /*
 pub fn check_roundtrip<'r, T>(value: &T)
 where
-    T: Debug + Eq + cxs::Deconstruct + cxs::Construct<'r>
+    T: Debug + Eq + cxs::WriteXDR + cxs::ReadXDR<'r>
 {
     let vec = vec![];
     let vec = encode_into_vec(value, vec);

@@ -3,7 +3,7 @@
 mod common;
 use common::*;
 
-use cxs::*;
+use ::cxs::*;
 
 #[test]
 fn byte_slice() {
