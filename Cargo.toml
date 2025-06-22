@@ -1,3 +1,9 @@
+[workspace]
+members = ["xdr-derive"]
+
+[workspace.dependencies]
+xdr-derive = { path = "xdr-derive" }
+
 [package]
 name = "cxs"
 version = "0.1.0"
@@ -6,6 +12,7 @@ edition = "2024"
 [dependencies]
 hex = "0.4.3"
 thiserror = "2.0.12"
+xdr-derive.workspace = true
 
 [features]
 alloc = []
