@@ -39,6 +39,12 @@ write_xdr_int_impls! {
     write_u8 for u8,
 }
 
+impl<T: WriteXDR> WriteXDR for Option<T> {
+    fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
+        w.write_opt(self)
+    }
+}
+
 impl<'a> WriteXDR for Bytes<'a> {
     fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
         w.write_bytes(&self.as_ref())

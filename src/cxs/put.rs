@@ -27,6 +27,10 @@ pub trait Put {
 
     // Provided:
 
+    fn put_bool(&mut self, v: bool) -> Result<()> {
+        self.put_i32(if v { 1 } else { 0 })
+    }
+
     fn put_i64(&mut self, n: i64) -> Result<()> {
         if n > i32::MAX as i64 || n < i32::MIN as i64 {
             // Use the 8-byte representation
@@ -156,7 +160,14 @@ pub trait Put {
             self.put_byte(n)
         }
     }
+
+    fn put_xdr<T: WriteXDR>(&mut self, value: &T) -> Result<()>
+        where Self: Sized
+    {
+        value.write_xdr(self)
+    }
 }
+
 
 impl<'a, P> Writer for &'a mut P
 where
@@ -181,6 +192,15 @@ where
 
         self.put_u32(bytes.len() as u32)?;
         self.put_byte_array(bytes)
+    }
+
+    fn write_opt<T: WriteXDR>(self, v: &Option<T>) -> Result <()> {
+        if let Some(v) = v.as_ref() {
+            self.put_bool(true)?;
+            self.put_xdr(v)
+        } else {
+            self.put_bool(false)
+        }
     }
 
     #[inline]

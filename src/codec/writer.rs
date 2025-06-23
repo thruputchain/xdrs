@@ -25,6 +25,8 @@ pub trait Writer {
     /// Write a byte sequence of unspecified length
     fn write_bytes(self, bytes: &[u8]) -> Result<()>;
 
+    fn write_opt<T: WriteXDR>(self, _v: &Option<T>) -> Result <()>;
+
     fn write_i64(self, n: i64) -> Result<()>;
     fn write_i32(self, n: i32) -> Result<()>;
     fn write_i16(self, n: i16) -> Result<()>;

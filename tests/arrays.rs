@@ -32,3 +32,19 @@ fn owned_byte_array() {
     check_encode(&buf, expected);
     check_decode(&buf, expected);
 }
+
+#[test]
+fn optional_data() {
+    let n: i32 = 5;
+    let mut v = Some(n);
+    let expected = &hex!("0105");
+
+    check_encode(&v, expected);
+    check_decode(&v, expected);
+
+    v = None;
+    let expected = &hex!("00");
+
+    check_encode(&v, expected);
+    check_decode(&v, expected);
+}

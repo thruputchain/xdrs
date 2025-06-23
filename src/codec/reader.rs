@@ -6,8 +6,8 @@ use alloc::vec::Vec;
 use core::mem::MaybeUninit as MU;
 use thiserror::Error;
 
-/// Objects that can source XDR values, some borrowed with lifetime 'r
-pub trait Reader<'r> {
+/// Something that can produce XDR values, some borrowed with lifetime 'r
+pub trait Reader<'r>: Sized {
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;
     fn read_i16(&mut self) -> Result<i16>;
@@ -27,7 +27,27 @@ pub trait Reader<'r> {
     /// Read a byte-sequence of unknown length, borrowing the contents from the reader
     fn read_bytes(&mut self) -> Result<&'r [u8]>;
 
+    // fn read_array(&mut self, len: u32) -> Result<Self::ReadArray>;
+
+    fn read_optional<V>(&mut self, visit_some: V) -> Result<()>
+        where V: FnOnce (&mut Self) -> Result<()>;
+
+    fn read_struct<V>(
+        &mut self,
+        nfields: u32,
+        visit_field: V
+    ) -> Result<()>
+        where V: FnMut (u32, &mut Self) -> Result<()>;
+
     // Provided methods
+
+    fn read_bool(&mut self) -> Result<bool> {
+        match self.read_i32()? {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(Error::BadBool)
+        }
+    }
 
     #[cfg(feature = "alloc")]
     fn read_byte_array_owned(&mut self, len: u32) -> Result<Vec<u8>> {
@@ -57,4 +77,10 @@ pub enum Error {
 
     #[error("encoded integer out of range")]
     IntegerOutOfRange,
+
+    #[error("bad bool value")]
+    BadBool,
+
+    #[error("bad field index")]
+    BadFieldIndex,
 }

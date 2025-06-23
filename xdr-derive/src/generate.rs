@@ -100,17 +100,28 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     generics.params.push(syn::GenericParam::Lifetime(lifetime_param));
     let (impl_generics, _ty_generics, _where_clause) = generics.split_for_impl();
 
+    let mut n_fields: u32 = 0;
     let mut fields_read_xdr = TokenStream::new();
-    for f in item.fields.iter() {
-        fields_read_xdr.extend(read_field(f));
+    for (i, f) in item.fields.iter().enumerate() {
+        fields_read_xdr.extend(read_field(f, i as u32));
+        n_fields += 1;
     }
 
     quote! {
         impl #impl_generics ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
-            fn read_xdr(value: &mut MU<Self>, r: &mut dyn Reader<'_r>) -> Result<()> {
+            fn read_xdr<R: Reader<'_r>>(value: &mut MU<Self>, r: &mut R) -> Result<()> {
                 let struct_ptr = value.as_mut_ptr();
 
-                #fields_read_xdr
+                let visit_field = |index: u32, r: &mut R| -> ReadResult<()> {
+                    match index {
+
+                        #fields_read_xdr
+
+                        _ => Err(Error::BadFieldIndex)
+                    }
+                };
+
+                r.read_struct(#n_fields, visit_field)?;
 
                 Ok(())
             }
@@ -118,15 +129,18 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     }
 }
 
-fn read_field(f: &syn::Field) -> TokenStream {
+fn read_field(f: &syn::Field, index: u32) -> TokenStream {
     let ident = &f.ident.as_ref().unwrap();
     let ty = &f.ty;
 
     quote! {
-        let field_mu: &mut MU<#ty> = unsafe {
-            transmute(&raw mut (*struct_ptr).#ident)
-        };
+                        #index => {
+                            let field_mu: &mut MU<#ty> = unsafe {
+                                transmute(&raw mut (*struct_ptr).#ident)
+                            };
 
-        read_xdr(field_mu, r)?;
+                            read_xdr(field_mu, r)
+                        },
+
     }
 }

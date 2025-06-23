@@ -1,8 +1,8 @@
 use crate::codec::reader::*;
 use core::mem::MaybeUninit as MU;
 
-pub struct BufReader<'a> {
-    data: &'a [u8],
+pub struct BufReader<'r> {
+    data: &'r [u8],
     pos: usize,
 }
 
@@ -145,18 +145,19 @@ macro_rules! read_unsigned {
 
 
 impl<'r> Reader<'r> for BufReader<'r> {
-    read_unsigned! {
-        [read_u64, u64],
-        [read_u32, u32],
-        [read_u16, u16],
-        [read_u8, u8],
-    }
 
     read_signed! {
         [read_i64, i64],
         [read_i32, i32],
         [read_i16, i16],
         [read_i8, i8],
+    }
+
+    read_unsigned! {
+        [read_u64, u64],
+        [read_u32, u32],
+        [read_u16, u16],
+        [read_u8, u8],
     }
 
     fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]> {
@@ -176,5 +177,29 @@ impl<'r> Reader<'r> for BufReader<'r> {
     fn read_bytes(&mut self) -> Result<&'r [u8]> {
         let len = self.read_u32()?;
         self.read_byte_array(len)
+    }
+
+    fn read_optional<V>(&mut self, visit_some: V) -> Result<()>
+        where V: FnOnce (&mut Self) -> Result<()>
+    {
+        let is_present = self.read_bool()?;
+        if is_present {
+            visit_some(self)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn read_struct<V>(
+        &mut self,
+        nfields: u32,
+        mut visit_field: V
+    ) -> Result<()>
+        where V: FnMut (u32, &mut Self) -> Result<()>
+    {
+        for i in 0..nfields {
+            visit_field(i, self)?;
+        }
+        Ok(())
     }
 }
