@@ -10,7 +10,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
     Ok(quote!{
         const _: () = {
-            use ::cxs::codec::writer::Result;
+            use ::cxs::xdr::writer::Result;
 
             #impls
         };
@@ -64,7 +64,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
         const _: () = {
             use core::mem::MaybeUninit as MU;
             use core::mem::transmute;
-            use ::cxs::codec::reader::Result;
+            use ::cxs::xdr::reader::Result;
 
             #impls
         };
@@ -121,6 +121,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
                 };
 
                 r.read_struct(#n_fields, visit_field)?;
+                // SAFETY: we depend on `read_struct` initializing all fields
                 let value = unsafe { value.assume_init() };
 
                 Ok(value)

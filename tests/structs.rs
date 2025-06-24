@@ -1,8 +1,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 
 use ::cxs::*;
-// use ::cxs::codec::writer::Result as WriteResult;
-use ::cxs::codec::reader::Result as ReadResult;
+use ::cxs::xdr_cxs::*;
 
 mod common;
 use common::*;

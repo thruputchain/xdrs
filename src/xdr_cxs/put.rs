@@ -1,8 +1,8 @@
 //! Provide a generic CXS implementation for any type
 //! that implements some basic byte operations
 
-use crate::codec::writer::*;
-use crate::codec::writer::Result;
+use crate::xdr::writer::*;
+use crate::xdr::writer::Result;
 use crate::write_xdr::*;
 
 const V_MULTIBYTE: u8 = 63;

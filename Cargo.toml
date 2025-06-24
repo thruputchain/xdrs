@@ -10,9 +10,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-hex = "0.4.3"
 thiserror = "2.0.12"
-xdr-derive.workspace = true
+xdr-derive = { workspace = true, optional = true }
+
+[dev-dependencies]
+hex = "0.4.3"
 
 [features]
+default = ["derive"]
 alloc = []
+derive = ["dep:xdr-derive"]

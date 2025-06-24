@@ -1,7 +1,7 @@
 //! Translate Rust values into XDR values
 
-use crate::codec::writer::*;
-use crate::codec::writer::Result;
+use crate::xdr::writer::*;
+use crate::xdr::writer::Result;
 use crate::bytes::*;
 
 pub trait WriteXDR {

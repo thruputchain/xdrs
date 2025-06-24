@@ -1,4 +1,4 @@
-use crate::codec::reader::*;
+use crate::xdr::reader::*;
 use crate::bytes::*;
 use core::mem::MaybeUninit as MU;
 
