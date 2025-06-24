@@ -51,3 +51,18 @@ fn struct_boo() {
     let val2: Boo = decode(expected).unwrap();
     assert_eq!(val2, val);
 }
+
+#[test]
+fn newtype() {
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct New<'a> (
+        ByteArray<'a, 6>
+    );
+
+    let bytes = [0, 1, 2, 3, 4, 5];
+    let val = New(ByteArray::from(&bytes));
+    let expected = &hex!("000102030405");
+
+    check_encode(&val, expected);
+    check_decode(&val, expected);
+}

@@ -30,8 +30,8 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let mut fields_write_xdr = TokenStream::new();
-    for f in item.fields.iter() {
-        fields_write_xdr.extend(write_field(f));
+    for (i, f) in item.fields.iter().enumerate() {
+        fields_write_xdr.extend(write_field(i, f));
     }
 
     quote! {
@@ -47,11 +47,11 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream
     }
 }
 
-fn write_field(f: &syn::Field) -> TokenStream {
-    let ident = &f.ident.as_ref().unwrap();
+fn write_field(index: usize, f: &syn::Field) -> TokenStream {
+    let fa = FieldAccess::from((f, index));
 
     quote! {
-        s.write_field(&(self.#ident))?;
+        s.write_field(&(self.#fa))?;
     }
 }
 
@@ -130,17 +130,16 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
 }
 
 fn read_field(f: &syn::Field, index: u32) -> TokenStream {
-    let ident = &f.ident.as_ref().unwrap();
+    let fa = FieldAccess::from((f, index as usize));
     let ty = &f.ty;
 
     quote! {
                         #index => {
                             let field_mu: &mut MU<#ty> = unsafe {
-                                transmute(&raw mut (*struct_ptr).#ident)
+                                transmute(&raw mut (*struct_ptr).#fa)
                             };
 
                             read_xdr(field_mu, r)
                         },
-
     }
 }
