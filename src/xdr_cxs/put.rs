@@ -53,6 +53,7 @@ pub trait Put {
             let v = V_MULTIBYTE;
             let h = v | s;
             self.put_byte(h)?;
+
             let buf = n.to_le_bytes();
             self.put_byte_array(&buf)
         } else {
@@ -67,7 +68,8 @@ pub trait Put {
             let v = V_MULTIBYTE;
             let h = v | s;
             self.put_byte(h)?;
-            let buf = (n as i16).to_le_bytes();
+
+            let buf = n.to_le_bytes();
             self.put_byte_array(&buf)
         } else {
             self.put_i8(n as i8)
@@ -75,24 +77,24 @@ pub trait Put {
     }
 
     fn put_i8(&mut self, n: i8) -> Result<()> {
-        if n > I6_MAX || n < I6_MIN {
+        if !(I6_MIN..=I6_MAX).contains(&n) {
             // Use the 1-byte repr
             let s = S_1BYTE;
             let v = V_MULTIBYTE;
             let h = v | s;
             self.put_byte(h)?;
+
             self.put_byte(n as u8)
         } else {
             // This small, signed number will be represented in the header-byte with 6-bit,
             // one's-complement encoding
-            let v;
             let nu: u8 = n.unsigned_abs();
-            if n >= 0 {
-                v = nu;
+            let v = if n >= 0 {
+                nu
             } else {
                 // invert and set the high bit
-                v = (!nu & 0b01_1111) | 0b0010_0000;
-            }
+                (!nu & 0b01_1111) | 0b0010_0000
+            };
 
             let s = S_HEADER;
             let h = v | s;
@@ -248,7 +250,7 @@ where
     }
 }
 
-impl<'a, P> StructWriter for &'a mut P
+impl<P> StructWriter for &mut P
 where P: Put
 {
     fn write_field<T: WriteXDR>(&mut self, value: &T) -> Result<()> {

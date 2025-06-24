@@ -59,8 +59,8 @@ impl<'a> BufReader<'a> {
 
             if input[n_bytes - 1] & 0x80 != 0 {
                 // the high bit is set, so sign-extend remaining bytes
-                for i in n_bytes .. 8 {
-                    int_bytes[i] = 0xff;
+                for b in int_bytes.iter_mut().skip(n_bytes) {
+                    *b = 0xff;
                 }
             }
 

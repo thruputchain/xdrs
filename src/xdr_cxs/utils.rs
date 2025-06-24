@@ -26,7 +26,9 @@ where
 
 pub fn encode_into<T: WriteXDR>(value: &T, buf: &mut [MU<u8>]) -> usize {
     let mut writer = IntoBufWriter::new(buf);
-    let _acc = value.write_xdr(&mut writer).unwrap();
+
+    value.write_xdr(&mut writer).unwrap();
+
     writer.written()
 }
 

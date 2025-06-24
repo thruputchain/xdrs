@@ -55,7 +55,7 @@ impl<T: WriteXDR, const N: usize> WriteXDR for [T; N] {
 
 impl<'a> WriteXDR for Bytes<'a> {
     fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
-        w.write_bytes(&self.as_ref())
+        w.write_bytes(self.as_ref())
     }
 }
 
