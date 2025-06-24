@@ -19,6 +19,8 @@ pub mod codec;
 // An implementation of CXS serialization
 pub mod cxs;
 
+pub use ::xdr_derive::*;
+
 pub mod prelude {
     pub use crate::bytes::*;
     pub use crate::codec::reader::*;

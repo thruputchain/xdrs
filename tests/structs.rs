@@ -3,7 +3,6 @@
 use ::cxs::*;
 // use ::cxs::codec::writer::Result as WriteResult;
 use ::cxs::codec::reader::Result as ReadResult;
-use ::xdr_derive::*;
 
 mod common;
 use common::*;
