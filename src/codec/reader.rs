@@ -27,10 +27,15 @@ pub trait Reader<'r>: Sized {
     /// Read a byte-sequence of unknown length, borrowing the contents from the reader
     fn read_bytes(&mut self) -> Result<&'r [u8]>;
 
-    // fn read_array(&mut self, len: u32) -> Result<Self::ReadArray>;
+    fn read_array<V>(
+        &mut self,
+        len: usize,
+        visit_element: V,
+    ) -> Result<()>
+        where V: FnMut (&mut Self) -> Result<()>;
 
-    fn read_optional<V>(&mut self, visit_some: V) -> Result<()>
-        where V: FnOnce (&mut Self) -> Result<()>;
+    fn read_optional<V>(&mut self, visit_opt: V) -> Result<()>
+        where V: FnOnce (Option<&mut Self>) -> Result<()>;
 
     fn read_struct<V>(
         &mut self,
@@ -67,6 +72,11 @@ pub enum Error {
         )]
     SourceEmpty {
         requested: u32,
+        remaining: u32,
+    },
+
+    #[error("input remaining after decoding: {} bytes", remaining)]
+    SourceRemaining {
         remaining: u32,
     },
 

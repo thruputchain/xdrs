@@ -32,26 +32,6 @@ macro_rules! construct_int_impls {
     )* };
 }
 
-impl<'r, T> ReadXDR<'r> for Option<T>
-where
-    T: ReadXDR<'r>
-{
-    fn read_xdr<R: Reader<'r>>(value: &mut MU<Self>, r: &mut R) -> Result<()> {
-        let mut opt = None;
-        let visit_some = |r: &mut R| {
-            let mut v: MU<T> = MU::uninit();
-            read_xdr(&mut v, r)?;
-            let v = unsafe { v.assume_init() };
-            opt = Some(v);
-            Ok(())
-        };
-        r.read_optional(visit_some)?;
-
-        value.write(opt);
-        Ok(())
-    }
-}
-
 construct_int_impls! {
     read_i64 for i64,
     read_i32 for i32,
@@ -62,6 +42,46 @@ construct_int_impls! {
     read_u32 for u32,
     read_u16 for u16,
     read_u8 for u8,
+
+    read_bool for bool,
+}
+
+impl<'r, T> ReadXDR<'r> for Option<T>
+where
+    T: ReadXDR<'r>
+{
+    fn read_xdr<R: Reader<'r>>(value: &mut MU<Self>, r: &mut R) -> Result<()> {
+        let visit_opt = |r: Option<&mut R>| {
+            if let Some(r) = r {
+                // Can we do better?
+                let mut v: MU<T> = MU::uninit();
+                read_xdr(&mut v, r)?;
+                let v = unsafe { v.assume_init() };
+                value.write(Some(v));
+            } else {
+                value.write(None);
+            }
+                Ok(())
+        };
+        r.read_optional(visit_opt)
+    }
+}
+
+impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
+where
+    T: ReadXDR<'r>
+{
+    fn read_xdr<R: Reader<'r>>(value: &mut MU<Self>, r: &mut R) -> Result<()> {
+        let value: &mut [MU<T>; N] = unsafe { core::mem::transmute(value) };
+        let mut i = 0;
+        let visit_element = |r: &mut R| -> Result<()> {
+            let rslt = read_xdr(&mut value[i], r);
+            i += 1;
+            rslt
+        };
+
+        r.read_array(N, visit_element)
+    }
 }
 
 impl<'a, 'r: 'a> ReadXDR<'r> for Bytes<'a> {

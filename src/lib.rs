@@ -1,6 +1,7 @@
 #![no_std]
 #![feature(maybe_uninit_write_slice)]
 #![feature(maybe_uninit_as_bytes)]
+#![feature(maybe_uninit_uninit_array_transpose)]
 #![allow(ambiguous_glob_reexports)]
 
 #[cfg(feature = "alloc")]
@@ -22,6 +23,7 @@ pub mod prelude {
     pub use crate::bytes::*;
     pub use crate::codec::reader::*;
     pub use crate::codec::reader::Result as ReadResult;
+    pub use crate::codec::reader::Error as ReadError;
     pub use crate::codec::writer::*;
     pub use crate::codec::writer::Result as WriteResult;
     pub use crate::read_xdr::*;
@@ -45,6 +47,14 @@ mod cxs_utils {
 
         // SAFETY: if it doesn't panic, construct() has initialized the value
         let value = unsafe { value.assume_init() };
+
+        debug_assert!(reader.position() <= buf.len());
+
+        let remaining = buf.len().checked_sub(reader.position()).unwrap();
+        if remaining > 0 {
+            let remaining = remaining as u32;
+            return Err(ReadError::SourceRemaining { remaining })
+        }
 
         Ok(value)
     }

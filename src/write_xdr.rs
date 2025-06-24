@@ -37,11 +37,19 @@ write_xdr_int_impls! {
     write_u32 for u32,
     write_u16 for u16,
     write_u8 for u8,
+
+    write_bool for bool,
 }
 
 impl<T: WriteXDR> WriteXDR for Option<T> {
     fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
         w.write_opt(self)
+    }
+}
+
+impl<T: WriteXDR, const N: usize> WriteXDR for [T; N] {
+    fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
+        w.write_array(self)
     }
 }
 

@@ -48,3 +48,12 @@ fn optional_data() {
     check_encode(&v, expected);
     check_decode(&v, expected);
 }
+
+#[test]
+fn int_array() {
+    let v: [i32; 3] = [-1, 0, 1];
+    let expected = &hex!("3e0001");
+
+    check_encode(&v, expected);
+    check_decode(&v, expected);
+}

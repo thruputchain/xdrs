@@ -179,12 +179,10 @@ where
         Ok(self)
     }
 
-    #[inline]
     fn write_byte_array(self, bytes: &[u8]) -> Result<()> {
         self.put_byte_array(bytes)
     }
 
-    #[inline]
     fn write_bytes(self, bytes: &[u8]) -> Result<()> {
         if bytes.len() > u32::MAX as usize {
             return Err(Error::InvalidArrayLength);
@@ -201,6 +199,15 @@ where
         } else {
             self.put_bool(false)
         }
+    }
+
+    fn write_array<T, const N: usize>(self, array: &[T; N]) -> Result<()>
+        where T: WriteXDR
+    {
+        for elt in array {
+            self.put_xdr(elt)?;
+        }
+        Ok(())
     }
 
     #[inline]
@@ -234,6 +241,10 @@ where
     #[inline]
     fn write_u8(self, n: u8) -> Result<()> {
         self.put_u8(n)
+    }
+    #[inline]
+    fn write_bool(self, b: bool) -> Result<()> {
+        self.put_bool(b)
     }
 }
 

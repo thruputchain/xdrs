@@ -12,6 +12,10 @@ impl<'a> BufReader<'a> {
         Self { data, pos }
     }
 
+    pub fn position(&self) -> usize {
+        self.pos
+    }
+
     fn reserve_extent(&mut self, requested: u32) -> Result<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
@@ -21,7 +25,7 @@ impl<'a> BufReader<'a> {
 
         let buf = &self.data[self.pos .. extent];
 
-        self.pos += extent;
+        self.pos = extent;
 
         Ok(buf)
     }
@@ -179,15 +183,28 @@ impl<'r> Reader<'r> for BufReader<'r> {
         self.read_byte_array(len)
     }
 
-    fn read_optional<V>(&mut self, visit_some: V) -> Result<()>
-        where V: FnOnce (&mut Self) -> Result<()>
+    fn read_optional<V>(&mut self, visit_opt: V) -> Result<()>
+        where V: FnOnce (Option<&mut Self>) -> Result<()>,
     {
         let is_present = self.read_bool()?;
         if is_present {
-            visit_some(self)
+            visit_opt(Some(self))
         } else {
-            Ok(())
+            visit_opt(None)
         }
+    }
+
+    fn read_array<V>(
+        &mut self,
+        len: usize,
+        mut visit_element: V,
+    ) -> Result<()>
+        where V: FnMut (&mut Self) -> Result<()>
+    {
+        for _ in 0..len {
+            visit_element(self)?;
+        }
+        Ok(())
     }
 
     fn read_struct<V>(
