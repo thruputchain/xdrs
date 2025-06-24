@@ -1,7 +1,6 @@
 #![no_std]
+#![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_write_slice)]
-#![feature(maybe_uninit_as_bytes)]
-#![feature(maybe_uninit_uninit_array_transpose)]
 #![allow(ambiguous_glob_reexports)]
 
 #[cfg(feature = "alloc")]
@@ -44,11 +43,8 @@ mod cxs_utils {
         T: ReadXDR<'r>
     {
         let mut reader = BufReader::new(buf);
-        let mut value: MU<T> = MU::uninit();
-        read_xdr(&mut value, &mut reader)?;
 
-        // SAFETY: if it doesn't panic, construct() has initialized the value
-        let value = unsafe { value.assume_init() };
+        let value = read_xdr(&mut reader)?;
 
         debug_assert!(reader.position() <= buf.len());
 

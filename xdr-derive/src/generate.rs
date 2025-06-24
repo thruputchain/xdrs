@@ -109,21 +109,21 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
 
     quote! {
         impl #impl_generics ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
-            fn read_xdr<R: Reader<'_r>>(value: &mut MU<Self>, r: &mut R) -> Result<()> {
+            fn read_xdr<R: Reader<'_r>>(r: &mut R) -> Result<Self> {
+                let mut value: MU<Self> = MU::uninit();
                 let struct_ptr = value.as_mut_ptr();
 
                 let visit_field = |index: u32, r: &mut R| -> ReadResult<()> {
                     match index {
-
                         #fields_read_xdr
-
                         _ => Err(::cxs::ReadError::BadFieldIndex)
                     }
                 };
 
                 r.read_struct(#n_fields, visit_field)?;
+                let value = unsafe { value.assume_init() };
 
-                Ok(())
+                Ok(value)
             }
         }
     }
@@ -131,15 +131,12 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
 
 fn read_field(f: &syn::Field, index: u32) -> TokenStream {
     let fa = FieldAccess::from((f, index as usize));
-    let ty = &f.ty;
 
     quote! {
                         #index => {
-                            let field_mu: &mut MU<#ty> = unsafe {
-                                transmute(&raw mut (*struct_ptr).#fa)
-                            };
-
-                            read_xdr(field_mu, r)
+                            let field_value = read_xdr(r)?;
+                            unsafe { (*struct_ptr).#fa = field_value; }
+                            Ok(())
                         },
     }
 }

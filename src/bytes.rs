@@ -61,17 +61,3 @@ impl<const N: usize> Deref for OwnedByteArray<N> {
         &self.0
     }
 }
-
-/*
-impl<const N: usize> AsRef<[u8; N]> for OwnedByteArray<N> {
-    fn as_ref(&self) -> &[u8; N] {
-        &self.0
-    }
-}
-
-impl<const N: usize> AsRef<[u8]> for OwnedByteArray<N> {
-    fn as_ref(&self) -> &[u8] {
-        &self.0[..]
-    }
-}
-*/
