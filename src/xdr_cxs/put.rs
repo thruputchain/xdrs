@@ -1,9 +1,9 @@
 //! Provide a generic CXS implementation for any type
 //! that implements some basic byte operations
 
-use crate::xdr::writer::*;
-use crate::xdr::writer::Result;
 use crate::write_xdr::*;
+use crate::xdr::writer::Result;
+use crate::xdr::writer::*;
 
 const V_MULTIBYTE: u8 = 63;
 const S_8BYTE: u8 = 3 << 6;
@@ -164,16 +164,16 @@ pub trait Put {
     }
 
     fn put_xdr<T: WriteXDR>(&mut self, value: &T) -> Result<()>
-        where Self: Sized
+    where
+        Self: Sized,
     {
         value.write_xdr(self)
     }
 }
 
-
 impl<'a, P> Writer for &'a mut P
 where
-    P: Put
+    P: Put,
 {
     type SW = &'a mut P;
 
@@ -194,7 +194,7 @@ where
         self.put_byte_array(bytes)
     }
 
-    fn write_opt<T: WriteXDR>(self, v: &Option<T>) -> Result <()> {
+    fn write_opt<T: WriteXDR>(self, v: &Option<T>) -> Result<()> {
         if let Some(v) = v.as_ref() {
             self.put_bool(true)?;
             self.put_xdr(v)
@@ -204,7 +204,8 @@ where
     }
 
     fn write_array<T, const N: usize>(self, array: &[T; N]) -> Result<()>
-        where T: WriteXDR
+    where
+        T: WriteXDR,
     {
         for elt in array {
             self.put_xdr(elt)?;
@@ -251,7 +252,8 @@ where
 }
 
 impl<P> StructWriter for &mut P
-where P: Put
+where
+    P: Put,
 {
     fn write_field<T: WriteXDR>(&mut self, value: &T) -> Result<()> {
         value.write_xdr(&mut **self)

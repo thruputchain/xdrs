@@ -47,9 +47,9 @@ impl I6 {
 
 #[test]
 fn show_i6() {
-    show_range(I6_MIN, I6_MIN+3);
+    show_range(I6_MIN, I6_MIN + 3);
     show_range(-3, 3);
-    show_range(I6_MAX-3, I6_MAX);
+    show_range(I6_MAX - 3, I6_MAX);
 }
 
 fn show_range(min: i8, max: i8) {
@@ -70,22 +70,58 @@ fn show_range(min: i8, max: i8) {
 
 #[test]
 fn show_i32() {
-    println!("i32::MAX {} {}", i32::MAX, hex::encode(&i32::MAX.to_le_bytes()[..]));
-    println!("i32::MIN {} {}", i32::MIN, hex::encode(&i32::MIN.to_le_bytes()[..]));
-    println!("i32  32 {} {}", 32i32, hex::encode(&(32i32.to_le_bytes()[..])));
-    println!("i32 -32 {} {}", -32i32, hex::encode(&((-32i32).to_le_bytes()[..])));
+    println!(
+        "i32::MAX {} {}",
+        i32::MAX,
+        hex::encode(&i32::MAX.to_le_bytes()[..])
+    );
+    println!(
+        "i32::MIN {} {}",
+        i32::MIN,
+        hex::encode(&i32::MIN.to_le_bytes()[..])
+    );
+    println!(
+        "i32  32 {} {}",
+        32i32,
+        hex::encode(&(32i32.to_le_bytes()[..]))
+    );
+    println!(
+        "i32 -32 {} {}",
+        -32i32,
+        hex::encode(&((-32i32).to_le_bytes()[..]))
+    );
 }
 
 #[test]
 fn show_min_max() {
-    println!("{:5}{:>20}{:>20}{:>20}", "ty", "min" , "max", "umax");
+    println!("{:5}{:>20}{:>20}{:>20}", "ty", "min", "max", "umax");
 
     fn show(ty: &str, min: u64, max: u64, umax: u64) {
-        println!("{:5}{:20x}{:20x}{:20x}", ty, min , max, umax);
+        println!("{:5}{:20x}{:20x}{:20x}", ty, min, max, umax);
     }
 
-    show("i8", i8::MIN.unsigned_abs() as u64, i8::MAX as u64, u8::MAX as u64);
-    show("i16", i16::MIN.unsigned_abs() as u64, i16::MAX as u64, u16::MAX as u64);
-    show("i32", i32::MIN.unsigned_abs() as u64, i32::MAX as u64, u32::MAX as u64);
-    show("i64", i64::MIN.unsigned_abs() as u64, i64::MAX as u64, u64::MAX);
+    show(
+        "i8",
+        i8::MIN.unsigned_abs() as u64,
+        i8::MAX as u64,
+        u8::MAX as u64,
+    );
+    show(
+        "i16",
+        i16::MIN.unsigned_abs() as u64,
+        i16::MAX as u64,
+        u16::MAX as u64,
+    );
+    show(
+        "i32",
+        i32::MIN.unsigned_abs() as u64,
+        i32::MAX as u64,
+        u32::MAX as u64,
+    );
+    show(
+        "i64",
+        i64::MIN.unsigned_abs() as u64,
+        i64::MAX as u64,
+        u64::MAX,
+    );
 }

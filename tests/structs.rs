@@ -1,7 +1,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 
-use ::cxs::*;
 use ::cxs::xdr_cxs::*;
+use ::cxs::*;
 
 mod common;
 use common::*;
@@ -17,7 +17,7 @@ fn struct_foo() {
     // Given: a value and its expected encoding
     let val: Foo = Foo {
         bytes: OwnedByteArray::from([0xAA, 0xBB, 0xCC]),
-        blerg: 7
+        blerg: 7,
     };
     let expected_hex = "aabbcc07";
     let expected = &hex::decode(expected_hex).unwrap();
@@ -53,9 +53,7 @@ fn struct_boo() {
 #[test]
 fn newtype() {
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
-    struct New<'a> (
-        ByteArray<'a, 6>
-    );
+    struct New<'a>(ByteArray<'a, 6>);
 
     let bytes = [0, 1, 2, 3, 4, 5];
     let val = New(ByteArray::from(&bytes));

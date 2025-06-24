@@ -1,11 +1,11 @@
-use crate::xdr::reader::*;
 use crate::bytes::*;
+use crate::xdr::reader::*;
 use core::mem::MaybeUninit as MU;
 
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
 where
     R: Reader<'r>,
-    T: ReadXDR<'r>
+    T: ReadXDR<'r>,
 {
     ReadXDR::read_xdr(r)
 }
@@ -44,7 +44,7 @@ construct_int_impls! {
 
 impl<'r, T> ReadXDR<'r> for Option<T>
 where
-    T: ReadXDR<'r>
+    T: ReadXDR<'r>,
 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let mut value: Option<T> = None;
@@ -61,7 +61,7 @@ where
 
 impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
 where
-    T: ReadXDR<'r>
+    T: ReadXDR<'r>,
 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];

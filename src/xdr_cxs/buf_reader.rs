@@ -20,10 +20,13 @@ impl<'a> BufReader<'a> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
             let remaining = (self.data.len() - self.pos).try_into().unwrap();
-            return Err(Error::SourceEmpty { requested, remaining });
+            return Err(Error::SourceEmpty {
+                requested,
+                remaining,
+            });
         }
 
-        let buf = &self.data[self.pos .. extent];
+        let buf = &self.data[self.pos..extent];
 
         self.pos = extent;
 
@@ -46,7 +49,7 @@ impl<'a> BufReader<'a> {
             // The number is encoded in the following bytes
 
             if s > 3 {
-                return Err(Error::InvalidHeaderByte { h })
+                return Err(Error::InvalidHeaderByte { h });
             }
 
             let n_bytes: usize = 2usize.pow(s as u32);
@@ -72,7 +75,7 @@ impl<'a> BufReader<'a> {
             // integer in `v`
 
             if s != 0 {
-                return Err(Error::InvalidHeaderByte { h })
+                return Err(Error::InvalidHeaderByte { h });
             }
 
             if v & 0b10_0000 != 0 {
@@ -96,7 +99,7 @@ impl<'a> BufReader<'a> {
             // The number is encoded in the following bytes
 
             if s > 3 {
-                return Err(Error::InvalidHeaderByte { h })
+                return Err(Error::InvalidHeaderByte { h });
             }
 
             let n_bytes: usize = 2usize.pow(s as u32);
@@ -147,9 +150,7 @@ macro_rules! read_unsigned {
     )* };
 }
 
-
 impl<'r> Reader<'r> for BufReader<'r> {
-
     read_signed! {
         [read_i64, i64],
         [read_i32, i32],
@@ -184,7 +185,8 @@ impl<'r> Reader<'r> for BufReader<'r> {
     }
 
     fn read_optional<V>(&mut self, visit_opt: V) -> Result<()>
-        where V: FnOnce (Option<&mut Self>) -> Result<()>,
+    where
+        V: FnOnce(Option<&mut Self>) -> Result<()>,
     {
         let is_present = self.read_bool()?;
         if is_present {
@@ -194,12 +196,9 @@ impl<'r> Reader<'r> for BufReader<'r> {
         }
     }
 
-    fn read_array<V>(
-        &mut self,
-        len: usize,
-        mut visit_element: V,
-    ) -> Result<()>
-        where V: FnMut (&mut Self) -> Result<()>
+    fn read_array<V>(&mut self, len: usize, mut visit_element: V) -> Result<()>
+    where
+        V: FnMut(&mut Self) -> Result<()>,
     {
         for _ in 0..len {
             visit_element(self)?;
@@ -207,12 +206,9 @@ impl<'r> Reader<'r> for BufReader<'r> {
         Ok(())
     }
 
-    fn read_struct<V>(
-        &mut self,
-        nfields: u32,
-        mut visit_field: V
-    ) -> Result<()>
-        where V: FnMut (u32, &mut Self) -> Result<()>
+    fn read_struct<V>(&mut self, nfields: u32, mut visit_field: V) -> Result<()>
+    where
+        V: FnMut(u32, &mut Self) -> Result<()>,
     {
         for i in 0..nfields {
             visit_field(i, self)?;

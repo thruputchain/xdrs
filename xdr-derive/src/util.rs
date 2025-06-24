@@ -1,7 +1,7 @@
-use syn::Result;
-use syn::spanned::Spanned;
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::Result;
+use syn::spanned::Spanned;
 
 // Produce an error referencing a particular code span
 pub fn err<T, S, M>(spanned: &S, msg: M) -> Result<T>
@@ -33,8 +33,8 @@ impl<'a> quote::ToTokens for FieldAccess<'a> {
             FieldAccess::Ident(id) => id.to_tokens(tokens),
             FieldAccess::Index(ix) => {
                 let ix = syn::Index::from(ix);
-                tokens.extend(quote!{ #ix })
-            },
+                tokens.extend(quote! { #ix })
+            }
         }
     }
 }

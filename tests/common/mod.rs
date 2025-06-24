@@ -2,8 +2,8 @@
 
 use ::cxs::*;
 
-use core::mem::MaybeUninit as MU;
 use core::fmt::Debug;
+use core::mem::MaybeUninit as MU;
 
 #[macro_export]
 macro_rules! hex {
@@ -14,7 +14,7 @@ macro_rules! hex {
 
 pub fn check_codec<'r, T>(val: &T, expected: &'r [u8])
 where
-    T: Debug + Eq + ReadXDR<'r> + WriteXDR
+    T: Debug + Eq + ReadXDR<'r> + WriteXDR,
 {
     check_encode(val, expected);
     check_decode(val, expected);
@@ -22,7 +22,7 @@ where
 
 pub fn check_decode<'r, T>(val: &T, expected: &'r [u8])
 where
-    T: Debug + Eq + ReadXDR<'r>
+    T: Debug + Eq + ReadXDR<'r>,
 {
     let val2: T = xdr_cxs::decode(expected).unwrap();
 
@@ -31,7 +31,7 @@ where
 
 pub fn check_encode<T>(val: &T, expected: &[u8])
 where
-    T: WriteXDR
+    T: WriteXDR,
 {
     // Check the allocating encoder
     #[cfg(feature = "alloc")]
@@ -43,7 +43,7 @@ where
 
 pub fn check_encode_into_static<T>(value: &T, expected: &[u8])
 where
-    T: WriteXDR
+    T: WriteXDR,
 {
     const BUFSZ: usize = 1000;
     assert!(expected.len() <= BUFSZ);
@@ -61,7 +61,7 @@ where
 #[cfg(feature = "alloc")]
 pub fn check_encode_alloc<T>(value: &T, expected: &[u8])
 where
-    T: WriteXDR
+    T: WriteXDR,
 {
     let encoded = xdr_cxs::encode(value);
 
@@ -70,7 +70,8 @@ where
 
 #[cfg(feature = "alloc")]
 pub fn check_encode_into_alloc<T>(value: &T, expected: &[u8])
-where T: WriteXDR
+where
+    T: WriteXDR,
 {
     let encoded = encode_into_alloc(value, expected.len());
 
@@ -81,7 +82,8 @@ where T: WriteXDR
 // Allocate a buffer of the expected size and encode
 // the value into it
 pub fn encode_into_alloc<T>(value: &T, expected_len: usize) -> Vec<u8>
-where T: WriteXDR
+where
+    T: WriteXDR,
 {
     let mut encoded = Vec::with_capacity(expected_len);
     let written = xdr_cxs::encode_into(value, encoded.spare_capacity_mut());

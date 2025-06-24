@@ -1,5 +1,5 @@
-mod util;
 mod generate;
+mod util;
 
 use proc_macro::TokenStream;
 

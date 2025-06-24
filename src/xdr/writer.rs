@@ -1,7 +1,7 @@
 //! Write XDR values in some format
 
-use thiserror::Error;
 use crate::write_xdr::WriteXDR;
+use thiserror::Error;
 
 #[derive(Copy, Clone, Debug, Error)]
 pub enum Error {
@@ -28,7 +28,8 @@ pub trait Writer {
     fn write_opt<T: WriteXDR>(self, v: &Option<T>) -> Result<()>;
 
     fn write_array<T, const N: usize>(self, array: &[T; N]) -> Result<()>
-        where T: WriteXDR;
+    where
+        T: WriteXDR;
 
     fn write_i64(self, n: i64) -> Result<()>;
     fn write_i32(self, n: i32) -> Result<()>;

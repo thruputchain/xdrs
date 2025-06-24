@@ -1,14 +1,14 @@
+use crate::util::*;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
-use crate::util::*;
 
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let mut impls = TokenStream::new();
 
     impls.extend(write_data(input));
 
-    Ok(quote!{
+    Ok(quote! {
         const _: () = {
             use ::cxs::xdr::writer::Result;
 
@@ -19,9 +19,8 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
 fn write_data(input: &syn::DeriveInput) -> Result<TokenStream> {
     match &input.data {
-        syn::Data::Struct(item) =>
-            Ok(write_struct(input, item)),
-        _ => err(input, "Can't derive for this item")
+        syn::Data::Struct(item) => Ok(write_struct(input, item)),
+        _ => err(input, "Can't derive for this item"),
     }
 }
 
@@ -60,7 +59,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
     impls.extend(read_data(input));
 
-    Ok(quote!{
+    Ok(quote! {
         const _: () = {
             use core::mem::MaybeUninit as MU;
             use core::mem::transmute;
@@ -73,9 +72,8 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
 fn read_data(input: &syn::DeriveInput) -> Result<TokenStream> {
     match &input.data {
-        syn::Data::Struct(item) =>
-            Ok(read_struct(input, item)),
-        _ => err(input, "Can't derive for this item")
+        syn::Data::Struct(item) => Ok(read_struct(input, item)),
+        _ => err(input, "Can't derive for this item"),
     }
 }
 
@@ -90,14 +88,16 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     });
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let mut lifetime_param: syn::LifetimeParam = syn::parse_quote!{ '_r };
+    let mut lifetime_param: syn::LifetimeParam = syn::parse_quote! { '_r };
     for lt in ty_lifetimes {
         // Add each of the item's lifetime params as a bound on the reader lifetime
         lifetime_param.bounds.push(lt.clone())
     }
 
     let mut generics = input.generics.clone();
-    generics.params.push(syn::GenericParam::Lifetime(lifetime_param));
+    generics
+        .params
+        .push(syn::GenericParam::Lifetime(lifetime_param));
     let (impl_generics, _ty_generics, _where_clause) = generics.split_for_impl();
 
     let mut n_fields: u32 = 0;

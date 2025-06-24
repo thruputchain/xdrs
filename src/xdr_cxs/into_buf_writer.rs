@@ -1,5 +1,5 @@
-use crate::xdr::writer::*;
 use super::put::*;
+use crate::xdr::writer::*;
 
 use core::mem::MaybeUninit;
 type Mu8 = MaybeUninit<u8>;
@@ -20,7 +20,7 @@ impl<'a> IntoBufWriter<'a> {
 
     fn reserve<'s>(&'s mut self, len: usize) -> Result<&'s mut [Mu8]>
     where
-        'a: 's
+        'a: 's,
     {
         let extent = self.written + len;
         if extent > self.buf.len() {

@@ -1,8 +1,8 @@
 //! Translate Rust values into XDR values
 
-use crate::xdr::writer::*;
-use crate::xdr::writer::Result;
 use crate::bytes::*;
+use crate::xdr::writer::Result;
+use crate::xdr::writer::*;
 
 pub trait WriteXDR {
     fn write_xdr<W: Writer>(&self, w: W) -> Result;
@@ -10,7 +10,8 @@ pub trait WriteXDR {
 
 pub fn write_xdr<T, W>(this: &T, w: W) -> Result<()>
 where
-    T: WriteXDR, W: Writer
+    T: WriteXDR,
+    W: Writer,
 {
     this.write_xdr(w)
 }

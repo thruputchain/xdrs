@@ -27,22 +27,17 @@ pub trait Reader<'r>: Sized {
     /// Read a byte-sequence of unknown length, borrowing the contents from the reader
     fn read_bytes(&mut self) -> Result<&'r [u8]>;
 
-    fn read_array<V>(
-        &mut self,
-        len: usize,
-        visit_element: V,
-    ) -> Result<()>
-        where V: FnMut (&mut Self) -> Result<()>;
+    fn read_array<V>(&mut self, len: usize, visit_element: V) -> Result<()>
+    where
+        V: FnMut(&mut Self) -> Result<()>;
 
     fn read_optional<V>(&mut self, visit_opt: V) -> Result<()>
-        where V: FnOnce (Option<&mut Self>) -> Result<()>;
+    where
+        V: FnOnce(Option<&mut Self>) -> Result<()>;
 
-    fn read_struct<V>(
-        &mut self,
-        nfields: u32,
-        visit_field: V
-    ) -> Result<()>
-        where V: FnMut (u32, &mut Self) -> Result<()>;
+    fn read_struct<V>(&mut self, nfields: u32, visit_field: V) -> Result<()>
+    where
+        V: FnMut(u32, &mut Self) -> Result<()>;
 
     // Provided methods
 
@@ -50,7 +45,7 @@ pub trait Reader<'r>: Sized {
         match self.read_i32()? {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(Error::BadBool)
+            _ => Err(Error::BadBool),
         }
     }
 
@@ -66,24 +61,18 @@ pub type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Copy, Clone, Debug, Error)]
 pub enum Error {
-    #[error("unexpected end of input (requested: {}, remaining: {})",
+    #[error(
+        "unexpected end of input (requested: {}, remaining: {})",
         requested,
-        remaining,
-        )]
-    SourceEmpty {
-        requested: u32,
-        remaining: u32,
-    },
+        remaining
+    )]
+    SourceEmpty { requested: u32, remaining: u32 },
 
     #[error("input remaining after decoding: {} bytes", remaining)]
-    SourceRemaining {
-        remaining: u32,
-    },
+    SourceRemaining { remaining: u32 },
 
     #[error("invalid header byte: 0x{h:02x}")]
-    InvalidHeaderByte {
-        h: u8
-    },
+    InvalidHeaderByte { h: u8 },
 
     #[error("encoded integer out of range")]
     IntegerOutOfRange,
