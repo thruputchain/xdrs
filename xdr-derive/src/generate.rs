@@ -117,7 +117,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
 
                         #fields_read_xdr
 
-                        _ => Err(Error::BadFieldIndex)
+                        _ => Err(::cxs::ReadError::BadFieldIndex)
                     }
                 };
 
