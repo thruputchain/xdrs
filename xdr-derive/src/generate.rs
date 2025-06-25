@@ -20,25 +20,54 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 fn write_data(input: &syn::DeriveInput) -> Result<TokenStream> {
     match &input.data {
         syn::Data::Struct(item) => Ok(write_struct(input, item)),
+        syn::Data::Enum(item) => Ok(write_enum(input, item)),
         _ => err(input, "Can't derive for this item"),
     }
 }
 
-fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
+fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
-    let mut fields_write_xdr = TokenStream::new();
-    for (i, f) in item.fields.iter().enumerate() {
-        fields_write_xdr.extend(write_field(i, f));
-    }
+    let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input));
 
     quote! {
         impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<W: Writer>(&self, w: W) -> Result {
                 let mut s = w.write_struct()?;
 
-                #fields_write_xdr
+                match self {
+                    #write_variants
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+fn write_variant(i: usize, v: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
+    let var_ident = &v.ident;
+    let ty_ident = &input.ident;
+    let write_var_fields = quote! {};
+
+    unimplemented!()
+
+    /*
+    quote! {
+        #ty_ident::#var_ident #write_var_fields
+    }
+    */
+}
+
+fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
+    let ty_ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let write_fields = token_reduce(&item.fields, write_field);
+    quote! {
+        impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
+            fn write_xdr<W: Writer>(&self, w: W) -> Result {
+                let mut s = w.write_struct()?;
+
+                #write_fields
 
                 Ok(())
             }
@@ -101,11 +130,10 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     let (impl_generics, _ty_generics, _where_clause) = generics.split_for_impl();
 
     let mut n_fields: u32 = 0;
-    let mut fields_read_xdr = TokenStream::new();
-    for (i, f) in item.fields.iter().enumerate() {
-        fields_read_xdr.extend(read_field(f, i as u32));
+    let fields_read_xdr = token_reduce(&item.fields, |i, f| {
         n_fields += 1;
-    }
+        read_field(i, f)
+    });
 
     quote! {
         impl #impl_generics ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
@@ -130,14 +158,15 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     }
 }
 
-fn read_field(f: &syn::Field, index: u32) -> TokenStream {
-    let fa = FieldAccess::from((f, index as usize));
+fn read_field(index: usize, f: &syn::Field) -> TokenStream {
+    let fa = FieldAccess::from((f, index));
+    let index = index as u32;
 
     quote! {
-                        #index => {
-                            let field_value = read_xdr(r)?;
-                            unsafe { (*struct_ptr).#fa = field_value; }
-                            Ok(())
-                        },
+        #index => {
+            let field_value = read_xdr(r)?;
+            unsafe { (*struct_ptr).#fa = field_value; }
+            Ok(())
+        },
     }
 }

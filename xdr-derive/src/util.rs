@@ -38,3 +38,11 @@ impl<'a> quote::ToTokens for FieldAccess<'a> {
         }
     }
 }
+
+pub fn token_reduce<T, I, F>(i: I, mut f: F) -> TokenStream
+where
+    I: IntoIterator<Item = T>,
+    F: FnMut(usize, T) -> TokenStream,
+{
+    TokenStream::from_iter(i.into_iter().enumerate().map(|(i, x)| f(i, x)))
+}
