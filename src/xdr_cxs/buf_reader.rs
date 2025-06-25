@@ -215,4 +215,11 @@ impl<'r> Reader<'r> for BufReader<'r> {
         }
         Ok(())
     }
+
+    fn read_enum<V>(&mut self, nfields: u32, visit_field: V) -> Result<()>
+    where
+        V: FnMut(u32, &mut Self) -> Result<()>,
+    {
+        self.read_struct(nfields, visit_field)
+    }
 }

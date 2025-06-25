@@ -9,9 +9,9 @@ extern crate alloc;
 pub mod bytes;
 
 // Traits for translating Rust values to and from XDR
+pub mod discrim;
 pub mod read_xdr;
 pub mod write_xdr;
-pub mod discrim;
 
 // The abstract interface for serialization formats
 pub mod xdr;
@@ -21,9 +21,9 @@ pub mod xdr_cxs;
 
 pub mod prelude {
     pub use crate::bytes::*;
+    pub use crate::discrim::*;
     pub use crate::read_xdr::*;
     pub use crate::write_xdr::*;
-    pub use crate::discrim::*;
     pub use crate::xdr::reader::Error as ReadError;
     pub use crate::xdr::reader::Result as ReadResult;
     pub use crate::xdr::reader::*;

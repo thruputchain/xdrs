@@ -39,6 +39,10 @@ pub trait Reader<'r>: Sized {
     where
         V: FnMut(u32, &mut Self) -> Result<()>;
 
+    fn read_enum<V>(&mut self, nfields: u32, visit_field: V) -> Result<()>
+    where
+        V: FnMut(u32, &mut Self) -> Result<()>;
+
     // Provided methods
 
     fn read_bool(&mut self) -> Result<bool> {
