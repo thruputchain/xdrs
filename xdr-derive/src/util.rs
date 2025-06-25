@@ -17,12 +17,12 @@ pub enum FieldAccess<'a> {
     Index(usize),
 }
 
-impl<'a> From<(&'a syn::Field, usize)> for FieldAccess<'a> {
-    fn from(f: (&'a syn::Field, usize)) -> Self {
-        if let Some(id) = f.0.ident.as_ref() {
+impl<'a> FieldAccess<'a> {
+    pub fn new(index: usize, field: &'a syn::Field) -> Self {
+        if let Some(id) = field.ident.as_ref() {
             FieldAccess::Ident(id)
         } else {
-            FieldAccess::Index(f.1)
+            FieldAccess::Index(index)
         }
     }
 }

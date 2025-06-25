@@ -176,8 +176,14 @@ where
     P: Put,
 {
     type SW = &'a mut P;
+    type EW = &'a mut P;
 
-    fn write_struct(self) -> Result<Self::SW> {
+    fn write_struct(self, _nfields: usize) -> Result<Self::SW> {
+        Ok(self)
+    }
+
+    fn write_enum(self, discriminant: i32, _nfields: usize) -> Result<Self::EW> {
+        self.put_i32(discriminant)?;
         Ok(self)
     }
 

@@ -16,8 +16,11 @@ pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 
 pub trait Writer {
     type SW: StructWriter;
+    type EW: StructWriter;
 
-    fn write_struct(self) -> Result<Self::SW>;
+    fn write_struct(self, n_fields: usize) -> Result<Self::SW>;
+
+    fn write_enum(self, discriminant: i32, nfields: usize) -> Result<Self::EW>;
 
     /// Write a byte array of specified length
     fn write_byte_array(self, bytes: &[u8]) -> Result<()>;
@@ -44,5 +47,9 @@ pub trait Writer {
 }
 
 pub trait StructWriter {
+    fn write_field<T: WriteXDR>(&mut self, value: &T) -> Result<()>;
+}
+
+pub trait EnumWriter {
     fn write_field<T: WriteXDR>(&mut self, value: &T) -> Result<()>;
 }
