@@ -33,7 +33,7 @@ pub fn encode_into<T: WriteXDR>(value: &T, buf: &mut [MU<u8>]) -> usize {
 }
 
 #[cfg(feature = "alloc")]
-mod cxs_utils_alloc {
+mod utils_alloc {
     use crate::prelude::*;
     use crate::serialize_cxs::buf_writer::*;
     use alloc::vec::Vec;
@@ -54,4 +54,4 @@ mod cxs_utils_alloc {
 }
 
 #[cfg(feature = "alloc")]
-pub use cxs_utils_alloc::*;
+pub use utils_alloc::*;

@@ -14,9 +14,9 @@ pub enum Error {
 
 pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 
-pub trait Writer {
-    type SW: StructWriter;
-    type EW: StructWriter;
+pub trait Writer<F> {
+    type SW: StructWriter<F>;
+    type EW: EnumWriter<F>;
 
     fn write_struct(self, n_fields: usize) -> Result<Self::SW>;
 
@@ -46,10 +46,10 @@ pub trait Writer {
     fn write_bool(self, b: bool) -> Result<()>;
 }
 
-pub trait StructWriter {
+pub trait StructWriter<F> {
     fn write_field<T: WriteXDR>(&mut self, value: &T) -> Result<()>;
 }
 
-pub trait EnumWriter {
+pub trait EnumWriter<F> {
     fn write_field<T: WriteXDR>(&mut self, value: &T) -> Result<()>;
 }

@@ -5,13 +5,13 @@ use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 
 pub trait WriteXDR {
-    fn write_xdr<W: Writer>(&self, w: W) -> Result;
+    fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result;
 }
 
-pub fn write_xdr<T, W>(this: &T, w: W) -> Result<()>
+pub fn write_xdr<T, F, W>(this: &T, w: W) -> Result<()>
 where
     T: WriteXDR,
-    W: Writer,
+    W: Writer<F>,
 {
     this.write_xdr(w)
 }
@@ -20,7 +20,7 @@ macro_rules! write_xdr_int_impls {
     { $( $write_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
         impl WriteXDR for $int_ty {
-            fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
+            fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
                 w.$write_method(*self)
             }
         }
@@ -43,31 +43,31 @@ write_xdr_int_impls! {
 }
 
 impl<T: WriteXDR> WriteXDR for Option<T> {
-    fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
         w.write_opt(self)
     }
 }
 
 impl<T: WriteXDR, const N: usize> WriteXDR for [T; N] {
-    fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
         w.write_array(self)
     }
 }
 
 impl<'a> WriteXDR for Bytes<'a> {
-    fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
         w.write_bytes(self.as_ref())
     }
 }
 
 impl<'a, const N: usize> WriteXDR for ByteArray<'a, N> {
-    fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
         w.write_byte_array(self.as_ref())
     }
 }
 
 impl<const N: usize> WriteXDR for OwnedByteArray<N> {
-    fn write_xdr<W: Writer>(&self, w: W) -> Result<()> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
         w.write_byte_array(self.as_ref())
     }
 }

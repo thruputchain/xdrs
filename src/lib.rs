@@ -16,8 +16,11 @@ pub mod write_xdr;
 // The abstract interface for serialization formats
 pub mod serialize;
 
-// An implementation of CXS serialization
+// CXS serialization
 pub mod serialize_cxs;
+
+// TXS serialization
+pub mod serialize_txs;
 
 pub mod prelude {
     pub use crate::bytes::*;

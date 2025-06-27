@@ -37,7 +37,7 @@ impl Put for BufWriter {
         Ok(())
     }
 
-    fn put_byte_array(&mut self, bytes: &[u8]) -> Result<()> {
+    fn put_bytes(&mut self, bytes: &[u8]) -> Result<()> {
         if bytes.len() > u32::MAX as usize {
             return Err(Error::InvalidArrayLength);
         }

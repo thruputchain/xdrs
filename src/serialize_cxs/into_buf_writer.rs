@@ -45,7 +45,7 @@ impl<'a> Put for IntoBufWriter<'a> {
         Ok(())
     }
 
-    fn put_byte_array(&mut self, bytes: &[u8]) -> Result<()> {
+    fn put_bytes(&mut self, bytes: &[u8]) -> Result<()> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 

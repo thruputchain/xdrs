@@ -35,7 +35,7 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream
     let write_fields = token_reduce(&item.fields, write_field);
     quote! {
         impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<W: Writer>(&self, w: W) -> Result {
+            fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result {
                 let mut s = w.write_struct(#n_fields)?;
 
                 #write_fields
@@ -61,7 +61,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
 
     quote! {
         impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<W: Writer>(&self, w: W) -> Result {
+            fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result {
                 let d = <Self as XDRDiscriminant>::discriminant(self);
 
                 match self {

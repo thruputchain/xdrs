@@ -25,7 +25,9 @@ where
     T: Debug + Eq + ReadXDR<'r>,
 {
     let val2: T = serialize_cxs::decode(expected).unwrap();
+    assert_eq!(&val2, val);
 
+    let val2: T = serialize_txs::decode(expected).unwrap();
     assert_eq!(&val2, val);
 }
 
@@ -38,23 +40,23 @@ where
     check_encode_alloc(val, expected);
 
     // Check the static encoder
-    check_encode_into_static(val, expected);
+    check_encode_into_static(val, expected, serialize_cxs::encode_into);
+    check_encode_into_static(val, expected, serialize_txs::encode_into);
 }
 
-pub fn check_encode_into_static<T>(value: &T, expected: &[u8])
+
+pub fn check_encode_into_static<T, E>(value: &T, expected: &[u8], encode_into: E)
 where
     T: WriteXDR,
+    E: Fn (&T, &mut [MU<u8>]) -> usize,
 {
     const BUFSZ: usize = 1000;
     assert!(expected.len() <= BUFSZ);
 
     // An "uninitialized" buffer that has actually been zeroed
     let mut buf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
-
-    let written = serialize_cxs::encode_into(value, &mut buf);
-    let buf = unsafe { MU::array_assume_init(buf) };
-    let encoded = &buf[..written];
-
+    let written = encode_into(value, &mut buf);
+    let encoded = unsafe { &MU::array_assume_init(buf)[..written] };
     check_eq(encoded, expected);
 }
 
@@ -64,7 +66,9 @@ where
     T: WriteXDR,
 {
     let encoded = serialize_cxs::encode(value);
+    check_eq(&encoded, expected);
 
+    let encoded = serialize_txs::encode(value);
     check_eq(&encoded, expected);
 }
 
@@ -73,20 +77,23 @@ pub fn check_encode_into_alloc<T>(value: &T, expected: &[u8])
 where
     T: WriteXDR,
 {
-    let encoded = encode_into_alloc(value, expected.len());
+    let encoded = encode_into_alloc(value, expected.len(), serialize_cxs::encode_into);
+    check_eq(&encoded, expected);
 
+    let encoded = encode_into_alloc(value, expected.len(), serialize_txs::encode_into);
     check_eq(&encoded, expected);
 }
 
 #[cfg(feature = "alloc")]
 // Allocate a buffer of the expected size and encode
 // the value into it
-pub fn encode_into_alloc<T>(value: &T, expected_len: usize) -> Vec<u8>
+pub fn encode_into_alloc<T, E>(value: &T, expected_len: usize, encode_into: E) -> Vec<u8>
 where
     T: WriteXDR,
+    E: Fn (&T, &mut [MU<u8>]) -> usize,
 {
     let mut encoded = Vec::with_capacity(expected_len);
-    let written = serialize_cxs::encode_into(value, encoded.spare_capacity_mut());
+    let written = encode_into(value, encoded.spare_capacity_mut());
 
     // SAFETY:
     // - the new len must be less than or equal to capacity().
