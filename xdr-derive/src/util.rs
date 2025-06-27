@@ -46,3 +46,29 @@ where
 {
     TokenStream::from_iter(i.into_iter().enumerate().map(|(i, x)| f(i, x)))
 }
+
+pub fn tmp_binding(index: usize) -> syn::Ident {
+    quote::format_ident!("_self_{}", index)
+}
+
+pub fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
+    let ty_lifetimes = generics.params.iter().filter_map(|g| {
+        if let syn::GenericParam::Lifetime(param) = g {
+            Some(&param.lifetime)
+        } else {
+            None
+        }
+    });
+
+    let mut lifetime_param: syn::LifetimeParam = syn::parse_quote! { '_r };
+    for lt in ty_lifetimes {
+        // Add each of the item's lifetime params as a bound on the reader lifetime
+        lifetime_param.bounds.push(lt.clone())
+    }
+
+    generics
+        .params
+        .push(syn::GenericParam::Lifetime(lifetime_param));
+
+    generics
+}

@@ -1,6 +1,6 @@
 #![feature(maybe_uninit_array_assume_init)]
 
-use ::cxs::*;
+use ::xdrs::*;
 
 mod common;
 use common::*;

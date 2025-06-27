@@ -1,5 +1,5 @@
 use crate::bytes::*;
-use crate::xdr::reader::*;
+use crate::serialize::reader::*;
 use core::mem::MaybeUninit as MU;
 
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>

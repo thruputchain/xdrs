@@ -1,8 +1,8 @@
 //! Translate Rust values into XDR values
 
 use crate::bytes::*;
-use crate::xdr::writer::Result;
-use crate::xdr::writer::*;
+use crate::serialize::writer::Result;
+use crate::serialize::writer::*;
 
 pub trait WriteXDR {
     fn write_xdr<W: Writer>(&self, w: W) -> Result;

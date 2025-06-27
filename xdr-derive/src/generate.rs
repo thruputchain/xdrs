@@ -4,6 +4,8 @@ use quote::quote;
 use syn::Result;
 use syn::spanned::Spanned;
 
+// ---- derive WriteXDR ------------------------------------------------------
+
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let mut impls = TokenStream::new();
 
@@ -11,7 +13,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
     Ok(quote! {
         const _: () = {
-            use ::cxs::xdr::writer::Result;
+            use ::xdrs::serialize::writer::Result;
 
             #impls
         };
@@ -128,6 +130,8 @@ fn named_field_binding(index: usize, field: &syn::Field) -> TokenStream {
     quote! { #ident: #bind, }
 }
 
+// ---- derive ReadXDR ------------------------------------------------------
+
 pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let mut impls = TokenStream::new();
 
@@ -137,7 +141,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
         const _: () = {
             use core::mem::MaybeUninit as MU;
             use core::mem::transmute;
-            use ::cxs::xdr::reader::Result;
+            use ::xdrs::serialize::reader::{Error, Result};
 
             #impls
         };
@@ -171,7 +175,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
                 let visit_field = |index: u32, r: &mut R| -> ReadResult<()> {
                     match index {
                         #read_fields
-                        _ => Err(::cxs::ReadError::BadFieldIndex)
+                        _ => Err(Error::BadFieldIndex)
                     }
                 };
 
@@ -228,7 +232,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
 
                 match d {
                     #read_variants
-                    _ => Err(::cxs::ReadError::BadFieldIndex)
+                    _ => Err(Error::BadFieldIndex)
                 }
             }
         }
@@ -253,7 +257,7 @@ fn read_variant(index: usize, variant: &syn::Variant, input: &syn::DeriveInput) 
             let visit_field = |index: u32, r: &mut R| -> ReadResult<()> {
                 match index {
                     #read_var_fields
-                    _ => Err(::cxs::ReadError::BadFieldIndex)
+                    _ => Err(Error::BadFieldIndex)
                 }
             };
 
@@ -315,30 +319,4 @@ fn init_field(index: usize, field: &syn::Field) -> TokenStream {
     } else {
         quote! { unsafe { #bind.assume_init() }, }
     }
-}
-
-fn tmp_binding(index: usize) -> syn::Ident {
-    quote::format_ident!("_self_{}", index)
-}
-
-fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
-    let ty_lifetimes = generics.params.iter().filter_map(|g| {
-        if let syn::GenericParam::Lifetime(param) = g {
-            Some(&param.lifetime)
-        } else {
-            None
-        }
-    });
-
-    let mut lifetime_param: syn::LifetimeParam = syn::parse_quote! { '_r };
-    for lt in ty_lifetimes {
-        // Add each of the item's lifetime params as a bound on the reader lifetime
-        lifetime_param.bounds.push(lt.clone())
-    }
-
-    generics
-        .params
-        .push(syn::GenericParam::Lifetime(lifetime_param));
-
-    generics
 }

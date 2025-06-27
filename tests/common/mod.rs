@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use ::cxs::*;
+use ::xdrs::*;
 
 use core::fmt::Debug;
 use core::mem::MaybeUninit as MU;
@@ -24,7 +24,7 @@ pub fn check_decode<'r, T>(val: &T, expected: &'r [u8])
 where
     T: Debug + Eq + ReadXDR<'r>,
 {
-    let val2: T = xdr_cxs::decode(expected).unwrap();
+    let val2: T = serialize_cxs::decode(expected).unwrap();
 
     assert_eq!(&val2, val);
 }
@@ -51,7 +51,7 @@ where
     // An "uninitialized" buffer that has actually been zeroed
     let mut buf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
 
-    let written = xdr_cxs::encode_into(value, &mut buf);
+    let written = serialize_cxs::encode_into(value, &mut buf);
     let buf = unsafe { MU::array_assume_init(buf) };
     let encoded = &buf[..written];
 
@@ -63,7 +63,7 @@ pub fn check_encode_alloc<T>(value: &T, expected: &[u8])
 where
     T: WriteXDR,
 {
-    let encoded = xdr_cxs::encode(value);
+    let encoded = serialize_cxs::encode(value);
 
     check_eq(&encoded, expected);
 }
@@ -86,7 +86,7 @@ where
     T: WriteXDR,
 {
     let mut encoded = Vec::with_capacity(expected_len);
-    let written = xdr_cxs::encode_into(value, encoded.spare_capacity_mut());
+    let written = serialize_cxs::encode_into(value, encoded.spare_capacity_mut());
 
     // SAFETY:
     // - the new len must be less than or equal to capacity().

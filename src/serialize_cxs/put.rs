@@ -2,8 +2,8 @@
 //! that implements some basic byte operations
 
 use crate::write_xdr::*;
-use crate::xdr::writer::Result;
-use crate::xdr::writer::*;
+use crate::serialize::writer::Result;
+use crate::serialize::writer::*;
 
 const V_MULTIBYTE: u8 = 63;
 const S_8BYTE: u8 = 3 << 6;

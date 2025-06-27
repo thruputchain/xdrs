@@ -14,24 +14,25 @@ pub mod read_xdr;
 pub mod write_xdr;
 
 // The abstract interface for serialization formats
-pub mod xdr;
+pub mod serialize;
 
 // An implementation of CXS serialization
-pub mod xdr_cxs;
+pub mod serialize_cxs;
 
 pub mod prelude {
     pub use crate::bytes::*;
     pub use crate::discrim::*;
     pub use crate::read_xdr::*;
     pub use crate::write_xdr::*;
-    pub use crate::xdr::reader::Error as ReadError;
-    pub use crate::xdr::reader::Result as ReadResult;
-    pub use crate::xdr::reader::*;
-    pub use crate::xdr::writer::Error as WriteError;
-    pub use crate::xdr::writer::Result as WriteResult;
-    pub use crate::xdr::writer::*;
+    pub use crate::serialize::reader::Error as ReadError;
+    pub use crate::serialize::reader::Result as ReadResult;
+    pub use crate::serialize::reader::*;
+    pub use crate::serialize::writer::Error as WriteError;
+    pub use crate::serialize::writer::Result as WriteResult;
+    pub use crate::serialize::writer::*;
 
     #[cfg(feature = "derive")]
     pub use ::xdr_derive::*;
 }
+
 pub use prelude::*;

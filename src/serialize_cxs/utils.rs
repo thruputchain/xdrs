@@ -1,8 +1,8 @@
 //! Convenient interfaces to CXS serialization
 
 use crate::prelude::*;
-use crate::xdr_cxs::buf_reader::*;
-use crate::xdr_cxs::into_buf_writer::*;
+use crate::serialize_cxs::buf_reader::*;
+use crate::serialize_cxs::into_buf_writer::*;
 use core::mem::MaybeUninit as MU;
 
 pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
@@ -35,7 +35,7 @@ pub fn encode_into<T: WriteXDR>(value: &T, buf: &mut [MU<u8>]) -> usize {
 #[cfg(feature = "alloc")]
 mod cxs_utils_alloc {
     use crate::prelude::*;
-    use crate::xdr_cxs::buf_writer::*;
+    use crate::serialize_cxs::buf_writer::*;
     use alloc::vec::Vec;
 
     #[cfg(feature = "alloc")]

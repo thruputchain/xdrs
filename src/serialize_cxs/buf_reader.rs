@@ -1,4 +1,4 @@
-use crate::xdr::reader::*;
+use crate::serialize::reader::*;
 use core::mem::MaybeUninit as MU;
 
 pub struct BufReader<'r> {

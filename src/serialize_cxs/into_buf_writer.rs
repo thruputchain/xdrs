@@ -1,5 +1,5 @@
 use super::put::*;
-use crate::xdr::writer::*;
+use crate::serialize::writer::*;
 
 use core::mem::MaybeUninit;
 type Mu8 = MaybeUninit<u8>;

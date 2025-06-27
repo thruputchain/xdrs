@@ -1,7 +1,7 @@
 #![feature(maybe_uninit_array_assume_init)]
 
-use ::cxs::xdr_cxs::*;
-use ::cxs::*;
+use ::xdrs::serialize_cxs::*;
+use ::xdrs::*;
 
 mod common;
 use common::*;

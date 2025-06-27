@@ -5,7 +5,7 @@ members = ["xdr-derive"]
 xdr-derive = { path = "xdr-derive" }
 
 [package]
-name = "cxs"
+name = "xdrs"
 version = "0.1.0"
 edition = "2024"
 
