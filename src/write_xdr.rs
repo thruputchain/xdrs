@@ -71,3 +71,10 @@ impl<const N: usize> WriteXDR for OwnedByteArray<N> {
         w.write_byte_array(self.as_ref())
     }
 }
+
+#[cfg(feature = "alloc")]
+impl WriteXDR for OwnedByteVec {
+    fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
+        w.write_bytes(self.as_ref())
+    }
+}

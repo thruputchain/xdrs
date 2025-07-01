@@ -61,3 +61,34 @@ impl<const N: usize> Deref for OwnedByteArray<N> {
         &self.0
     }
 }
+
+#[cfg(feature = "alloc")]
+mod owned_byte_vec {
+    use core::ops::Deref;
+    use alloc::vec::Vec;
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct OwnedByteVec(Vec<u8>);
+
+    impl Deref for OwnedByteVec {
+        type Target = Vec<u8>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl From<Vec<u8>> for OwnedByteVec {
+        fn from(vec: Vec<u8>) -> Self {
+            Self(vec)
+        }
+    }
+
+    impl From<OwnedByteVec> for Vec<u8> {
+        fn from(v: OwnedByteVec) -> Self {
+            v.0
+        }
+    }
+}
+#[cfg(feature = "alloc")]
+pub use owned_byte_vec::*;

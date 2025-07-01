@@ -101,3 +101,11 @@ impl<'r, const N: usize> ReadXDR<'r> for OwnedByteArray<N> {
         Ok(OwnedByteArray::from(arr))
     }
 }
+
+#[cfg(feature = "alloc")]
+impl<'r> ReadXDR<'r> for OwnedByteVec {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let bytes: &[u8] = r.read_bytes()?;
+        Ok(alloc::vec::Vec::from(bytes).into())
+    }
+}

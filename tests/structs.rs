@@ -2,6 +2,7 @@
 
 use ::xdrs::serialize_cxs::*;
 use ::xdrs::*;
+use core::ops::Deref;
 
 mod common;
 use common::*;
@@ -58,6 +59,50 @@ fn newtype() {
     let bytes = [0, 1, 2, 3, 4, 5];
     let val = New(ByteArray::from(&bytes));
     let expected = &hex!("000102030405");
+
+    check_encode(&val, expected);
+    check_decode(&val, expected);
+}
+
+#[test]
+fn as_type() {
+    #[derive(Debug, PartialEq, Eq)]
+    struct Blob(u32);
+
+    impl Deref for Blob {
+        type Target = u32;
+
+        fn deref(&self) -> &u32 {
+            &self.0
+        }
+    }
+
+    impl From<u32> for Blob {
+        fn from(n: u32) -> Self {
+            Self(n)
+        }
+    }
+
+    /*
+    impl From<Blob> for u32 {
+        fn from(b: Blob) -> u32 {
+            b.0
+        }
+    }
+
+    impl AsRef<u32> for Blob {
+        fn as_ref(&self) -> &u32 {
+            &self.0
+        }
+    }
+    */
+
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct New(#[xdrs(as_type = "u32")] Blob);
+
+    let n: u32 = 7;
+    let val = New(Blob::from(n));
+    let expected = &hex!("07");
 
     check_encode(&val, expected);
     check_decode(&val, expected);

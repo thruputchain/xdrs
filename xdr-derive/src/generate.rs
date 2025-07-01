@@ -4,6 +4,14 @@ use quote::quote;
 use syn::Result;
 use syn::spanned::Spanned;
 
+use darling::FromField;
+
+#[derive(Debug, FromField)]
+#[darling(attributes(xdrs))]
+struct FieldAttrs {
+    pub as_type: Option<syn::Type>
+}
+
 // ---- derive WriteXDR ------------------------------------------------------
 
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
@@ -13,7 +21,12 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
     Ok(quote! {
         const _: () = {
-            use ::xdrs::serialize::writer::Result;
+            use ::xdrs::serialize::writer::{
+                Writer,
+                StructWriter,
+                EnumWriter,
+                Result};
+            use ::xdrs::discrim::XDRDiscriminant;
 
             #impls
         };
@@ -48,9 +61,17 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream
 
 fn write_field(index: usize, field: &syn::Field) -> TokenStream {
     let fa = FieldAccess::new(index, field);
+    let attrs = FieldAttrs::from_field(field).unwrap();
 
-    quote! {
-        s.write_field(&(self.#fa))?;
+    if let Some(ty) = attrs.as_type {
+        quote! {
+            let v: &#ty = self.#fa.deref();
+            s.write_field(v)?;
+        }
+    } else {
+        quote! {
+            s.write_field(&(self.#fa))?;
+        }
     }
 }
 
@@ -60,6 +81,12 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input));
 
     quote! {
+        impl #impl_generics XDRDiscriminant for #ty_ident #ty_generics #where_clause {
+            fn discriminant(&self) -> i32 {
+                unsafe { *<*const _>::from(self).cast::<i32>() }
+            }
+        }
+
         impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result {
                 let d = <Self as XDRDiscriminant>::discriminant(self);
@@ -141,7 +168,9 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
         const _: () = {
             use core::mem::MaybeUninit as MU;
             use core::mem::transmute;
-            use ::xdrs::serialize::reader::{Error, Result};
+            use ::xdrs::read_xdr::{ReadXDR, read_xdr};
+            use ::xdrs::serialize::reader::{Reader, Error, Result};
+            use ::xdrs::discrim::XDRDiscriminant;
 
             #impls
         };
@@ -172,7 +201,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
                 let mut value: MU<Self> = MU::uninit();
                 let struct_ptr = value.as_mut_ptr();
 
-                let visit_field = |index: u32, r: &mut R| -> ReadResult<()> {
+                let visit_field = |index: u32, r: &mut R| -> Result<()> {
                     match index {
                         #read_fields
                         _ => Err(Error::BadFieldIndex)
@@ -191,11 +220,23 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
 
 fn read_field(index: usize, field: &syn::Field) -> TokenStream {
     let fa = FieldAccess::new(index, field);
+    let attrs = FieldAttrs::from_field(field).unwrap();
     let index = index as u32;
+
+    let read_field_value = if let Some(as_ty) = attrs.as_type {
+        quote! {
+            let as_value: #as_ty = read_xdr(r)?;
+            let field_value = as_value.into();
+        }
+    } else {
+        quote! {
+            let field_value = read_xdr(r)?;
+        }
+    };
 
     quote! {
         #index => {
-            let field_value = read_xdr(r)?;
+            #read_field_value
             unsafe { (*struct_ptr).#fa = field_value; }
             Ok(())
         },
@@ -205,21 +246,29 @@ fn read_field(index: usize, field: &syn::Field) -> TokenStream {
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     let ty_ident = &input.ident;
     let n_variants = item.variants.iter().count();
-    let n_explicit = item
-        .variants
-        .iter()
-        .filter(|v| v.discriminant.is_some())
-        .count();
-    if !(n_explicit == 0 || n_explicit == n_variants) {
+    let n_explicit = item.variants.iter().filter(|v| v.discriminant.is_some()).count();
+
+    let mut default_ix = None;
+    if n_variants > 1 && n_explicit == n_variants - 1 {
+        // We'll treat the single implicit variant as a default,
+        default_ix = Some(item.variants.iter().enumerate()
+            .find(|(_, v)| v.discriminant.is_none())
+            .map(|(i, _)| i).unwrap());
+    } else if !(n_explicit == 0 || n_explicit == n_variants) {
         return syn::Error::new(
             input.span(),
-            "derive ReadXDR: Enums must have all explicit discriminators or all implicit",
+            "derive ReadXDR: Enums must have zero, one, or all implicit variants",
         )
         .into_compile_error();
-        // (But we could support a mix with a little more effort)
+        // (But we could support other mixes with a little more effort)
     }
+    let catch_bad_index = if default_ix.is_none() {
+        quote! { _ => Err(Error::BadFieldIndex) }
+    } else {
+        quote! {}
+    };
 
-    let read_variants = token_reduce(&item.variants, |i, v| read_variant(i, v, input));
+    let read_variants = token_reduce(&item.variants, |i, v| read_variant(i, v, input, default_ix));
 
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
     let generics = modify_for_reader_impl(input.generics.clone());
@@ -232,17 +281,20 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
 
                 match d {
                     #read_variants
-                    _ => Err(Error::BadFieldIndex)
+                    #catch_bad_index
                 }
             }
         }
     }
 }
 
-fn read_variant(index: usize, variant: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
-    let index = index as i32;
-    let var_match = if let Some((_, d)) = variant.discriminant.as_ref() {
-        quote! { #d }
+fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput, default_ix: Option<usize>) -> TokenStream {
+    let index = index_u as i32;
+    let var_match = if default_ix == Some(index_u) {
+        quote! { _ }
+    } else if let Some((_, d)) = variant.discriminant.as_ref() {
+        // this formulation is needed in case of an explicit discriminant like "ENUM as i32"
+        quote! { d if d == (#d) }
     } else {
         quote! { #index }
     };
@@ -254,8 +306,8 @@ fn read_variant(index: usize, variant: &syn::Variant, input: &syn::DeriveInput) 
     let init_var_fields = init_var_fields(&variant.fields);
     let visit_variant_fields = if n_fields > 0 {
         quote! {
-            let visit_field = |index: u32, r: &mut R| -> ReadResult<()> {
-                match index {
+            let visit_field = |field_index: u32, r: &mut R| -> Result<()> {
+                match field_index {
                     #read_var_fields
                     _ => Err(Error::BadFieldIndex)
                 }

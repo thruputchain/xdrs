@@ -14,12 +14,6 @@ fn enum_bare() {
         This,
     }
 
-    impl XDRDiscriminant for Bare {
-        fn discriminant(&self) -> i32 {
-            unsafe { *<*const _>::from(self).cast::<i32>() }
-        }
-    }
-
     let val = Bare::Only;
     let expected = &hex!("00");
     check_encode(&val, expected);
@@ -41,12 +35,7 @@ fn enum_foo() {
         A(Bytes<'a>) = FOO_A,
         B { x: i32, y: u32 } = 7,
         C = 2,
-    }
-
-    impl<'a> XDRDiscriminant for Foo<'a> {
-        fn discriminant(&self) -> i32 {
-            unsafe { *<*const _>::from(self).cast::<i32>() }
-        }
+        D(bool), // note lack of explicit discriminant
     }
 
     let bytes = b"\r\n";
@@ -61,9 +50,16 @@ fn enum_foo() {
     let val = Foo::C;
     let expected = &hex!("02");
     check_codec(&val, expected);
+
+    let val = Foo::D(true);
+    let expected = &hex!("0301");
+    check_codec(&val, expected);
+    let expected = &hex!("0b01");
+    check_decode(&val, expected);
 }
 
-// We don't support enums with a mix of implicit and explicit discriminators.
+// We don't support enums with some explicit variants and
+// more than one implicit variant.
 // This test should produce a compile error.
 #[cfg(false)]
 #[test]
@@ -73,12 +69,7 @@ fn bad_enum() {
     enum Animal {
         Ewe = 4,
         Eagle,
-    }
-
-    impl<'a> XDRDiscriminant for Animal {
-        fn discriminant(&self) -> i32 {
-            unsafe { *<*const _>::from(self).cast::<i32>() }
-        }
+        Egret,
     }
 
     let val = Animal::Eagle;
