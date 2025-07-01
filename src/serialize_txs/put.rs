@@ -80,6 +80,21 @@ where
         Ok(())
     }
 
+    fn write_slice<T>(self, slice: &[T]) -> Result<()>
+    where
+        T: WriteXDR,
+    {
+        let len: u32 = slice.len().try_into().map_err(|_|
+            Error::InvalidArrayLength)?;
+
+        self.write_u32(len)?;
+
+        for elt in slice {
+            self.put_xdr(elt)?;
+        }
+        Ok(())
+    }
+
     fn write_bool(self, v: bool) -> Result<()> {
         self.write_i32(if v { 1 } else { 0 })
     }

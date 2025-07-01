@@ -1,6 +1,9 @@
 use crate::serialize::reader::*;
 use core::mem::MaybeUninit as MU;
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
 where
     R: Reader<'r>,
@@ -105,6 +108,34 @@ impl<'r> ReadXDR<'r> for alloc::vec::Vec<u8> {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let bytes: &[u8] = r.read_bytes()?;
         let vec = alloc::vec::Vec::from(bytes); // copy the slice
+        Ok(vec)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'r, T> ReadXDR<'r> for alloc::vec::Vec<T>
+where
+    T: ReadXDR<'r>
+{
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let len = r.read_u32()? as usize;
+
+        let mut vec: Vec<T> = Vec::with_capacity(len as usize);
+        let slice = vec.spare_capacity_mut();
+
+        let mut i = 0;
+        let visit_element = |r: &mut R| -> Result<()> {
+            slice[i].write(read_xdr(r)?);
+            i += 1;
+            Ok(())
+        };
+
+        r.read_array(len, visit_element)?;
+
+        debug_assert_eq!(i, len as usize);
+
+        unsafe { vec.set_len(i) }
+
         Ok(vec)
     }
 }

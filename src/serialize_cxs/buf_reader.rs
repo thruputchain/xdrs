@@ -206,6 +206,14 @@ impl<'r> Reader<'r> for BufReader<'r> {
         Ok(())
     }
 
+    fn read_slice<V>(&mut self, visit_element: V) -> Result<()>
+    where
+        V: FnMut(&mut Self) -> Result<()>,
+    {
+        let len = self.read_u32()?;
+        self.read_array(len as usize, visit_element)
+    }
+
     fn read_struct<V>(&mut self, nfields: u32, mut visit_field: V) -> Result<()>
     where
         V: FnMut(u32, &mut Self) -> Result<()>,

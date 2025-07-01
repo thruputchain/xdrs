@@ -34,6 +34,10 @@ pub trait Writer<F> {
     where
         T: WriteXDR;
 
+    fn write_slice<T>(self, slice: &[T]) -> Result<()>
+    where
+        T: WriteXDR;
+
     fn write_i64(self, n: i64) -> Result<()>;
     fn write_i32(self, n: i32) -> Result<()>;
     fn write_i16(self, n: i16) -> Result<()>;

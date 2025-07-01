@@ -31,6 +31,10 @@ pub trait Reader<'r>: Sized {
     where
         V: FnMut(&mut Self) -> Result<()>;
 
+    fn read_slice<V>(&mut self, visit_element: V) -> Result<()>
+    where
+        V: FnMut(&mut Self) -> Result<()>;
+
     fn read_optional<V>(&mut self, visit_opt: V) -> Result<()>
     where
         V: FnOnce(Option<&mut Self>) -> Result<()>;

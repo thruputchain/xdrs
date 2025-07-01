@@ -76,3 +76,13 @@ impl WriteXDR for alloc::vec::Vec<u8> {
         w.write_bytes(self.as_ref())
     }
 }
+
+#[cfg(feature = "alloc")]
+impl<T> WriteXDR for alloc::vec::Vec<T>
+where
+    T: WriteXDR
+{
+    fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
+        w.write_slice(self.as_ref())
+    }
+}
