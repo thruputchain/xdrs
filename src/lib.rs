@@ -6,8 +6,6 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-pub mod bytes;
-
 // Traits for translating Rust values to and from XDR
 pub mod discrim;
 pub mod read_xdr;
@@ -23,7 +21,6 @@ pub mod serialize_cxs;
 pub mod serialize_txs;
 
 pub mod prelude {
-    pub use crate::bytes::*;
     pub use crate::discrim::*;
     pub use crate::read_xdr::*;
     pub use crate::write_xdr::*;

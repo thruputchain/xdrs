@@ -3,12 +3,10 @@
 mod common;
 use common::*;
 
-use ::xdrs::*;
-
 #[test]
 fn byte_slice() {
     let arr: [u8; 3] = [0, 1, 2];
-    let buf = Bytes::from(&arr[..]);
+    let buf = &arr[..];
     let expected = &hex!("03000102");
 
     check_codec(&buf, expected);
@@ -17,7 +15,7 @@ fn byte_slice() {
 #[test]
 fn byte_array() {
     let arr: [u8; 3] = [0, 1, 2];
-    let buf = ByteArray::from(&arr);
+    let buf: &[u8; 3] = &arr;
     let expected = &hex!("000102");
 
     check_codec(&buf, expected);
@@ -26,11 +24,10 @@ fn byte_array() {
 #[test]
 fn owned_byte_array() {
     let arr: [u8; 3] = [0, 1, 2];
-    let buf = OwnedByteArray::from(arr);
     let expected = &hex!("000102");
 
-    check_encode(&buf, expected);
-    check_decode(&buf, expected);
+    check_encode(&arr, expected);
+    check_decode(&arr, expected);
 }
 
 #[test]

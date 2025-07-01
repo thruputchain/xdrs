@@ -18,12 +18,6 @@ macro_rules! enc_test_int {
 }
 
 enc_test_int! {
-    [u8_zero, u8, 0, "00"],
-    [u8_61, u8, 61, "3d"],
-    [u8_62, u8, 62, "3e"],
-    [u8_63, u8, 63, "3f3f"],
-    [u8_max, u8, u8::MAX, "3fff"],
-
     [i8_min, i8, i8::MIN, "3f80"],
     [i8_neg_33, i8, -33, "3fdf"],
     [i8_neg_32, i8, -32, "3fe0"],

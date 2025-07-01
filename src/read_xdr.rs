@@ -1,4 +1,3 @@
-use crate::bytes::*;
 use crate::serialize::reader::*;
 use core::mem::MaybeUninit as MU;
 
@@ -37,7 +36,6 @@ construct_int_impls! {
     read_u64 for u64,
     read_u32 for u32,
     read_u16 for u16,
-    read_u8 for u8,
 
     read_bool for bool,
 }
@@ -79,33 +77,34 @@ where
     }
 }
 
-impl<'a, 'r: 'a> ReadXDR<'r> for Bytes<'a> {
+impl<'a, 'r: 'a> ReadXDR<'r> for &'a [u8] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let bytes: &[u8] = r.read_bytes()?;
-        Ok(Bytes::from(bytes))
+        Ok(bytes)
     }
 }
 
-impl<'a, 'r: 'a, const N: usize> ReadXDR<'r> for ByteArray<'a, N> {
+impl<'a, 'r: 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let bytes: &[u8; N] = (r.read_byte_array(N as u32)?).try_into().unwrap();
-        Ok(ByteArray::from(bytes))
+        Ok(bytes)
     }
 }
 
-impl<'r, const N: usize> ReadXDR<'r> for OwnedByteArray<N> {
+impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let mut arr: [MU<u8>; N] = [const { MU::uninit() }; N];
         r.read_byte_array_into(&mut arr, N as u32)?;
         let arr = unsafe { MU::array_assume_init(arr) };
-        Ok(OwnedByteArray::from(arr))
+        Ok(arr)
     }
 }
 
 #[cfg(feature = "alloc")]
-impl<'r> ReadXDR<'r> for OwnedByteVec {
+impl<'r> ReadXDR<'r> for alloc::vec::Vec<u8> {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let bytes: &[u8] = r.read_bytes()?;
-        Ok(alloc::vec::Vec::from(bytes).into())
+        let vec = alloc::vec::Vec::from(bytes); // copy the slice
+        Ok(vec)
     }
 }

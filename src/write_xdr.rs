@@ -1,6 +1,5 @@
 //! Translate Rust values into XDR values
 
-use crate::bytes::*;
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 
@@ -37,7 +36,6 @@ write_xdr_int_impls! {
     write_u64 for u64,
     write_u32 for u32,
     write_u16 for u16,
-    write_u8 for u8,
 
     write_bool for bool,
 }
@@ -54,26 +52,26 @@ impl<T: WriteXDR, const N: usize> WriteXDR for [T; N] {
     }
 }
 
-impl<'a> WriteXDR for Bytes<'a> {
+impl<'a> WriteXDR for &'a [u8] {
     fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
-        w.write_bytes(self.as_ref())
+        w.write_bytes(self)
     }
 }
 
-impl<'a, const N: usize> WriteXDR for ByteArray<'a, N> {
+impl<'a, const N: usize> WriteXDR for &'a [u8; N] {
     fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
-        w.write_byte_array(self.as_ref())
+        w.write_byte_array(&**self)
     }
 }
 
-impl<const N: usize> WriteXDR for OwnedByteArray<N> {
+impl<const N: usize> WriteXDR for [u8; N] {
     fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
-        w.write_byte_array(self.as_ref())
+        w.write_byte_array(&*self)
     }
 }
 
 #[cfg(feature = "alloc")]
-impl WriteXDR for OwnedByteVec {
+impl WriteXDR for alloc::vec::Vec<u8> {
     fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result<()> {
         w.write_bytes(self.as_ref())
     }

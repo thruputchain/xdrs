@@ -32,14 +32,14 @@ fn enum_foo() {
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     #[repr(i32)]
     enum Foo<'a> {
-        A(Bytes<'a>) = FOO_A,
+        A(&'a [u8]) = FOO_A,
         B { x: i32, y: u32 } = 7,
         C = 2,
         D(bool), // note lack of explicit discriminant
     }
 
     let bytes = b"\r\n";
-    let val = Foo::A(Bytes::from(bytes));
+    let val = Foo::A(bytes);
     let expected = &hex!("3e020d0a");
     check_codec(&val, expected);
 
