@@ -1,5 +1,8 @@
 //! An interface for serializing XDR primitives,
-//! which various formats may implement.
+//! which certain formats may implement.  The
+//! formats must:
+//! - Serialize structs simply by concatenating their fields
+//! - Serialize arrays simply by concatenating their elements
 
 pub mod reader;
 pub mod writer;

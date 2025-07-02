@@ -20,6 +20,8 @@ pub mod serialize_cxs;
 // TXS serialization
 // pub mod serialize_txs;
 
+pub(crate) mod valid_u32;
+
 pub mod prelude {
     pub use crate::discrim::*;
     pub use crate::read_xdr::*;

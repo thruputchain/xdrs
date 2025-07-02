@@ -1,7 +1,6 @@
 //! Provide a generic CXS implementation for any type
 //! that implements some basic byte operations
 
-use crate::write_xdr::*;
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 
@@ -20,39 +19,19 @@ pub(crate) trait Put {
     // Required:
     fn put_byte(&mut self, b: u8) -> Result<()>;
     fn put_bytes(&mut self, bytes: &[u8]) -> Result<()>;
-
-    // Provided:
-    fn put_xdr<T: WriteXDR>(&mut self, value: &T) -> Result<()>
-    where
-        Self: Sized,
-    {
-        value.write_xdr(self)
-    }
 }
 
 pub struct CXS;
 
-impl<'a, P> Writer<CXS> for &'a mut P
+impl<'a, P> Writer<CXS> for P
 where
     P: Put,
 {
-    type SW = &'a mut P;
-    type EW = &'a mut P;
-
-    fn write_struct(self, _nfields: usize) -> Result<Self::SW> {
-        Ok(self)
-    }
-
-    fn write_enum(self, discriminant: i32, _nfields: usize) -> Result<Self::EW> {
-        self.write_i32(discriminant)?;
-        Ok(self)
-    }
-
-    fn write_byte_array(self, bytes: &[u8]) -> Result<()> {
+    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> Result<()> {
         self.put_bytes(bytes)
     }
 
-    fn write_bytes(self, bytes: &[u8]) -> Result<()> {
+    fn write_opaque_variable(&mut self, bytes: &[u8]) -> Result<()> {
         if bytes.len() > u32::MAX as usize {
             return Err(Error::InvalidArrayLength);
         }
@@ -61,45 +40,11 @@ where
         self.put_bytes(bytes)
     }
 
-    fn write_opt<T: WriteXDR>(self, v: &Option<T>) -> Result<()> {
-        if let Some(v) = v.as_ref() {
-            self.write_bool(true)?;
-            self.put_xdr(v)
-        } else {
-            self.write_bool(false)
-        }
-    }
-
-    fn write_array<T, const N: usize>(self, array: &[T; N]) -> Result<()>
-    where
-        T: WriteXDR,
-    {
-        for elt in array {
-            self.put_xdr(elt)?;
-        }
-        Ok(())
-    }
-
-    fn write_slice<T>(self, slice: &[T]) -> Result<()>
-    where
-        T: WriteXDR,
-    {
-        let len: u32 = slice.len().try_into().map_err(|_|
-            Error::InvalidArrayLength)?;
-
-        self.write_u32(len)?;
-
-        for elt in slice {
-            self.put_xdr(elt)?;
-        }
-        Ok(())
-    }
-
-    fn write_bool(self, v: bool) -> Result<()> {
+    fn write_bool(&mut self, v: bool) -> Result<()> {
         self.write_i32(if v { 1 } else { 0 })
     }
 
-    fn write_i64(self, n: i64) -> Result<()> {
+    fn write_i64(&mut self, n: i64) -> Result<()> {
         if n > i32::MAX as i64 || n < i32::MIN as i64 {
             // Use the 8-byte representation
             let s = S_8BYTE;
@@ -114,7 +59,7 @@ where
         }
     }
 
-    fn write_i32(self, n: i32) -> Result<()> {
+    fn write_i32(&mut self, n: i32) -> Result<()> {
         if n > i16::MAX as i32 || n < i16::MIN as i32 {
             // use 4-byte repr
             let s = S_4BYTE;
@@ -129,7 +74,7 @@ where
         }
     }
 
-    fn write_i16(self, n: i16) -> Result<()> {
+    fn write_i16(&mut self, n: i16) -> Result<()> {
         if n > i8::MAX as i16 || n < i8::MIN as i16 {
             // use 2-byte repr
             let s = S_2BYTE;
@@ -144,7 +89,7 @@ where
         }
     }
 
-    fn write_i8(self, n: i8) -> Result<()> {
+    fn write_i8(&mut self, n: i8) -> Result<()> {
         if !(I6_MIN..=I6_MAX).contains(&n) {
             // Use the 1-byte repr
             let s = S_1BYTE;
@@ -170,7 +115,7 @@ where
         }
     }
 
-    fn write_u64(self, n: u64) -> Result<()> {
+    fn write_u64(&mut self, n: u64) -> Result<()> {
         if n > u32::MAX as u64 {
             // Use 8-byte representation
             let s = S_8BYTE;
@@ -185,7 +130,7 @@ where
         }
     }
 
-    fn write_u32(self, n: u32) -> Result<()> {
+    fn write_u32(&mut self, n: u32) -> Result<()> {
         if n > u16::MAX as u32 {
             // Use 4-byte representation
             let s = S_4BYTE;
@@ -200,7 +145,7 @@ where
         }
     }
 
-    fn write_u16(self, n: u16) -> Result<()> {
+    fn write_u16(&mut self, n: u16) -> Result<()> {
         if n > u8::MAX as u16 {
             // Use 2-byte representation
             let s = S_2BYTE;
@@ -215,7 +160,7 @@ where
         }
     }
 
-    fn write_u8(self, n: u8) -> Result<()> {
+    fn write_u8(&mut self, n: u8) -> Result<()> {
         if n > U6_MAX {
             // Use 1-byte representation
             let s = S_1BYTE;
@@ -229,23 +174,5 @@ where
             // This can be represented in the header byte
             self.put_byte(n)
         }
-    }
-}
-
-impl<P> StructWriter<CXS> for &mut P
-where
-    P: Put,
-{
-    fn write_field<T: WriteXDR>(&mut self, value: &T) -> Result<()> {
-        value.write_xdr(&mut **self)
-    }
-}
-
-impl<P> EnumWriter<CXS> for &mut P
-where
-    P: Put,
-{
-    fn write_field<T: WriteXDR>(&mut self, value: &T) -> Result<()> {
-        value.write_xdr(&mut **self)
     }
 }

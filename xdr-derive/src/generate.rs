@@ -21,11 +21,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
     Ok(quote! {
         const _: () = {
-            use ::xdrs::serialize::writer::{
-                Writer,
-                StructWriter,
-                EnumWriter,
-                Result};
+            use ::xdrs::serialize::writer::{Writer, Result};
             use ::xdrs::discrim::XDRDiscriminant;
 
             #impls
@@ -44,15 +40,11 @@ fn write_data(input: &syn::DeriveInput) -> Result<TokenStream> {
 fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let n_fields = item.fields.len();
     let write_fields = token_reduce(&item.fields, write_field);
     quote! {
         impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result {
-                let mut s = w.write_struct(#n_fields)?;
-
+            fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result {
                 #write_fields
-
                 Ok(())
             }
         }
@@ -60,17 +52,19 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream
 }
 
 fn write_field(index: usize, field: &syn::Field) -> TokenStream {
+    let ty = &field.ty;
     let fa = FieldAccess::new(index, field);
     let attrs = FieldAttrs::from_field(field).unwrap();
 
-    if let Some(ty) = attrs.as_type {
+    if let Some(as_ty) = attrs.as_type {
         quote! {
-            let v: &#ty = self.#fa.deref();
-            s.write_field(v)?;
+            let v: &#as_ty = self.#fa.deref();
+            <#as_ty as WriteXDR>::write_xdr(v, w)?;
         }
     } else {
         quote! {
-            s.write_field(&(self.#fa))?;
+            let v: &#ty = &(self.#fa);
+            <#ty as WriteXDR>::write_xdr(v, w)?;
         }
     }
 }
@@ -88,8 +82,9 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         }
 
         impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<F, W: Writer<F>>(&self, w: W) -> Result {
+            fn write_xdr<F, W: Writer<F>>(&self, __write_xdr_writer: &mut W) -> Result {
                 let d = <Self as XDRDiscriminant>::discriminant(self);
+                __write_xdr_writer.write_i32(d)?;
 
                 match self {
                     #write_variants
@@ -103,24 +98,22 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
 fn write_variant(_index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
     let var_ident = &v.ident;
     let ty_ident = &input.ident;
-    let n_fields = v.fields.len();
     let var_bindings = var_bindings(&v.fields);
     let write_bindings = token_reduce(&v.fields, write_binding);
 
     quote! {
         #ty_ident::#var_ident #var_bindings => {
-            let mut e = w.write_enum(d, #n_fields)?;
-
             #write_bindings
         }
     }
 }
 
-fn write_binding(index: usize, _field: &syn::Field) -> TokenStream {
+fn write_binding(index: usize, field: &syn::Field) -> TokenStream {
+    let ty = &field.ty;
     let bind = tmp_binding(index);
 
     quote! {
-        e.write_field(#bind)?;
+        <#ty as WriteXDR>::write_xdr(&#bind, __write_xdr_writer)?;
     }
 }
 

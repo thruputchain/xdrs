@@ -1,5 +1,6 @@
 use crate::serialize::reader::*;
 use core::mem::MaybeUninit as MU;
+use crate::valid_u32::*;
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
@@ -85,7 +86,11 @@ impl<'a, 'r: 'a> ReadXDR<'r> for &'a [u8] {
 
 impl<'a, 'r: 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let bytes: &[u8; N] = r.read_opaque_fixed(N as u32)?.try_into().unwrap();
+        let () = ValidU32::<N>::OK;
+        let len = N as u32;
+
+        // PANIC: We depend on `Reader::read_opaque_fixed` returning a slice of the requested size
+        let bytes: &[u8; N] = r.read_opaque_fixed(len)?.try_into().unwrap();
         Ok(bytes)
     }
 }
@@ -134,10 +139,4 @@ where
 
         Ok(vec)
     }
-}
-
-// Hack to clamp const generic usize at compile-time
-struct ValidU32<const N: usize>;
-impl<const N: usize> ValidU32<N> {
-    const OK: () = assert!(N <= u32::MAX as usize, "N must fit in a u32");
 }
