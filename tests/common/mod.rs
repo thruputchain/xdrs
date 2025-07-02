@@ -27,8 +27,8 @@ where
     let val2: T = serialize_cxs::decode(expected).unwrap();
     assert_eq!(&val2, val);
 
-    let val2: T = serialize_txs::decode(expected).unwrap();
-    assert_eq!(&val2, val);
+    // let val2: T = serialize_txs::decode(expected).unwrap();
+    // assert_eq!(&val2, val);
 }
 
 pub fn check_encode<T>(val: &T, expected: &[u8])
@@ -41,7 +41,7 @@ where
 
     // Check the static encoder
     check_encode_into_static(val, expected, serialize_cxs::encode_into);
-    check_encode_into_static(val, expected, serialize_txs::encode_into);
+    // check_encode_into_static(val, expected, serialize_txs::encode_into);
 }
 
 
@@ -68,8 +68,8 @@ where
     let encoded = serialize_cxs::encode(value);
     check_eq(&encoded, expected);
 
-    let encoded = serialize_txs::encode(value);
-    check_eq(&encoded, expected);
+    // let encoded = serialize_txs::encode(value);
+    // check_eq(&encoded, expected);
 }
 
 #[cfg(feature = "alloc")]
@@ -80,8 +80,8 @@ where
     let encoded = encode_into_alloc(value, expected.len(), serialize_cxs::encode_into);
     check_eq(&encoded, expected);
 
-    let encoded = encode_into_alloc(value, expected.len(), serialize_txs::encode_into);
-    check_eq(&encoded, expected);
+    // let encoded = encode_into_alloc(value, expected.len(), serialize_txs::encode_into);
+    // check_eq(&encoded, expected);
 }
 
 #[cfg(feature = "alloc")]

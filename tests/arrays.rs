@@ -51,6 +51,13 @@ fn int_array() {
     check_codec(&v, expected);
 }
 
+#[cfg(false)]
+#[test]
+fn array_too_big() {
+    // should produce compiler error
+    let _v: [bool; 8_000_000_000] = ::xdrs::serialize_cxs::decode(b"foo").unwrap();
+}
+
 #[cfg(feature = "alloc")]
 #[test]
 fn int_vec() {

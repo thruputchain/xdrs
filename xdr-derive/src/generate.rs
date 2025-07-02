@@ -192,7 +192,6 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     let generics = modify_for_reader_impl(input.generics.clone());
     let (impl_generics, _, _) = generics.split_for_impl();
 
-    let n_fields = item.fields.len() as u32;
     let read_fields = token_reduce(&item.fields, read_field);
 
     quote! {
@@ -201,15 +200,9 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
                 let mut value: MU<Self> = MU::uninit();
                 let struct_ptr = value.as_mut_ptr();
 
-                let visit_field = |index: u32, r: &mut R| -> Result<()> {
-                    match index {
-                        #read_fields
-                        _ => Err(Error::BadFieldIndex)
-                    }
-                };
+                #read_fields
 
-                r.read_struct(#n_fields, visit_field)?;
-                // SAFETY: we depend on `read_struct` initializing all fields
+                // SAFETY: we have initialized all fields
                 let value = unsafe { value.assume_init() };
 
                 Ok(value)
@@ -221,7 +214,6 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
 fn read_field(index: usize, field: &syn::Field) -> TokenStream {
     let fa = FieldAccess::new(index, field);
     let attrs = FieldAttrs::from_field(field).unwrap();
-    let index = index as u32;
 
     let read_field_value = if let Some(as_ty) = attrs.as_type {
         quote! {
@@ -235,11 +227,8 @@ fn read_field(index: usize, field: &syn::Field) -> TokenStream {
     };
 
     quote! {
-        #index => {
-            #read_field_value
-            unsafe { (*struct_ptr).#fa = field_value; }
-            Ok(())
-        },
+        #read_field_value
+        unsafe { (*struct_ptr).#fa = field_value; }
     }
 }
 
@@ -263,7 +252,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         // (But we could support other mixes with a little more effort)
     }
     let catch_bad_index = if default_ix.is_none() {
-        quote! { _ => Err(Error::BadFieldIndex) }
+        quote! { _ => Err(Error::BadDiscriminator) }
     } else {
         quote! {}
     };
@@ -293,40 +282,25 @@ fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput
     let var_match = if default_ix == Some(index_u) {
         quote! { _ }
     } else if let Some((_, d)) = variant.discriminant.as_ref() {
-        // this formulation is needed in case of an explicit discriminant like "ENUM as i32"
+        // this formulation is needed in case of an explicit discriminant like "Enum::Variant as i32"
         quote! { d if d == (#d) }
     } else {
         quote! { #index }
     };
     let ty_ident = &input.ident;
     let var_ident = &variant.ident;
-    let n_fields = variant.fields.len() as u32;
     let declare_fields = token_reduce(&variant.fields, declare_uninit_field);
-    let read_var_fields = token_reduce(&variant.fields, read_var_field);
-    let init_var_fields = init_var_fields(&variant.fields);
-    let visit_variant_fields = if n_fields > 0 {
-        quote! {
-            let visit_field = |field_index: u32, r: &mut R| -> Result<()> {
-                match field_index {
-                    #read_var_fields
-                    _ => Err(Error::BadFieldIndex)
-                }
-            };
-
-            r.read_enum(#n_fields, visit_field)?;
-        }
-    } else {
-        quote! {}
-    };
+    let read_fields = token_reduce(&variant.fields, |i, _| {
+        let bind = tmp_binding(i);
+        quote! { #bind.write(read_xdr(r)?); }
+    });
+    let init_fields = init_fields(&variant.fields);
 
     quote! {
         #var_match => {
             #declare_fields
-
-            #visit_variant_fields
-
-            // SAFETY: we depend on `read_enum` initializing all variant fields
-            let value = #ty_ident::#var_ident #init_var_fields;
+            #read_fields
+            let value = #ty_ident::#var_ident #init_fields;
 
             Ok(value)
         }
@@ -342,19 +316,7 @@ fn declare_uninit_field(index: usize, field: &syn::Field) -> TokenStream {
     }
 }
 
-fn read_var_field(index: usize, _field: &syn::Field) -> TokenStream {
-    let bind = tmp_binding(index);
-    let index = index as u32;
-
-    quote! {
-        #index => {
-            #bind.write(read_xdr(r)?);
-            Ok(())
-        },
-    }
-}
-
-fn init_var_fields(fields: &syn::Fields) -> TokenStream {
+fn init_fields(fields: &syn::Fields) -> TokenStream {
     let init_fields = token_reduce(fields, init_field);
     match fields {
         syn::Fields::Named(_) => quote! { { #init_fields } },
@@ -366,6 +328,7 @@ fn init_var_fields(fields: &syn::Fields) -> TokenStream {
 fn init_field(index: usize, field: &syn::Field) -> TokenStream {
     let bind = tmp_binding(index);
 
+    // SAFETY: all bindings have been written in #read_fields
     if let Some(ident) = field.ident.as_ref() {
         quote! { #ident: unsafe { #bind.assume_init() }, }
     } else {

@@ -19,36 +19,15 @@ pub trait Reader<'r>: Sized {
     fn read_u8(&mut self) -> Result<u8>;
 
     /// Read a byte-array of known length, borrowing the contents from the reader
-    fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]>;
+    fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]>;
 
     /// Read a byte-array of known length into a provided buffer
-    fn read_byte_array_into(&mut self, dst: &mut [MU<u8>], len: u32) -> Result<()>;
+    fn read_opaque_fixed_into(&mut self, dst: &mut [MU<u8>], len: u32) -> Result<()>;
 
     /// Read a byte-sequence of unknown length, borrowing the contents from the reader
-    fn read_bytes(&mut self) -> Result<&'r [u8]>;
-
-    fn read_array<V>(&mut self, len: usize, visit_element: V) -> Result<()>
-    where
-        V: FnMut(&mut Self) -> Result<()>;
-
-    fn read_slice<V>(&mut self, visit_element: V) -> Result<()>
-    where
-        V: FnMut(&mut Self) -> Result<()>;
-
-    fn read_optional<V>(&mut self, visit_opt: V) -> Result<()>
-    where
-        V: FnOnce(Option<&mut Self>) -> Result<()>;
-
-    fn read_struct<V>(&mut self, nfields: u32, visit_field: V) -> Result<()>
-    where
-        V: FnMut(u32, &mut Self) -> Result<()>;
-
-    fn read_enum<V>(&mut self, nfields: u32, visit_field: V) -> Result<()>
-    where
-        V: FnMut(u32, &mut Self) -> Result<()>;
+    fn read_opaque_variable(&mut self) -> Result<&'r [u8]>;
 
     // Provided methods
-
     fn read_bool(&mut self) -> Result<bool> {
         match self.read_i32()? {
             0 => Ok(false),
@@ -58,8 +37,8 @@ pub trait Reader<'r>: Sized {
     }
 
     #[cfg(feature = "alloc")]
-    fn read_byte_array_owned(&mut self, len: u32) -> Result<Vec<u8>> {
-        let bytes = self.read_byte_array(len)?;
+    fn read_opaque_fixed_owned(&mut self, len: u32) -> Result<Vec<u8>> {
+        let bytes = self.read_opaque_fixed(len)?;
         let buf = Vec::from(bytes); // copy from input
         Ok(buf)
     }
@@ -88,6 +67,6 @@ pub enum Error {
     #[error("bad bool value")]
     BadBool,
 
-    #[error("bad field index")]
-    BadFieldIndex,
+    #[error("unexpected discriminator value")]
+    BadDiscriminator,
 }

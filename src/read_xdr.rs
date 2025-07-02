@@ -48,15 +48,12 @@ where
     T: ReadXDR<'r>,
 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let mut value: Option<T> = None;
-        let visit_opt = |r: Option<&mut R>| -> Result<()> {
-            if let Some(r) = r {
-                value = Some(read_xdr(r)?);
-            }
-            Ok(())
-        };
-        r.read_optional(visit_opt)?;
-        Ok(value)
+        let is_present = r.read_bool()?;
+        if is_present {
+            Ok(Some(read_xdr(r)?))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -65,15 +62,15 @@ where
     T: ReadXDR<'r>,
 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
-        let mut i = 0;
-        let visit_element = |r: &mut R| -> Result<()> {
-            arr[i].write(read_xdr(r)?);
-            i += 1;
-            Ok(())
-        };
+        let () = ValidU32::<N>::OK;
 
-        r.read_array(N, visit_element)?;
+        let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
+
+        for i in 0..N {
+            arr[i].write(read_xdr(r)?);
+        }
+
+        // SAFETY: all elements have been initialized
         let arr = unsafe { MU::array_assume_init(arr) };
 
         Ok(arr)
@@ -82,23 +79,28 @@ where
 
 impl<'a, 'r: 'a> ReadXDR<'r> for &'a [u8] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let bytes: &[u8] = r.read_bytes()?;
-        Ok(bytes)
+        r.read_opaque_variable()
     }
 }
 
 impl<'a, 'r: 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let bytes: &[u8; N] = (r.read_byte_array(N as u32)?).try_into().unwrap();
+        let bytes: &[u8; N] = r.read_opaque_fixed(N as u32)?.try_into().unwrap();
         Ok(bytes)
     }
 }
 
 impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let () = ValidU32::<N>::OK;
+
         let mut arr: [MU<u8>; N] = [const { MU::uninit() }; N];
-        r.read_byte_array_into(&mut arr, N as u32)?;
+
+        r.read_opaque_fixed_into(&mut arr, N as u32)?;
+
+        // SAFETY: We depend on read_opaque_fixed_into to init all elements
         let arr = unsafe { MU::array_assume_init(arr) };
+
         Ok(arr)
     }
 }
@@ -106,7 +108,7 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
 #[cfg(feature = "alloc")]
 impl<'r> ReadXDR<'r> for alloc::vec::Vec<u8> {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let bytes: &[u8] = r.read_bytes()?;
+        let bytes: &[u8] = r.read_opaque_variable()?;
         let vec = alloc::vec::Vec::from(bytes); // copy the slice
         Ok(vec)
     }
@@ -123,19 +125,19 @@ where
         let mut vec: Vec<T> = Vec::with_capacity(len as usize);
         let slice = vec.spare_capacity_mut();
 
-        let mut i = 0;
-        let visit_element = |r: &mut R| -> Result<()> {
+        for i in 0..len {
             slice[i].write(read_xdr(r)?);
-            i += 1;
-            Ok(())
-        };
+        }
 
-        r.read_array(len, visit_element)?;
-
-        debug_assert_eq!(i, len as usize);
-
-        unsafe { vec.set_len(i) }
+        // SAFETY: all elts up to `len` have been initialized
+        unsafe { vec.set_len(len) }
 
         Ok(vec)
     }
+}
+
+// Hack to clamp const generic usize at compile-time
+struct ValidU32<const N: usize>;
+impl<const N: usize> ValidU32<N> {
+    const OK: () = assert!(N <= u32::MAX as usize, "N must fit in a u32");
 }

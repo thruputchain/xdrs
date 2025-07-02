@@ -18,7 +18,7 @@ pub mod serialize;
 pub mod serialize_cxs;
 
 // TXS serialization
-pub mod serialize_txs;
+// pub mod serialize_txs;
 
 pub mod prelude {
     pub use crate::discrim::*;

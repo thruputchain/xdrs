@@ -53,7 +53,7 @@ impl<'a> BufReader<'a> {
             }
 
             let n_bytes: usize = 2usize.pow(s as u32);
-            let input = self.read_byte_array(n_bytes as u32)?;
+            let input = self.read_opaque_fixed(n_bytes as u32)?;
 
             let mut int_bytes = [0u8; 8];
 
@@ -103,7 +103,7 @@ impl<'a> BufReader<'a> {
             }
 
             let n_bytes: usize = 2usize.pow(s as u32);
-            let input = self.read_byte_array(n_bytes as u32)?;
+            let input = self.read_opaque_fixed(n_bytes as u32)?;
 
             let mut int_bytes = [0u8; 8];
             let int_dest = &mut int_bytes[0..n_bytes];
@@ -165,13 +165,13 @@ impl<'r> Reader<'r> for BufReader<'r> {
         [read_u8, u8],
     }
 
-    fn read_byte_array(&mut self, len: u32) -> Result<&'r [u8]> {
+    fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
         let shared = self.reserve_extent(len)?;
 
         Ok(shared)
     }
 
-    fn read_byte_array_into(&mut self, dst: &mut [MU<u8>], len: u32) -> Result<()> {
+    fn read_opaque_fixed_into(&mut self, dst: &mut [MU<u8>], len: u32) -> Result<()> {
         let data = self.reserve_extent(len)?;
 
         let _init_slice = dst.write_copy_of_slice(data);
@@ -179,55 +179,8 @@ impl<'r> Reader<'r> for BufReader<'r> {
         Ok(())
     }
 
-    fn read_bytes(&mut self) -> Result<&'r [u8]> {
+    fn read_opaque_variable(&mut self) -> Result<&'r [u8]> {
         let len = self.read_u32()?;
-        self.read_byte_array(len)
-    }
-
-    fn read_optional<V>(&mut self, visit_opt: V) -> Result<()>
-    where
-        V: FnOnce(Option<&mut Self>) -> Result<()>,
-    {
-        let is_present = self.read_bool()?;
-        if is_present {
-            visit_opt(Some(self))
-        } else {
-            visit_opt(None)
-        }
-    }
-
-    fn read_array<V>(&mut self, len: usize, mut visit_element: V) -> Result<()>
-    where
-        V: FnMut(&mut Self) -> Result<()>,
-    {
-        for _ in 0..len {
-            visit_element(self)?;
-        }
-        Ok(())
-    }
-
-    fn read_slice<V>(&mut self, visit_element: V) -> Result<()>
-    where
-        V: FnMut(&mut Self) -> Result<()>,
-    {
-        let len = self.read_u32()?;
-        self.read_array(len as usize, visit_element)
-    }
-
-    fn read_struct<V>(&mut self, nfields: u32, mut visit_field: V) -> Result<()>
-    where
-        V: FnMut(u32, &mut Self) -> Result<()>,
-    {
-        for i in 0..nfields {
-            visit_field(i, self)?;
-        }
-        Ok(())
-    }
-
-    fn read_enum<V>(&mut self, nfields: u32, visit_field: V) -> Result<()>
-    where
-        V: FnMut(u32, &mut Self) -> Result<()>,
-    {
-        self.read_struct(nfields, visit_field)
+        self.read_opaque_fixed(len)
     }
 }
