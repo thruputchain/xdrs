@@ -2,6 +2,8 @@
 
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
+use crate::valid_u32::*;
+use crate::discrim::XDRDiscriminant;
 
 pub trait WriteXDR {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result;
@@ -40,6 +42,13 @@ write_xdr_int_impls! {
     write_bool for bool,
 }
 
+impl WriteXDR for u128 {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        let buf = self.to_le_bytes();
+        write_xdr(&buf, w)
+    }
+}
+
 impl<'a> WriteXDR for &'a [u8] {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
         w.write_opaque_variable(*self)
@@ -59,17 +68,6 @@ impl<const N: usize> WriteXDR for [u8; N] {
         let () = ValidU32::<N>::OK;
 
         w.write_opaque_fixed(self)
-    }
-}
-
-impl<T: WriteXDR> WriteXDR for Option<T> {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        if let Some(val) = self {
-            w.write_i32(1)?;
-            val.write_xdr(w)
-        } else {
-            w.write_i32(0)
-        }
     }
 }
 
@@ -99,27 +97,88 @@ impl<T: WriteXDR> WriteXDR for [T] {
     }
 }
 
-
-#[cfg(feature = "alloc")]
-impl WriteXDR for alloc::vec::Vec<u8> {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        w.write_opaque_variable(self.as_ref())
+impl WriteXDR for () {
+    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> Result<()> {
+        Ok(())
     }
 }
 
-#[cfg(feature = "alloc")]
-impl<T> WriteXDR for alloc::vec::Vec<T>
+impl<T1, T2> WriteXDR for (T1, T2)
 where
-    T: WriteXDR
+    T1: WriteXDR,
+    T2: WriteXDR,
 {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        let slice: &[T] = self.as_ref();
-        slice.write_xdr(w)
+        write_xdr(&self.0, w)?;
+        write_xdr(&self.1, w)?;
+        Ok(())
     }
 }
 
-// Hack to clamp const generic usize at compile-time
-struct ValidU32<const N: usize>;
-impl<const N: usize> ValidU32<N> {
-    const OK: () = assert!(N <= u32::MAX as usize, "N must fit in a u32");
+impl<T1, T2, T3> WriteXDR for (T1, T2, T3)
+where
+    T1: WriteXDR,
+    T2: WriteXDR,
+    T3: WriteXDR,
+{
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        write_xdr(&self.0, w)?;
+        write_xdr(&self.1, w)?;
+        write_xdr(&self.2, w)?;
+        Ok(())
+    }
 }
+
+impl<T: WriteXDR> WriteXDR for Option<T> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        if let Some(val) = self {
+            w.write_i32(1)?;
+            val.write_xdr(w)
+        } else {
+            w.write_i32(0)
+        }
+    }
+}
+
+impl<T, E> XDRDiscriminant for Result<T, E> {
+    fn discriminant(&self) -> i32 {
+        unsafe { *<*const _>::from(self).cast::<i32>() }
+    }
+}
+
+impl<T, E> WriteXDR for Result<T, E>
+where
+    T: WriteXDR,
+    E: WriteXDR,
+{
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        let d = <Self as XDRDiscriminant>::discriminant(self);
+        w.write_i32(d)?;
+
+        match self {
+            Ok(x) => <T as WriteXDR>::write_xdr(x, w),
+            Err(e) => <E as WriteXDR>::write_xdr(e, w),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+const _: () = {
+    use alloc::vec::Vec;
+
+    impl WriteXDR for Vec<u8> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            w.write_opaque_variable(self.as_ref())
+        }
+    }
+
+    impl<T> WriteXDR for Vec<T>
+    where
+        T: WriteXDR
+    {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            let slice: &[T] = self.as_ref();
+            slice.write_xdr(w)
+        }
+    }
+};

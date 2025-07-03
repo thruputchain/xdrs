@@ -2,9 +2,6 @@ use crate::serialize::reader::*;
 use core::mem::MaybeUninit as MU;
 use crate::valid_u32::*;
 
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
-
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
 where
     R: Reader<'r>,
@@ -18,6 +15,9 @@ where
 pub trait ReadXDR<'r>: Sized {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self>;
 }
+
+pub trait ReadXDROwned: for<'r> ReadXDR<'r> {}
+impl<T> ReadXDROwned for T where T: for<'r> ReadXDR<'r> {}
 
 macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
@@ -44,17 +44,10 @@ construct_int_impls! {
     read_bool for bool,
 }
 
-impl<'r, T> ReadXDR<'r> for Option<T>
-where
-    T: ReadXDR<'r>,
-{
+impl<'r> ReadXDR<'r> for u128 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let is_present = r.read_bool()?;
-        if is_present {
-            Ok(Some(read_xdr(r)?))
-        } else {
-            Ok(None)
-        }
+        let buf = read_xdr(r)?;
+        Ok(u128::from_le_bytes(buf))
     }
 }
 
@@ -110,33 +103,108 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     }
 }
 
-#[cfg(feature = "alloc")]
-impl<'r> ReadXDR<'r> for alloc::vec::Vec<u8> {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let bytes: &[u8] = r.read_opaque_variable()?;
-        let vec = alloc::vec::Vec::from(bytes); // copy the slice
-        Ok(vec)
+impl<'r> ReadXDR<'r> for () {
+    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
+        Ok(())
     }
 }
 
-#[cfg(feature = "alloc")]
-impl<'r, T> ReadXDR<'r> for alloc::vec::Vec<T>
+impl<'r, T1, T2> ReadXDR<'r> for (T1, T2)
 where
-    T: ReadXDR<'r>
+    T1: ReadXDR<'r>,
+    T2: ReadXDR<'r>,
 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let len = r.read_u32()? as usize;
-
-        let mut vec: Vec<T> = Vec::with_capacity(len as usize);
-        let slice = vec.spare_capacity_mut();
-
-        for i in 0..len {
-            slice[i].write(read_xdr(r)?);
-        }
-
-        // SAFETY: all elts up to `len` have been initialized
-        unsafe { vec.set_len(len) }
-
-        Ok(vec)
+        let v1 = read_xdr(r)?;
+        let v2 = read_xdr(r)?;
+        Ok((v1, v2))
     }
 }
+
+impl<'r, T1, T2, T3> ReadXDR<'r> for (T1, T2, T3)
+where
+    T1: ReadXDR<'r>,
+    T2: ReadXDR<'r>,
+    T3: ReadXDR<'r>,
+{
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let v1 = read_xdr(r)?;
+        let v2 = read_xdr(r)?;
+        let v3 = read_xdr(r)?;
+        Ok((v1, v2, v3))
+    }
+}
+
+impl<'r, T> ReadXDR<'r> for Option<T>
+where
+    T: ReadXDR<'r>,
+{
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let is_present = r.read_bool()?;
+        if is_present {
+            Ok(Some(read_xdr(r)?))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
+where
+    T: ReadXDR<'r>,
+    E: ReadXDR<'r>,
+{
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let d = r.read_i32()?;
+
+        match d {
+            0 => {
+                let mut v: MU<T> = MU::uninit();
+                v.write(read_xdr(r)?);
+                let value = Result::Ok(unsafe { v.assume_init() });
+                Ok(value)
+            },
+            1 => {
+                let mut v: MU<E> = MU::uninit();
+                v.write(read_xdr(r)?);
+                let value = Result::Err(unsafe { v.assume_init() });
+                Ok(value)
+            },
+            _ => Err(Error::BadDiscriminator)
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+const _: () = {
+    use alloc::vec::Vec;
+
+    impl<'r> ReadXDR<'r> for Vec<u8> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+            let bytes: &[u8] = r.read_opaque_variable()?;
+            let vec = Vec::from(bytes); // copy the slice
+            Ok(vec)
+        }
+    }
+
+    impl<'r, T> ReadXDR<'r> for Vec<T>
+    where
+        T: ReadXDR<'r>
+    {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+            let len = r.read_u32()? as usize;
+
+            let mut vec: Vec<T> = Vec::with_capacity(len as usize);
+            let slice = vec.spare_capacity_mut();
+
+            for i in 0..len {
+                slice[i].write(read_xdr(r)?);
+            }
+
+            // SAFETY: all elts up to `len` have been initialized
+            unsafe { vec.set_len(len) }
+
+            Ok(vec)
+        }
+    }
+};

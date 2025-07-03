@@ -75,7 +75,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input));
 
     quote! {
-        impl #impl_generics XDRDiscriminant for #ty_ident #ty_generics #where_clause {
+        impl #impl_generics XDRDiscriminant for #ty_ident #ty_generics {
             fn discriminant(&self) -> i32 {
                 unsafe { *<*const _>::from(self).cast::<i32>() }
             }
@@ -113,7 +113,7 @@ fn write_binding(index: usize, field: &syn::Field) -> TokenStream {
     let bind = tmp_binding(index);
 
     quote! {
-        <#ty as WriteXDR>::write_xdr(&#bind, __write_xdr_writer)?;
+        <#ty as WriteXDR>::write_xdr(#bind, __write_xdr_writer)?;
     }
 }
 
