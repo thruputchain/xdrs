@@ -1,13 +1,11 @@
 #![feature(maybe_uninit_array_assume_init)]
 
-use ::xdrs::*;
-
 mod common;
 use common::*;
 
 #[test]
 fn enum_bare() {
-    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[repr(i32)]
     enum Bare {
         Only,
@@ -29,7 +27,7 @@ fn enum_bare() {
 fn enum_foo() {
     const FOO_A: i32 = -1;
 
-    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[repr(i32)]
     enum Foo<'a> {
         A(&'a [u8]) = FOO_A,
@@ -64,7 +62,7 @@ fn enum_foo() {
 #[cfg(false)]
 #[test]
 fn bad_enum() {
-    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[repr(i32)]
     enum Animal {
         Ewe = 4,

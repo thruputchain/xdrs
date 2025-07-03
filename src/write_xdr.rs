@@ -42,6 +42,13 @@ write_xdr_int_impls! {
     write_bool for bool,
 }
 
+impl WriteXDR for i128 {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        let buf = self.to_le_bytes();
+        write_xdr(&buf, w)
+    }
+}
+
 impl WriteXDR for u128 {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
         let buf = self.to_le_bytes();

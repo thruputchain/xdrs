@@ -21,8 +21,11 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
     Ok(quote! {
         const _: () = {
-            use ::xdrs::serialize::writer::{Writer, Result};
-            use ::xdrs::discrim::XDRDiscriminant;
+            mod __xdrs {
+                pub use ::xdrs::serialize::writer::{Writer, Result};
+                pub use ::xdrs::discrim::XDRDiscriminant;
+                pub use ::xdrs::WriteXDR;
+            }
 
             #impls
         };
@@ -42,8 +45,8 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let write_fields = token_reduce(&item.fields, write_field);
     quote! {
-        impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result {
+        impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
+            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::Result {
                 #write_fields
                 Ok(())
             }
@@ -58,13 +61,13 @@ fn write_field(index: usize, field: &syn::Field) -> TokenStream {
 
     if let Some(as_ty) = attrs.as_type {
         quote! {
-            let v: &#as_ty = self.#fa.deref();
-            <#as_ty as WriteXDR>::write_xdr(v, w)?;
+            let v: &#as_ty = ::core::ops::Deref::deref(&self.#fa);
+            <#as_ty as __xdrs::WriteXDR>::write_xdr(v, w)?;
         }
     } else {
         quote! {
             let v: &#ty = &(self.#fa);
-            <#ty as WriteXDR>::write_xdr(v, w)?;
+            <#ty as __xdrs::WriteXDR>::write_xdr(v, w)?;
         }
     }
 }
@@ -75,15 +78,15 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input));
 
     quote! {
-        impl #impl_generics XDRDiscriminant for #ty_ident #ty_generics {
+        impl #impl_generics __xdrs::XDRDiscriminant for #ty_ident #ty_generics {
             fn discriminant(&self) -> i32 {
                 unsafe { *<*const _>::from(self).cast::<i32>() }
             }
         }
 
-        impl #impl_generics WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<F, W: Writer<F>>(&self, __write_xdr_writer: &mut W) -> Result {
-                let d = <Self as XDRDiscriminant>::discriminant(self);
+        impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
+            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::Result {
+                let d = <Self as __xdrs::XDRDiscriminant>::discriminant(self);
                 __write_xdr_writer.write_i32(d)?;
 
                 match self {
@@ -113,7 +116,7 @@ fn write_binding(index: usize, field: &syn::Field) -> TokenStream {
     let bind = tmp_binding(index);
 
     quote! {
-        <#ty as WriteXDR>::write_xdr(#bind, __write_xdr_writer)?;
+        <#ty as __xdrs::WriteXDR>::write_xdr(#bind, __write_xdr_writer)?;
     }
 }
 
@@ -159,11 +162,12 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
     Ok(quote! {
         const _: () = {
-            use core::mem::MaybeUninit as MU;
-            use core::mem::transmute;
-            use ::xdrs::read_xdr::{ReadXDR, read_xdr};
-            use ::xdrs::serialize::reader::{Reader, Error, Result};
-            use ::xdrs::discrim::XDRDiscriminant;
+            mod __xdrs {
+                pub use core::mem::MaybeUninit as MU;
+                pub use ::xdrs::discrim::XDRDiscriminant;
+                pub use ::xdrs::read_xdr::{ReadXDR, read_xdr};
+                pub use ::xdrs::serialize::reader::{Reader, Error, Result};
+            }
 
             #impls
         };
@@ -188,9 +192,9 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     let read_fields = token_reduce(&item.fields, read_field);
 
     quote! {
-        impl #impl_generics ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
-            fn read_xdr<R: Reader<'_r>>(r: &mut R) -> Result<Self> {
-                let mut value: MU<Self> = MU::uninit();
+        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::Result<Self> {
+                let mut value: __xdrs::MU<Self> = __xdrs::MU::uninit();
                 let struct_ptr = value.as_mut_ptr();
 
                 #read_fields
@@ -210,12 +214,12 @@ fn read_field(index: usize, field: &syn::Field) -> TokenStream {
 
     let read_field_value = if let Some(as_ty) = attrs.as_type {
         quote! {
-            let as_value: #as_ty = read_xdr(r)?;
+            let as_value: #as_ty = __xdrs::read_xdr(r)?;
             let field_value = as_value.into();
         }
     } else {
         quote! {
-            let field_value = read_xdr(r)?;
+            let field_value = __xdrs::read_xdr(r)?;
         }
     };
 
@@ -245,7 +249,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         // (But we could support other mixes with a little more effort)
     }
     let catch_bad_index = if default_ix.is_none() {
-        quote! { _ => Err(Error::BadDiscriminator) }
+        quote! { _ => Err(__xdrs::Error::BadDiscriminator) }
     } else {
         quote! {}
     };
@@ -257,8 +261,8 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     let (impl_generics, _, _) = generics.split_for_impl();
 
     quote! {
-        impl #impl_generics ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
-            fn read_xdr<R: Reader<'_r>>(r: &mut R) -> Result<Self> {
+        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::Result<Self> {
                 let d = r.read_i32()?;
 
                 match d {
@@ -285,7 +289,7 @@ fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput
     let declare_fields = token_reduce(&variant.fields, declare_uninit_field);
     let read_fields = token_reduce(&variant.fields, |i, _| {
         let bind = tmp_binding(i);
-        quote! { #bind.write(read_xdr(r)?); }
+        quote! { #bind.write(__xdrs::read_xdr(r)?); }
     });
     let init_fields = init_fields(&variant.fields);
 
@@ -305,7 +309,7 @@ fn declare_uninit_field(index: usize, field: &syn::Field) -> TokenStream {
     let ty = &field.ty;
 
     quote! {
-        let mut #bind: MU<#ty> = MU::uninit();
+        let mut #bind: __xdrs::MU<#ty> = __xdrs::MU::uninit();
     }
 }
 

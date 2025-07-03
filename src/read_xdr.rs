@@ -44,10 +44,17 @@ construct_int_impls! {
     read_bool for bool,
 }
 
+impl<'r> ReadXDR<'r> for i128 {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let buf = read_xdr(r)?;
+        Ok(Self::from_le_bytes(buf))
+    }
+}
+
 impl<'r> ReadXDR<'r> for u128 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let buf = read_xdr(r)?;
-        Ok(u128::from_le_bytes(buf))
+        Ok(Self::from_le_bytes(buf))
     }
 }
 
