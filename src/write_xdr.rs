@@ -1,9 +1,9 @@
 //! Translate Rust values into XDR values
 
+use crate::discrim::XDRDiscriminant;
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 use crate::valid_u32::*;
-use crate::discrim::XDRDiscriminant;
 
 pub trait WriteXDR {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result;
@@ -42,27 +42,45 @@ write_xdr_int_impls! {
     write_bool for bool,
 }
 
+#[cfg(feature = "extras")]
 impl WriteXDR for i128 {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        let buf = self.to_le_bytes();
-        write_xdr(&buf, w)
+        let bytes = self.to_le_bytes();
+
+        let leading_sign_bytes = if *self >= 0 {
+            self.leading_zeros()
+        } else {
+            self.leading_ones()
+        } / 8;
+
+        let n_send_bytes = 16 - leading_sign_bytes as usize;
+        let buf = &bytes[..n_send_bytes];
+
+        w.write_opaque_variable(buf)
     }
 }
 
+#[cfg(feature = "extras")]
 impl WriteXDR for u128 {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        let buf = self.to_le_bytes();
-        write_xdr(&buf, w)
+        let bytes = self.to_le_bytes();
+
+        let leading_zero_bytes = self.leading_zeros() / 8;
+
+        let n_send_bytes = 16 - leading_zero_bytes as usize;
+        let buf = &bytes[..n_send_bytes];
+
+        w.write_opaque_variable(buf)
     }
 }
 
-impl<'a> WriteXDR for &'a [u8] {
+impl WriteXDR for &[u8] {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        w.write_opaque_variable(*self)
+        w.write_opaque_variable(self)
     }
 }
 
-impl<'a, const N: usize> WriteXDR for &'a [u8; N] {
+impl<const N: usize> WriteXDR for &[u8; N] {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
         let () = ValidU32::<N>::OK;
 
@@ -92,7 +110,7 @@ impl<T: WriteXDR, const N: usize> WriteXDR for [T; N] {
 impl<T: WriteXDR> WriteXDR for [T] {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
         if self.len() > u32::MAX as usize {
-            return Err(Error::InvalidArrayLength)
+            return Err(Error::InvalidArrayLength);
         }
         let len = self.len() as u32;
         w.write_u32(len)?;
@@ -181,7 +199,7 @@ const _: () = {
 
     impl<T> WriteXDR for Vec<T>
     where
-        T: WriteXDR
+        T: WriteXDR,
     {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             let slice: &[T] = self.as_ref();

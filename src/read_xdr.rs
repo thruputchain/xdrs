@@ -1,6 +1,6 @@
 use crate::serialize::reader::*;
-use core::mem::MaybeUninit as MU;
 use crate::valid_u32::*;
+use core::mem::MaybeUninit as MU;
 
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
 where
@@ -44,17 +44,29 @@ construct_int_impls! {
     read_bool for bool,
 }
 
+#[cfg(feature = "extras")]
 impl<'r> ReadXDR<'r> for i128 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let buf = read_xdr(r)?;
-        Ok(Self::from_le_bytes(buf))
+        let mut uninit = [MU::<u8>::zeroed(); 16];
+
+        let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
+
+        // SAFETY: the pre-zeroed bytes are valid u8's
+        let bytes = unsafe { MU::array_assume_init(uninit) };
+        Ok(Self::from_le_bytes(bytes))
     }
 }
 
+#[cfg(feature = "extras")]
 impl<'r> ReadXDR<'r> for u128 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let buf = read_xdr(r)?;
-        Ok(Self::from_le_bytes(buf))
+        let mut uninit = [MU::<u8>::zeroed(); 16];
+
+        let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
+
+        // SAFETY: the pre-zeroed bytes are valid u8's
+        let bytes = unsafe { MU::array_assume_init(uninit) };
+        Ok(Self::from_le_bytes(bytes))
     }
 }
 
@@ -67,8 +79,8 @@ where
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
 
-        for i in 0..N {
-            arr[i].write(read_xdr(r)?);
+        for elt in arr.iter_mut() {
+            elt.write(read_xdr(r)?);
         }
 
         // SAFETY: all elements have been initialized
@@ -80,7 +92,7 @@ where
 
 impl<'a, 'r: 'a> ReadXDR<'r> for &'a [u8] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        r.read_opaque_variable()
+        r.read_opaque_variable(u32::MAX)
     }
 }
 
@@ -170,14 +182,14 @@ where
                 v.write(read_xdr(r)?);
                 let value = Result::Ok(unsafe { v.assume_init() });
                 Ok(value)
-            },
+            }
             1 => {
                 let mut v: MU<E> = MU::uninit();
                 v.write(read_xdr(r)?);
                 let value = Result::Err(unsafe { v.assume_init() });
                 Ok(value)
-            },
-            _ => Err(Error::BadDiscriminator)
+            }
+            _ => Err(Error::BadDiscriminator),
         }
     }
 }
@@ -188,7 +200,7 @@ const _: () = {
 
     impl<'r> ReadXDR<'r> for Vec<u8> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let bytes: &[u8] = r.read_opaque_variable()?;
+            let bytes: &[u8] = r.read_opaque_variable(u32::MAX)?;
             let vec = Vec::from(bytes); // copy the slice
             Ok(vec)
         }
@@ -196,7 +208,7 @@ const _: () = {
 
     impl<'r, T> ReadXDR<'r> for Vec<T>
     where
-        T: ReadXDR<'r>
+        T: ReadXDR<'r>,
     {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let len = r.read_u32()? as usize;

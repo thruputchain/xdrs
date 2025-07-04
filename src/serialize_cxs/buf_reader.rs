@@ -1,5 +1,4 @@
 use crate::serialize::reader::*;
-use core::mem::MaybeUninit as MU;
 
 pub struct BufReader<'r> {
     data: &'r [u8],
@@ -16,9 +15,10 @@ impl<'a> BufReader<'a> {
         self.pos
     }
 
-    fn reserve_extent(&mut self, requested: u32) -> Result<&'a [u8]> {
+    fn get_extent(&mut self, requested: u32) -> Result<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
+            // no panic because remaining < requested <= u32::MAX
             let remaining = (self.data.len() - self.pos).try_into().unwrap();
             return Err(Error::SourceEmpty {
                 requested,
@@ -34,7 +34,7 @@ impl<'a> BufReader<'a> {
     }
 
     fn read_byte(&mut self) -> Result<u8> {
-        let byte = self.reserve_extent(1)?;
+        let byte = self.get_extent(1)?;
 
         Ok(byte[0])
     }
@@ -69,7 +69,9 @@ impl<'a> BufReader<'a> {
 
             n = i64::from_le_bytes(int_bytes);
 
-            // TODO: validate that the smallest possible encoding was used
+            // validate that the smallest possible encoding was used
+            #[cfg(feature = "strict")]
+            todo!();
         } else {
             // The number is the 6-bit, one's-complement signed
             // integer in `v`
@@ -111,7 +113,9 @@ impl<'a> BufReader<'a> {
             int_dest.copy_from_slice(input);
             let uint = u64::from_le_bytes(int_bytes);
 
-            // TODO: validate that the smallest possible encoding was used
+            // validate that the smallest possible encoding was used
+            #[cfg(feature = "strict")]
+            todo!();
 
             Ok(uint)
         } else {
@@ -166,21 +170,16 @@ impl<'r> Reader<'r> for BufReader<'r> {
     }
 
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
-        let shared = self.reserve_extent(len)?;
-
-        Ok(shared)
+        self.get_extent(len)
     }
 
-    fn read_opaque_fixed_into(&mut self, dst: &mut [MU<u8>], len: u32) -> Result<()> {
-        let data = self.reserve_extent(len)?;
-
-        let _init_slice = dst.write_copy_of_slice(data);
-
-        Ok(())
-    }
-
-    fn read_opaque_variable(&mut self) -> Result<&'r [u8]> {
+    fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8]> {
         let len = self.read_u32()?;
+
+        if len > max {
+            return Err(Error::MaxLengthExceeded);
+        }
+
         self.read_opaque_fixed(len)
     }
 }

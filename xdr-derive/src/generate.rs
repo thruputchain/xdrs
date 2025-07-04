@@ -9,7 +9,7 @@ use darling::FromField;
 #[derive(Debug, FromField)]
 #[darling(attributes(xdrs))]
 struct FieldAttrs {
-    pub as_type: Option<syn::Type>
+    pub as_type: Option<syn::Type>,
 }
 
 // ---- derive WriteXDR ------------------------------------------------------
@@ -232,14 +232,23 @@ fn read_field(index: usize, field: &syn::Field) -> TokenStream {
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     let ty_ident = &input.ident;
     let n_variants = item.variants.iter().count();
-    let n_explicit = item.variants.iter().filter(|v| v.discriminant.is_some()).count();
+    let n_explicit = item
+        .variants
+        .iter()
+        .filter(|v| v.discriminant.is_some())
+        .count();
 
     let mut default_ix = None;
     if n_variants > 1 && n_explicit == n_variants - 1 {
         // We'll treat the single implicit variant as a default,
-        default_ix = Some(item.variants.iter().enumerate()
-            .find(|(_, v)| v.discriminant.is_none())
-            .map(|(i, _)| i).unwrap());
+        default_ix = Some(
+            item.variants
+                .iter()
+                .enumerate()
+                .find(|(_, v)| v.discriminant.is_none())
+                .map(|(i, _)| i)
+                .unwrap(),
+        );
     } else if !(n_explicit == 0 || n_explicit == n_variants) {
         return syn::Error::new(
             input.span(),
@@ -274,7 +283,12 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     }
 }
 
-fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput, default_ix: Option<usize>) -> TokenStream {
+fn read_variant(
+    index_u: usize,
+    variant: &syn::Variant,
+    input: &syn::DeriveInput,
+    default_ix: Option<usize>,
+) -> TokenStream {
     let index = index_u as i32;
     let var_match = if default_ix == Some(index_u) {
         quote! { _ }

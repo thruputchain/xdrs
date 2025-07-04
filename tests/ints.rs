@@ -68,3 +68,13 @@ enc_test_int! {
     [i64_zero, i64, 0, "00"],
     [i64_max, i64, i64::MAX, "ffffffffffffffff7f"],
 }
+
+#[cfg(feature = "extras")]
+enc_test_int! {
+    [u128_min, u128, u128::MIN, "00"],
+    [u128_mid, u128, 0xadde07, "0307dead"],
+    [u128_max, u128, u128::MAX, "10ffffffffffffffffffffffffffffffff"],
+    [i128_min, i128, i128::MIN, "1000000000000000000000000000000080"],
+    [i128_pos, i128, 0xadde07, "0307dead"],
+    [i128_max, i128, i128::MAX, "10ffffffffffffffffffffffffffffff7f"],
+}

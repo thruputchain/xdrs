@@ -21,9 +21,10 @@ pub(crate) trait Put {
     fn put_bytes(&mut self, bytes: &[u8]) -> Result<()>;
 }
 
+#[allow(clippy::upper_case_acronyms)]
 pub struct CXS;
 
-impl<'a, P> Writer<CXS> for P
+impl<P> Writer<CXS> for P
 where
     P: Put,
 {

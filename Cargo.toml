@@ -17,6 +17,8 @@ xdr-derive = { workspace = true, optional = true }
 hex = "0.4.3"
 
 [features]
-default = ["derive"]
+default = ["extras", "derive"]
 alloc = []
 derive = ["dep:xdr-derive"]
+strict = []
+extras = []

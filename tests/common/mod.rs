@@ -44,11 +44,10 @@ where
     // check_encode_into_static(val, expected, serialize_txs::encode_into);
 }
 
-
 pub fn check_encode_into_static<T, E>(value: &T, expected: &[u8], encode_into: E)
 where
     T: WriteXDR,
-    E: Fn (&T, &mut [MU<u8>]) -> usize,
+    E: Fn(&T, &mut [MU<u8>]) -> usize,
 {
     const BUFSZ: usize = 1000;
     assert!(expected.len() <= BUFSZ);
@@ -90,7 +89,7 @@ where
 pub fn encode_into_alloc<T, E>(value: &T, expected_len: usize, encode_into: E) -> Vec<u8>
 where
     T: WriteXDR,
-    E: Fn (&T, &mut [MU<u8>]) -> usize,
+    E: Fn(&T, &mut [MU<u8>]) -> usize,
 {
     let mut encoded = Vec::with_capacity(expected_len);
     let written = encode_into(value, encoded.spare_capacity_mut());

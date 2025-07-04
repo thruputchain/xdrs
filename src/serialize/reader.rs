@@ -21,13 +21,9 @@ pub trait Reader<'r>: Sized {
     /// Read a byte-array of known length, borrowing the contents from the reader
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]>;
 
-    /// Read a byte-array of known length into a provided buffer
-    fn read_opaque_fixed_into(&mut self, dst: &mut [MU<u8>], len: u32) -> Result<()>;
+    /// Read a byte-sequence of specified max length, borrowing the contents from the reader
+    fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8]>;
 
-    /// Read a byte-sequence of unknown length, borrowing the contents from the reader
-    fn read_opaque_variable(&mut self) -> Result<&'r [u8]>;
-
-    // Provided methods
     fn read_bool(&mut self) -> Result<bool> {
         match self.read_i32()? {
             0 => Ok(false),
@@ -36,9 +32,50 @@ pub trait Reader<'r>: Sized {
         }
     }
 
+    /// Read a byte-array of known length, copying into a provided buffer.
+    /// Panics if `dst.len()` is not equal to `len as usize`.
+    fn read_opaque_fixed_into<'a>(
+        &mut self,
+        dst: &'a mut [MU<u8>],
+        len: u32,
+    ) -> Result<&'a mut [u8]> {
+        debug_assert_eq!(dst.len(), len as usize);
+
+        let data = self.read_opaque_fixed(len)?;
+
+        let initialized = dst.write_copy_of_slice(data);
+
+        Ok(initialized)
+    }
+
+    /// Read a byte-sequence of specified max length, copying into a provided buffer.
+    /// Panics if `dst.len()` is less than the actual length of the input data.
+    fn read_opaque_variable_into<'a>(
+        &mut self,
+        dst: &'a mut [MU<u8>],
+        max: u32,
+    ) -> Result<&'a mut [u8]> {
+        debug_assert!(dst.len() >= max as usize);
+
+        let len = self.read_u32()?;
+
+        if len > max {
+            return Err(Error::MaxLengthExceeded);
+        }
+
+        self.read_opaque_fixed_into(&mut dst[..len as usize], len)
+    }
+
     #[cfg(feature = "alloc")]
     fn read_opaque_fixed_owned(&mut self, len: u32) -> Result<Vec<u8>> {
         let bytes = self.read_opaque_fixed(len)?;
+        let buf = Vec::from(bytes); // copy from input
+        Ok(buf)
+    }
+
+    #[cfg(feature = "alloc")]
+    fn read_opaque_variable_owned(&mut self, max: u32) -> Result<Vec<u8>> {
+        let bytes = self.read_opaque_variable(max)?;
         let buf = Vec::from(bytes); // copy from input
         Ok(buf)
     }
@@ -61,7 +98,7 @@ pub enum Error {
     #[error("invalid header byte: 0x{h:02x}")]
     InvalidHeaderByte { h: u8 },
 
-    #[error("encoded integer out of range")]
+    #[error("decoded integer out of range")]
     IntegerOutOfRange,
 
     #[error("bad bool value")]
@@ -69,4 +106,7 @@ pub enum Error {
 
     #[error("unexpected discriminator value")]
     BadDiscriminator,
+
+    #[error("length exceeds array maximum")]
+    MaxLengthExceeded,
 }
