@@ -128,31 +128,28 @@ impl<'r> ReadXDR<'r> for () {
     }
 }
 
-impl<'r, T1, T2> ReadXDR<'r> for (T1, T2)
-where
-    T1: ReadXDR<'r>,
-    T2: ReadXDR<'r>,
-{
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let v1 = read_xdr(r)?;
-        let v2 = read_xdr(r)?;
-        Ok((v1, v2))
-    }
+macro_rules! read_tuple {
+    { $( $t:ident ),+ } => {
+
+        impl<'r, $($t),+> ReadXDR<'r> for ($($t),+)
+        where
+            $( $t: ReadXDR<'r>, )+
+        {
+            fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+                Ok(($(
+                        { let v: $t = read_xdr(r)?; v }
+                        ),+))
+            }
+        }
+
+    };
 }
 
-impl<'r, T1, T2, T3> ReadXDR<'r> for (T1, T2, T3)
-where
-    T1: ReadXDR<'r>,
-    T2: ReadXDR<'r>,
-    T3: ReadXDR<'r>,
-{
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let v1 = read_xdr(r)?;
-        let v2 = read_xdr(r)?;
-        let v3 = read_xdr(r)?;
-        Ok((v1, v2, v3))
-    }
-}
+read_tuple!(T1, T2);
+read_tuple!(T1, T2, T3);
+read_tuple!(T1, T2, T3, T4);
+read_tuple!(T1, T2, T3, T4, T5);
+read_tuple!(T1, T2, T3, T4, T5, T6);
 
 impl<'r, T> ReadXDR<'r> for Option<T>
 where
