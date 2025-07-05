@@ -9,6 +9,10 @@ name = "xdrs"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+# disable libtest benchmarks, in favor of Criterion
+bench = false
+
 [dependencies]
 thiserror = { version = "2.0.12", default-features = false }
 xdr-derive = { workspace = true, optional = true }
