@@ -18,7 +18,7 @@ criterion = "0.6.0"
 hex = "0.4.3"
 
 [features]
-default = ["extras", "derive"]
+default = ["alloc", "extras", "derive"]
 alloc = []
 derive = ["dep:xdr-derive"]
 strict = []

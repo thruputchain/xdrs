@@ -47,15 +47,20 @@ where
 pub fn check_encode_into_static<T, E>(value: &T, expected: &[u8], encode_into: E)
 where
     T: WriteXDR,
-    E: Fn(&T, &mut [MU<u8>]) -> usize,
+    E: Fn(&T, &mut [MU<u8>]) -> WriteResult<usize>,
 {
     const BUFSZ: usize = 1000;
     assert!(expected.len() <= BUFSZ);
 
     // An "uninitialized" buffer that has actually been zeroed
     let mut buf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
-    let written = encode_into(value, &mut buf);
-    let encoded = unsafe { &MU::array_assume_init(buf)[..written] };
+
+    let written = encode_into(value, &mut buf).unwrap();
+
+    let encoded = unsafe {
+        (&buf[..written]).assume_init_ref()
+    };
+
     check_eq(encoded, expected);
 }
 
@@ -64,7 +69,7 @@ pub fn check_encode_alloc<T>(value: &T, expected: &[u8])
 where
     T: WriteXDR,
 {
-    let encoded = serialize_cxs::encode(value);
+    let encoded = serialize_cxs::encode(value).unwrap();
     check_eq(&encoded, expected);
 
     // let encoded = serialize_txs::encode(value);
@@ -89,10 +94,10 @@ where
 pub fn encode_into_alloc<T, E>(value: &T, expected_len: usize, encode_into: E) -> Vec<u8>
 where
     T: WriteXDR,
-    E: Fn(&T, &mut [MU<u8>]) -> usize,
+    E: Fn(&T, &mut [MU<u8>]) -> WriteResult<usize>,
 {
     let mut encoded = Vec::with_capacity(expected_len);
-    let written = encode_into(value, encoded.spare_capacity_mut());
+    let written = encode_into(value, encoded.spare_capacity_mut()).unwrap();
 
     // SAFETY:
     // - the new len must be less than or equal to capacity().

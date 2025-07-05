@@ -11,6 +11,12 @@ impl BufWriter {
     }
 }
 
+impl Default for BufWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl From<Vec<u8>> for BufWriter {
     fn from(vec: Vec<u8>) -> Self {
         Self(vec)
@@ -23,9 +29,9 @@ impl AsRef<[u8]> for BufWriter {
     }
 }
 
-impl Into<Vec<u8>> for BufWriter {
-    fn into(self) -> Vec<u8> {
-        self.0
+impl From<BufWriter> for Vec<u8> {
+    fn from(w: BufWriter) -> Self {
+        w.0
     }
 }
 

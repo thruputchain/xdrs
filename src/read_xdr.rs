@@ -210,11 +210,11 @@ const _: () = {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let len = r.read_u32()? as usize;
 
-            let mut vec: Vec<T> = Vec::with_capacity(len as usize);
+            let mut vec: Vec<T> = Vec::with_capacity(len);
             let slice = vec.spare_capacity_mut();
 
-            for i in 0..len {
-                slice[i].write(read_xdr(r)?);
+            for elt in slice.iter_mut() {
+                elt.write(read_xdr(r)?);
             }
 
             // SAFETY: all elts up to `len` have been initialized
