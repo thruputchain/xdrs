@@ -1,6 +1,8 @@
 //! Provide a generic CXS implementation for any type
 //! that implements some basic byte operations
 
+#![allow(clippy::upper_case_acronyms)]
+
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 
@@ -14,14 +16,14 @@ const U6_MAX: u8 = 62;
 const I6_MAX: i8 = 31;
 const I6_MIN: i8 = -31;
 
-/// Basic output operations that facilitate implementing Writer
+/// Implement these basic byte operations in order
+/// to get a `Writer<CXS>` implementation for free
 pub(crate) trait Put {
     // Required:
     fn put_byte(&mut self, b: u8) -> Result<()>;
     fn put_bytes(&mut self, bytes: &[u8]) -> Result<()>;
 }
 
-#[allow(clippy::upper_case_acronyms)]
 pub struct CXS;
 
 impl<P> Writer<CXS> for P

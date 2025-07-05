@@ -15,7 +15,7 @@ impl<'a> BufReader<'a> {
         self.pos
     }
 
-    fn get_extent(&mut self, requested: u32) -> Result<&'a [u8]> {
+    fn get_input(&mut self, requested: u32) -> Result<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
             // no panic because remaining < requested <= u32::MAX
@@ -34,7 +34,7 @@ impl<'a> BufReader<'a> {
     }
 
     fn read_byte(&mut self) -> Result<u8> {
-        let byte = self.get_extent(1)?;
+        let byte = self.get_input(1)?;
 
         Ok(byte[0])
     }
@@ -170,7 +170,7 @@ impl<'r> Reader<'r> for BufReader<'r> {
     }
 
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
-        self.get_extent(len)
+        self.get_input(len)
     }
 
     fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8]> {

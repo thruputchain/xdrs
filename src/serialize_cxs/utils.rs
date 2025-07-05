@@ -44,13 +44,6 @@ mod utils_alloc {
         let _acc = value.write_xdr(&mut writer).unwrap();
         writer.into()
     }
-
-    #[cfg(feature = "alloc")]
-    pub fn encode_into_vec<T: WriteXDR>(value: &T, vec: Vec<u8>) -> Vec<u8> {
-        let mut writer = BufWriter::from(vec);
-        let _acc = value.write_xdr(&mut writer).unwrap();
-        writer.into()
-    }
 }
 
 #[cfg(feature = "alloc")]
