@@ -2,61 +2,53 @@
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_slice)]
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{
+    criterion_group,
+    criterion_main,
+    Criterion,
+    BenchmarkId,
+    Throughput,
+};
 // use std::hint::black_box;
 
-use xdrs::*;
-use xdrs::serialize_cxs::{encode, encode_into, UninitBuf};
+const N_CODEC_ITERATIONS: usize = 100;
 
-pub fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("boo encode", |b| b.iter(||
-            boo_encode()
-            ));
-    c.bench_function("boo decode", |b| b.iter(||
-            boo_decode()
-            ));
+use xdrs::*;
+use xdrs::serialize_cxs as cxs;
+use xdrs::serialize_cxs::UninitBuf;
+
+fn bench_codec(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Codec");
+
+    // Make input for decoding below
+    let input_vec = cxs::encode(&VALUES).unwrap();
+    let input: &[u8] = input_vec.as_ref();
+    let size = input.len();
+    group.throughput(Throughput::Bytes((N_CODEC_ITERATIONS * size) as u64));
+
+    let id = BenchmarkId::new("encode", format!("Output {}B * {}", size, N_CODEC_ITERATIONS));
+    group.bench_with_input(id, &VALUES, |b, values|
+        b.iter(|| run_encode(values)));
+
+    let id = BenchmarkId::new("decode", format!("Input {}B * {}", size, N_CODEC_ITERATIONS));
+    group.bench_with_input(id, input, |b, input|
+        b.iter(|| run_decode(input)));
+
+    group.finish();
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, bench_codec);
 criterion_main!(benches);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
-struct Boo<'a> {
-    blerg: i32,
-    blorg: u128,
-    bilig: u64,
-    bulba: &'a [u8],
-    bytes: &'a [u8; 9],
-}
+fn run_encode(values: &[Value; N_VALUES]) {
 
-const N_BOOS: usize = 1; // 50;
-const BOOS: [Boo; N_BOOS] = [const { Boo {
-    blerg: -5,
-    blorg: 0xdeadbeefdeadbeefdeadbeefdeadbeef,
-    bilig: 0xcafebabecafebabe,
-    bulba: &BOO_BYTES,
-    bytes: &BOO_BYTES,
-} }; N_BOOS];
-const BOO_BYTES: [u8; 9] = [7; 9];
-const BUFLEN: usize = 2500;
-
-const FOOS: [Boo; N_BOOS] = [const { Boo {
-    blerg: -7,
-    blorg: 0xfeedbeeffeedbeeffeedbeeffeedbeef,
-    bilig: 0xbabecafebabecafe,
-    bulba: &BOO_BYTES,
-    bytes: &BOO_BYTES,
-} }; N_BOOS];
-
-const CODEC_ITERATIONS: usize = 1000;
-
-fn boo_encode() {
     // A buffer to receive the encoded value
+    const BUFLEN: usize = 2500;
     let mut buf = UninitBuf::<BUFLEN>::new();
 
     // Encode the value many times
-    for _ in 0..CODEC_ITERATIONS {
-        buf.init(|buf| encode_into(&BOOS, buf)).unwrap();
+    for _ in 0..N_CODEC_ITERATIONS {
+        buf.init(|buf| cxs::encode_into(values, buf)).unwrap();
     }
 
     // run `cargo test --benches` to test with the asserts
@@ -67,22 +59,55 @@ fn boo_encode() {
             buf.assume_init()
         };
 
-        let boos2: [Boo; N_BOOS] =
+        let values2: [Value; N_VALUES] =
             serialize_cxs::decode(encoded).unwrap();
-        debug_assert_eq!(&boos2, &BOOS);
+        debug_assert_eq!(&values2, &VALUES);
     }
 }
 
-fn boo_decode()
+fn run_decode<'a>(input: &[u8])
 {
-    let encoded_owned = encode(&BOOS).unwrap();
-    let encoded = encoded_owned.as_ref();
+    let mut output: [Value; N_VALUES];
 
-    let mut boos2 = FOOS;
-    for _ in 0..CODEC_ITERATIONS {
-        boos2 = serialize_cxs::decode(encoded).unwrap();
+    output = cxs::decode(input).unwrap();
+    for _ in 1..N_CODEC_ITERATIONS {
+        output = cxs::decode(input).unwrap();
     }
 
     // run `cargo test --benches` to test with the asserts
-    debug_assert_eq!(&boos2, &BOOS);
+    debug_assert_eq!(output, VALUES);
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+struct Value<'a> {
+    blerg: i32,
+    blorg: u128,
+    bilig: u64,
+    bulba: &'a [u8],
+    bytes: &'a [u8; 9],
+}
+
+const N_VALUES: usize = 50;
+
+const VALUES: [Value; N_VALUES] = [const { Value {
+    blerg: -5,
+    blorg: 0xdeadbeefdeadbeefdeadbeefdeadbeef,
+    bilig: 0xcafebabecafebabe,
+    bulba: &VALUE_BYTES,
+    bytes: &VALUE_BYTES,
+} }; N_VALUES];
+
+const VALUE_BYTES: [u8; 9] = [7; 9];
+
+/*
+const fn default_value() -> Value<'static> {
+    Value {
+        blerg: 0,
+        blorg: 0,
+        bilig: 0,
+        bulba: &ZEROS,
+        bytes: &ZEROS,
+    }
+}
+const ZEROS: [u8; 9] = [0; 9];
+*/
