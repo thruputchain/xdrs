@@ -22,11 +22,13 @@ criterion = "0.6.0"
 hex = "0.4.3"
 
 [features]
-default = ["alloc", "extras", "derive"]
+default = ["alloc", "extras", "derive", "cxs", "txs"]
 alloc = []
-derive = ["dep:xdr-derive"]
-strict = []
 extras = []
+derive = ["dep:xdr-derive"]
+cxs = []
+txs = []
+strict = []
 
 [[bench]]
 name = "simple"

@@ -12,9 +12,9 @@ const S_4BYTE: u8 = 2 << 6;
 const S_2BYTE: u8 = 1 << 6;
 const S_1BYTE: u8 = 0 << 6;
 const S_HEADER: u8 = 0 << 6;
-const U6_MAX: u8 = 62;
 const I6_MAX: i8 = 31;
 const I6_MIN: i8 = -31;
+const U6_MAX: u8 = 62;
 
 /// Implement these basic byte operations in order
 /// to get a `Writer<CXS>` implementation for free
@@ -88,33 +88,7 @@ where
             let buf = n.to_le_bytes();
             self.put_bytes(&buf)
         } else {
-            self.write_i8(n as i8)
-        }
-    }
-
-    fn write_i8(&mut self, n: i8) -> Result<()> {
-        if !(I6_MIN..=I6_MAX).contains(&n) {
-            // Use the 1-byte repr
-            let s = S_1BYTE;
-            let v = V_MULTIBYTE;
-            let h = v | s;
-            self.put_byte(h)?;
-
-            self.put_byte(n as u8)
-        } else {
-            // This small, signed number will be represented in the header-byte with 6-bit,
-            // one's-complement encoding
-            let nu: u8 = n.unsigned_abs();
-            let v = if n >= 0 {
-                nu
-            } else {
-                // invert and set the high bit
-                (!nu & 0b01_1111) | 0b0010_0000
-            };
-
-            let s = S_HEADER;
-            let h = v | s;
-            self.put_byte(h)
+            write_i8(self, n as i8)
         }
     }
 
@@ -159,23 +133,56 @@ where
             let buf = n.to_le_bytes();
             self.put_bytes(&buf)
         } else {
-            self.write_u8(n as u8)
+            write_u8(self, n as u8)
         }
     }
 
-    fn write_u8(&mut self, n: u8) -> Result<()> {
-        if n > U6_MAX {
-            // Use 1-byte representation
-            let s = S_1BYTE;
-            let v = V_MULTIBYTE;
-            let h = v | s;
-            self.put_byte(h)?;
+}
 
-            let buf = n.to_le_bytes();
-            self.put_bytes(&buf)
+fn write_u8<P>(p: &mut P, n: u8) -> Result<()>
+where
+    P: Put
+{
+    if n > U6_MAX {
+        // Use 1-additional-byte representation
+        let s = S_1BYTE;
+        let v = V_MULTIBYTE;
+        let h = v | s;
+        p.put_byte(h)?;
+
+        let buf = n.to_le_bytes();
+        p.put_bytes(&buf)
+    } else {
+        // Use header-byte-only representation
+        p.put_byte(n)
+    }
+}
+
+fn write_i8<P>(p: &mut P, n: i8) -> Result<()>
+where
+    P: Put
+{
+    if !(I6_MIN..=I6_MAX).contains(&n) {
+        // Use the 1-byte repr
+        let s = S_1BYTE;
+        let v = V_MULTIBYTE;
+        let h = v | s;
+        p.put_byte(h)?;
+
+        p.put_byte(n as u8)
+    } else {
+        // This small, signed number will be represented in the header-byte with 6-bit,
+        // one's-complement encoding
+        let nu: u8 = n.unsigned_abs();
+        let v = if n >= 0 {
+            nu
         } else {
-            // This can be represented in the header byte
-            self.put_byte(n)
-        }
+            // invert and set the high bit
+            (!nu & 0b01_1111) | 0b0010_0000
+        };
+
+        let s = S_HEADER;
+        let h = v | s;
+        p.put_byte(h)
     }
 }

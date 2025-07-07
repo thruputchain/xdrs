@@ -17,10 +17,12 @@ fn struct_foo() {
         bytes: [0xAA, 0xBB, 0xCC],
         blerg: 7,
     };
-    let expected_hex = "aabbcc07";
-    let expected = &hex::decode(expected_hex).unwrap();
 
-    check_codec(&val, expected);
+    let expected = &hex!("aabbcc07");
+    CXS::check_codec(&val, expected);
+
+    let expected = &hex!("aabbcc0000000007");
+    TXS::check_codec(&val, expected);
 }
 
 #[test]
@@ -36,10 +38,12 @@ fn struct_boo() {
         blerg: -5,
         bytes: &bytes,
     };
-    let expected_hex = "3a070707070707070707";
-    let expected = &hex::decode(expected_hex).unwrap();
 
-    check_codec(&val, expected);
+    let expected = &hex!("3a070707070707070707");
+    CXS::check_codec(&val, expected);
+
+    let expected = &hex!("fffffffb070707070707070707000000");
+    TXS::check_codec(&val, expected);
 }
 
 #[test]
@@ -49,9 +53,12 @@ fn newtype() {
 
     let bytes = [0, 1, 2, 3, 4, 5];
     let val = New(&bytes);
-    let expected = &hex!("000102030405");
 
-    check_codec(&val, expected);
+    let expected = &hex!("000102030405");
+    CXS::check_codec(&val, expected);
+
+    let expected = &hex!("0001020304050000");
+    TXS::check_codec(&val, expected);
 }
 
 #[test]
@@ -78,7 +85,10 @@ fn as_type() {
 
     let n: u32 = 7;
     let val = New(Blob::from(n));
-    let expected = &hex!("07");
 
-    check_codec(&val, expected);
+    let expected = &hex!("07");
+    CXS::check_codec(&val, expected);
+
+    let expected = &hex!("00000007");
+    TXS::check_codec(&val, expected);
 }

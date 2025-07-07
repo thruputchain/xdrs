@@ -159,14 +159,12 @@ impl<'r> Reader<'r> for BufReader<'r> {
         [read_i64, i64],
         [read_i32, i32],
         [read_i16, i16],
-        [read_i8, i8],
     }
 
     read_unsigned! {
         [read_u64, u64],
         [read_u32, u32],
         [read_u16, u16],
-        [read_u8, u8],
     }
 
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {

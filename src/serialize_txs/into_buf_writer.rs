@@ -36,15 +36,7 @@ impl<'a> IntoBufWriter<'a> {
     }
 }
 
-// Implement the basic byte operations in order
-// to get a Writer implementation for free
 impl<'a> Put for IntoBufWriter<'a> {
-    fn put_byte(&mut self, b: u8) -> Result<()> {
-        let p = self.reserve(1)?;
-        p[0].write(b);
-        Ok(())
-    }
-
     fn put_bytes(&mut self, bytes: &[u8]) -> Result<()> {
         let len = bytes.len();
         let buf = self.reserve(len)?;

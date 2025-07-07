@@ -11,12 +11,10 @@ pub trait Reader<'r>: Sized {
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;
     fn read_i16(&mut self) -> Result<i16>;
-    fn read_i8(&mut self) -> Result<i8>;
 
     fn read_u64(&mut self) -> Result<u64>;
     fn read_u32(&mut self) -> Result<u32>;
     fn read_u16(&mut self) -> Result<u16>;
-    fn read_u8(&mut self) -> Result<u8>;
 
     /// Read a byte-array of known length, borrowing the contents from the reader
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]>;
@@ -109,4 +107,7 @@ pub enum Error {
 
     #[error("length exceeds array maximum")]
     MaxLengthExceeded,
+
+    #[error("bad UTF8")]
+    BadUTF8,
 }

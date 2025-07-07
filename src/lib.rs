@@ -19,7 +19,8 @@ pub mod serialize;
 pub mod serialize_cxs;
 
 // TXS serialization
-// pub mod serialize_txs;
+#[cfg(feature = "txs")]
+pub mod serialize_txs;
 
 pub(crate) mod valid_u32;
 

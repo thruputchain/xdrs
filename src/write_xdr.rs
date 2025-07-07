@@ -33,7 +33,6 @@ write_xdr_int_impls! {
     write_i64 for i64,
     write_i32 for i32,
     write_i16 for i16,
-    write_i8 for i8,
 
     write_u64 for u64,
     write_u32 for u32,
@@ -119,6 +118,13 @@ impl<T: WriteXDR> WriteXDR for [T] {
             elt.write_xdr(w)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl WriteXDR for alloc::string::String {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        w.write_opaque_variable(self.as_bytes())
     }
 }
 

@@ -35,7 +35,6 @@ construct_int_impls! {
     read_i64 for i64,
     read_i32 for i32,
     read_i16 for i16,
-    read_i8 for i8,
 
     read_u64 for u64,
     read_u32 for u32,
@@ -119,6 +118,16 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
         let arr = unsafe { MU::array_assume_init(arr) };
 
         Ok(arr)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'r> ReadXDR<'r> for alloc::string::String {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let bytes = r.read_opaque_variable(u32::MAX)?;
+        let v = alloc::vec::Vec::from(bytes);
+        let s = alloc::string::String::from_utf8(v).map_err(|_| Error::BadUTF8)?;
+        Ok(s)
     }
 }
 
