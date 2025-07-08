@@ -1,6 +1,5 @@
 # Tests to write
 
-- `Result<T, E>`
-- `reader::Error`
-- `writer::Error`
+- `reader::Error` cases
+- `writer::Error` cases
 - strict read (require shortest encoding)

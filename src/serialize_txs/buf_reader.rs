@@ -55,8 +55,11 @@ impl<'r> Reader<'r> for BufReader<'r> {
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
         let buf = self.get_input(len)?;
 
-        let padlen = 4 - (len % 4);
-        self.skip_input(padlen)?;
+        let rem = len % 4;
+        if rem > 0 {
+            let padlen = 4 - rem;
+            self.skip_input(padlen)?;
+        }
 
         Ok(buf)
     }

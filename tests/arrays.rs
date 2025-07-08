@@ -81,6 +81,15 @@ fn int_array() {
     TXS::check_codec(&v, expected);
 }
 
+#[test]
+fn unpadded_array() {
+    let v: [u8; 32] = [0xff; 32];
+
+    let expected = &hex!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    CXS::check_codec(&v, expected);
+    TXS::check_codec(&v, expected);
+}
+
 #[cfg(feature = "alloc")]
 #[test]
 fn int_vec() {

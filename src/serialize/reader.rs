@@ -102,8 +102,8 @@ pub enum Error {
     #[error("bad bool value")]
     BadBool,
 
-    #[error("unexpected discriminator value")]
-    BadDiscriminator,
+    #[error("unexpected discriminator value: {0}")]
+    BadDiscriminator(i32),
 
     #[error("length exceeds array maximum")]
     MaxLengthExceeded,

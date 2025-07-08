@@ -258,7 +258,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         // (But we could support other mixes with a little more effort)
     }
     let catch_bad_index = if default_ix.is_none() {
-        quote! { _ => Err(__xdrs::Error::BadDiscriminator) }
+        quote! { _ => Err(__xdrs::Error::BadDiscriminator(d)) }
     } else {
         quote! {}
     };

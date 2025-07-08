@@ -55,6 +55,19 @@ fn enum_foo() {
     CXS::check_decode(&val, expected);
 }
 
+#[test]
+fn result() {
+    type R = Result<bool, u32>;
+
+    let r: R = Ok(true);
+    CXS::check_codec(&r, &hex!("0001"));
+    TXS::check_codec(&r, &hex!("0000000000000001"));
+
+    let r: R = Err(3);
+    CXS::check_codec(&r, &hex!("0103"));
+    TXS::check_codec(&r, &hex!("0000000100000003"));
+}
+
 // We don't support enums with some explicit variants and
 // more than one implicit variant.
 // This test should produce a compile error.

@@ -195,7 +195,7 @@ where
                 let value = Result::Err(unsafe { v.assume_init() });
                 Ok(value)
             }
-            _ => Err(Error::BadDiscriminator),
+            _ => Err(Error::BadDiscriminator(d)),
         }
     }
 }

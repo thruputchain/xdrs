@@ -1,6 +1,5 @@
 //! Translate Rust values into XDR values
 
-use crate::discrim::XDRDiscriminant;
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 use crate::valid_u32::*;
@@ -73,17 +72,15 @@ impl WriteXDR for u128 {
     }
 }
 
-impl WriteXDR for &[u8] {
+impl WriteXDR for [u8] {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
         w.write_opaque_variable(self)
     }
 }
 
-impl<const N: usize> WriteXDR for &[u8; N] {
+impl WriteXDR for &[u8] {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        let () = ValidU32::<N>::OK;
-
-        w.write_opaque_fixed(*self)
+        w.write_opaque_variable(self)
     }
 }
 
@@ -118,6 +115,12 @@ impl<T: WriteXDR> WriteXDR for [T] {
             elt.write_xdr(w)?;
         }
         Ok(())
+    }
+}
+
+impl<T: WriteXDR> WriteXDR for &T {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        (*self).write_xdr(w)
     }
 }
 
@@ -171,24 +174,21 @@ impl<T: WriteXDR> WriteXDR for Option<T> {
     }
 }
 
-impl<T, E> XDRDiscriminant for Result<T, E> {
-    fn discriminant(&self) -> i32 {
-        unsafe { *<*const _>::from(self).cast::<i32>() }
-    }
-}
-
 impl<T, E> WriteXDR for Result<T, E>
 where
     T: WriteXDR,
     E: WriteXDR,
 {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        let d = <Self as XDRDiscriminant>::discriminant(self);
-        w.write_i32(d)?;
-
         match self {
-            Ok(x) => <T as WriteXDR>::write_xdr(x, w),
-            Err(e) => <E as WriteXDR>::write_xdr(e, w),
+            Ok(x) => {
+                w.write_i32(0)?;
+                <T as WriteXDR>::write_xdr(x, w)
+            },
+            Err(e) => {
+                w.write_i32(1)?;
+                <E as WriteXDR>::write_xdr(e, w)
+            },
         }
     }
 }

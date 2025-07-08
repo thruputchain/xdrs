@@ -37,10 +37,15 @@ where
     P: Put,
 {
     fn write_opaque_fixed(&mut self, bytes: &[u8]) -> Result<()> {
-        let padlen = 4 - (bytes.len() % 4);
-
         self.put_bytes(bytes)?;
-        self.put_bytes(&PAD[0..padlen])
+
+        let rem = bytes.len() % 4;
+        if rem > 0 {
+            let padlen = 4 - rem;
+            self.put_bytes(&PAD[0..padlen])?;
+        }
+
+        Ok(())
     }
 
     fn write_opaque_variable(&mut self, bytes: &[u8]) -> Result<()> {

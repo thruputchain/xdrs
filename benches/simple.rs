@@ -14,8 +14,9 @@ use criterion::{
 const N_CODEC_ITERATIONS: usize = 100;
 
 use xdrs::*;
-use xdrs::serialize_cxs as cxs;
 use xdrs::serialize_cxs::UninitBuf;
+use xdrs::serialize_cxs as cxs;
+use xdrs::serialize_txs as txs;
 
 fn bench_codec(c: &mut Criterion) {
     let mut group = c.benchmark_group("Codec");
