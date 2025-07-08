@@ -31,7 +31,6 @@ macro_rules! write_int {
     };
 }
 
-
 impl<P> Writer<TXS> for P
 where
     P: Put,

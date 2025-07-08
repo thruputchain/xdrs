@@ -184,11 +184,11 @@ where
             Ok(x) => {
                 w.write_i32(0)?;
                 <T as WriteXDR>::write_xdr(x, w)
-            },
+            }
             Err(e) => {
                 w.write_i32(1)?;
                 <E as WriteXDR>::write_xdr(e, w)
-            },
+            }
         }
     }
 }

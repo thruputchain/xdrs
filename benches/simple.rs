@@ -2,21 +2,15 @@
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(maybe_uninit_slice)]
 
-use criterion::{
-    criterion_group,
-    criterion_main,
-    Criterion,
-    BenchmarkId,
-    Throughput,
-};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 // use std::hint::black_box;
 
 const N_CODEC_ITERATIONS: usize = 100;
 
-use xdrs::*;
-use xdrs::serialize_cxs::UninitBuf;
 use xdrs::serialize_cxs as cxs;
+use xdrs::serialize_cxs::UninitBuf;
 use xdrs::serialize_txs as txs;
+use xdrs::*;
 
 fn bench_codec(c: &mut Criterion) {
     let mut group = c.benchmark_group("Codec");
@@ -27,13 +21,17 @@ fn bench_codec(c: &mut Criterion) {
     let size = input.len();
     group.throughput(Throughput::Bytes((N_CODEC_ITERATIONS * size) as u64));
 
-    let id = BenchmarkId::new("encode", format!("Output {}B * {}", size, N_CODEC_ITERATIONS));
-    group.bench_with_input(id, &VALUES, |b, values|
-        b.iter(|| run_encode(values)));
+    let id = BenchmarkId::new(
+        "encode",
+        format!("Output {}B * {}", size, N_CODEC_ITERATIONS),
+    );
+    group.bench_with_input(id, &VALUES, |b, values| b.iter(|| run_encode(values)));
 
-    let id = BenchmarkId::new("decode", format!("Input {}B * {}", size, N_CODEC_ITERATIONS));
-    group.bench_with_input(id, input, |b, input|
-        b.iter(|| run_decode(input)));
+    let id = BenchmarkId::new(
+        "decode",
+        format!("Input {}B * {}", size, N_CODEC_ITERATIONS),
+    );
+    group.bench_with_input(id, input, |b, input| b.iter(|| run_decode(input)));
 
     group.finish();
 }
@@ -42,7 +40,6 @@ criterion_group!(benches, bench_codec);
 criterion_main!(benches);
 
 fn run_encode(values: &[Value; N_VALUES]) {
-
     // A buffer to receive the encoded value
     const BUFLEN: usize = 2500;
     let mut buf = UninitBuf::<BUFLEN>::new();
@@ -56,18 +53,14 @@ fn run_encode(values: &[Value; N_VALUES]) {
     #[cfg(test)]
     {
         // Extract the now-initialized portion of the buffer
-        let encoded = unsafe {
-            buf.assume_init()
-        };
+        let encoded = unsafe { buf.assume_init() };
 
-        let values2: [Value; N_VALUES] =
-            serialize_cxs::decode(encoded).unwrap();
+        let values2: [Value; N_VALUES] = serialize_cxs::decode(encoded).unwrap();
         debug_assert_eq!(&values2, &VALUES);
     }
 }
 
-fn run_decode<'a>(input: &[u8])
-{
+fn run_decode<'a>(input: &[u8]) {
     let mut output: [Value; N_VALUES];
 
     output = cxs::decode(input).unwrap();
@@ -90,13 +83,15 @@ struct Value<'a> {
 
 const N_VALUES: usize = 50;
 
-const VALUES: [Value; N_VALUES] = [const { Value {
-    blerg: -5,
-    blorg: 0xdeadbeefdeadbeefdeadbeefdeadbeef,
-    bilig: 0xcafebabecafebabe,
-    bulba: &VALUE_BYTES,
-    bytes: &VALUE_BYTES,
-} }; N_VALUES];
+const VALUES: [Value; N_VALUES] = [const {
+    Value {
+        blerg: -5,
+        blorg: 0xdeadbeefdeadbeefdeadbeefdeadbeef,
+        bilig: 0xcafebabecafebabe,
+        bulba: &VALUE_BYTES,
+        bytes: &VALUE_BYTES,
+    }
+}; N_VALUES];
 
 const VALUE_BYTES: [u8; 9] = [7; 9];
 

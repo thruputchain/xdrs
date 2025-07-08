@@ -136,12 +136,11 @@ where
             write_u8(self, n as u8)
         }
     }
-
 }
 
 fn write_u8<P>(p: &mut P, n: u8) -> Result<()>
 where
-    P: Put
+    P: Put,
 {
     if n > U6_MAX {
         // Use 1-additional-byte representation
@@ -160,7 +159,7 @@ where
 
 fn write_i8<P>(p: &mut P, n: i8) -> Result<()>
 where
-    P: Put
+    P: Put,
 {
     if !(I6_MIN..=I6_MAX).contains(&n) {
         // Use the 1-byte repr

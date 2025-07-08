@@ -122,9 +122,7 @@ pub trait Check: Format {
 
         let written = Self::encode_into(value, &mut buf).unwrap();
 
-        let encoded = unsafe {
-            (&buf[..written]).assume_init_ref()
-        };
+        let encoded = unsafe { (&buf[..written]).assume_init_ref() };
 
         check_eq(encoded, expected);
     }
