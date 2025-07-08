@@ -2,7 +2,6 @@ use crate::util::*;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
-use syn::spanned::Spanned;
 
 use darling::FromField;
 
@@ -73,22 +72,17 @@ fn write_field(index: usize, field: &syn::Field) -> TokenStream {
 }
 
 fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
+    if let Some(toks) = write_enum_fast(input, item) {
+        return toks;
+    }
+
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input));
 
     quote! {
-        impl #impl_generics __xdrs::XDRDiscriminant for #ty_ident #ty_generics {
-            fn discriminant(&self) -> i32 {
-                unsafe { *<*const _>::from(self).cast::<i32>() }
-            }
-        }
-
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::Result {
-                let d = <Self as __xdrs::XDRDiscriminant>::discriminant(self);
-                __write_xdr_writer.write_i32(d)?;
-
                 match self {
                     #write_variants
                 }
@@ -98,14 +92,53 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     }
 }
 
-fn write_variant(_index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
+// Give an alternate implementation in certain cases
+fn write_enum_fast(_input: &syn::DeriveInput, _item: &syn::DataEnum) -> Option<TokenStream> {
+    // TODO: Determine when, if ever, to use "fast" enums.
+    // (see https://doc.rust-lang.org/reference/items/enumerations.html)
+    // (see https://github.com/rust-lang/rfcs/blob/master/text/2195-really-tagged-unions.md)
+
+    None
+
+    /*
+    let ty_ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input));
+
+    Some(quote! {
+        impl #impl_generics __xdrs::XDRDiscriminant for #ty_ident #ty_generics {
+            fn discriminant(&self) -> i32 {
+                // or use numeric cast if enum is unit-only, or in some other cases
+                unsafe { *<*const _>::from(self).cast::<i32>() }
+            }
+        }
+
+        impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
+            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::Result {
+                let d = <Self as __xdrs::XDRDiscriminant>::discriminant(self);
+                __write_xdr_writer.write_i32(d)
+            }
+        }
+    })
+    */
+}
+
+fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
     let var_ident = &v.ident;
     let ty_ident = &input.ident;
     let var_bindings = var_bindings(&v.fields);
     let write_bindings = token_reduce(&v.fields, write_binding);
+    let variant_idx = index as i32;
+    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #d }
+    } else {
+        quote! { #variant_idx }
+    };
 
     quote! {
         #ty_ident::#var_ident #var_bindings => {
+            __write_xdr_writer.write_i32(#discriminant)?;
+
             #write_bindings
         }
     }
@@ -237,24 +270,29 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         .iter()
         .filter(|v| v.discriminant.is_some())
         .count();
+    let n_implicit = n_variants - n_explicit;
 
     let mut default_ix = None;
-    if n_variants > 1 && n_explicit == n_variants - 1 {
-        // We'll treat the single implicit variant as a default,
-        default_ix = Some(
-            item.variants
-                .iter()
-                .enumerate()
-                .find(|(_, v)| v.discriminant.is_none())
-                .map(|(i, _)| i)
-                .unwrap(),
-        );
-    } else if !(n_explicit == 0 || n_explicit == n_variants) {
-        return syn::Error::new(
-            input.span(),
+    if n_variants > 1 && n_implicit == 1 {
+        // We'll treat the single implicit variant as a default
+        // TODO: make this unusual default-variant behavior optional
+
+        default_ix = if let Some(ix) = item
+            .variants
+            .iter()
+            .enumerate()
+            .find(|(_, v)| v.discriminant.is_none() && v.fields.is_empty())
+            .map(|(i, _)| i)
+        {
+            Some(ix)
+        } else {
+            return err_tok(input, "derive ReadXDR: default variants must have no data");
+        }
+    } else if !(n_explicit == 0 || n_implicit == 0) {
+        return err_tok(
+            input,
             "derive ReadXDR: Enums must have zero, one, or all implicit variants",
-        )
-        .into_compile_error();
+        );
         // (But we could support other mixes with a little more effort)
     }
     let catch_bad_index = if default_ix.is_none() {
@@ -293,7 +331,7 @@ fn read_variant(
     let var_match = if default_ix == Some(index_u) {
         quote! { _ }
     } else if let Some((_, d)) = variant.discriminant.as_ref() {
-        // this formulation is needed in case of an explicit discriminant like "Enum::Variant as i32"
+        // this formulation is needed in case of an explicit discriminant expression like "Enum::Variant as i32"
         quote! { d if d == (#d) }
     } else {
         quote! { #index }

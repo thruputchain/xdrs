@@ -32,27 +32,25 @@ fn enum_foo() {
         A(&'a [u8]) = FOO_A,
         B { x: i32, y: u32 } = 7,
         C = 2,
-        D(bool), // note lack of explicit discriminant
+        D, // sole implicit arm (with no data) is default
     }
 
     let bytes = b"\r\n";
     let val = Foo::A(bytes);
-    let expected = &hex!("3e020d0a");
-    CXS::check_codec(&val, expected);
+    CXS::check_codec(&val, &hex!("3e020d0a"));
 
     let val = Foo::B { x: 0, y: 1 };
-    let expected = &hex!("070001");
-    CXS::check_codec(&val, expected);
+    CXS::check_codec(&val, &hex!("070001"));
 
     let val = Foo::C;
-    let expected = &hex!("02");
-    CXS::check_codec(&val, expected);
+    CXS::check_codec(&val, &hex!("02"));
+    TXS::check_codec(&val, &hex!("00000002"));
 
-    let val = Foo::D(true);
-    let expected = &hex!("0301");
-    CXS::check_codec(&val, expected);
-    let expected = &hex!("0b01");
-    CXS::check_decode(&val, expected);
+    let val = Foo::D;
+    CXS::check_codec(&val, &hex!("03"));
+    CXS::check_decode(&val, &hex!("0a")); // should decode to default
+    TXS::check_codec(&val, &hex!("00000003"));
+    TXS::check_decode(&val, &hex!("0000000a")); // should decode to default
 }
 
 #[test]

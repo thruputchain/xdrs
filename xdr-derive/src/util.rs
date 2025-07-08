@@ -3,13 +3,21 @@ use quote::quote;
 use syn::Result;
 use syn::spanned::Spanned;
 
-// Produce an error referencing a particular code span
+// Produce an error result referencing a particular code span
 pub fn err<T, S, M>(spanned: &S, msg: M) -> Result<T>
 where
     S: Spanned,
     M: AsRef<str>,
 {
     Err(syn::Error::new(spanned.span(), msg.as_ref()))
+}
+
+pub fn err_tok<S, M>(spanned: &S, msg: M) -> TokenStream
+where
+    S: Spanned,
+    M: AsRef<str>,
+{
+    syn::Error::new(spanned.span(), msg.as_ref()).into_compile_error()
 }
 
 pub enum FieldAccess<'a> {
