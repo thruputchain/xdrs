@@ -272,36 +272,14 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         .count();
     let n_implicit = n_variants - n_explicit;
 
-    let mut default_ix = None;
-    if n_variants > 1 && n_implicit == 1 {
-        // We'll treat the single implicit variant as a default
-        // TODO: make this unusual default-variant behavior optional
-
-        default_ix = if let Some(ix) = item
-            .variants
-            .iter()
-            .enumerate()
-            .find(|(_, v)| v.discriminant.is_none() && v.fields.is_empty())
-            .map(|(i, _)| i)
-        {
-            Some(ix)
-        } else {
-            return err_tok(input, "derive ReadXDR: default variants must have no data");
-        }
-    } else if !(n_explicit == 0 || n_implicit == 0) {
+    if !(n_explicit == 0 || n_implicit == 0) {
         return err_tok(
             input,
-            "derive ReadXDR: Enums must have zero, one, or all implicit variants",
+            "derive ReadXDR: Enum discriminants must be all explicit or all implicit"
         );
         // (But we could support other mixes with a little more effort)
     }
-    let catch_bad_index = if default_ix.is_none() {
-        quote! { _ => Err(__xdrs::Error::BadDiscriminator(d)) }
-    } else {
-        quote! {}
-    };
-
-    let read_variants = token_reduce(&item.variants, |i, v| read_variant(i, v, input, default_ix));
+    let read_variants = token_reduce(&item.variants, |i, v| read_variant(i, v, input));
 
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
     let generics = modify_for_reader_impl(input.generics.clone());
@@ -314,7 +292,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
 
                 match d {
                     #read_variants
-                    #catch_bad_index
+                    _ => Err(__xdrs::Error::BadDiscriminator(d))
                 }
             }
         }
@@ -325,12 +303,9 @@ fn read_variant(
     index_u: usize,
     variant: &syn::Variant,
     input: &syn::DeriveInput,
-    default_ix: Option<usize>,
 ) -> TokenStream {
     let index = index_u as i32;
-    let var_match = if default_ix == Some(index_u) {
-        quote! { _ }
-    } else if let Some((_, d)) = variant.discriminant.as_ref() {
+    let var_match = if let Some((_, d)) = variant.discriminant.as_ref() {
         // this formulation is needed in case of an explicit discriminant expression like "Enum::Variant as i32"
         quote! { d if d == (#d) }
     } else {
