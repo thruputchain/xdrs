@@ -79,8 +79,7 @@ mod utils_alloc {
     use crate::serialize_txs::buf_writer::*;
     use alloc::vec::Vec;
 
-    #[cfg(feature = "alloc")]
-    pub fn encode<T: WriteXDR>(value: &T) -> WriteResult<Vec<u8>> {
+    pub fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
         let mut writer = BufWriter::new();
 
         value.write_xdr(&mut writer)?;
