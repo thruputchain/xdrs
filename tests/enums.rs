@@ -26,13 +26,13 @@ fn enum_bare() {
 fn enum_foo() {
     const FOO_A: i32 = -1;
 
-    #[allow(non_camel_case_types, dead_code)]
     #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[repr(i32)]
     enum Foo<'a> {
         A(&'a [u8]) = FOO_A,
         B { x: i32, y: u32 } = 7,
         C = 2,
+        D, // sole implicit arm (with no data) is default
     }
 
     let bytes = b"\r\n";
@@ -45,6 +45,12 @@ fn enum_foo() {
     let val = Foo::C;
     CXS::check_codec(&val, &hex!("02"));
     TXS::check_codec(&val, &hex!("00000002"));
+
+    let val = Foo::D;
+    CXS::check_codec(&val, &hex!("03"));
+    CXS::check_decode(&val, &hex!("0a")); // should decode to default
+    TXS::check_codec(&val, &hex!("00000003"));
+    TXS::check_decode(&val, &hex!("0000000a")); // should decode to default
 }
 
 #[test]
