@@ -32,7 +32,7 @@ fn enum_foo() {
         A(&'a [u8]) = FOO_A,
         B { x: i32, y: u32 } = 7,
         C = 2,
-        D, // sole implicit arm (with no data) is default
+        Default(i32), // sole implicit arm with one i32 field is a default
     }
 
     let bytes = b"\r\n";
@@ -46,11 +46,13 @@ fn enum_foo() {
     CXS::check_codec(&val, &hex!("02"));
     TXS::check_codec(&val, &hex!("00000002"));
 
-    let val = Foo::D;
+    let val = Foo::Default(3);
     CXS::check_codec(&val, &hex!("03"));
-    CXS::check_decode(&val, &hex!("0a")); // should decode to default
     TXS::check_codec(&val, &hex!("00000003"));
-    TXS::check_decode(&val, &hex!("0000000a")); // should decode to default
+
+    let val = Foo::Default(10);
+    CXS::check_decode(&val, &hex!("0a"));
+    TXS::check_decode(&val, &hex!("0000000a"));
 }
 
 #[test]
@@ -66,8 +68,9 @@ fn result() {
     TXS::check_codec(&r, &hex!("0000000100000003"));
 }
 
-// We don't support enums with some explicit variants and
-// more than one implicit variant.
+// We don't support enums with mixed implicit/explicit variants
+// (except that a default arm is allowed).
+//
 // This test should produce a compile error.
 #[cfg(false)]
 #[test]
