@@ -40,6 +40,7 @@ fn byte_array() {
 }
 
 #[test]
+#[cfg(feature = "alloc")]
 fn byte_vec() {
     let vec: Vec<u8> = vec![0, 1, 2];
 
@@ -90,8 +91,8 @@ fn unpadded_array() {
     TXS::check_codec(&v, expected);
 }
 
-#[cfg(feature = "alloc")]
 #[test]
+#[cfg(feature = "alloc")]
 fn int_vec() {
     let v: Vec<i32> = vec![-1, 0, 1];
 
@@ -102,8 +103,8 @@ fn int_vec() {
     TXS::check_codec(&v, expected);
 }
 
-#[cfg(feature = "alloc")]
 #[test]
+#[cfg(feature = "alloc")]
 fn string() {
     let s: String = "String!".to_owned();
 
@@ -111,8 +112,8 @@ fn string() {
     TXS::check_codec(&s, &hex!("00000007537472696e672100"));
 }
 
-#[cfg(false)]
-#[test]
+#[allow(dead_code)]
+#[cfg(feature = "alloc")]
 fn array_too_big() {
     // should produce compiler error
     let _v: [bool; 8_000_000_000] = ::xdrs::serialize_cxs::decode(b"foo").unwrap();

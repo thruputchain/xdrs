@@ -1,4 +1,5 @@
 use crate::serialize::reader::*;
+#[cfg(feature = "strict")]
 use super::limits::*;
 
 pub struct BufReader<'r> {
