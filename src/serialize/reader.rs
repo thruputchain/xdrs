@@ -110,4 +110,7 @@ pub enum Error {
 
     #[error("bad UTF8")]
     BadUTF8,
+
+    #[error("not the minimal-size encoding")]
+    NotMinimalEncoding,
 }

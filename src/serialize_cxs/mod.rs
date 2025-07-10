@@ -3,6 +3,8 @@
 mod utils;
 pub use utils::*;
 
+mod limits;
+
 pub mod buf_reader;
 pub mod into_buf_writer;
 

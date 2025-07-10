@@ -9,7 +9,7 @@ const N_CODEC_ITERATIONS: usize = 100;
 
 use xdrs::serialize_cxs as cxs;
 use xdrs::serialize_cxs::UninitBuf;
-use xdrs::serialize_txs as txs;
+// use xdrs::serialize_txs as txs;
 use xdrs::*;
 
 fn bench_codec(c: &mut Criterion) {

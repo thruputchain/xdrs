@@ -22,13 +22,13 @@ criterion = "0.6.0"
 hex = "0.4.3"
 
 [features]
-default = ["alloc", "extras", "derive", "cxs", "txs"]
-alloc = []
-extras = []
-derive = ["dep:xdr-derive"]
-cxs = []
-txs = []
-strict = []
+default = ["strict", "alloc", "extras", "derive", "cxs", "txs"]
+strict = [] # require minimal encodings when reading
+alloc = [] # enable allocating interfaces
+extras = [] # include convenient extensions to the spec
+derive = ["dep:xdr-derive"] # provide ReadXDR, WriteXDR derive-macros
+cxs = [] # include CXS codec
+txs = [] # include TXS codec
 
 [[bench]]
 name = "simple"

@@ -5,6 +5,7 @@
 
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
+use super::limits::*;
 
 const V_MULTIBYTE: u8 = 63;
 const S_8BYTE: u8 = 3 << 6;
@@ -12,9 +13,6 @@ const S_4BYTE: u8 = 2 << 6;
 const S_2BYTE: u8 = 1 << 6;
 const S_1BYTE: u8 = 0 << 6;
 const S_HEADER: u8 = 0 << 6;
-const I6_MAX: i8 = 31;
-const I6_MIN: i8 = -31;
-const U6_MAX: u8 = 62;
 
 /// Implement these basic byte operations in order
 /// to get a `Writer<CXS>` implementation for free
@@ -142,7 +140,7 @@ fn write_u8<P>(p: &mut P, n: u8) -> Result<()>
 where
     P: Put,
 {
-    if n > U6_MAX {
+    if n > UH_MAX {
         // Use 1-additional-byte representation
         let s = S_1BYTE;
         let v = V_MULTIBYTE;
@@ -161,7 +159,7 @@ fn write_i8<P>(p: &mut P, n: i8) -> Result<()>
 where
     P: Put,
 {
-    if !(I6_MIN..=I6_MAX).contains(&n) {
+    if !(IH_MIN..=IH_MAX).contains(&n) {
         // Use the 1-byte repr
         let s = S_1BYTE;
         let v = V_MULTIBYTE;
@@ -170,7 +168,7 @@ where
 
         p.put_byte(n as u8)
     } else {
-        // This small, signed number will be represented in the header-byte with 6-bit,
+        // Represent this small, signed number in the header-byte with 6-bit,
         // one's-complement encoding
         let nu: u8 = n.unsigned_abs();
         let v = if n >= 0 {

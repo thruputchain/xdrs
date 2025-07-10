@@ -1,6 +1,5 @@
 # Tests to write
 
-- `reader::Error` cases
+- `reader::Error` cases (including strict-representation check)
 - `writer::Error` cases
-- some more Enum variations to test default logic
-- strict read (require shortest encoding)
+- more Enum variations to test "default" logic

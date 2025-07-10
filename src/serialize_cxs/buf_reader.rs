@@ -1,4 +1,5 @@
 use crate::serialize::reader::*;
+use super::limits::*;
 
 pub struct BufReader<'r> {
     data: &'r [u8],
@@ -18,7 +19,7 @@ impl<'a> BufReader<'a> {
     fn get_input(&mut self, requested: u32) -> Result<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
-            // no panic because remaining < requested <= u32::MAX
+            // no panic can occur because remaining < requested <= u32::MAX
             let remaining = (self.data.len() - self.pos).try_into().unwrap();
             return Err(Error::SourceEmpty {
                 requested,
@@ -48,11 +49,9 @@ impl<'a> BufReader<'a> {
         if v == 63 {
             // The number is encoded in the following bytes
 
-            if s > 3 {
-                return Err(Error::InvalidHeaderByte { h });
-            }
+            const N_BYTES_MAP: [usize; 4] = [1, 2, 4, 8];
+            let n_bytes = N_BYTES_MAP[s as usize];
 
-            let n_bytes: usize = 2usize.pow(s as u32);
             let input = self.read_opaque_fixed(n_bytes as u32)?;
 
             let mut int_bytes = [0u8; 8];
@@ -69,9 +68,28 @@ impl<'a> BufReader<'a> {
 
             n = i64::from_le_bytes(int_bytes);
 
-            // validate that the smallest possible encoding was used
             #[cfg(feature = "strict")]
-            todo!();
+            {
+                // validate that the smallest possible encoding was used
+
+                const N_BYTE_REPR_MINMAX: [(i64, i64); 4] = [
+                    (IH_MAX as i64 + 1, IH_MIN as i64 - 1),
+                    (i8::MAX as i64 + 1, i8::MIN as i64 - 1),
+                    (i16::MAX as i64 + 1, i16::MIN as i64 - 1),
+                    (i32::MAX as i64 + 1, i32::MIN as i64 - 1),
+                ];
+                let (repr_min, repr_max) = N_BYTE_REPR_MINMAX[s as usize];
+
+                if n > 0 {
+                    if n < repr_min {
+                        return Err(Error::NotMinimalEncoding)
+                    }
+                } else {
+                    if n > repr_max {
+                        return Err(Error::NotMinimalEncoding)
+                    }
+                }
+            }
         } else {
             // The number is the 6-bit, one's-complement signed
             // integer in `v`
@@ -100,11 +118,9 @@ impl<'a> BufReader<'a> {
         if v == 63 {
             // The number is encoded in the following bytes
 
-            if s > 3 {
-                return Err(Error::InvalidHeaderByte { h });
-            }
+            const N_BYTES_MAP: [usize; 4] = [1, 2, 4, 8];
+            let n_bytes = N_BYTES_MAP[s as usize];
 
-            let n_bytes: usize = 2usize.pow(s as u32);
             let input = self.read_opaque_fixed(n_bytes as u32)?;
 
             let mut int_bytes = [0u8; 8];
@@ -113,9 +129,17 @@ impl<'a> BufReader<'a> {
             int_dest.copy_from_slice(input);
             let uint = u64::from_le_bytes(int_bytes);
 
-            // validate that the smallest possible encoding was used
             #[cfg(feature = "strict")]
-            todo!();
+            {
+                // validate that the smallest possible encoding was used
+
+                const N_BYTE_REPR_MIN: [u64; 4] = [63, u8::MAX as u64 + 1, u16::MAX as u64 + 1, u32::MAX as u64 + 1];
+                let repr_min = N_BYTE_REPR_MIN[s as usize];
+
+                if uint < repr_min {
+                    return Err(Error::NotMinimalEncoding)
+                }
+            }
 
             Ok(uint)
         } else {
