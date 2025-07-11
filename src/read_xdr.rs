@@ -89,13 +89,13 @@ where
     }
 }
 
-impl<'a, 'r: 'a> ReadXDR<'r> for &'a [u8] {
+impl<'r> ReadXDR<'r> for &'r [u8] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         r.read_opaque_variable(u32::MAX)
     }
 }
 
-impl<'a, 'r: 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
+impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let () = ValidU32::<N>::OK;
         let len = N as u32;

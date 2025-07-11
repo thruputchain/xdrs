@@ -3,10 +3,12 @@
 
 mod common;
 use common::*;
+use core::ops::Deref;
+use xdrs::{WriteXDR, ReadXDR, Reader, ReadResult, read_xdr};
 
 #[test]
 fn struct_foo() {
-    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct Foo {
         bytes: [u8; 3],
         blerg: i32,
@@ -27,7 +29,7 @@ fn struct_foo() {
 
 #[test]
 fn struct_boo() {
-    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct Boo<'a> {
         blerg: i32,
         bytes: &'a [u8; 9],
@@ -48,7 +50,7 @@ fn struct_boo() {
 
 #[test]
 fn newtype() {
-    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct New<'a>(&'a [u8; 6]);
 
     let bytes = [0, 1, 2, 3, 4, 5];
@@ -80,7 +82,7 @@ fn as_type() {
         }
     }
 
-    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct New(#[xdrs(as_type = "u32")] Blob);
 
     let n: u32 = 7;
@@ -91,4 +93,46 @@ fn as_type() {
 
     let expected = &hex!("00000007");
     TXS::check_codec(&val, expected);
+}
+
+#[test]
+fn ref_newtype() {
+
+    #[derive(Debug, PartialEq, Eq, WriteXDR)]
+    #[repr(transparent)]
+    struct Buf([u8; 3]);
+
+    impl Deref for Buf {
+        type Target = [u8; 3];
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    impl<'a> From<&'a [u8; 3]> for &'a Buf {
+        fn from(arr: &[u8; 3]) -> Self {
+            // SAFETY: #[repr(transparent)] ensures these have the same representation
+            unsafe { core::mem::transmute(arr) }
+        }
+    }
+
+    impl<'r> ReadXDR<'r> for &'r Buf {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+            let arr: &[u8; 3] = read_xdr(r)?;
+            let val = Self::from(arr);
+            Ok(val)
+        }
+    }
+
+    let arr = [0, 1, 2];
+    let buf = Buf(arr);
+
+    CXS::check_codec(&&buf, &hex!("000102"));
+    TXS::check_codec(&&buf, &hex!("00010200"));
+
+    // make sure we aren't being foxed out by auto(de)ref magic
+    let expected = hex!("000102");
+    let buf2: &Buf = xdrs::serialize_cxs::decode(&expected).unwrap();
+    assert_eq!(&buf2.0, &arr);
 }
