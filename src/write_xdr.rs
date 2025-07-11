@@ -137,31 +137,28 @@ impl WriteXDR for () {
     }
 }
 
-impl<T1, T2> WriteXDR for (T1, T2)
-where
-    T1: WriteXDR,
-    T2: WriteXDR,
-{
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        write_xdr(&self.0, w)?;
-        write_xdr(&self.1, w)?;
-        Ok(())
-    }
+macro_rules! write_tuple {
+    { $( ($v:ident, $t:ident) ),+ } => {
+
+        impl<$($t),+> WriteXDR for ($($t),+)
+        where
+            $( $t: WriteXDR, )+
+        {
+            fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+                let ( $($v),+ ) = self;
+                $( write_xdr($v, w)?; )+
+                Ok(())
+            }
+        }
+
+    };
 }
 
-impl<T1, T2, T3> WriteXDR for (T1, T2, T3)
-where
-    T1: WriteXDR,
-    T2: WriteXDR,
-    T3: WriteXDR,
-{
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        write_xdr(&self.0, w)?;
-        write_xdr(&self.1, w)?;
-        write_xdr(&self.2, w)?;
-        Ok(())
-    }
-}
+write_tuple! { (t0, T0), (t1, T1) }
+write_tuple! { (t0, T0), (t1, T1), (t2, T2) }
+write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3) }
+write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4) }
+write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5) }
 
 impl<T: WriteXDR> WriteXDR for Option<T> {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
