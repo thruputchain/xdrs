@@ -1,9 +1,10 @@
 # CXS (Compact XDR Serialization)
 
-This modification of the traditional XDR serialization (henceforth *TXS*) makes
-these changes:
-- No 32-bit block structure: structures and arrays are not padded
-- Variable-length encoding for integer types and sizes of variable-length arrays
+This modification of the traditional [XDR][RFC-4506] serialization (henceforth
+*TXS*) makes these changes:
+- No 32-bit block structure: opaque arrays are not padded
+- Variable-length encoding for integer types (including enumerations), sizes of
+  variable-length arrays, and union discriminants
 
 The changes from TXS in detail:
 
@@ -27,15 +28,14 @@ The changes from TXS in detail:
   integer bytes, using two's complement for the signed XDR types.  Encodings
   other than the shortest possible are invalid.
 
-- XDR _Structure_ :
-   same as TXS, but with no padding
+- XDR _Fixed-Length Opaque Data_ : same as TXS, but with no padding
 
-- XDR _Fixed-Length Array_ / _Fixed-Length Opaque Data_ :
-   same as TXS, but with no padding
-
-- XDR _Variable-Length Array_ / _Variable-Length Opaque Data_ / _String_ :
+- XDR _Variable-Length Opaque Data_ / _String_ :
    same as TXS, but with no padding and the length is indicated using the new
    encoding for XDR _Unsigned Integer_.
+
+- XDR _Variable-Length Array_ : same as TXS, but the length is indicated using
+  the new encoding for XDR _Unsigned Integer_.
 
 - XDR _Discriminated Union_:
    same as TXS, but the discriminant uses the new integer encoding
@@ -50,3 +50,5 @@ representations:
 - XDR _Optional-Data_: equivalent to a _Discriminated Union_ with one void arm
   and one data arm, switched on a _Bool_. Also equivalent to a _Variable-Length
   Array_ with maximum length one.
+
+[RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
