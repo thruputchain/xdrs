@@ -22,7 +22,7 @@ criterion = "0.6.0"
 hex = "0.4.3"
 
 [features]
-default = ["strict", "alloc", "extras", "derive", "cxs", "txs"]
+default = ["strict", "derive", "cxs", "txs"]
 strict = [] # require minimal encodings when reading
 alloc = [] # enable allocating interfaces
 extras = [] # include convenient extensions to the spec
