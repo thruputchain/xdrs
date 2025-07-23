@@ -174,6 +174,19 @@ where
     }
 }
 
+#[allow(unused_imports)]
+use xdr_common::Box;
+
+#[cfg(feature = "alloc")]
+impl<'r, T> ReadXDR<'r> for Box<T>
+where
+    T: ReadXDR<'r>,
+{
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        Ok(Box::new(read_xdr(r)?))
+    }
+}
+
 impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
 where
     T: ReadXDR<'r>,

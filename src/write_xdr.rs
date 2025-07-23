@@ -171,6 +171,16 @@ impl<T: WriteXDR> WriteXDR for Option<T> {
     }
 }
 
+#[allow(unused_imports)]
+use xdr_common::Box;
+
+#[cfg(feature = "alloc")]
+impl<T: WriteXDR> WriteXDR for Box<T> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        self.as_ref().write_xdr(w)
+    }
+}
+
 impl<T, E> WriteXDR for Result<T, E>
 where
     T: WriteXDR,
