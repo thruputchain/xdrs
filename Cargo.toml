@@ -1,0 +1,14 @@
+[package]
+name = "xdr_common"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+doctest = false
+
+[features]
+alloc = []
+std = []
+
+[dependencies]
