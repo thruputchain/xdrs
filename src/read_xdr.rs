@@ -239,3 +239,52 @@ const _: () = {
         }
     }
 };
+
+// TODO(geoff): make a noalloc version of this
+#[cfg(feature = "alloc")]
+const _: () = {
+    use ::xdr_common::*;
+
+    use crate::{ReadXDR, read_xdr};
+    use crate::serialize::reader::{Reader, Result, Error};
+
+    use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
+
+    impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+            let vec: Vec<u8> = read_xdr(r)?;
+            if vec.len() > MAX as usize {
+                return Err(Error::MaxLengthExceeded);
+            }
+            Ok(Self(vec))
+        }
+    }
+
+    impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
+    where
+        T: ReadXDR<'r>
+    {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+            let vec: Vec<T> = read_xdr(r)?;
+            if vec.len() > MAX as usize {
+                return Err(Error::MaxLengthExceeded);
+            }
+            Ok(Self(vec))
+        }
+    }
+
+    /*
+    impl<'r, T> ReadXDR<'r> for VecM<T>
+    where
+        T: ReadXDR<'r>
+    {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+            let vec: Vec<T> = read_xdr(r)?;
+            Ok(vec.into())
+        }
+    }
+    */
+};
+
+
+

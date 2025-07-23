@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.XDRS_TO_XDR_COMMON_ACCESS_KEY }}
+      - uses: actions/checkout@v4
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: Test (No Features)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace
+      - name: Test (Extras)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F extras
+      - name: Test (Extras, Alloc)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F extras,alloc
+

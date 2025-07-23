@@ -216,3 +216,33 @@ const _: () = {
         }
     }
 };
+
+const _: () = {
+    use ::xdr_common::*;
+    use crate::WriteXDR;
+    use crate::serialize::writer::{Writer, Result};
+
+    impl<const MAX: u32> WriteXDR for BytesM<MAX> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            self.0.write_xdr(w)
+        }
+    }
+
+    impl<const MAX: u32, T> WriteXDR for VecM<T, MAX>
+    where
+        T: WriteXDR
+    {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            let slice: &[T] = self.as_ref();
+            slice.write_xdr(w)
+        }
+    }
+
+    /*
+    impl WriteXDR for VecM<u8> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            self.0.write_xdr(w)
+        }
+    }
+    */
+};
