@@ -16,6 +16,7 @@ bench = false
 [dependencies]
 thiserror = { version = "2.0.12", default-features = false }
 xdr-derive = { workspace = true, optional = true }
+xdr_common = { git = "ssh://git@github.com/groundhogchain/xdr_common.git" }
 
 [dev-dependencies]
 criterion = "0.6.0"
@@ -24,7 +25,7 @@ hex = "0.4.3"
 [features]
 default = ["strict", "derive", "cxs", "txs"]
 strict = [] # require minimal encodings when reading
-alloc = [] # enable allocating interfaces
+alloc = [xdr_common/alloc] # enable allocating interfaces
 extras = [] # include convenient extensions to the spec
 derive = ["dep:xdr-derive"] # provide ReadXDR, WriteXDR derive-macros
 cxs = [] # include CXS codec
