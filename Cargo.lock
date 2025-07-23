@@ -671,6 +671,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdr_common"
+version = "0.1.0"
+source = "git+ssh://git@github.com/groundhogchain/xdr_common.git#38ed4304ff8880844e52858fc22da5b7b7834aa9"
+
+[[package]]
 name = "xdrs"
 version = "0.1.0"
 dependencies = [
@@ -678,4 +683,5 @@ dependencies = [
  "hex",
  "thiserror",
  "xdr-derive",
+ "xdr_common",
 ]

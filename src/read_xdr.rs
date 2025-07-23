@@ -245,8 +245,8 @@ const _: () = {
 const _: () = {
     use ::xdr_common::*;
 
-    use ::xdrs::{ReadXDR, read_xdr};
-    use ::xdrs::serialize::reader::{Reader, Result, Error};
+    use crate::{ReadXDR, read_xdr};
+    use crate::serialize::reader::{Reader, Result, Error};
 
     use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
 

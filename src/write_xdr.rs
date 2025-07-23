@@ -219,8 +219,8 @@ const _: () = {
 
 const _: () = {
     use ::xdr_common::*;
-    use ::xdrs::WriteXDR;
-    use ::xdrs::serialize::writer::{Writer, Result};
+    use crate::WriteXDR;
+    use crate::serialize::writer::{Writer, Result};
 
     impl<const MAX: u32> WriteXDR for BytesM<MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
