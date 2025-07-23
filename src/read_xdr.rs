@@ -200,6 +200,12 @@ where
     }
 }
 
+impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
+    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
+        Ok(core::marker::PhantomData)
+    }
+}
+
 #[cfg(feature = "alloc")]
 const _: () = {
     use alloc::vec::Vec;

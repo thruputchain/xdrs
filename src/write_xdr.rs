@@ -190,6 +190,12 @@ where
     }
 }
 
+impl<T> WriteXDR for core::marker::PhantomData<T> {
+    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(feature = "alloc")]
 const _: () = {
     use alloc::vec::Vec;

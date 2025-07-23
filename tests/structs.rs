@@ -137,3 +137,23 @@ fn ref_newtype() {
     let buf2: &Buf = xdrs::serialize_cxs::decode(&expected).unwrap();
     assert_eq!(&buf2.0, &arr);
 }
+
+#[test]
+fn phantom_data() {
+    #[derive(Debug, PartialEq, Eq)]
+    struct Erik;
+
+    #[derive(Debug, PartialEq, Eq, ReadXDR, WriteXDR)]
+    struct Opera<T> {
+        phantom: core::marker::PhantomData<T>,
+        christine: u32,
+    }
+
+    let opera: Opera<Erik> = Opera {
+        phantom: core::marker::PhantomData,
+        christine: 5,
+    };
+
+    CXS::check_codec(&opera, &hex!("05"));
+    TXS::check_codec(&opera, &hex!("00000005"));
+}
