@@ -25,7 +25,7 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: Build (features: ${{ matrix.features }})
+      - name: Build (features=${{ matrix.features }})
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo build --workspace --all-targets -F ${{ matrix.features }}
-      - name: Test (features: ${{ matrix.features }})
+      - name: Test (features=${{ matrix.features }})
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F ${{ matrix.features }}
