@@ -245,8 +245,8 @@ const _: () = {
 const _: () = {
     use ::xdr_common::*;
 
+    use crate::serialize::reader::{Error, Reader, Result};
     use crate::{ReadXDR, read_xdr};
-    use crate::serialize::reader::{Reader, Result, Error};
 
     use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
 
@@ -262,7 +262,7 @@ const _: () = {
 
     impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
-        T: ReadXDR<'r>
+        T: ReadXDR<'r>,
     {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let vec: Vec<T> = read_xdr(r)?;
@@ -286,5 +286,24 @@ const _: () = {
     */
 };
 
+#[cfg(not(feature = "alloc"))]
+const _: () = {
+    use crate::ReadXDR;
+    use crate::serialize::reader::{Reader, Result};
+    use ::xdr_common::*;
 
+    impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
+        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
+            unimplemented!()
+        }
+    }
 
+    impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
+    where
+        T: ReadXDR<'r>,
+    {
+        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
+            unimplemented!()
+        }
+    }
+};
