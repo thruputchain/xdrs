@@ -9,12 +9,6 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        features:
-          - ""
-          - "extras"
-          - "extras,alloc"
     steps:
       - uses: webfactory/ssh-agent@v0.9.1
         with:
@@ -25,7 +19,10 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: Build (features=${{ matrix.features }})
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo build --workspace --all-targets -F ${{ matrix.features }}
-      - name: Test (features=${{ matrix.features }})
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F ${{ matrix.features }}
+      - name: Test (No Features)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace
+      - name: Test (Extras)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F extras
+      - name: Test (Extras, Alloc)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F extras,alloc
+
