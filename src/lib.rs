@@ -37,7 +37,10 @@ pub mod prelude {
     pub use crate::serialize::writer::*;
 
     #[cfg(feature = "derive")]
-    pub use ::xdr_derive::*;
+    pub use xdr_derive::*;
+
+    #[cfg(feature = "xdr_common")]
+    pub use xdr_common::*;
 }
 
 pub use prelude::*;
