@@ -171,15 +171,35 @@ impl<T: WriteXDR> WriteXDR for Option<T> {
     }
 }
 
-#[allow(unused_imports)]
-use xdr_common::Box;
+#[cfg(feature = "xdr_common")]
+const _: () = {
+    use super::*;
+    use crate::serialize::writer::{Result, Writer};
+    use xdr_common::*;
 
-#[cfg(feature = "alloc")]
-impl<T: WriteXDR> WriteXDR for Box<T> {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        self.as_ref().write_xdr(w)
+    impl<const MAX: u32> WriteXDR for BytesM<MAX> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            self.0.write_xdr(w)
+        }
     }
-}
+
+    impl<const MAX: u32, T> WriteXDR for VecM<T, MAX>
+    where
+        T: WriteXDR,
+    {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            let slice: &[T] = self.as_ref();
+            slice.write_xdr(w)
+        }
+    }
+
+    #[cfg(feature = "alloc")]
+    impl<T: WriteXDR> WriteXDR for xdr_common::Box<T> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            self.as_ref().write_xdr(w)
+        }
+    }
+};
 
 impl<T, E> WriteXDR for Result<T, E>
 where
@@ -227,24 +247,4 @@ const _: () = {
     }
 };
 
-const _: () = {
-    use crate::WriteXDR;
-    use crate::serialize::writer::{Result, Writer};
-    use xdr_common::*;
 
-    impl<const MAX: u32> WriteXDR for BytesM<MAX> {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            self.0.write_xdr(w)
-        }
-    }
-
-    impl<const MAX: u32, T> WriteXDR for VecM<T, MAX>
-    where
-        T: WriteXDR,
-    {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            let slice: &[T] = self.as_ref();
-            slice.write_xdr(w)
-        }
-    }
-};

@@ -180,16 +180,13 @@ where
     }
 }
 
-#[allow(unused_imports)]
-use xdr_common::Box;
-
-#[cfg(feature = "alloc")]
-impl<'r, T> ReadXDR<'r> for Box<T>
+#[cfg(all(feature = "xdr_common", feature = "alloc"))]
+impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        Ok(Box::new(read_xdr(r)?))
+        Ok(Self::new(read_xdr(r)?))
     }
 }
 
@@ -250,10 +247,9 @@ const _: () = {
     }
 };
 
-// TODO(geoff): make a noalloc version of this
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "xdr_common", feature = "alloc"))]
 const _: () = {
-    use ::xdr_common::*;
+    use xdr_common::*;
 
     use crate::serialize::reader::{Error, Reader, Result};
     use crate::{ReadXDR, read_xdr};
@@ -284,11 +280,11 @@ const _: () = {
     }
 };
 
-#[cfg(not(feature = "alloc"))]
+#[cfg(all(feature = "xdr_common", not(feature = "alloc")))]
 const _: () = {
     use crate::ReadXDR;
     use crate::serialize::reader::{Reader, Result};
-    use ::xdr_common::*;
+    use xdr_common::*;
 
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {

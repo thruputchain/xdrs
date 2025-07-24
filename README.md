@@ -24,4 +24,4 @@ enabled with feature `alloc`.
 
 - Address some memory-leaks that can happen around read failures
 
-- Provide an out-parameter read-interface
+- Provide an out-parameter (i.e., in-place) decoding interface

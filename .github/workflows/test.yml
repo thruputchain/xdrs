@@ -25,4 +25,7 @@ jobs:
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F extras
       - name: Test (Extras, Alloc)
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F extras,alloc
-
+      - name: Test (xdr_common)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F xdr_common
+      - name: Test (xdr_common, Alloc)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F xdr_common,alloc
