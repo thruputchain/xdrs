@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use xdrs::*;
 use core::fmt::Debug;
 use core::mem::MaybeUninit as MU;
 use xdrs::mu;
+use xdrs::*;
 
 pub trait Format {
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T>;

@@ -3,8 +3,8 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use core::mem::MaybeUninit as MU;
 use crate::mu;
+use core::mem::MaybeUninit as MU;
 use thiserror::Error;
 
 /// Something that can produce XDR values, some borrowed with lifetime 'r

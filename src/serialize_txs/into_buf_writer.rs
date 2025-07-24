@@ -1,7 +1,7 @@
 use super::put::*;
+use crate::mu;
 use crate::serialize::writer::*;
 use core::mem::MaybeUninit;
-use crate::mu;
 
 type Mu8 = MaybeUninit<u8>;
 
