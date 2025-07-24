@@ -149,9 +149,20 @@ fn write_variant(
     };
     let variant_idx = index as i32;
     let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
+        if let Some(default_ix_inner) = default_ix {
+            assert_ne!(default_ix_inner, index);
+        }
         quote! { #d }
     } else {
-        quote! { #variant_idx }
+        if let Some(default_ix_inner) = default_ix {
+            if index == default_ix_inner {
+                quote! { *_self_0 }
+            } else {
+                quote! { #variant_idx }
+            }
+        } else {
+            quote! { #variant_idx }
+        }
     };
 
     quote! {

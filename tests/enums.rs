@@ -65,6 +65,27 @@ fn result() {
     TXS::check_codec(&r, &hex!("0000000100000003"));
 }
 
+#[test]
+fn enum_default_variant_encode() {
+
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum FooDefault {
+        A{a : u32} = 1,
+        B { b: i32 } = 2,
+        C = 3,
+        Default{d : i32},
+    }
+
+    let discriminant : i32 = 0x0ABBCCDD;
+    CXS::check_encode(&discriminant, &hex!("bfddccbb0a"));
+    TXS::check_encode(&discriminant, &hex!("0ABBCCDD"));
+
+    let val = FooDefault::Default{d : discriminant};
+    CXS::check_codec(&val, &hex!("bfddccbb0a"));
+    TXS::check_codec(&val, &hex!("0ABBCCDD"));
+}
+
 // We don't support enums with mixed implicit/explicit variants
 // (except that a default arm is allowed).
 //
