@@ -1,6 +1,5 @@
-#![feature(maybe_uninit_array_assume_init)]
-#![feature(maybe_uninit_uninit_array_transpose)]
-#![feature(maybe_uninit_slice)]
+mod uninit_buf;
+use uninit_buf::*;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 // use std::hint::black_box;
@@ -8,8 +7,6 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 const N_CODEC_ITERATIONS: usize = 100;
 
 use xdrs::serialize_cxs as cxs;
-use xdrs::serialize_cxs::UninitBuf;
-// use xdrs::serialize_txs as txs;
 use xdrs::*;
 
 fn bench_codec(c: &mut Criterion) {

@@ -34,5 +34,6 @@ txs = [] # include TXS codec
 xdr_common = ["dep:xdr_common"]
 
 [[bench]]
-name = "simple"
+name = "bench1"
 harness = false
+required-features = ["alloc", "extras"]

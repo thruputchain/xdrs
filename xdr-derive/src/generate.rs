@@ -249,6 +249,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
                 let mut value: __xdrs::MU<Self> = __xdrs::MU::uninit();
                 let struct_ptr = value.as_mut_ptr();
 
+                // TODO: cleanup on error to avoid memory leaks
                 #read_fields
 
                 // SAFETY: we have initialized all fields
