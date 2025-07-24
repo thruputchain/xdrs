@@ -3,9 +3,9 @@
 
 #![allow(clippy::upper_case_acronyms)]
 
+use super::limits::*;
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
-use super::limits::*;
 
 const V_MULTIBYTE: u8 = 63;
 const S_8BYTE: u8 = 3 << 6;

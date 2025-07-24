@@ -78,12 +78,16 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
 
     let default_ix = match find_default_variant(input, item) {
         Ok(d) => d,
-        Err(e) => { return e; }
+        Err(e) => {
+            return e;
+        }
     };
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input, default_ix));
+    let write_variants = token_reduce(&item.variants, |i, v| {
+        write_variant(i, v, input, default_ix)
+    });
 
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
@@ -128,7 +132,12 @@ fn write_enum_fast(_input: &syn::DeriveInput, _item: &syn::DataEnum) -> Option<T
     */
 }
 
-fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput, default_ix: Option<usize>) -> TokenStream {
+fn write_variant(
+    index: usize,
+    v: &syn::Variant,
+    input: &syn::DeriveInput,
+    default_ix: Option<usize>,
+) -> TokenStream {
     let var_ident = &v.ident;
     let ty_ident = &input.ident;
     let var_bindings = var_bindings(&v.fields);
@@ -284,13 +293,17 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
 
     let default_ix = match find_default_variant(input, item) {
         Ok(d) => d,
-        Err(e) => { return e; }
+        Err(e) => {
+            return e;
+        }
     };
 
     if default_ix.is_none() && !(n_explicit == 0 || n_implicit == 0) {
         return err_tok(
             input,
-            "derive ReadXDR: Enums discriminants must be all explicit or all implicit (except there my be one variant called \"Default\" with a single i32 field)"
+            "derive ReadXDR: Enums discriminants must be all explicit or all \
+             implicit (except there may be one variant called \"Default\" \
+             with a single i32 field)",
         );
         // (But we could support other mixes with a little more effort)
     }
@@ -340,7 +353,9 @@ fn read_variant(
     let ty_ident = &input.ident;
     let var_ident = &variant.ident;
     let declare_fields = token_reduce(&variant.fields, |i, field| {
-        if is_default { return quote! {} }
+        if is_default {
+            return quote! {};
+        }
 
         let bind = tmp_binding(i);
         let ty = &field.ty;
@@ -350,7 +365,9 @@ fn read_variant(
         }
     });
     let read_fields = token_reduce(&variant.fields, |i, _| {
-        if is_default { return quote! {} }
+        if is_default {
+            return quote! {};
+        }
 
         let bind = tmp_binding(i);
         quote! { #bind.write(__xdrs::read_xdr(r)?); }
@@ -394,26 +411,33 @@ fn init_fields(fields: &syn::Fields, is_default: bool) -> TokenStream {
     }
 }
 
-fn find_default_variant(input: &syn::DeriveInput, item: &syn::DataEnum) -> core::result::Result<Option<usize>, TokenStream> {
+fn find_default_variant(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+) -> core::result::Result<Option<usize>, TokenStream> {
     let variants = &item.variants;
     let n_variants = variants.iter().count();
-    let n_explicit = variants
-        .iter()
-        .filter(|v| v.discriminant.is_some())
-        .count();
+    let n_explicit = variants.iter().filter(|v| v.discriminant.is_some()).count();
     let n_implicit = n_variants - n_explicit;
 
     if n_variants > 1 && n_implicit == 1 {
         if let Some(ix) = variants
             .iter()
             .enumerate()
-            .find(|(_, v)| v.discriminant.is_none() && v.fields.len() == 1 &&
-                v.ident.to_string().as_str() == "Default")
+            .find(|(_, v)| {
+                v.discriminant.is_none()
+                    && v.fields.len() == 1
+                    && v.ident.to_string().as_str() == "Default"
+            })
             .map(|(i, _)| i)
         {
             Ok(Some(ix))
         } else {
-            Err(err_tok(input, "derive ReadXDR: default variants must have one i32 field and be called \"Default\""))
+            Err(err_tok(
+                input,
+                "derive ReadXDR: default variants must have one i32 field and \
+                 be called \"Default\"",
+            ))
         }
     } else {
         Ok(None)

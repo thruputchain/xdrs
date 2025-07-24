@@ -26,7 +26,7 @@ where
 
 pub fn encode_into<T>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>
 where
-    T: WriteXDR + ?Sized
+    T: WriteXDR + ?Sized,
 {
     let mut writer = IntoBufWriter::new(buf);
 
@@ -84,7 +84,7 @@ mod utils_alloc {
 
     pub fn encode<T>(value: &T) -> WriteResult<Vec<u8>>
     where
-        T: WriteXDR + ?Sized
+        T: WriteXDR + ?Sized,
     {
         let mut writer = BufWriter::new();
 

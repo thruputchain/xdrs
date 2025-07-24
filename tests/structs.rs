@@ -4,7 +4,7 @@
 mod common;
 use common::*;
 use core::ops::Deref;
-use xdrs::{WriteXDR, ReadXDR, Reader, ReadResult, read_xdr};
+use xdrs::{ReadResult, ReadXDR, Reader, WriteXDR, read_xdr};
 
 #[test]
 fn struct_foo() {
@@ -97,7 +97,6 @@ fn as_type() {
 
 #[test]
 fn ref_newtype() {
-
     #[derive(Debug, PartialEq, Eq, WriteXDR)]
     #[repr(transparent)]
     struct Buf([u8; 3]);

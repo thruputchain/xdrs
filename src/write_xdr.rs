@@ -190,11 +190,11 @@ where
         match self {
             Ok(x) => {
                 w.write_i32(0)?;
-                <T as WriteXDR>::write_xdr(x, w)
+                x.write_xdr(w)
             }
             Err(e) => {
                 w.write_i32(1)?;
-                <E as WriteXDR>::write_xdr(e, w)
+                e.write_xdr(w)
             }
         }
     }
@@ -228,9 +228,9 @@ const _: () = {
 };
 
 const _: () = {
-    use ::xdr_common::*;
     use crate::WriteXDR;
-    use crate::serialize::writer::{Writer, Result};
+    use crate::serialize::writer::{Result, Writer};
+    use xdr_common::*;
 
     impl<const MAX: u32> WriteXDR for BytesM<MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
@@ -240,19 +240,11 @@ const _: () = {
 
     impl<const MAX: u32, T> WriteXDR for VecM<T, MAX>
     where
-        T: WriteXDR
+        T: WriteXDR,
     {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             let slice: &[T] = self.as_ref();
             slice.write_xdr(w)
         }
     }
-
-    /*
-    impl WriteXDR for VecM<u8> {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            self.0.write_xdr(w)
-        }
-    }
-    */
 };

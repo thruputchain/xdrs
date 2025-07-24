@@ -7,7 +7,7 @@ where
     R: Reader<'r>,
     T: ReadXDR<'r>,
 {
-    ReadXDR::read_xdr(r)
+    <T as ReadXDR>::read_xdr(r)
 }
 
 /// Types that can be constructed by reading XDR data,
@@ -16,7 +16,10 @@ pub trait ReadXDR<'r>: Sized {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self>;
 }
 
+/// Types that can be constructed by reading XDR data
+/// of any lifetime
 pub trait ReadXDROwned: for<'r> ReadXDR<'r> {}
+
 impl<T> ReadXDROwned for T where T: for<'r> ReadXDR<'r> {}
 
 macro_rules! construct_int_impls {
@@ -100,7 +103,8 @@ impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
         let () = ValidU32::<N>::OK;
         let len = N as u32;
 
-        // PANIC: We depend on `Reader::read_opaque_fixed` returning a slice of the requested size
+        // PANIC: We rely on `Reader::read_opaque_fixed` to return a slice of
+        // the requested size
         let bytes: &[u8; N] = r.read_opaque_fixed(len)?.try_into().unwrap();
         Ok(bytes)
     }
@@ -110,11 +114,11 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let () = ValidU32::<N>::OK;
 
-        let mut arr: [MU<u8>; N] = [const { MU::uninit() }; N];
+        let mut arr: [MU<u8>; N] = [MU::uninit(); N];
 
         r.read_opaque_fixed_into(&mut arr, N as u32)?;
 
-        // SAFETY: We depend on read_opaque_fixed_into to init all elements
+        // SAFETY: We rely on `read_opaque_fixed_into` to init all elements
         let arr = unsafe { MU::array_assume_init(arr) };
 
         Ok(arr)

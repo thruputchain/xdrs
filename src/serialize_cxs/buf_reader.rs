@@ -1,6 +1,6 @@
-use crate::serialize::reader::*;
 #[cfg(feature = "strict")]
 use super::limits::*;
+use crate::serialize::reader::*;
 
 pub struct BufReader<'r> {
     data: &'r [u8],
@@ -83,12 +83,10 @@ impl<'a> BufReader<'a> {
 
                 if n > 0 {
                     if n < repr_min {
-                        return Err(Error::NotMinimalEncoding)
+                        return Err(Error::NotMinimalEncoding);
                     }
-                } else {
-                    if n > repr_max {
-                        return Err(Error::NotMinimalEncoding)
-                    }
+                } else if n > repr_max {
+                    return Err(Error::NotMinimalEncoding);
                 }
             }
         } else {
@@ -134,11 +132,16 @@ impl<'a> BufReader<'a> {
             {
                 // validate that the smallest possible encoding was used
 
-                const N_BYTE_REPR_MIN: [u64; 4] = [63, u8::MAX as u64 + 1, u16::MAX as u64 + 1, u32::MAX as u64 + 1];
+                const N_BYTE_REPR_MIN: [u64; 4] = [
+                    63,
+                    u8::MAX as u64 + 1,
+                    u16::MAX as u64 + 1,
+                    u32::MAX as u64 + 1,
+                ];
                 let repr_min = N_BYTE_REPR_MIN[s as usize];
 
                 if uint < repr_min {
-                    return Err(Error::NotMinimalEncoding)
+                    return Err(Error::NotMinimalEncoding);
                 }
             }
 
