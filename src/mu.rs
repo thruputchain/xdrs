@@ -2,9 +2,7 @@ use core::mem::MaybeUninit as MU;
 
 /// This fills in for unstable feature `maybe_uninit_array_assume_init`
 #[inline(always)]
-pub const unsafe fn array_assume_init<T, const N: usize>(
-    array: [MU<T>; N]
-) -> [T; N] {
+pub const unsafe fn array_assume_init<T, const N: usize>(array: [MU<T>; N]) -> [T; N] {
     // SAFETY:
     // * The caller guarantees that all elements of the array are initialized
     // * `MaybeUninit<T>` and T are guaranteed to have the same layout
@@ -29,7 +27,5 @@ pub const unsafe fn array_assume_init<T, const N: usize>(
     // }
 
     // And this is approximately the same thing:
-    unsafe {
-        core::mem::transmute_copy(&array)
-    }
+    unsafe { core::mem::transmute_copy(&array) }
 }

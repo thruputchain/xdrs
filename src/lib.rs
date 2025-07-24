@@ -21,8 +21,8 @@ pub mod serialize_cxs;
 #[cfg(feature = "txs")]
 pub mod serialize_txs;
 
-pub(crate) mod valid_u32;
 pub(crate) mod mu;
+pub(crate) mod valid_u32;
 
 pub mod prelude {
     pub use crate::read_xdr::*;

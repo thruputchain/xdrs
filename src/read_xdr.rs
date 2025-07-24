@@ -1,6 +1,6 @@
+use crate::mu;
 use crate::serialize::reader::*;
 use crate::valid_u32::*;
-use crate::mu;
 use core::mem::MaybeUninit as MU;
 
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
