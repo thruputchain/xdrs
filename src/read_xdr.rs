@@ -1,5 +1,6 @@
 use crate::serialize::reader::*;
 use crate::valid_u32::*;
+use crate::mu;
 use core::mem::MaybeUninit as MU;
 
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
@@ -54,7 +55,7 @@ impl<'r> ReadXDR<'r> for i128 {
         let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
 
         // SAFETY: the pre-zeroed bytes are valid u8's
-        let bytes = unsafe { MU::array_assume_init(uninit) };
+        let bytes = unsafe { mu::array_assume_init(uninit) };
         Ok(Self::from_le_bytes(bytes))
     }
 }
@@ -67,7 +68,7 @@ impl<'r> ReadXDR<'r> for u128 {
         let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
 
         // SAFETY: the pre-zeroed bytes are valid u8's
-        let bytes = unsafe { MU::array_assume_init(uninit) };
+        let bytes = unsafe { mu::array_assume_init(uninit) };
         Ok(Self::from_le_bytes(bytes))
     }
 }
@@ -81,12 +82,13 @@ where
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
 
+        // TODO: catch errors to avoid memory leaks
         for elt in arr.iter_mut() {
             elt.write(read_xdr(r)?);
         }
 
         // SAFETY: all elements have been initialized
-        let arr = unsafe { MU::array_assume_init(arr) };
+        let arr = unsafe { mu::array_assume_init(arr) };
 
         Ok(arr)
     }
@@ -119,7 +121,7 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
         r.read_opaque_fixed_into(&mut arr, N as u32)?;
 
         // SAFETY: We rely on `read_opaque_fixed_into` to init all elements
-        let arr = unsafe { MU::array_assume_init(arr) };
+        let arr = unsafe { mu::array_assume_init(arr) };
 
         Ok(arr)
     }
@@ -200,18 +202,8 @@ where
         let d = r.read_i32()?;
 
         match d {
-            0 => {
-                let mut v: MU<T> = MU::uninit();
-                v.write(read_xdr(r)?);
-                let value = Result::Ok(unsafe { v.assume_init() });
-                Ok(value)
-            }
-            1 => {
-                let mut v: MU<E> = MU::uninit();
-                v.write(read_xdr(r)?);
-                let value = Result::Err(unsafe { v.assume_init() });
-                Ok(value)
-            }
+            0 => Ok(Result::Ok(read_xdr(r)?)),
+            1 => Ok(Result::Err(read_xdr(r)?)),
             _ => Err(Error::BadDiscriminator(d)),
         }
     }
@@ -245,6 +237,7 @@ const _: () = {
             let mut vec: Vec<T> = Vec::with_capacity(len);
             let slice = vec.spare_capacity_mut();
 
+            // TODO: catch errors to avoid memory leaks
             for elt in slice.iter_mut() {
                 elt.write(read_xdr(r)?);
             }
@@ -289,18 +282,6 @@ const _: () = {
             Ok(Self(vec))
         }
     }
-
-    /*
-    impl<'r, T> ReadXDR<'r> for VecM<T>
-    where
-        T: ReadXDR<'r>
-    {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let vec: Vec<T> = read_xdr(r)?;
-            Ok(vec.into())
-        }
-    }
-    */
 };
 
 #[cfg(not(feature = "alloc"))]

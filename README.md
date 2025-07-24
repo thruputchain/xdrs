@@ -17,3 +17,11 @@ This package provides:
 
 The library is `no_std`, but a few extra things can be
 enabled with feature `alloc`.
+
+## TODOs
+
+(See "TODO" comments in sources.)
+
+- Address some memory-leaks that can happen around read failures
+
+- Provide an out-parameter read-interface

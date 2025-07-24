@@ -1,5 +1,4 @@
 #![no_std]
-#![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_write_slice)]
 #![feature(maybe_uninit_slice)]
 #![allow(ambiguous_glob_reexports)]
@@ -23,6 +22,7 @@ pub mod serialize_cxs;
 pub mod serialize_txs;
 
 pub(crate) mod valid_u32;
+pub(crate) mod mu;
 
 pub mod prelude {
     pub use crate::read_xdr::*;
