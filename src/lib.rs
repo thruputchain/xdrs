@@ -1,6 +1,4 @@
 #![no_std]
-#![feature(maybe_uninit_write_slice)]
-#![feature(maybe_uninit_slice)]
 #![allow(ambiguous_glob_reexports)]
 
 #[cfg(feature = "alloc")]
@@ -21,7 +19,7 @@ pub mod serialize_cxs;
 #[cfg(feature = "txs")]
 pub mod serialize_txs;
 
-pub(crate) mod mu;
+pub mod mu; // used by integration tests
 pub(crate) mod valid_u32;
 
 pub mod prelude {

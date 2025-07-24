@@ -4,6 +4,7 @@
 use alloc::vec::Vec;
 
 use core::mem::MaybeUninit as MU;
+use crate::mu;
 use thiserror::Error;
 
 /// Something that can produce XDR values, some borrowed with lifetime 'r
@@ -41,7 +42,7 @@ pub trait Reader<'r>: Sized {
 
         let data = self.read_opaque_fixed(len)?;
 
-        let initialized = dst.write_copy_of_slice(data);
+        let initialized = mu::write_copy_of_slice(dst, data);
 
         Ok(initialized)
     }

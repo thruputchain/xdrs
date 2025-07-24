@@ -1,6 +1,3 @@
-#![feature(maybe_uninit_array_assume_init)]
-#![feature(maybe_uninit_slice)]
-
 mod common;
 use common::*;
 use core::ops::Deref;
@@ -112,7 +109,7 @@ fn ref_newtype() {
     impl<'a> From<&'a [u8; 3]> for &'a Buf {
         fn from(arr: &[u8; 3]) -> Self {
             // SAFETY: #[repr(transparent)] ensures these have the same representation
-            let ptr = arr as *const [u8] as *const Buf;
+            let ptr = arr as *const [u8; 3] as *const Buf;
             unsafe { &*ptr }
         }
     }

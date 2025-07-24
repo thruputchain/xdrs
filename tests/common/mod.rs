@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use ::xdrs::*;
-
+use xdrs::*;
 use core::fmt::Debug;
 use core::mem::MaybeUninit as MU;
+use xdrs::mu;
 
 pub trait Format {
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T>;
@@ -122,7 +122,7 @@ pub trait Check: Format {
 
         let written = Self::encode_into(value, &mut buf).unwrap();
 
-        let encoded = unsafe { (&buf[..written]).assume_init_ref() };
+        let encoded = unsafe { mu::assume_init_ref(&buf[..written]) };
 
         check_eq(encoded, expected);
     }

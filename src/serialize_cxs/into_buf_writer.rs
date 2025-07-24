@@ -1,7 +1,8 @@
 use super::put::*;
 use crate::serialize::writer::*;
-
 use core::mem::MaybeUninit;
+use crate::mu;
+
 type Mu8 = MaybeUninit<u8>;
 
 pub struct IntoBufWriter<'a> {
@@ -47,8 +48,7 @@ impl<'a> Put for IntoBufWriter<'a> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 
-        // unstable feature maybe_uninit_write_slice
-        buf.write_copy_of_slice(bytes);
+        let _ = mu::write_copy_of_slice(buf, bytes);
 
         Ok(())
     }
