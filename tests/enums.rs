@@ -90,7 +90,7 @@ fn enum_default_variant_encode() {
 // (except that a default arm is allowed).
 //
 // This test should produce a compile error.
-#[cfg(false)]
+#[cfg(any())]
 #[test]
 fn bad_enum() {
     #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
