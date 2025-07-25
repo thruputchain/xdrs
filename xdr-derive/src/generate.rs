@@ -245,6 +245,7 @@ fn read_data(input: &syn::DeriveInput) -> Result<TokenStream> {
     }
 }
 
+#[cfg(not(feature = "unsafe_structs"))]
 fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
     let ty_ident = &input.ident;
 
@@ -252,7 +253,60 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     let generics = modify_for_reader_impl(input.generics.clone());
     let (impl_generics, _, _) = generics.split_for_impl();
 
-    let read_fields = token_reduce(&item.fields, read_field);
+    let read_fields = read_fields(&item.fields);
+
+    quote! {
+        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::Result<Self> {
+                Ok(#ty_ident #read_fields)
+            }
+        }
+    }
+}
+
+#[cfg(not(feature = "unsafe_structs"))]
+fn read_fields(fields: &syn::Fields) -> TokenStream {
+    let read_fields = token_reduce(fields, read_field);
+    match fields {
+        syn::Fields::Named(_) => quote! { { #read_fields } },
+        syn::Fields::Unnamed(_) => quote! { ( #read_fields ) },
+        syn::Fields::Unit => quote! {},
+    }
+}
+
+#[cfg(not(feature = "unsafe_structs"))]
+fn read_field(_index: usize, field: &syn::Field) -> TokenStream {
+    let attrs = FieldAttrs::from_field(field).unwrap();
+
+    let field_spec = if let Some(field_ident) = field.ident.as_ref() {
+        quote! { #field_ident: }
+    } else {
+        quote! {}
+    };
+
+    let field_value = if let Some(as_ty) = attrs.as_type {
+        quote! { {
+            let as_value: #as_ty = __xdrs::read_xdr(r)?;
+            as_value.into()
+        } }
+    } else {
+        quote! {
+            __xdrs::read_xdr(r)?
+        }
+    };
+
+    quote! { #field_spec #field_value, }
+}
+
+#[cfg(feature = "unsafe_structs")]
+fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
+    let ty_ident = &input.ident;
+
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
+    let generics = modify_for_reader_impl(input.generics.clone());
+    let (impl_generics, _, _) = generics.split_for_impl();
+
+    let read_fields = token_reduce(&item.fields, read_field_unsafe);
 
     quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
@@ -272,7 +326,9 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     }
 }
 
-fn read_field(index: usize, field: &syn::Field) -> TokenStream {
+#[cfg(feature = "unsafe_structs")]
+fn read_field_unsafe(index: usize, field: &syn::Field) -> TokenStream {
+    let f_ty = &field.ty;
     let fa = FieldAccess::new(index, field);
     let attrs = FieldAttrs::from_field(field).unwrap();
 
@@ -283,7 +339,7 @@ fn read_field(index: usize, field: &syn::Field) -> TokenStream {
         }
     } else {
         quote! {
-            let field_value = __xdrs::read_xdr(r)?;
+            let field_value: #f_ty = __xdrs::read_xdr(r)?;
         }
     };
 

@@ -77,7 +77,8 @@ pub trait Check: Format {
     where
         T: Debug + Eq + ReadXDR<'r>,
     {
-        let val2: T = Self::decode(expected).unwrap();
+        let val2: T = Self::decode(expected).unwrap_or_else(|e|
+            panic!("decode failed: {e}"));
         assert_eq!(&val2, val);
     }
 
