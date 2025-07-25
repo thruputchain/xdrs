@@ -21,7 +21,7 @@ fn recursive_struct() {
     };
 
     CXS::check_codec(&val, &hex!("0568656c6c6f00"));
-    TXS::check_codec(&val, &hex!("0000000568656c6c6f0000000000000"));
+    TXS::check_codec(&val, &hex!("0000000568656c6c6f00000000000000"));
 }
 
 #[cfg(feature = "alloc")]
@@ -42,7 +42,7 @@ fn recursive_struct_box() {
     };
 
     CXS::check_codec(&val, &hex!("0568656c6c6f00"));
-    TXS::check_codec(&val, &hex!("0000000568656c6c6f0000000000000"));
+    TXS::check_codec(&val, &hex!("0000000568656c6c6f00000000000000"));
 }
 
 #[test]
