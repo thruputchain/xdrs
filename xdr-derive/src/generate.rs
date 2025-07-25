@@ -138,28 +138,27 @@ fn write_variant(
     input: &syn::DeriveInput,
     default_ix: Option<usize>,
 ) -> TokenStream {
+    let is_default_arm = Some(index) == default_ix;
+
     let var_ident = &v.ident;
     let ty_ident = &input.ident;
     let var_bindings = var_bindings(&v.fields);
-    let write_bindings = if Some(index) == default_ix {
-        // only write the discriminant
+    let write_bindings = if is_default_arm {
+        // Write only the discriminant
         quote! {}
     } else {
         token_reduce(&v.fields, write_binding)
     };
     let variant_idx = index as i32;
     let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
-        if let Some(default_ix_inner) = default_ix {
-            assert_ne!(default_ix_inner, index);
-        }
+        // An explicit-discriminant variant should never be considered a default arm
+        assert!(! is_default_arm);
+
         quote! { #d }
     } else {
-        if let Some(default_ix_inner) = default_ix {
-            if index == default_ix_inner {
-                quote! { *_self_0 }
-            } else {
-                quote! { #variant_idx }
-            }
+        if is_default_arm {
+            // Use the default-arm value as the discriminant
+            quote! { *_self_0 }
         } else {
             quote! { #variant_idx }
         }
