@@ -33,7 +33,6 @@ derive = ["dep:xdr-derive"] # provide ReadXDR, WriteXDR derive-macros
 cxs = [] # include CXS codec
 txs = [] # include TXS codec
 xdr_common = ["dep:xdr_common"]
-unsafe_structs = ["xdr-derive/unsafe_structs"]
 
 [[bench]]
 name = "bench1"

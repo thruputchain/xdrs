@@ -12,6 +12,3 @@ darling = "0.20.11"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
 syn = "2.0.104"
-
-[features]
-unsafe_structs = []
