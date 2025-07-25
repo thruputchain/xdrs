@@ -684,4 +684,5 @@ dependencies = [
  "thiserror",
  "xdr-derive",
  "xdr_common",
+ "xdrs",
 ]

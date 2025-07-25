@@ -251,45 +251,47 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
     let generics = modify_for_reader_impl(input.generics.clone());
     let (impl_generics, _, _) = generics.split_for_impl();
 
-    let read_fields = token_reduce(&item.fields, read_field);
+    let read_fields = read_fields(&item.fields);
 
     quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::Result<Self> {
-                let mut value: __xdrs::MU<Self> = __xdrs::MU::uninit();
-                let struct_ptr = value.as_mut_ptr();
-
-                // TODO: cleanup on error to avoid memory leaks
-                #read_fields
-
-                // SAFETY: we have initialized all fields
-                let value = unsafe { value.assume_init() };
-
-                Ok(value)
+                Ok(#ty_ident #read_fields)
             }
         }
     }
 }
 
-fn read_field(index: usize, field: &syn::Field) -> TokenStream {
-    let fa = FieldAccess::new(index, field);
+fn read_fields(fields: &syn::Fields) -> TokenStream {
+    let read_fields = token_reduce(fields, read_field);
+    match fields {
+        syn::Fields::Named(_) => quote! { { #read_fields } },
+        syn::Fields::Unnamed(_) => quote! { ( #read_fields ) },
+        syn::Fields::Unit => quote! {},
+    }
+}
+
+fn read_field(_index: usize, field: &syn::Field) -> TokenStream {
     let attrs = FieldAttrs::from_field(field).unwrap();
 
-    let read_field_value = if let Some(as_ty) = attrs.as_type {
-        quote! {
+    let field_spec = if let Some(field_ident) = field.ident.as_ref() {
+        quote! { #field_ident: }
+    } else {
+        quote! {}
+    };
+
+    let field_value = if let Some(as_ty) = attrs.as_type {
+        quote! { {
             let as_value: #as_ty = __xdrs::read_xdr(r)?;
-            let field_value = as_value.into();
-        }
+            as_value.into()
+        } }
     } else {
         quote! {
-            let field_value = __xdrs::read_xdr(r)?;
+            __xdrs::read_xdr(r)?
         }
     };
 
-    quote! {
-        #read_field_value
-        unsafe { (*struct_ptr).#fa = field_value; }
-    }
+    quote! { #field_spec #field_value, }
 }
 
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {

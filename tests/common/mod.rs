@@ -77,7 +77,8 @@ pub trait Check: Format {
     where
         T: Debug + Eq + ReadXDR<'r>,
     {
-        let val2: T = Self::decode(expected).unwrap();
+        let val2: T = Self::decode(expected).unwrap_or_else(|e|
+            panic!("decode failed: {e}"));
         assert_eq!(&val2, val);
     }
 
@@ -153,6 +154,6 @@ pub fn check_eq(encoded: &[u8], expected: &[u8]) {
 #[macro_export]
 macro_rules! hex {
     ($hstr:expr) => {
-        ::hex::decode($hstr).unwrap()
+        ::hex::decode($hstr).unwrap_or_else(|e| panic!("Bad hex string: {e}"))
     };
 }

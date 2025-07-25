@@ -46,6 +46,28 @@ fn struct_boo() {
 }
 
 #[test]
+fn struct_unit() {
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct Unity();
+
+    let val = Unity();
+
+    CXS::check_codec(&val, b"");
+    TXS::check_codec(&val, b"");
+}
+
+#[test]
+fn struct_bare() {
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct Bare;
+
+    let val = Bare;
+
+    CXS::check_codec(&val, b"");
+    TXS::check_codec(&val, b"");
+}
+
+#[test]
 fn newtype() {
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct New<'a>(&'a [u8; 6]);
