@@ -83,21 +83,22 @@ impl Display for Value {
 impl Display for Declaration {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
         match self {
-            Declaration::Named(ident, type_spec) => {
-                ident.fmt(f)?;
+            Declaration::Named { name, ty } => {
+                ty.fmt(f)?;
                 f.write_str(" ")?;
-                type_spec.fmt(f)?;
+                name.fmt(f)?;
             }
-            Declaration::FixedOpaque(ident, value) => {
+            Declaration::FixedOpaque { name, size } => {
                 f.write_str("opaque ")?;
-                ident.fmt(f)?;
+                name.fmt(f)?;
                 f.write_str("[")?;
-                value.fmt(f)?;
+                size.fmt(f)?;
                 f.write_str("]")?;
             }
             Declaration::Void => {
                 f.write_str("void")?;
             }
+            _ => unimplemented!()
         }
         Ok(())
     }
@@ -115,7 +116,24 @@ impl Display for TypeSpec {
             TypeSpec::Ident(ident) => {
                 ident.fmt(f)?;
             }
+            TypeSpec::Struct(body) => {
+                f.write_str("struct ")?;
+                body.fmt(f)?;
+            }
+            _ => panic!("no Display impl for {self:?}")
         }
         Ok(())
+    }
+}
+
+// pub struct StructBody(pub Vec<Declaration>);
+impl Display for StructBody {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        f.write_str("{\n")?;
+        for d in &self.0 {
+            d.fmt(f)?;
+            f.write_str(";\n")?;
+        }
+        f.write_str("}")
     }
 }
