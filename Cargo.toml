@@ -1,23 +1,31 @@
 [workspace]
-members = ["xdr-derive"]
+members = [
+    "xdr-derive",
+    "xdr-repr",
+    ]
 
-[workspace.dependencies]
-xdr-derive = { path = "xdr-derive" }
-xdr_common = { git = "ssh://git@github.com/groundhogchain/xdr_common.git" }
-
-[package]
-name = "xdrs"
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-# disable libtest benchmarks, in favor of Criterion
-bench = false
+[workspace.dependencies]
+xdr-derive = { path = "xdr-derive" }
+xdr-repr = { path = "xdr-repr" }
+xdr_common = { git = "ssh://git@github.com/groundhogchain/xdr_common.git" }
+thiserror = { version = "2.0.12", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "allow"
+
+[package]
+name = "xdrs"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-thiserror = { version = "2.0.12", default-features = false }
 xdr-derive = { workspace = true, optional = true }
 xdr_common = { workspace = true, optional = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.6.0"
@@ -29,10 +37,17 @@ default = ["strict", "derive", "cxs", "txs"]
 strict = [] # require minimal encodings when reading
 alloc = ["xdr_common/alloc"] # enable allocating interfaces
 extras = [] # include convenient extensions to the spec
-derive = ["dep:xdr-derive"] # provide ReadXDR, WriteXDR derive-macros
+derive = ["dep:xdr-derive"] # provide ReadXDR+WriteXDR derive-macros
 cxs = [] # include CXS codec
 txs = [] # include TXS codec
 xdr_common = ["dep:xdr_common"]
+
+[lints]
+workspace = true
+
+[lib]
+doctest = false
+bench = false # disable libtest benchmarks, in favor of Criterion
 
 [[bench]]
 name = "bench1"
