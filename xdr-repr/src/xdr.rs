@@ -14,6 +14,8 @@ pub enum Definition {
 #[derive(Debug, Clone)]
 pub enum TypeDef {
     Def(Declaration),
+
+    // We avoid these in favor of `TypeSpec::Struct`
     // Enum(Ident, EnumBody),
     Struct(Ident, StructBody),
     // Union(Ident, UnionBody)
@@ -32,10 +34,11 @@ pub struct Ident(pub String);
 pub struct StructBody(pub Vec<Declaration>);
 
 // struct EnumBody(pub Vec<(Ident, Value)>);
+
 // struct UnionBody(...);
 
 #[derive(Debug, Clone)]
-pub struct Constant(pub usize);
+pub struct Constant(pub u32);
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -45,8 +48,12 @@ pub enum Value {
 
 #[derive(Debug, Clone)]
 pub enum Declaration {
-    Named(Ident, TypeSpec),
-    FixedOpaque(Ident, Value),
+    Named { name: Ident, ty: TypeSpec },
+    FixedOpaque { name: Ident, size: Value },
+    VariableOpaque { name: Ident, max: Value },
+    FixedArray { name: Ident, elt_ty: TypeSpec, len: Value },
+    VariableArray { name: Ident, elt_ty: TypeSpec, max: Value },
+    Optional { name: Ident, opt_ty: TypeSpec },
     Void,
 }
 
@@ -54,5 +61,14 @@ pub enum Declaration {
 pub enum TypeSpec {
     Int,
     UnsignedInt,
+    Hyper,
+    UnsignedHyper,
+    Float,
+    Double,
+    Quadruple,
+    Bool,
+    // Enum(EnumBody),
+    Struct(StructBody),
+    // Union(UnionBody),
     Ident(Ident),
 }

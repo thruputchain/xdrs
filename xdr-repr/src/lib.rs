@@ -9,6 +9,7 @@
 
 pub mod xdr;
 pub mod rpc;
+pub mod ty;
 
 mod display_xdr;
 mod display_rpc;

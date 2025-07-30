@@ -4,7 +4,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-// Traits for translating Rust values to and from XDR
+// Traits for translating Rust values to and from the XDR data model
 pub mod discrim;
 pub mod read_xdr;
 pub mod write_xdr;
