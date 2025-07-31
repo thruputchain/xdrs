@@ -4,7 +4,8 @@ use quote::{quote, ToTokens};
 use syn::Result;
 
 pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
-    let imp = from_data(input)?;
+    let imp = from_input(input)?;
+
     Ok(quote! {
         const _: () = {
             mod __xdrs {
@@ -18,8 +19,9 @@ pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     })
 }
 
-fn from_data(input: &syn::DeriveInput) -> Result<TokenStream> {
-    match &input.data {
+fn from_input(input: &syn::DeriveInput) -> Result<TokenStream> {
+    let data = &input.data;
+    match data {
         syn::Data::Struct(item) => Ok(from_struct(input, item)),
         syn::Data::Enum(item) => Ok(from_enum(input, item)),
         _ => err(input, "Can't derive XDR for this item"),
@@ -95,7 +97,7 @@ fn declare_enum_variant(
     // let fields = &variant.fields;
 
     let index = index as i32;
-    let index_expr = quote! { signed(#index) };
+    let index_expr = quote! { #index };
     let discriminant_expr = variant.discriminant.as_ref().map(|(_, expr)|
         expr.to_token_stream());
     let discriminant = discriminant_expr.as_ref().unwrap_or(&index_expr);
