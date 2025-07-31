@@ -60,8 +60,12 @@ impl<T> Declare for T
     fn declare(name: Ident) -> Declaration {
         match T::type_def() {
             TypeDef::Def(decl) => decl,
-            // Enum(Ident, EnumBody),
             TypeDef::Struct(ty_ident, _) =>
+                Declaration::Named {
+                    name,
+                    ty: TypeSpec::Ident(ty_ident)
+                },
+            TypeDef::Enum(ty_ident, _) =>
                 Declaration::Named {
                     name,
                     ty: TypeSpec::Ident(ty_ident)

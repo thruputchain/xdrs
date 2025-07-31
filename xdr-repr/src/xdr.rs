@@ -14,7 +14,7 @@ pub enum Definition {
 #[derive(Debug, Clone)]
 pub enum TypeDef {
     Def(Declaration),
-    // Enum(Ident, EnumBody),
+    Enum(Ident, EnumBody),
     Struct(Ident, StructBody),
     // Union(Ident, UnionBody)
 }
@@ -31,7 +31,8 @@ pub struct Ident(pub String);
 #[derive(Debug, Clone)]
 pub struct StructBody(pub Vec<Declaration>);
 
-// struct EnumBody(pub Vec<(Ident, Value)>);
+#[derive(Debug, Clone)]
+pub struct EnumBody(pub Vec<(Ident, Value)>);
 
 // struct UnionBody(...);
 
@@ -68,7 +69,7 @@ pub enum TypeSpec {
     Double,
     Quadruple,
     Bool,
-    // Enum(EnumBody),
+    Enum(EnumBody),
     Struct(StructBody),
     // Union(UnionBody),
     Ident(Ident),

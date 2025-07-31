@@ -24,7 +24,7 @@ const _: () = {
         ConstDef,
         Ident,
         StructBody,
-        // EnumBody,
+        EnumBody,
         // UnionBody,
         Constant,
         Value,
@@ -120,14 +120,14 @@ impl Format for TypeDef {
             TypeDef::Struct(ident, body) => {
                 f.write_str("struct ");
                 ident.fmt(f);
-                f.write_str(" {\n");
-                for decl in body.0.iter() {
-                    f.write_str("\t");
-                    decl.fmt(f);
-                    f.write_str(";");
-                    f.write_str("\n");
-                }
-                f.write_str("}");
+                f.write_str(" ");
+                body.fmt(f);
+            }
+            TypeDef::Enum(ident, body) => {
+                f.write_str("enum ");
+                ident.fmt(f);
+                f.write_str(" ");
+                body.fmt(f);
             }
         }
         f.write_str(";\n");
@@ -214,6 +214,10 @@ impl Format for TypeSpec {
                 f.write_str("struct ");
                 body.fmt(f);
             }
+            TypeSpec::Enum(body) => {
+                f.write_str("enum ");
+                body.fmt(f);
+            }
             _ => panic!("Format unimplemented for {self:?}")
         }
     }
@@ -227,6 +231,25 @@ impl Format for StructBody {
         for d in &self.0 {
             f.startln();
             d.fmt(f);
+            f.write_str(";");
+            f.endln();
+        }
+        f.end_indent();
+        f.startln();
+        f.write_str("}");
+    }
+}
+
+impl Format for EnumBody {
+    fn fmt(&self, f: &mut Formatter) {
+        f.write_str("{");
+        f.endln();
+        f.start_indent();
+        for (ident, value) in &self.0 {
+            f.startln();
+            ident.fmt(f);
+            f.write_str(" = ");
+            value.fmt(f);
             f.write_str(";");
             f.endln();
         }

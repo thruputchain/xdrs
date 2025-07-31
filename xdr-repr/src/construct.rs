@@ -16,6 +16,22 @@ impl From<i32> for Constant {
     }
 }
 
+pub fn unsigned_constant(n: u32) -> Constant {
+    Constant::Unsigned(n)
+}
+
+pub fn signed_constant(n: i32) -> Constant {
+    Constant::Signed(n)
+}
+
+pub fn unsigned(n: u32) -> Value {
+    unsigned_constant(n).into()
+}
+
+pub fn signed(n: i32) -> Value {
+    signed_constant(n).into()
+}
+
 impl From<Constant> for Value {
     fn from(c: Constant) -> Self {
         Self::Const(c)
@@ -63,8 +79,17 @@ pub fn struct_type(fields: Vec<Declaration>) -> TypeSpec {
         StructBody(fields))
 }
 
+pub fn enum_type(variants: Vec<(Ident, Value)>) -> TypeSpec {
+    TypeSpec::Enum(
+        EnumBody(variants))
+}
+
 pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
     TypeDef::Struct(ident(name), StructBody(fields))
+}
+
+pub fn enum_def(name: &str, variants: Vec<(Ident, Value)>) -> TypeDef {
+    TypeDef::Enum(ident(name), EnumBody(variants))
 }
 
 pub fn def_struct(name: &str, fields: Vec<Declaration>) -> Definition {
