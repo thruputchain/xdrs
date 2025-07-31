@@ -9,9 +9,12 @@ doctest = false
 
 [dependencies]
 xdr_common = { workspace = true, optional = true }
+xdr-derive = { workspace = true, optional = true }
 
 [lints.rust]
 unsafe_code = "forbid"
 
 [features]
+default = ["derive"]
+derive = ["dep:xdr-derive"]
 xdr_common = ["dep:xdr_common"]
