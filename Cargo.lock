@@ -673,6 +673,9 @@ dependencies = [
 [[package]]
 name = "xdr-repr"
 version = "0.1.0"
+dependencies = [
+ "xdr_common",
+]
 
 [[package]]
 name = "xdr_common"
@@ -687,6 +690,7 @@ dependencies = [
  "hex",
  "thiserror",
  "xdr-derive",
+ "xdr-repr",
  "xdr_common",
  "xdrs",
 ]

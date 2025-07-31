@@ -25,6 +25,7 @@ edition.workspace = true
 [dependencies]
 xdr-derive = { workspace = true, optional = true }
 xdr_common = { workspace = true, optional = true }
+xdr-repr = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -33,14 +34,14 @@ hex = "0.4.3"
 xdrs = { path = ".", features = ["derive", "xdr_common"] }
 
 [features]
-default = ["strict", "derive", "cxs", "txs"]
+default = ["strict", "derive", "cxs", "txs", "xdr_common"]
 strict = [] # require minimal encodings when reading
 alloc = ["xdr_common/alloc"] # enable allocating interfaces
 extras = [] # include convenient extensions to the spec
 derive = ["dep:xdr-derive"] # provide ReadXDR+WriteXDR derive-macros
 cxs = [] # include CXS codec
 txs = [] # include TXS codec
-xdr_common = ["dep:xdr_common"]
+xdr_common = ["dep:xdr_common", "xdr-repr/xdr_common"]
 
 [lints]
 workspace = true

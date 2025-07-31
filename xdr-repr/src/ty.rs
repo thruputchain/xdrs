@@ -45,18 +45,30 @@ impl Declare for u32 {
     }
 }
 
-// conflicts with impl where T: HasTypeDef
-#[cfg(any())]
-impl<T> Declare for T
-    where T: HasTypeSpec
-{
+impl<const N: usize> Declare for [u8; N] {
     fn declare(name: Ident) -> Declaration {
-        Declaration::Named {
+        Declaration::FixedOpaque {
             name,
-            ty: T::type_spec(),
+            // TODO: use compile-time asserts to check N fits in u32
+            size: Value::Const((N as u32).into()),
         }
     }
 }
+
+#[cfg(feature = "xdr_common")]
+const _: () = {
+    use xdr_common::BytesM;
+
+    impl<const MAX: u32> Declare for BytesM<MAX> {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::VariableOpaque {
+                name,
+                // TODO: use compile-time asserts to check MAX fits in u32
+                max: Value::Const(Constant::Unsigned(MAX as u32))
+            }
+        }
+    }
+};
 
 impl<T> Declare for T
     where T: HasTypeDef
@@ -74,6 +86,20 @@ impl<T> Declare for T
         }
     }
 }
+
+/*
+// conflicts with impl where T: HasTypeDef
+impl<T> Declare for T
+    where T: HasTypeSpec
+{
+    fn declare(name: Ident) -> Declaration {
+        Declaration::Named {
+            name,
+            ty: T::type_spec(),
+        }
+    }
+}
+*/
 
 #[cfg(test)]
 mod tytest {
@@ -97,20 +123,24 @@ mod tytest {
     struct Foo {
         num: u32,
         bytes: [u8; 3],
-        boo: Boo,
         boo_by_name: Boo,
+        // We can't actually inline this definition in Rust
+        boo_inline: Boo,
     }
 
+    // To be derived
     impl HasTypeDef for Foo {
         fn type_def() -> TypeDef {
             declare_type("Foo",
                 struct_type(vec![
-                    declare_unsigned("num"),
-                    declare_fixed_opaque("bytes", 3),
-                    declare_type("boo", struct_type(vec![
+                    <u32>::declare(ident("num")),
+                    <[u8; 3]>::declare(ident("bytes")),
+                    <Boo>::declare(ident("boo_by_name")),
+
+                    // We won't need to generate inline structs like this
+                    declare_type("boo_inline", struct_type(vec![
                         declare_unsigned("boonum"),
                     ])),
-                    Boo::declare(ident("boo_by_name")),
                 ])).into()
         }
     }
@@ -119,10 +149,11 @@ mod tytest {
         weight: u32,
     }
 
+    // To be derived
     impl HasTypeDef for Garbage {
         fn type_def() -> TypeDef {
             struct_def("Garbage", vec![
-                declare_unsigned("weight"),
+                <u32>::declare(ident("weight")),
             ])
         }
     }
@@ -133,10 +164,10 @@ mod tytest {
             "typedef struct {"
             "	unsigned int num;"
             "	opaque bytes[3];"
+            "	Boo boo_by_name;"
             "	struct {"
             "		unsigned int boonum;"
-            "	} boo;"
-            "	Boo boo_by_name;"
+            "	} boo_inline;"
             "} Foo;"
     }
 
@@ -149,10 +180,10 @@ mod tytest {
             "typedef struct {"
             "	unsigned int num;"
             "	opaque bytes[3];"
+            "	Boo boo_by_name;"
             "	struct {"
             "		unsigned int boonum;"
-            "	} boo;"
-            "	Boo boo_by_name;"
+            "	} boo_inline;"
             "} Foo;"
             ""
             "struct Garbage {"
@@ -161,5 +192,33 @@ mod tytest {
             ""
             "const SPECIAL = -14;"
             ""
+    }
+
+    #[cfg(feature = "xdr_common")]
+    mod test_common {
+        use super::*;
+        use xdr_common::*;
+
+        struct Varry {
+            stuff: BytesM<100>,
+        }
+
+        // To be derived
+        impl HasTypeDef for Varry {
+            fn type_def() -> TypeDef {
+                struct_def("Varry", vec![
+                    <BytesM<100>>::declare(ident("stuff")),
+                ])
+            }
+        }
+
+        #[cfg(feature = "xdr_common")]
+        check_format! { format_variable_opaque
+            Varry::def()
+            =>
+            "struct Varry {"
+            "	opaque stuff<100>;"
+            "};"
+        }
     }
 }
