@@ -197,7 +197,7 @@ impl Format for TypeSpec {
             TypeSpec::Int => {
                 f.write_str("int");
             }
-            TypeSpec::UnsignedInt => {
+            TypeSpec::Unsigned => {
                 f.write_str("unsigned int");
             }
             TypeSpec::Ident(ident) => {
