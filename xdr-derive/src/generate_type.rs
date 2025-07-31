@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
 
-pub fn has_type_def(input: &syn::DeriveInput) -> Result<TokenStream> {
+pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let imp = from_data(input)?;
     Ok(quote! {
         const _: () = {
@@ -49,9 +49,10 @@ fn declare_field(_index: usize, field: &syn::Field) -> TokenStream {
     // let fa = FieldAccess::new(index, field);
     // let attrs = FieldAttrs::from_field(field).unwrap();
 
-    // TODO: assert that #ty does impl Declare (for better errors)
     quote! {
-        <#ty as __xdrs::Declare>::declare(
-            __xdrs::ident(#name)),
+        {
+            <#ty as __xdrs::Declare>::declare(
+                __xdrs::ident(#name))
+        },
     }
 }

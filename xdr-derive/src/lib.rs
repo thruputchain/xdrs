@@ -22,11 +22,11 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
         .into()
 }
 
-#[proc_macro_derive(HasTypeDef)]
-pub fn derive_has_type_def(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(XDR)]
+pub fn derive_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
-    generate_type::has_type_def(&input)
+    generate_type::xdr(&input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

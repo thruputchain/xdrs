@@ -2,7 +2,7 @@
 
 use crate::xdr::*;
 
-pub trait HasDefinition {
+pub trait XDR {
     fn def() -> Definition;
 }
 
@@ -10,7 +10,7 @@ pub trait HasTypeDef {
     fn type_def() -> TypeDef;
 }
 
-impl<T: HasTypeDef> HasDefinition for T {
+impl<T: HasTypeDef> XDR for T {
     fn def() -> Definition {
         Definition::Type(T::type_def())
     }
