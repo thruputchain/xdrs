@@ -80,3 +80,36 @@ pub fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
 
     generics
 }
+
+pub fn find_default_variant(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+) -> core::result::Result<Option<usize>, TokenStream> {
+    let variants = &item.variants;
+    let n_variants = variants.iter().count();
+    let n_explicit = variants.iter().filter(|v| v.discriminant.is_some()).count();
+    let n_implicit = n_variants - n_explicit;
+
+    if n_variants > 1 && n_implicit == 1 {
+        if let Some(ix) = variants
+            .iter()
+            .enumerate()
+            .find(|(_, v)| {
+                v.discriminant.is_none()
+                    && v.fields.len() == 1
+                    && v.ident.to_string().as_str() == "Default"
+            })
+            .map(|(i, _)| i)
+        {
+            Ok(Some(ix))
+        } else {
+            Err(err_tok(
+                input,
+                "derive XDR: default variants must have one i32 field and \
+                 be called \"Default\"",
+            ))
+        }
+    } else {
+        Ok(None)
+    }
+}

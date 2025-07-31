@@ -47,4 +47,11 @@ macro_rules! check_format {
             crate::assert_formatted!($val, crate::lines![$($ln),*]);
         }
     };
+    { #[$attr:meta] $test_name:ident $val:expr => $($ln:expr $(,)?)* } => {
+        #[test]
+        #[$attr]
+        fn $test_name() {
+            crate::assert_formatted!($val, crate::lines![$($ln),*]);
+        }
+    };
 }

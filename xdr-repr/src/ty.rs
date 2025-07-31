@@ -2,6 +2,18 @@
 
 use crate::xdr::*;
 
+pub trait HasSpecification {
+    fn spec() -> Specification;
+}
+
+impl<T: XDR> HasSpecification for T {
+    fn spec() -> Specification {
+        Specification {
+            definitions: vec![T::def()]
+        }
+    }
+}
+
 pub trait XDR {
     fn def() -> Definition;
 }

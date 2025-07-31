@@ -358,7 +358,8 @@ fn read_variant(
     let var_match = if is_default {
         quote! { _ }
     } else if let Some((_, d)) = variant.discriminant.as_ref() {
-        // this formulation is needed in case of an explicit discriminant expression like "Enum::Variant as i32"
+        // this formulation is needed in case of an explicit discriminant
+        // expression like "Enum::Variant as i32"
         quote! { d if d == (#d) }
     } else {
         quote! { #index }
@@ -373,6 +374,7 @@ fn read_variant(
         let bind = tmp_binding(i);
         let ty = &field.ty;
 
+        // TODO: remove this unnecessary MU stuff
         quote! {
             let mut #bind: __xdrs::MU<#ty> = __xdrs::MU::uninit();
         }
@@ -421,38 +423,5 @@ fn init_fields(fields: &syn::Fields, is_default: bool) -> TokenStream {
         syn::Fields::Named(_) => quote! { { #init_fields } },
         syn::Fields::Unnamed(_) => quote! { ( #init_fields ) },
         syn::Fields::Unit => quote! {},
-    }
-}
-
-fn find_default_variant(
-    input: &syn::DeriveInput,
-    item: &syn::DataEnum,
-) -> core::result::Result<Option<usize>, TokenStream> {
-    let variants = &item.variants;
-    let n_variants = variants.iter().count();
-    let n_explicit = variants.iter().filter(|v| v.discriminant.is_some()).count();
-    let n_implicit = n_variants - n_explicit;
-
-    if n_variants > 1 && n_implicit == 1 {
-        if let Some(ix) = variants
-            .iter()
-            .enumerate()
-            .find(|(_, v)| {
-                v.discriminant.is_none()
-                    && v.fields.len() == 1
-                    && v.ident.to_string().as_str() == "Default"
-            })
-            .map(|(i, _)| i)
-        {
-            Ok(Some(ix))
-        } else {
-            Err(err_tok(
-                input,
-                "derive ReadXDR: default variants must have one i32 field and \
-                 be called \"Default\"",
-            ))
-        }
-    } else {
-        Ok(None)
     }
 }
