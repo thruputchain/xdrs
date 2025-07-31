@@ -16,6 +16,65 @@ impl<T: HasTypeDef> HasDefinition for T {
     }
 }
 
+trait HasTypeSpec {
+    fn type_spec() -> TypeSpec;
+}
+
+impl HasTypeSpec for i32 {
+    fn type_spec() -> TypeSpec {
+        TypeSpec::Int
+    }
+}
+
+impl HasTypeSpec for u32 {
+    fn type_spec() -> TypeSpec {
+        TypeSpec::Unsigned
+    }
+}
+
+trait Declare {
+    fn declare(name: Ident) -> Declaration;
+}
+
+impl Declare for u32 {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::Named {
+            name,
+            ty: TypeSpec::Unsigned,
+        }
+    }
+}
+
+// conflicts with impl where T: HasTypeDef
+#[cfg(any())]
+impl<T> Declare for T
+    where T: HasTypeSpec
+{
+    fn declare(name: Ident) -> Declaration {
+        Declaration::Named {
+            name,
+            ty: T::type_spec(),
+        }
+    }
+}
+
+impl<T> Declare for T
+    where T: HasTypeDef
+{
+    fn declare(name: Ident) -> Declaration {
+        match T::type_def() {
+            TypeDef::Def(decl) => decl,
+            // Enum(Ident, EnumBody),
+            TypeDef::Struct(ty_ident, _) =>
+                Declaration::Named {
+                    name,
+                    ty: TypeSpec::Ident(ty_ident)
+                },
+            // Union(Ident, UnionBody)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tytest {
     use super::*;
@@ -27,10 +86,19 @@ mod tytest {
         boonum: u32,
     }
 
+    impl HasTypeDef for Boo {
+        fn type_def() -> TypeDef {
+            struct_def("Boo", vec![
+                <u32 as Declare>::declare(ident("boonum"))
+            ])
+        }
+    }
+
     struct Foo {
         num: u32,
         bytes: [u8; 3],
         boo: Boo,
+        boo_by_name: Boo,
     }
 
     impl HasTypeDef for Foo {
@@ -42,6 +110,7 @@ mod tytest {
                     declare_type("boo", struct_type(vec![
                         declare_unsigned("boonum"),
                     ])),
+                    Boo::declare(ident("boo_by_name")),
                 ])).into()
         }
     }
@@ -67,6 +136,7 @@ mod tytest {
             "	struct {"
             "		unsigned int boonum;"
             "	} boo;"
+            "	Boo boo_by_name;"
             "} Foo;"
     }
 
@@ -82,6 +152,7 @@ mod tytest {
             "	struct {"
             "		unsigned int boonum;"
             "	} boo;"
+            "	Boo boo_by_name;"
             "} Foo;"
             ""
             "struct Garbage {"

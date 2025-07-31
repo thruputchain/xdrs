@@ -14,8 +14,6 @@ pub enum Definition {
 #[derive(Debug, Clone)]
 pub enum TypeDef {
     Def(Declaration),
-
-    // We avoid these in favor of `TypeSpec::Struct`
     // Enum(Ident, EnumBody),
     Struct(Ident, StructBody),
     // Union(Ident, UnionBody)
@@ -63,7 +61,7 @@ pub enum Declaration {
 #[derive(Debug, Clone)]
 pub enum TypeSpec {
     Int,
-    UnsignedInt,
+    Unsigned,
     Hyper,
     UnsignedHyper,
     Float,

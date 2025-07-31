@@ -15,7 +15,7 @@ fn show_prog() {
     let proc2 = Procedure {
         id: Id("pong".into()),
         value: Constant(2),
-        return_type: Some(TypeSpec::UnsignedInt),
+        return_type: Some(TypeSpec::Unsigned),
         arg_types: vec![],
     };
 

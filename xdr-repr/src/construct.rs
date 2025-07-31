@@ -47,7 +47,7 @@ pub fn declare_fixed_opaque(s: &str, size: u32) -> Declaration {
 }
 
 pub fn declare_unsigned(s: &str) -> Declaration {
-    declare_type(s, TypeSpec::UnsignedInt)
+    declare_type(s, TypeSpec::Unsigned)
 }
 
 pub fn declare_int(s: &str) -> Declaration {
