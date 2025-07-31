@@ -16,22 +16,6 @@ impl<T: HasTypeDef> XDR for T {
     }
 }
 
-pub trait HasTypeSpec {
-    fn type_spec() -> TypeSpec;
-}
-
-impl HasTypeSpec for i32 {
-    fn type_spec() -> TypeSpec {
-        TypeSpec::Int
-    }
-}
-
-impl HasTypeSpec for u32 {
-    fn type_spec() -> TypeSpec {
-        TypeSpec::Unsigned
-    }
-}
-
 pub trait Declare {
     fn declare(name: Ident) -> Declaration;
 }
@@ -86,17 +70,3 @@ impl<T> Declare for T
         }
     }
 }
-
-/*
-// conflicts with impl where T: HasTypeDef
-impl<T> Declare for T
-    where T: HasTypeSpec
-{
-    fn declare(name: Ident) -> Declaration {
-        Declaration::Named {
-            name,
-            ty: T::type_spec(),
-        }
-    }
-}
-*/
