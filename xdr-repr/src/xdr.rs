@@ -38,7 +38,10 @@ pub struct StructBody(pub Vec<Declaration>);
 // struct UnionBody(...);
 
 #[derive(Debug, Clone)]
-pub struct Constant(pub u32);
+pub enum Constant {
+    Unsigned(u32),
+    Signed(i32),
+}
 
 #[derive(Debug, Clone)]
 pub enum Value {

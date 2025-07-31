@@ -14,5 +14,4 @@ pub mod construct;
 pub mod format;
 
 mod test;
-mod display_xdr;
 mod display_rpc;

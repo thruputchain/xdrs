@@ -2,6 +2,37 @@
 
 use super::xdr::*;
 
+const _: () = {
+    use std::fmt;
+
+    macro_rules! impl_display {
+        { $($ty:ty),* $(,)? } => { $(
+
+            impl fmt::Display for $ty {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    f.write_str(&format(self))
+                }
+            }
+
+        )* };
+    }
+
+    impl_display! {
+        Specification,
+        Definition,
+        TypeDef,
+        ConstDef,
+        Ident,
+        StructBody,
+        // EnumBody,
+        // UnionBody,
+        Constant,
+        Value,
+        Declaration,
+        TypeSpec,
+    }
+};
+
 pub struct Formatter {
     depth: usize,
     output: String,
@@ -109,7 +140,7 @@ impl Format for ConstDef {
         self.ident.fmt(f);
         f.write_str(" = ");
         self.constant.fmt(f);
-        f.write_str(";");
+        f.write_str(";\n");
     }
 }
 
@@ -121,7 +152,10 @@ impl Format for Ident {
 
 impl Format for Constant {
     fn fmt(&self, f: &mut Formatter) {
-        f.write_str(format!("{}", self.0));
+        match self {
+            Self::Signed(n) => f.write_str(format!("{n}")),
+            Self::Unsigned(n) => f.write_str(format!("{n}")),
+        }
     }
 }
 
