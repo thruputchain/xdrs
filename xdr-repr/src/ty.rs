@@ -10,88 +10,81 @@ trait HasTypeDef {
     fn type_def() -> TypeDef;
 }
 
+impl<T: HasTypeDef> HasDefinition for T {
+    fn def() -> Definition {
+        Definition::Type(T::type_def())
+    }
+}
 
-#[test]
-fn test() {
-    use construct::*;
-    use TypeDef;
+#[cfg(test)]
+mod tytest {
+    use super::*;
+    use crate::{check_format, spec};
+    use crate::format::*;
+    use crate::construct::*;
+
+    struct Boo {
+        boonum: u32,
+    }
 
     struct Foo {
         num: u32,
         bytes: [u8; 3],
+        boo: Boo,
     }
 
     impl HasTypeDef for Foo {
         fn type_def() -> TypeDef {
-            /*
-            TypeDef::Struct(
-                ident("Foo"),
-                StructBody(vec![
+            declare_type("Foo",
+                struct_type(vec![
                     declare_unsigned("num"),
                     declare_fixed_opaque("bytes", 3),
-                ]),
-            )
-            */
-
-            TypeDef::Def(declare_type("foo",
-                TypeSpec::Struct(
-                    StructBody(vec![
-                        declare_unsigned("num"),
-                        declare_fixed_opaque("bytes", 3),
-                    ]))))
+                    declare_type("boo", struct_type(vec![
+                        declare_unsigned("boonum"),
+                    ])),
+                ])).into()
         }
     }
 
-    let expected =
-           "typedef struct {\
-                unsigned int num;\
-                opaque bytes[3];\
-            } foo;\
-            ";
-
-    let output = Foo::type_def().to_string();
-    println!("OUT:\n{output}");
-    assert_eq!(output, expected);
-}
-
-pub mod construct {
-    use crate::xdr::*;
-
-    pub fn ident(s: &str) -> Ident {
-        Ident(s.to_string())
+    struct Garbage {
+        weight: u32,
     }
 
-    pub fn constant(n: u32) -> Value {
-        Value::Const(Constant(n))
-    }
-
-    pub fn name_ref(s: &str) -> Value {
-        Value::Ident(ident(s))
-    }
-
-    pub fn declare_type(s: &str, type_spec: TypeSpec) -> Declaration {
-        Declaration::Named {
-            name: ident(s),
-            ty: type_spec,
+    impl HasDefinition for Garbage {
+        fn def() -> Definition {
+            def_struct("Garbage", vec![
+                declare_unsigned("weight"),
+            ])
         }
     }
 
-    pub fn declare_fixed_opaque(s: &str, size: u32) -> Declaration {
-        Declaration::FixedOpaque {
-            name: ident(s),
-            size: constant(size),
-        }
+    check_format! { foo_format
+        Foo::def()
+        =>
+            "typedef struct {"
+            "	unsigned int num;"
+            "	opaque bytes[3];"
+            "	struct {"
+            "		unsigned int boonum;"
+            "	} boo;"
+            "} Foo;"
     }
 
-    pub fn declare_unsigned(s: &str) -> Declaration {
-        declare_type(s, TypeSpec::UnsignedInt)
-    }
-
-    pub fn declare_int(s: &str) -> Declaration {
-        declare_type(s, TypeSpec::Int)
-    }
-
-    pub fn declare_named_type(s: &str, ident: Ident) -> Declaration {
-        declare_type(s, TypeSpec::Ident(ident))
+    check_format! { specification_format
+        // spec(vec![Foo::def(), Garbage::def()])
+        spec![Foo::def(), Garbage::def()]
+        =>
+            "typedef struct {"
+            "	unsigned int num;"
+            "	opaque bytes[3];"
+            "	struct {"
+            "		unsigned int boonum;"
+            "	} boo;"
+            "} Foo;"
+            ""
+            "struct Garbage {"
+            "	unsigned int weight;"
+            "};"
+            ""
     }
 }

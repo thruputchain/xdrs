@@ -10,6 +10,9 @@
 pub mod xdr;
 pub mod rpc;
 pub mod ty;
+pub mod construct;
+pub mod format;
 
+mod test;
 mod display_xdr;
 mod display_rpc;
