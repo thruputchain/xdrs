@@ -50,9 +50,9 @@ mod tytest {
         weight: u32,
     }
 
-    impl HasDefinition for Garbage {
-        fn def() -> Definition {
-            def_struct("Garbage", vec![
+    impl HasTypeDef for Garbage {
+        fn type_def() -> TypeDef {
+            struct_def("Garbage", vec![
                 declare_unsigned("weight"),
             ])
         }
@@ -70,9 +70,11 @@ mod tytest {
             "} Foo;"
     }
 
+    const FOURTEEN: Constant = Constant::Signed(-14);
+
     check_format! { specification_format
         // spec(vec![Foo::def(), Garbage::def()])
-        spec![Foo::def(), Garbage::def()]
+        spec![Foo::def(), Garbage::def(), def_const("SPECIAL", FOURTEEN)]
         =>
             "typedef struct {"
             "	unsigned int num;"
@@ -85,6 +87,8 @@ mod tytest {
             "struct Garbage {"
             "	unsigned int weight;"
             "};"
+            ""
+            "const SPECIAL = -14;"
             ""
     }
 }

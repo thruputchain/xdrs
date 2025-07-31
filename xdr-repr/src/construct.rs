@@ -4,8 +4,28 @@ pub fn ident(s: &str) -> Ident {
     Ident(s.to_string())
 }
 
-pub fn constant(n: u32) -> Value {
-    Value::Const(Constant(n))
+impl From<u32> for Constant {
+    fn from(n: u32) -> Self {
+        Self::Unsigned(n)
+    }
+}
+
+impl From<i32> for Constant {
+    fn from(n: i32) -> Self {
+        Self::Signed(n)
+    }
+}
+
+impl From<Constant> for Value {
+    fn from(c: Constant) -> Self {
+        Self::Const(c)
+    }
+}
+
+impl From<Ident> for Value {
+    fn from(i: Ident) -> Self {
+        Self::Ident(i)
+    }
 }
 
 pub fn name_ref(s: &str) -> Value {
@@ -22,7 +42,7 @@ pub fn declare_type(s: &str, type_spec: TypeSpec) -> Declaration {
 pub fn declare_fixed_opaque(s: &str, size: u32) -> Declaration {
     Declaration::FixedOpaque {
         name: ident(s),
-        size: constant(size),
+        size: Value::Const(size.into()),
     }
 }
 
@@ -43,9 +63,18 @@ pub fn struct_type(fields: Vec<Declaration>) -> TypeSpec {
         StructBody(fields))
 }
 
+pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
+    TypeDef::Struct(ident(name), StructBody(fields))
+}
+
 pub fn def_struct(name: &str, fields: Vec<Declaration>) -> Definition {
     Definition::Type(
         TypeDef::Struct(ident(name), StructBody(fields)))
+}
+
+pub fn def_const(name: &str, constant: Constant) -> Definition {
+    Definition::Const(
+        ConstDef { ident: ident(name), constant })
 }
 
 pub fn spec(definitions: Vec<Definition>) -> Specification {
