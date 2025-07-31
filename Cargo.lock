@@ -674,6 +674,7 @@ dependencies = [
 name = "xdr-repr"
 version = "0.1.0"
 dependencies = [
+ "xdr-derive",
  "xdr_common",
 ]
 
