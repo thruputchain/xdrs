@@ -183,6 +183,13 @@ impl Format for Declaration {
                 size.fmt(f);
                 f.write_str("]");
             }
+            Declaration::VariableOpaque { name, max } => {
+                f.write_str("opaque ");
+                name.fmt(f);
+                f.write_str("<");
+                max.fmt(f);
+                f.write_str(">");
+            }
             Declaration::Void => {
                 f.write_str("void");
             }
