@@ -3,7 +3,6 @@ use xdr_repr::ty::*;
 use xdr_repr::{check_format, assert_formatted, lines};
 use xdr_repr::format::*;
 use xdr_repr::construct::*;
-use xdr_derive::HasTypeDef;
 
 pub struct Boo {
     pub boonum: u32,
@@ -41,11 +40,10 @@ impl HasTypeDef for Foo {
     }
 }
 
-#[derive(HasTypeDef)]
 pub struct Garbage {
     pub weight: u32,
 }
-/*
+
 impl HasTypeDef for Garbage {
     fn type_def() -> TypeDef {
         struct_def("Garbage", vec![
@@ -53,7 +51,6 @@ impl HasTypeDef for Garbage {
         ])
     }
 }
-*/
 
 check_format! { foo_format
     Foo::def()
@@ -91,15 +88,14 @@ check_format! { specification_format
 }
 
 #[cfg(feature = "xdr_common")]
-mod test_common {
+pub mod test_common {
     use super::*;
     use xdr_common::*;
 
-    #[derive(HasTypeDef)]
     pub struct Varry {
         pub stuff: BytesM<100>,
     }
-    /*
+
     impl HasTypeDef for Varry {
         fn type_def() -> TypeDef {
             struct_def("Varry", vec![
@@ -107,9 +103,7 @@ mod test_common {
             ])
         }
     }
-    */
 
-    #[cfg(feature = "xdr_common")]
     check_format! { format_variable_opaque
         Varry::def()
         =>
