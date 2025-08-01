@@ -46,14 +46,13 @@ check_format! { derive_enum_fieldless
 }
 
 // Enum with the wrong discriminant representation for XDR
-
+/* doesn't compile
 #[derive(XDR)]
-#[repr(u32)]
+#[repr(u8)]
 pub enum EnumBadRepr {
     Alpha = 1,
 }
 
-// TODO: This test fails, as the bad repr is not yet caught
 check_format! { #[should_panic] derive_enum_bad_repr
     EnumBadRepr::def()
     =>
@@ -61,6 +60,7 @@ check_format! { #[should_panic] derive_enum_bad_repr
         "	Alpha = 1;"
         "};"
 }
+*/
 
 // Data-bearing enum
 
@@ -123,6 +123,27 @@ check_format! { derive_enum_with_default
         "		void;"
         "	default:"
         "		i32 which;"
+        "};"
+        ""
+}
+
+// Unit-only enum with all-implicit discriminants
+
+#[derive(XDR)]
+#[repr(i32)]
+pub enum ImplicitUnit {
+    Alpha,
+    Beta,
+    Omega,
+}
+
+check_format! { derive_enum_implicit_unit
+    ImplicitUnit::spec()
+    =>
+        "enum ImplicitUnit {"
+        "	Alpha = 0;"
+        "	Beta = 1;"
+        "	Omega = 2;"
         "};"
         ""
 }

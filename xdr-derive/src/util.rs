@@ -1,23 +1,33 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Result;
+use syn::{Result, Error};
 use syn::spanned::Spanned;
 
 // Produce an error result referencing a particular code span
-pub fn err<T, S, M>(spanned: &S, msg: M) -> Result<T>
+pub fn err<T, S, M>(item: &S, msg: M) -> Result<T>
 where
     S: Spanned,
     M: AsRef<str>,
 {
-    Err(syn::Error::new(spanned.span(), msg.as_ref()))
+    Err(error(item, msg))
 }
 
-pub fn err_tok<S, M>(spanned: &S, msg: M) -> TokenStream
+// Produce an error result referencing a particular code span
+pub fn error<S, M>(item: &S, msg: M) -> Error
 where
     S: Spanned,
     M: AsRef<str>,
 {
-    syn::Error::new(spanned.span(), msg.as_ref()).into_compile_error()
+    syn::Error::new(item.span(), msg.as_ref())
+}
+
+#[allow(dead_code)]
+pub fn err_tok<S, M>(item: &S, msg: M) -> TokenStream
+where
+    S: Spanned,
+    M: AsRef<str>,
+{
+    syn::Error::new(item.span(), msg.as_ref()).into_compile_error()
 }
 
 pub enum FieldAccess<'a> {
@@ -84,7 +94,7 @@ pub fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
 pub fn find_default_variant(
     input: &syn::DeriveInput,
     item: &syn::DataEnum,
-) -> core::result::Result<Option<usize>, TokenStream> {
+) -> Result<Option<usize>> {
     let variants = &item.variants;
     let n_variants = variants.iter().count();
     let n_explicit = variants.iter().filter(|v| v.discriminant.is_some()).count();
@@ -103,13 +113,23 @@ pub fn find_default_variant(
         {
             Ok(Some(ix))
         } else {
-            Err(err_tok(
-                input,
-                "derive XDR: default variants must have one i32 field and \
-                 be called \"Default\"",
-            ))
+            enum_discrim_err(input)
         }
     } else {
-        Ok(None)
+        if n_variants > 1 && !(n_implicit == 0 || n_explicit == 0) {
+            enum_discrim_err(input)
+        } else {
+            Ok(None)
+        }
     }
+}
+
+fn enum_discrim_err<T>(input: &syn::DeriveInput) -> Result<T> {
+    err(
+        input,
+        "derive XDR: enum discriminants must be all implicit or \
+         all explicit, and may optionally also include a default \
+         variant (with no explicit discriminant) named \"Default\", \
+         which must have one i32 field",
+         )
 }

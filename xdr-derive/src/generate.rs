@@ -2,7 +2,6 @@ use crate::util::*;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
-
 use darling::FromField;
 
 #[derive(Debug, FromField)]
@@ -34,7 +33,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 fn write_data(input: &syn::DeriveInput) -> Result<TokenStream> {
     match &input.data {
         syn::Data::Struct(item) => Ok(write_struct(input, item)),
-        syn::Data::Enum(item) => Ok(write_enum(input, item)),
+        syn::Data::Enum(item) => write_enum(input, item),
         _ => err(input, "Can't derive for this item"),
     }
 }
@@ -71,17 +70,12 @@ fn write_field(index: usize, field: &syn::Field) -> TokenStream {
     }
 }
 
-fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
+fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     if let Some(toks) = write_enum_fast(input, item) {
-        return toks;
+        return Ok(toks);
     }
 
-    let default_ix = match find_default_variant(input, item) {
-        Ok(d) => d,
-        Err(e) => {
-            return e;
-        }
-    };
+    let default_ix = find_default_variant(input, item)?;
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -89,7 +83,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         write_variant(i, v, input, default_ix)
     });
 
-    quote! {
+    Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::Result {
                 match self {
@@ -98,7 +92,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
                 Ok(())
             }
         }
-    }
+    })
 }
 
 // Give an alternate implementation in certain cases
@@ -239,7 +233,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 fn read_data(input: &syn::DeriveInput) -> Result<TokenStream> {
     match &input.data {
         syn::Data::Struct(item) => Ok(read_struct(input, item)),
-        syn::Data::Enum(item) => Ok(read_enum(input, item)),
+        syn::Data::Enum(item) => read_enum(input, item),
         _ => err(input, "Can't derive for this item"),
     }
 }
@@ -294,7 +288,7 @@ fn read_field(_index: usize, field: &syn::Field) -> TokenStream {
     quote! { #field_spec #field_value, }
 }
 
-fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
+fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let n_variants = item.variants.iter().count();
     let n_explicit = item
@@ -304,15 +298,10 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         .count();
     let n_implicit = n_variants - n_explicit;
 
-    let default_ix = match find_default_variant(input, item) {
-        Ok(d) => d,
-        Err(e) => {
-            return e;
-        }
-    };
+    let default_ix = find_default_variant(input, item)?;
 
     if default_ix.is_none() && !(n_explicit == 0 || n_implicit == 0) {
-        return err_tok(
+        return err(
             input,
             "derive ReadXDR: Enums discriminants must be all explicit or all \
              implicit (except there may be one variant called \"Default\" \
@@ -333,7 +322,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
     let generics = modify_for_reader_impl(input.generics.clone());
     let (impl_generics, _, _) = generics.split_for_impl();
 
-    quote! {
+    Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::Result<Self> {
                 let d = r.read_i32()?;
@@ -344,7 +333,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
                 }
             }
         }
-    }
+    })
 }
 
 fn read_variant(

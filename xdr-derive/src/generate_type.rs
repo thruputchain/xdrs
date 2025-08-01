@@ -3,6 +3,16 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::Result;
 
+/*
+use darling::{self, FromDeriveInput};
+#[derive(Debug, FromDeriveInput)]
+#[darling(attributes(repr))]
+struct Repr {
+    #[darling(rename = "i32")]
+    pub _i32: Option<()>
+}
+*/
+
 pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let imp = from_input(input)?;
 
@@ -22,18 +32,19 @@ pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 fn from_input(input: &syn::DeriveInput) -> Result<TokenStream> {
     let data = &input.data;
     match data {
-        syn::Data::Struct(item) => Ok(from_struct(input, item)),
-        syn::Data::Enum(item) => Ok(from_enum(input, item)),
+        syn::Data::Struct(item) => from_struct(input, item),
+        syn::Data::Enum(item) => from_enum(input, item),
         _ => err(input, "Can't derive XDR for this item"),
     }
 }
 
-fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
+fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let ty_name = ty_ident.to_string();
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let declare_fields = token_reduce(&item.fields, declare_struct_field);
-    quote! {
+
+    Ok(quote! {
         impl #impl_generics __xdrs::HasTypeDef for #ty_ident #ty_generics #where_clause {
             fn type_def() -> __xdrs::TypeDef {
                 __xdrs::struct_def(#ty_name, vec![
@@ -41,16 +52,13 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
                 ])
             }
         }
-    }
+    })
 }
 
-fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
-    let default_ix = match find_default_variant(input, item) {
-        Ok(d) => d,
-        Err(e) => {
-            return e;
-        }
-    };
+fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
+    check_enum_attrs(input)?;
+
+    let default_ix = find_default_variant(input, item)?;
 
     let ty_ident = &input.ident;
     let ty_name = ty_ident.to_string();
@@ -59,7 +67,7 @@ fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
         declare_enum_variant(i, v, input, default_ix)
     });
 
-    quote! {
+    Ok(quote! {
         impl #impl_generics __xdrs::HasTypeDef for #ty_ident #ty_generics #where_clause {
             fn type_def() -> __xdrs::TypeDef {
                 __xdrs::enum_def(#ty_name, vec![
@@ -67,7 +75,7 @@ fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> TokenStream {
                 ])
             }
         }
-    }
+    })
 }
 
 fn declare_struct_field(_index: usize, field: &syn::Field) -> TokenStream {
@@ -105,4 +113,22 @@ fn declare_enum_variant(
     quote! {
         (ident(#ident), signed(#discriminant)),
     }
+}
+
+fn check_enum_attrs(input: &syn::DeriveInput) -> Result<()> {
+    if let Some(repr_attr) = input.attrs.iter().find(|a|
+        a.path().get_ident().map(|i| &i.to_string() == "repr").unwrap_or(false))
+    {
+        if let Ok(repr_ident) = repr_attr.parse_args::<syn::Ident>() {
+            let repr_str = repr_ident.to_string();
+            if &repr_str != "i32" {
+                return err(repr_attr, format!("enum must use #[repr(i32)] to derive XDR; found {repr_str}"));
+            }
+        } else {
+            return err(input, "enum must use #[repr(i32)] to derive XDR; couldn't parse repr args");
+        }
+    } else {
+        return err(input, "enum must use #[repr(i32)] to derive XDR; no #[repr(_)] found");
+    }
+    Ok(())
 }

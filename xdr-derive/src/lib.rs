@@ -22,7 +22,7 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
         .into()
 }
 
-#[proc_macro_derive(XDR)]
+#[proc_macro_derive(XDR, attributes(xdr))]
 pub fn derive_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
