@@ -16,7 +16,7 @@ pub enum TypeDef {
     Def(Declaration),
     Enum(Ident, EnumBody),
     Struct(Ident, StructBody),
-    // Union(Ident, UnionBody)
+    Union(Ident, UnionBody)
 }
 
 #[derive(Debug, Clone)]
@@ -34,7 +34,18 @@ pub struct StructBody(pub Vec<Declaration>);
 #[derive(Debug, Clone)]
 pub struct EnumBody(pub Vec<(Ident, Value)>);
 
-// struct UnionBody(...);
+#[derive(Debug, Clone)]
+pub struct UnionBody {
+    pub discriminant_decl: Declaration,
+    pub case_specs: Vec<CaseSpec>, // TODO: enforce non-empty
+    pub default_decl: Option<Declaration>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CaseSpec {
+    pub cases: Vec<Value>, // TODO: enforce non-empty
+    pub decl: Declaration,
+}
 
 #[derive(Debug, Clone)]
 pub enum Constant {

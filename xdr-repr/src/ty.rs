@@ -41,6 +41,24 @@ impl Declare for u32 {
     }
 }
 
+impl Declare for i32 {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::Named {
+            name,
+            ty: TypeSpec::Int,
+        }
+    }
+}
+
+impl Declare for bool {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::Named {
+            name,
+            ty: TypeSpec::Bool,
+        }
+    }
+}
+
 impl<const N: usize> Declare for [u8; N] {
     fn declare(name: Ident) -> Declaration {
         Declaration::FixedOpaque {
@@ -70,19 +88,17 @@ impl<T> Declare for T
     where T: HasTypeDef
 {
     fn declare(name: Ident) -> Declaration {
+        let declare_named = |ty_ident|
+            Declaration::Named {
+                name,
+                ty: TypeSpec::Ident(ty_ident)
+            };
+
         match T::type_def() {
             TypeDef::Def(decl) => decl,
-            TypeDef::Struct(ty_ident, _) =>
-                Declaration::Named {
-                    name,
-                    ty: TypeSpec::Ident(ty_ident)
-                },
-            TypeDef::Enum(ty_ident, _) =>
-                Declaration::Named {
-                    name,
-                    ty: TypeSpec::Ident(ty_ident)
-                },
-            // Union(Ident, UnionBody)
+            TypeDef::Struct(ty_ident, _) => declare_named(ty_ident),
+            TypeDef::Enum(ty_ident, _) => declare_named(ty_ident),
+            TypeDef::Union(ty_ident, _) => declare_named(ty_ident),
         }
     }
 }

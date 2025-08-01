@@ -27,6 +27,9 @@ macro_rules! assert_formatted {
             let expected = $expected;
             let actual = format(&value);
 
+            assert_eq!(expected, actual);
+
+            /*
             if actual != expected {
                 panic!("unexpected formatting:\n\n\
                         /* ---- expected ---- */\n\
@@ -35,6 +38,7 @@ macro_rules! assert_formatted {
                         {actual}<END>\n\
                         /* ------------------ */\n");
             }
+            */
         }
     }
 }

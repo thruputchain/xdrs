@@ -3,16 +3,6 @@ use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::Result;
 
-/*
-use darling::{self, FromDeriveInput};
-#[derive(Debug, FromDeriveInput)]
-#[darling(attributes(repr))]
-struct Repr {
-    #[darling(rename = "i32")]
-    pub _i32: Option<()>
-}
-*/
-
 pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let imp = from_input(input)?;
 
@@ -43,13 +33,16 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let ty_name = ty_ident.to_string();
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let declare_fields = token_reduce(&item.fields, declare_struct_field);
+    let struct_typedef = quote! {
+        __xdrs::struct_def(#ty_name, vec![
+            #declare_fields
+        ])
+    };
 
     Ok(quote! {
         impl #impl_generics __xdrs::HasTypeDef for #ty_ident #ty_generics #where_clause {
             fn type_def() -> __xdrs::TypeDef {
-                __xdrs::struct_def(#ty_name, vec![
-                    #declare_fields
-                ])
+                #struct_typedef
             }
         }
     })
@@ -102,27 +95,6 @@ fn from_enum_with_fields(
     })
 }
 
-/*
-union EnumWithDefault switch (EnumWithDefaultType which) {
-	case Alpha:
-		void;
-	case Beta:
-		void;
-	default:
-		i32 which;
-};
-*/
-fn union_def(
-    input: &syn::DeriveInput,
-    item: &syn::DataEnum,
-    cfg: &EnumCfg
-) -> Result<TokenStream> {
-    let ty_name = input.ident.to_string();
-
-    Ok(quote! {
-    })
-}
-
 fn from_enum_fieldless(
     input: &syn::DeriveInput,
     item: &syn::DataEnum,
@@ -171,6 +143,71 @@ fn enum_typedef(
                 #declare_variants
             ])
     })
+}
+
+fn union_def(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    cfg: &EnumCfg
+) -> Result<TokenStream> {
+    let ty_name = input.ident.to_string();
+    let discrim_type_name = cfg.enum_name.clone().unwrap_or_else(|| ty_name.clone() + "Type");
+    let discrim_type = quote! { __xdrs::named_type(#discrim_type_name) };
+    let discrim_name = "which";
+    let specs = item.variants.iter().map(variant_case_spec);
+    let case_specs = quote! { vec![#(#specs),*] };
+    let default_variant = cfg.default_ix.map(|ix| item.variants.iter().nth(ix).unwrap());
+    let default_decl = option_tokens(default_variant.map(|v| variant_fields_decl(v)));
+
+    let union_typedef = quote! {
+        __xdrs::union_def(#ty_name, #discrim_name, #discrim_type, #case_specs, #default_decl)
+    };
+
+    Ok(quote! {
+        __xdrs::Definition::Type(#union_typedef)
+    })
+}
+
+fn variant_case_spec(variant: &syn::Variant) -> TokenStream {
+    let variant_name = variant.ident.to_string();
+    let decl = variant_fields_decl(variant);
+
+    quote! {
+        __xdrs::single_case_spec(#variant_name, #decl)
+    }
+}
+
+fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
+    let fields = &variant.fields;
+    let variant_name = variant.ident.to_string().to_lowercase();
+
+    match fields {
+        syn::Fields::Unit => {
+            quote! { __xdrs::Declaration::Void }
+        }
+        syn::Fields::Named(fields_named) => {
+            let decls = fields_named.named.iter().map(|field| {
+                let field_ty = &field.ty;
+                let field_name = field.ident.as_ref().unwrap().to_string();
+                quote! { <#field_ty as __xdrs::Declare>::declare(ident(#field_name)) }
+            });
+            quote! {
+                __xdrs::declare_type(#variant_name,
+                    __xdrs::struct_type(vec![ #(#decls),* ]))
+            }
+        }
+        syn::Fields::Unnamed(_) => {
+            unimplemented!();
+        }
+    }
+}
+
+fn option_tokens(opt: Option<TokenStream>) -> TokenStream {
+    if let Some(val) = opt {
+        quote! { Some(#val) }
+    } else {
+        quote! { None }
+    }
 }
 
 fn declare_struct_field(_index: usize, field: &syn::Field) -> TokenStream {
