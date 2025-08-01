@@ -91,6 +91,14 @@ pub fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
     generics
 }
 
+pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
+    v.fields.is_empty()
+}
+
+pub fn enum_is_fieldless(e: &syn::DataEnum) -> bool {
+    e.variants.iter().all(variant_is_fieldless)
+}
+
 pub fn find_default_variant(
     input: &syn::DeriveInput,
     item: &syn::DataEnum,

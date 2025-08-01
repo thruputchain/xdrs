@@ -59,22 +59,117 @@ fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     check_enum_attrs(input)?;
 
     let default_ix = find_default_variant(input, item)?;
+    let cfg = EnumCfg { default_ix, .. EnumCfg::default() };
+
+    if enum_is_fieldless(item) {
+        from_enum_fieldless(input, item, &cfg)
+    } else {
+        from_enum_with_fields(input, item, &cfg)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+struct EnumCfg {
+    default_ix: Option<usize>,
+    enum_name: Option<String>,
+}
+
+fn from_enum_with_fields(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    cfg: &EnumCfg
+) -> Result<TokenStream> {
+    // The enum will have an XDR spec with two definitions:
+    // - an XDR enumeration with the discriminant values
+    // - an XDR union with the variant fields
 
     let ty_ident = &input.ident;
-    let ty_name = ty_ident.to_string();
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let declare_variants = token_reduce(&item.variants, |i, v| {
-        declare_enum_variant(i, v, input, default_ix)
-    });
+
+    let enum_name = Some(input.ident.to_string() + "Type");
+    let enum_def = enum_def(input, item, &EnumCfg { enum_name, .. *cfg })?;
+
+    let union_def = union_def(input, item, cfg)?;
+
+    Ok(quote! {
+        impl #impl_generics __xdrs::HasSpecification for #ty_ident #ty_generics #where_clause {
+            fn spec() -> __xdrs::Specification {
+                __xdrs::Specification {
+                    definitions: vec![#enum_def, #union_def]
+                }
+            }
+        }
+    })
+}
+
+/*
+union EnumWithDefault switch (EnumWithDefaultType which) {
+	case Alpha:
+		void;
+	case Beta:
+		void;
+	default:
+		i32 which;
+};
+*/
+fn union_def(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    cfg: &EnumCfg
+) -> Result<TokenStream> {
+    let ty_name = input.ident.to_string();
+
+    Ok(quote! {
+    })
+}
+
+fn from_enum_fieldless(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    cfg: &EnumCfg
+) -> Result<TokenStream> {
+    let ty_ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let enum_typedef = enum_typedef(input, item, cfg)?;
 
     Ok(quote! {
         impl #impl_generics __xdrs::HasTypeDef for #ty_ident #ty_generics #where_clause {
             fn type_def() -> __xdrs::TypeDef {
-                __xdrs::enum_def(#ty_name, vec![
-                    #declare_variants
-                ])
+                #enum_typedef
             }
         }
+    })
+}
+
+fn enum_def(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    cfg: &EnumCfg
+) -> Result<TokenStream> {
+    let typedef = enum_typedef(input, item, cfg)?;
+
+    Ok(quote! {
+        __xdrs::Definition::Type(#typedef)
+    })
+}
+
+fn enum_typedef(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    cfg: &EnumCfg
+) -> Result<TokenStream> {
+    // The XDR enum has the same name as the rust type, unless the config overrides that
+    let enum_name = cfg.enum_name.clone().unwrap_or_else(|| input.ident.to_string());
+
+    let declare_variants = token_reduce(&item.variants, |i, v| {
+        declare_enum_variant(i, v, input, cfg)
+    });
+
+    Ok(quote! {
+            __xdrs::enum_def(#enum_name, vec![
+                #declare_variants
+            ])
     })
 }
 
@@ -93,16 +188,19 @@ fn declare_struct_field(_index: usize, field: &syn::Field) -> TokenStream {
     }
 }
 
+// Generate a variant declaration for an XDR enumeration
 fn declare_enum_variant(
     index: usize,
     variant: &syn::Variant,
     _input: &syn::DeriveInput,
-    _default_ix: Option<usize>,
+    cfg: &EnumCfg,
 ) -> TokenStream {
-    // let is_default_arm = Some(index) == default_ix;
+    if Some(index) == cfg.default_ix {
+        // Ignore default arm
+        return quote!{}
+    }
 
     let ident = &variant.ident.to_string();
-    // let fields = &variant.fields;
 
     let index = index as i32;
     let index_expr = quote! { #index };
