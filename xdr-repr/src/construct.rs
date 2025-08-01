@@ -70,8 +70,14 @@ pub fn declare_int(s: &str) -> Declaration {
     declare_type(s, TypeSpec::Int)
 }
 
+/*
 pub fn declare_named_type(s: &str, ident: Ident) -> Declaration {
     declare_type(s, TypeSpec::Ident(ident))
+}
+*/
+
+pub fn named_type(name: &str) -> TypeSpec {
+    TypeSpec::Ident(ident(name))
 }
 
 pub fn struct_type(fields: Vec<Declaration>) -> TypeSpec {
@@ -92,10 +98,32 @@ pub fn enum_def(name: &str, variants: Vec<(Ident, Value)>) -> TypeDef {
     TypeDef::Enum(ident(name), EnumBody(variants))
 }
 
-pub fn def_struct(name: &str, fields: Vec<Declaration>) -> Definition {
-    Definition::Type(
-        TypeDef::Struct(ident(name), StructBody(fields)))
+pub fn union_def(
+    name: &str,
+    discrim_name: &str,
+    discrim_type: TypeSpec,
+    case_specs: Vec<CaseSpec>,
+    default_decl: Option<Declaration>
+) -> TypeDef {
+    assert!(!case_specs.is_empty(), "XDR Union: must have at least one case-spec");
+
+    TypeDef::Union(ident(name),
+        UnionBody {
+            discriminant_decl: declare_type(discrim_name, discrim_type),
+            case_specs,
+            default_decl,
+        })
 }
+
+pub fn single_case_spec(case: &str, decl: Declaration) -> CaseSpec {
+    CaseSpec { cases: vec![Value::Ident(ident(case))], decl }
+}
+
+/*
+pub fn def_struct(name: &str, fields: Vec<Declaration>) -> Definition {
+    Definition::Type(struct_def(name, fields))
+}
+*/
 
 pub fn def_const(name: &str, constant: Constant) -> Definition {
     Definition::Const(

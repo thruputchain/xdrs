@@ -25,7 +25,7 @@ const _: () = {
         Ident,
         StructBody,
         EnumBody,
-        // UnionBody,
+        UnionBody,
         Constant,
         Value,
         Declaration,
@@ -129,6 +129,12 @@ impl Format for TypeDef {
                 f.write_str(" ");
                 body.fmt(f);
             }
+            TypeDef::Union(ident, body) => {
+                f.write_str("union ");
+                ident.fmt(f);
+                f.write_str(" ");
+                body.fmt(f);
+            }
         }
         f.write_str(";\n");
     }
@@ -207,6 +213,9 @@ impl Format for TypeSpec {
             TypeSpec::Unsigned => {
                 f.write_str("unsigned int");
             }
+            TypeSpec::Bool => {
+                f.write_str("bool");
+            }
             TypeSpec::Ident(ident) => {
                 ident.fmt(f);
             }
@@ -235,6 +244,53 @@ impl Format for StructBody {
             f.endln();
         }
         f.end_indent();
+        f.startln();
+        f.write_str("}");
+    }
+}
+
+impl Format for UnionBody {
+    fn fmt(&self, f: &mut Formatter) {
+        f.write_str("switch (");
+        self.discriminant_decl.fmt(f);
+        f.write_str(")");
+        f.endln();
+
+        f.startln();
+        f.write_str("{");
+        f.endln();
+        for case_spec in &self.case_specs {
+            for value in &case_spec.cases {
+                f.startln();
+                f.write_str("case ");
+                value.fmt(f);
+                f.write_str(":");
+                f.endln();
+            }
+
+            f.start_indent();
+            {
+                f.startln();
+                case_spec.decl.fmt(f);
+                f.write_str(";");
+                f.endln();
+            }
+            f.end_indent();
+        }
+        if let Some(decl) = &self.default_decl {
+            f.startln();
+            f.write_str("default: ");
+            f.endln();
+
+            f.start_indent();
+            {
+                f.startln();
+                decl.fmt(f);
+                f.write_str(";");
+                f.endln();
+            }
+            f.end_indent();
+        }
         f.startln();
         f.write_str("}");
     }

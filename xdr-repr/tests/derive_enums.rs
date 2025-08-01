@@ -5,6 +5,8 @@ use xdr_repr::format::*;
 use xdr_repr::construct::*;
 use xdr_derive::XDR;
 
+use pretty_assertions::assert_eq;
+
 // Unit-only enum
 
 #[derive(XDR)]
@@ -45,8 +47,9 @@ check_format! { derive_enum_fieldless
         "};"
 }
 
+/*
 // Enum with the wrong discriminant representation for XDR
-/* doesn't compile
+// (Shouldn't compile.)
 #[derive(XDR)]
 #[repr(u8)]
 pub enum EnumBadRepr {
@@ -75,7 +78,6 @@ pub enum Data {
     Omega = -1,
 }
 
-// TODO: This test fails, as we don't yet produce unions
 check_format! { derive_enum_data
     Data::spec()
     =>
@@ -85,19 +87,23 @@ check_format! { derive_enum_data
         "	Omega = -1;"
         "};"
         ""
-        "union Data switch (DataType ty) {"
-        "	case Alpha:"
-        "		unsigned n;"
+        "union Data switch (DataType which)"
+        "{"
+        "case Alpha:"
+        "	struct {"
+        "		unsigned int n;"
         "		bool okay;"
-        "	case Beta:"
-        "		void;"
-        "	case Omega:"
-        "		void;"
+        "	} alpha;"
+        "case Beta:"
+        "	void;"
+        "case Omega:"
+        "	void;"
         "};"
         ""
 }
 
 // Enum with a default arm
+// TODO: fix default handling: same as other case-specs
 
 #[derive(XDR)]
 #[repr(i32)]
@@ -107,7 +113,6 @@ pub enum EnumWithDefault {
     Default { which: i32 }
 }
 
-// TODO:
 check_format! { derive_enum_with_default
     EnumWithDefault::spec()
     =>
@@ -161,7 +166,6 @@ pub enum Implicit {
     Omega,
 }
 
-// TODO:
 check_format! { derive_enum_implicit
     Implicit::spec()
     =>
@@ -171,17 +175,30 @@ check_format! { derive_enum_implicit
         "	Omega = 2;"
         "};"
         ""
-        "union Implicit switch (ImplicitType ty) {"
-        "	case Alpha:"
-        "		unsigned n;"
+        "union Implicit switch (ImplicitType which)"
+        "{"
+        "case Alpha:"
+        "	struct {"
+        "		unsigned int n;"
         "		bool okay;"
-        "	case Beta:"
-        "		void;"
-        "	case Omega:"
-        "		void;"
+        "	} alpha;"
+        "case Beta:"
+        "	void;"
+        "case Omega:"
+        "	void;"
         "};"
         ""
 }
+
+/*
+#[derive(XDR)]
+#[repr(i32)]
+pub enum FunctionLike {
+    Beta(i32),
+    Omega,
+}
+*/
+
 
 /*
 // Enum with mixed implicit/explicit discriminants (and no default arm)
