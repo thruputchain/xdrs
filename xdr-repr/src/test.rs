@@ -46,15 +46,9 @@ macro_rules! assert_formatted {
 
 #[macro_export]
 macro_rules! check_format {
-    { $test_name:ident $val:expr => $($ln:expr $(,)?)* } => {
+    { $(#[$attr:meta])? $test_name:ident $val:expr => $($ln:expr $(,)?)* } => {
         #[test]
-        fn $test_name() {
-            crate::assert_formatted!($val, crate::lines![$($ln),*]);
-        }
-    };
-    { #[$attr:meta] $test_name:ident $val:expr => $($ln:expr $(,)?)* } => {
-        #[test]
-        #[$attr]
+        $(#[$attr])?
         fn $test_name() {
             crate::assert_formatted!($val, crate::lines![$($ln),*]);
         }
