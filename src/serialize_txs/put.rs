@@ -6,10 +6,9 @@
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 
-/// Implement these basic byte operations in order
+/// Implement this basic byte operation in order
 /// to get a `Writer<TXS>` implementation for free
 pub(crate) trait Put {
-    // Required:
     // fn put_byte(&mut self, b: u8) -> Result<()>;
     fn put_bytes(&mut self, bytes: &[u8]) -> Result<()>;
 }
