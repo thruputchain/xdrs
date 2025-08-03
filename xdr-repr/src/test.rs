@@ -27,7 +27,8 @@ macro_rules! assert_formatted {
             let expected = $expected;
             let actual = format(&value);
 
-            assert_eq!(expected, actual);
+            // This gets us pretty_assertions::assert_eq!
+            crate::assert_eq!(expected, actual);
 
             /*
             if actual != expected {
