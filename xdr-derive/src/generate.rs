@@ -4,6 +4,8 @@ use quote::quote;
 use syn::Result;
 use darling::FromField;
 
+// TODO:
+
 #[derive(Debug, FromField)]
 #[darling(attributes(xdrs))]
 struct FieldAttrs {
@@ -71,6 +73,8 @@ fn write_field(index: usize, field: &syn::Field) -> TokenStream {
 }
 
 fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
+    check_enum_attrs(input)?;
+
     if let Some(toks) = write_enum_fast(input, item) {
         return Ok(toks);
     }
@@ -289,6 +293,8 @@ fn read_field(_index: usize, field: &syn::Field) -> TokenStream {
 }
 
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
+    check_enum_attrs(input)?;
+
     let ty_ident = &input.ident;
     let n_variants = item.variants.iter().count();
     let n_explicit = item

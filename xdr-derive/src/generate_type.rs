@@ -134,13 +134,12 @@ fn enum_typedef(
     // The XDR enum has the same name as the rust type, unless the config overrides that
     let enum_name = cfg.enum_name.clone().unwrap_or_else(|| input.ident.to_string());
 
-    let declare_variants = token_reduce(&item.variants, |i, v| {
-        declare_enum_variant(i, v, input, cfg)
-    });
+    let declare_variants = item.variants.iter().enumerate().map(|(i, v)|
+        declare_enum_variant(i, v, input, cfg));
 
     Ok(quote! {
             __xdrs::enum_def(#enum_name, vec![
-                #declare_variants
+                #(#declare_variants)*
             ])
     })
 }
@@ -248,22 +247,4 @@ fn declare_enum_variant(
     quote! {
         (ident(#ident), signed(#discriminant)),
     }
-}
-
-fn check_enum_attrs(input: &syn::DeriveInput) -> Result<()> {
-    if let Some(repr_attr) = input.attrs.iter().find(|a|
-        a.path().get_ident().map(|i| &i.to_string() == "repr").unwrap_or(false))
-    {
-        if let Ok(repr_ident) = repr_attr.parse_args::<syn::Ident>() {
-            let repr_str = repr_ident.to_string();
-            if &repr_str != "i32" {
-                return err(repr_attr, format!("enum must use #[repr(i32)] to derive XDR; found {repr_str}"));
-            }
-        } else {
-            return err(input, "enum must use #[repr(i32)] to derive XDR; couldn't parse repr args");
-        }
-    } else {
-        return err(input, "enum must use #[repr(i32)] to derive XDR; no #[repr(_)] found");
-    }
-    Ok(())
 }

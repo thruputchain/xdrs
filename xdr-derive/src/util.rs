@@ -141,3 +141,21 @@ fn enum_discrim_err<T>(input: &syn::DeriveInput) -> Result<T> {
          which must have one i32 field",
          )
 }
+
+pub fn check_enum_attrs(input: &syn::DeriveInput) -> Result<()> {
+    if let Some(repr_attr) = input.attrs.iter().find(|a|
+        a.path().get_ident().map(|i| &i.to_string() == "repr").unwrap_or(false))
+    {
+        if let Ok(repr_ident) = repr_attr.parse_args::<syn::Ident>() {
+            let repr_str = repr_ident.to_string();
+            if &repr_str != "i32" {
+                return err(repr_attr, format!("enum must use #[repr(i32)] to derive XDR; found {repr_str}"));
+            }
+        } else {
+            return err(input, "enum must use #[repr(i32)] to derive XDR; couldn't parse repr args");
+        }
+    } else {
+        return err(input, "enum must use #[repr(i32)] to derive XDR; no #[repr(_)] found");
+    }
+    Ok(())
+}

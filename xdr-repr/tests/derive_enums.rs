@@ -47,6 +47,56 @@ check_format! { derive_enum_fieldless
         "};"
 }
 
+#[derive(XDR)]
+#[repr(i32)]
+pub enum Status {
+    Ok = 0,
+    Err = -1,
+}
+
+check_format! { derive_enum_status
+    Status::def()
+    =>
+        "enum Status {"
+        "	Ok = 0;"
+        "	Err = -1;"
+        "};"
+}
+
+#[derive(XDR)]
+#[repr(i32)]
+pub enum Message {
+    Good {
+        contents: [u8; 100],
+    } = Status::Ok as i32,
+    Bad {
+        err_msg: [u8; 20],
+    } = Status::Err as i32,
+}
+
+// TODO: use attrs to avoid production of the additional enum
+check_format! { derive_message
+    Message::spec()
+    =>
+        "enum MessageType {"
+        "	Good = 0;"
+        "	Bad = -1;"
+        "};"
+        ""
+        "union Message switch (MessageType which)"
+        "{"
+        "case Good:"
+        "	struct {"
+        "		opaque contents[100];"
+        "	} good;"
+        "case Bad:"
+        "	struct {"
+        "		opaque err_msg[20];"
+        "	} bad;"
+        "};"
+        ""
+}
+
 /*
 // Enum with the wrong discriminant representation for XDR
 // (Shouldn't compile.)
@@ -110,7 +160,8 @@ check_format! { derive_enum_data
 pub enum EnumWithDefault {
     Alpha = 10,
     Beta = 20,
-    Default { which: i32 }
+    // #[xdrs(enum_default)]
+    Default { okay: bool },
 }
 
 check_format! { derive_enum_with_default
@@ -127,7 +178,9 @@ check_format! { derive_enum_with_default
         "	case Beta:"
         "		void;"
         "	default:"
-        "		i32 which;"
+        "		struct {"
+        "			okay: bool;"
+        "		};"
         "};"
         ""
 }
