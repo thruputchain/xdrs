@@ -279,7 +279,7 @@ impl Format for UnionBody {
         }
         if let Some(decl) = &self.default_decl {
             f.startln();
-            f.write_str("default: ");
+            f.write_str("default:");
             f.endln();
 
             f.start_indent();

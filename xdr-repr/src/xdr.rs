@@ -37,13 +37,13 @@ pub struct EnumBody(pub Vec<(Ident, Value)>);
 #[derive(Debug, Clone)]
 pub struct UnionBody {
     pub discriminant_decl: Declaration,
-    pub case_specs: Vec<CaseSpec>, // TODO: enforce non-empty
+    pub case_specs: Vec<CaseSpec>, // must be non-empty
     pub default_decl: Option<Declaration>,
 }
 
 #[derive(Debug, Clone)]
 pub struct CaseSpec {
-    pub cases: Vec<Value>, // TODO: enforce non-empty
+    pub cases: Vec<Value>, // must be non-empty
     pub decl: Declaration,
 }
 

@@ -77,11 +77,12 @@ pub mod separate_discriminant {
         } = Status::Ok as i32,
         Bad {
             err_msg: [u8; 20],
+            code: i32,
         } = Status::Err as i32,
     }
 
     // TODO: use attrs to avoid production of the additional enum
-    check_format! { derive_message
+    check_format! { check
         Message::spec()
         =>
             "enum MessageType {"
@@ -92,12 +93,11 @@ pub mod separate_discriminant {
             "union Message switch (MessageType which)"
             "{"
             "case Good:"
-            "	struct {"
-            "		opaque contents[100];"
-            "	} good;"
+            "	opaque contents[100];"
             "case Bad:"
             "	struct {"
             "		opaque err_msg[20];"
+            "		int code;"
             "	} bad;"
             "};"
             ""
@@ -134,11 +134,11 @@ pub mod enum_with_data {
             n: u32,
             okay: bool,
         } = 1,
-        Beta = 2,
+        Beta { b: i32 } = 2,
         Omega = -1,
     }
 
-    check_format! { derive_enum_data
+    check_format! { derive
         Data::spec()
         =>
             "enum DataType {"
@@ -155,7 +155,7 @@ pub mod enum_with_data {
             "		bool okay;"
             "	} alpha;"
             "case Beta:"
-            "	void;"
+            "	int b;"
             "case Omega:"
             "	void;"
             "};"
@@ -186,14 +186,14 @@ pub mod enum_with_default {
     #[derive(XDR)]
     #[repr(i32)]
     pub enum EnumWithDefault {
-        Alpha = 10,
+        Alpha { a: u32 } = 10,
         Beta = 20,
 
         #[xdr(enum_default)]
-        Default { okay: bool },
+        Default { which: i32 },
     }
 
-    check_format! { derive_enum_with_default
+    check_format! { derive
         EnumWithDefault::spec()
         =>
             "enum EnumWithDefaultType {"
@@ -201,15 +201,14 @@ pub mod enum_with_default {
             "	Beta = 20;"
             "};"
             ""
-            "union EnumWithDefault switch (EnumWithDefaultType which) {"
-            "	case Alpha:"
-            "		void;"
-            "	case Beta:"
-            "		void;"
-            "	default:"
-            "		struct {"
-            "			okay: bool;"
-            "		};"
+            "union EnumWithDefault switch (EnumWithDefaultType which)"
+            "{"
+            "case Alpha:"
+            "	unsigned int a;"
+            "case Beta:"
+            "	void;"
+            "default:"
+            "	void;"
             "};"
             ""
     }
