@@ -74,17 +74,16 @@ fn write_field(index: usize, field: &syn::Field) -> TokenStream {
 
 fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_attrs(input)?;
+    check_variants(input, item)?;
 
     if let Some(toks) = write_enum_fast(input, item) {
         return Ok(toks);
     }
 
-    let default_ix = find_default_variant(input, item)?;
-
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let write_variants = token_reduce(&item.variants, |i, v| {
-        write_variant(i, v, input, default_ix)
+        write_variant(i, v, input)
     });
 
     Ok(quote! {
@@ -134,9 +133,8 @@ fn write_variant(
     index: usize,
     v: &syn::Variant,
     input: &syn::DeriveInput,
-    default_ix: Option<usize>,
 ) -> TokenStream {
-    let is_default_arm = Some(index) == default_ix;
+    let is_default_arm = variant_is_default(v);
 
     let var_ident = &v.ident;
     let ty_ident = &input.ident;
@@ -150,7 +148,7 @@ fn write_variant(
     let variant_idx = index as i32;
     let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
         // An explicit-discriminant variant should never be considered a default arm
-        assert!(! is_default_arm);
+        assert!(!is_default_arm);
 
         quote! { #d }
     } else {
@@ -294,39 +292,22 @@ fn read_field(_index: usize, field: &syn::Field) -> TokenStream {
 
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_attrs(input)?;
+    check_variants(input, item)?;
+    let default_variant = find_default_variant(item);
 
     let ty_ident = &input.ident;
-    let n_variants = item.variants.iter().count();
-    let n_explicit = item
-        .variants
-        .iter()
-        .filter(|v| v.discriminant.is_some())
-        .count();
-    let n_implicit = n_variants - n_explicit;
+    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
+    let generics = modify_for_reader_impl(input.generics.clone());
+    let (impl_generics, _, _) = generics.split_for_impl();
 
-    let default_ix = find_default_variant(input, item)?;
+    let read_variants = item.variants.iter().enumerate().map(|(i, v)|
+        read_variant(i, v, input));
 
-    if default_ix.is_none() && !(n_explicit == 0 || n_implicit == 0) {
-        return err(
-            input,
-            "derive ReadXDR: Enums discriminants must be all explicit or all \
-             implicit (except there may be one variant called \"Default\" \
-             with a single i32 field)",
-        );
-        // (But we could support other mixes with a little more effort)
-    }
-
-    let catch_bad_index = if default_ix.is_none() {
+    let catch_bad_index = if default_variant.is_none() {
         quote! { _ => Err(__xdrs::Error::BadDiscriminator(d)) }
     } else {
         quote! {}
     };
-
-    let read_variants = token_reduce(&item.variants, |i, v| read_variant(i, v, input, default_ix));
-
-    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
-    let generics = modify_for_reader_impl(input.generics.clone());
-    let (impl_generics, _, _) = generics.split_for_impl();
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
@@ -334,7 +315,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
                 let d = r.read_i32()?;
 
                 match d {
-                    #read_variants
+                    #(#read_variants)*
                     #catch_bad_index
                 }
             }
@@ -346,10 +327,9 @@ fn read_variant(
     index_u: usize,
     variant: &syn::Variant,
     input: &syn::DeriveInput,
-    default_ix: Option<usize>,
 ) -> TokenStream {
     let index = index_u as i32;
-    let is_default = Some(index_u) == default_ix;
+    let is_default = variant_is_default(variant);
     let var_match = if is_default {
         quote! { _ }
     } else if let Some((_, d)) = variant.discriminant.as_ref() {

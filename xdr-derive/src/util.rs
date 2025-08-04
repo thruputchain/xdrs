@@ -69,6 +69,14 @@ pub fn tmp_binding(index: usize) -> syn::Ident {
     quote::format_ident!("_self_{}", index)
 }
 
+pub fn option_tok(opt: Option<TokenStream>) -> TokenStream {
+    if let Some(val) = opt {
+        quote! { Some(#val) }
+    } else {
+        quote! { None }
+    }
+}
+
 pub fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
     let ty_lifetimes = generics.params.iter().filter_map(|g| {
         if let syn::GenericParam::Lifetime(param) = g {
@@ -95,51 +103,47 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
     v.fields.is_empty()
 }
 
+pub fn variant_is_default(v: &syn::Variant) -> bool {
+    v.discriminant.is_none()
+        // TODO: use #[xdrs(default)]
+        && v.ident.to_string().as_str() == "Default"
+}
+
 pub fn enum_is_fieldless(e: &syn::DataEnum) -> bool {
     e.variants.iter().all(variant_is_fieldless)
 }
 
-pub fn find_default_variant(
-    input: &syn::DeriveInput,
-    item: &syn::DataEnum,
-) -> Result<Option<usize>> {
-    let variants = &item.variants;
-    let n_variants = variants.iter().count();
-    let n_explicit = variants.iter().filter(|v| v.discriminant.is_some()).count();
-    let n_implicit = n_variants - n_explicit;
-
-    if n_variants > 1 && n_implicit == 1 {
-        if let Some(ix) = variants
-            .iter()
-            .enumerate()
-            .find(|(_, v)| {
-                v.discriminant.is_none()
-                    && v.fields.len() == 1
-                    && v.ident.to_string().as_str() == "Default"
-            })
-            .map(|(i, _)| i)
-        {
-            Ok(Some(ix))
-        } else {
-            enum_discrim_err(input)
-        }
-    } else {
-        if n_variants > 1 && !(n_implicit == 0 || n_explicit == 0) {
-            enum_discrim_err(input)
-        } else {
-            Ok(None)
-        }
-    }
+pub fn find_default_variant(item: &syn::DataEnum) -> Option<&syn::Variant> {
+    item.variants.iter().find(|v|
+        variant_is_default(*v))
 }
 
-fn enum_discrim_err<T>(input: &syn::DeriveInput) -> Result<T> {
-    err(
-        input,
-        "derive XDR: enum discriminants must be all implicit or \
-         all explicit, and may optionally also include a default \
-         variant (with no explicit discriminant) named \"Default\", \
-         which must have one i32 field",
-         )
+pub fn check_variants(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+) -> Result<()> {
+    let variants = &item.variants;
+    let default_variant = item.variants.iter().find(|v|
+        variant_is_default(*v));
+
+    let n_variants = variants.iter().count();
+    let n_explicit = variants.iter().filter(|v|
+        v.discriminant.is_some()).count();
+    let n_implicit = n_variants - n_explicit - 
+        // we don't consider a default variant implicit or explicit
+        if default_variant.is_some() { 1 } else { 0 };
+
+    if n_explicit > 0 && n_implicit > 0 {
+        err(
+            input,
+            "derive XDR: enum discriminants must be all implicit or \
+             all explicit, and may optionally also include a default \
+             variant (with no explicit discriminant) named \"Default\", \
+             which must have one i32 field",
+             )
+    } else {
+        Ok(())
+    }
 }
 
 pub fn check_enum_attrs(input: &syn::DeriveInput) -> Result<()> {

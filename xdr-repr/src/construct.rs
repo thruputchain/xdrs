@@ -48,6 +48,10 @@ pub fn name_ref(s: &str) -> Value {
     Value::Ident(ident(s))
 }
 
+pub fn declare_void() -> Declaration {
+    Declaration::Void
+}
+
 pub fn declare_type(s: &str, type_spec: TypeSpec) -> Declaration {
     Declaration::Named {
         name: ident(s),
@@ -118,12 +122,6 @@ pub fn union_def(
 pub fn single_case_spec(case: &str, decl: Declaration) -> CaseSpec {
     CaseSpec { cases: vec![Value::Ident(ident(case))], decl }
 }
-
-/*
-pub fn def_struct(name: &str, fields: Vec<Declaration>) -> Definition {
-    Definition::Type(struct_def(name, fields))
-}
-*/
 
 pub fn def_const(name: &str, constant: Constant) -> Definition {
     Definition::Const(

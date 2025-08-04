@@ -32,10 +32,10 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let ty_ident = &input.ident;
     let ty_name = ty_ident.to_string();
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let declare_fields = token_reduce(&item.fields, declare_struct_field);
+    let declare_fields = item.fields.iter().map(declare_struct_field);
     let struct_typedef = quote! {
         __xdrs::struct_def(#ty_name, vec![
-            #declare_fields
+            #(#declare_fields)*
         ])
     };
 
@@ -48,11 +48,16 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     })
 }
 
+#[derive(Debug, Default, Clone)]
+struct EnumCfg {
+    enum_name: Option<String>,
+}
+
 fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_attrs(input)?;
+    check_variants(input, item)?;
 
-    let default_ix = find_default_variant(input, item)?;
-    let cfg = EnumCfg { default_ix, .. EnumCfg::default() };
+    let cfg = EnumCfg::default();
 
     if enum_is_fieldless(item) {
         from_enum_fieldless(input, item, &cfg)
@@ -61,18 +66,12 @@ fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     }
 }
 
-#[derive(Debug, Default, Clone)]
-struct EnumCfg {
-    default_ix: Option<usize>,
-    enum_name: Option<String>,
-}
-
 fn from_enum_with_fields(
     input: &syn::DeriveInput,
     item: &syn::DataEnum,
     cfg: &EnumCfg
 ) -> Result<TokenStream> {
-    // The enum will have an XDR spec with two definitions:
+    // The enum will produce two definitions:
     // - an XDR enumeration with the discriminant values
     // - an XDR union with the variant fields
 
@@ -150,16 +149,26 @@ fn union_def(
     cfg: &EnumCfg
 ) -> Result<TokenStream> {
     let ty_name = input.ident.to_string();
-    let discrim_type_name = cfg.enum_name.clone().unwrap_or_else(|| ty_name.clone() + "Type");
+    let discrim_type_name = cfg.enum_name.clone()
+        .unwrap_or_else(|| ty_name.clone() + "Type");
     let discrim_type = quote! { __xdrs::named_type(#discrim_type_name) };
     let discrim_name = "which";
-    let specs = item.variants.iter().map(variant_case_spec);
+    let specs = item.variants.iter().filter_map(variant_case_spec);
     let case_specs = quote! { vec![#(#specs),*] };
-    let default_variant = cfg.default_ix.map(|ix| item.variants.iter().nth(ix).unwrap());
-    let default_decl = option_tokens(default_variant.map(|v| variant_fields_decl(v)));
+    let default_variant = find_default_variant(item);
+    let default_decl = option_tok(default_variant.map(|_v|
+        quote! {
+            __xdrs::declare_void()
+        }));
 
     let union_typedef = quote! {
-        __xdrs::union_def(#ty_name, #discrim_name, #discrim_type, #case_specs, #default_decl)
+        __xdrs::union_def(
+            #ty_name,
+            #discrim_name,
+            #discrim_type,
+            #case_specs,
+            #default_decl,
+            )
     };
 
     Ok(quote! {
@@ -167,13 +176,17 @@ fn union_def(
     })
 }
 
-fn variant_case_spec(variant: &syn::Variant) -> TokenStream {
+fn variant_case_spec(variant: &syn::Variant) -> Option<TokenStream> {
+    if variant_is_default(variant) {
+        return None;
+    }
+
     let variant_name = variant.ident.to_string();
     let decl = variant_fields_decl(variant);
 
-    quote! {
+    Some(quote! {
         __xdrs::single_case_spec(#variant_name, #decl)
-    }
+    })
 }
 
 fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
@@ -185,14 +198,20 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
             quote! { __xdrs::Declaration::Void }
         }
         syn::Fields::Named(fields_named) => {
-            let decls = fields_named.named.iter().map(|field| {
+            let mut decls = fields_named.named.iter().map(|field| {
                 let field_ty = &field.ty;
                 let field_name = field.ident.as_ref().unwrap().to_string();
                 quote! { <#field_ty as __xdrs::Declare>::declare(ident(#field_name)) }
             });
-            quote! {
-                __xdrs::declare_type(#variant_name,
-                    __xdrs::struct_type(vec![ #(#decls),* ]))
+            if decls.len() == 1 {
+                decls.next().unwrap()
+            } else {
+                // A variant with multiple named fields gets a struct
+                // declaration containing them.
+                quote! {
+                    __xdrs::declare_type(#variant_name,
+                        __xdrs::struct_type(vec![ #(#decls),* ]))
+                }
             }
         }
         syn::Fields::Unnamed(_) => {
@@ -201,15 +220,7 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
     }
 }
 
-fn option_tokens(opt: Option<TokenStream>) -> TokenStream {
-    if let Some(val) = opt {
-        quote! { Some(#val) }
-    } else {
-        quote! { None }
-    }
-}
-
-fn declare_struct_field(_index: usize, field: &syn::Field) -> TokenStream {
+fn declare_struct_field(field: &syn::Field) -> TokenStream {
     let ty = &field.ty;
     let ident = field.ident.as_ref().unwrap();
     let name = ident.to_string();
@@ -229,9 +240,9 @@ fn declare_enum_variant(
     index: usize,
     variant: &syn::Variant,
     _input: &syn::DeriveInput,
-    cfg: &EnumCfg,
+    _cfg: &EnumCfg,
 ) -> TokenStream {
-    if Some(index) == cfg.default_ix {
+    if variant_is_default(variant) {
         // Ignore default arm
         return quote!{}
     }
