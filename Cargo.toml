@@ -36,12 +36,12 @@ xdrs = { path = ".", features = ["derive", "xdr_common"] }
 [features]
 default = ["strict", "derive", "cxs", "txs", "xdr_common"]
 strict = [] # require minimal encodings when reading
-alloc = ["xdr_common/alloc"] # enable allocating interfaces
-extras = [] # include convenient extensions to the spec
 derive = ["dep:xdr-derive"] # provide ReadXDR+WriteXDR derive-macros
 cxs = [] # include CXS codec
 txs = [] # include TXS codec
+extras = [] # include convenient extensions to the spec
 xdr_common = ["dep:xdr_common", "xdr-repr/xdr_common"]
+alloc = ["xdr_common/alloc"] # enable allocating interfaces
 
 [lints]
 workspace = true
