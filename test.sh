@@ -3,9 +3,23 @@
 set -x  # print commands
 set -e  # fail on error
 
-cargo test --workspace
-cargo test -F extras
-cargo test -F extras,alloc
-cargo test -F extras,alloc --benches
-cargo test -F xdr_common
-cargo test -F xdr_common,alloc
+additive_features="extras,xdr_common"
+
+# test the root library
+cargo test -F "alloc,${additive_features}"
+
+# check that the benchmarks compile
+cargo test -F "alloc,${additive_features}" --benches
+
+# test the xdr-repr crate
+cargo test -F derive,ns,xdr_common -p xdr-repr
+
+if [ "${1}" == "all" ]; then
+    # test with various feature combinations
+
+    # root library without alloc
+    cargo test -F "${additive_features}"
+
+    # xdr-repr crate without derive
+    cargo test -F ns,xdr_common -p xdr-repr
+fi

@@ -1,5 +1,12 @@
 //! Representation of an XDR specification
 
+#[cfg(feature = "ns")]
+#[derive(Debug, Clone)]
+pub struct Namespace {
+    pub name: String,
+    pub spec: Specification,
+}
+
 #[derive(Debug, Clone)]
 pub struct Specification {
     pub definitions: Vec<Definition>,

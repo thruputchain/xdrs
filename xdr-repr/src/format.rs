@@ -92,6 +92,17 @@ pub fn format<T: Format>(x: &T) -> String {
     f.into()
 }
 
+#[cfg(feature = "ns")]
+impl Format for Namespace {
+    fn fmt(&self, f: &mut Formatter) {
+        f.write_str("namespace ");
+        f.write_str(self.name.as_str());
+        f.write_str("\n{\n\n");
+        self.spec.fmt(f);
+        f.write_str("}\n");
+    }
+}
+
 impl Format for Specification {
     fn fmt(&self, f: &mut Formatter) {
         for d in &self.definitions {
