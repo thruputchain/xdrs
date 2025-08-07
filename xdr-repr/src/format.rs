@@ -6,8 +6,9 @@ const _: () = {
     use std::fmt;
 
     macro_rules! impl_display {
-        { $($ty:ty),* $(,)? } => { $(
+        { $( $(#[$attr:meta])? $ty:ty ),* $(,)? } => { $(
 
+            $(#[$attr])?
             impl fmt::Display for $ty {
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                     f.write_str(&format(self))
@@ -18,6 +19,8 @@ const _: () = {
     }
 
     impl_display! {
+        #[cfg(feature = "ns")]
+        Namespace,
         Specification,
         Definition,
         TypeDef,
