@@ -132,14 +132,15 @@ pub fn def_const(name: &str, constant: Constant) -> Definition {
         ConstDef { ident: ident(name), constant })
 }
 
-pub fn spec(definitions: Vec<Definition>) -> Specification {
+pub fn specification(definitions: Vec<Definition>) -> Specification {
     Specification { definitions }
 }
 
-#[macro_export]
-macro_rules! spec {
-    { $($def:expr),* $(,)? } => {
-        spec(vec![$($def),*])
+#[cfg(feature = "ns")]
+pub fn namespace(name: &str, spec: Specification) -> Namespace {
+    Namespace {
+        name: name.to_owned(),
+        spec,
     }
 }
 

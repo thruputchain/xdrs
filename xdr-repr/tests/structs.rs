@@ -68,7 +68,7 @@ check_format! { foo_format
 const FOURTEEN: Constant = Constant::Signed(-14);
 
 check_format! { specification_format
-    spec(vec![Foo::def(), Garbage::def(), def_const("SPECIAL", FOURTEEN)])
+    specification(vec![Foo::def(), Garbage::def(), def_const("SPECIAL", FOURTEEN)])
     =>
         "typedef struct {"
         "	unsigned int num;"

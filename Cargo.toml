@@ -34,7 +34,7 @@ hex = "0.4.3"
 xdrs = { path = ".", features = ["derive", "xdr_common"] }
 
 [features]
-default = ["strict", "derive", "cxs", "txs", "xdr_common"]
+default = ["strict", "cxs", "txs"]
 strict = [] # require minimal encodings when reading
 derive = ["dep:xdr-derive"] # provide ReadXDR+WriteXDR derive-macros
 cxs = [] # include CXS codec

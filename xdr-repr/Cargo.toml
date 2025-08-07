@@ -15,9 +15,21 @@ xdr-derive = { workspace = true, optional = true }
 unsafe_code = "forbid"
 
 [features]
-default = ["derive"]
-derive = ["dep:xdr-derive"]
-xdr_common = ["dep:xdr_common"]
+derive = ["dep:xdr-derive"] # derive XDR trait
+xdr_common = ["dep:xdr_common"] # types for variable-length arrays
+ns = [] # C++-like namespaces for XDR specs
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+
+[[test]]
+name = "derive_enums"
+required-features = ["derive"]
+
+[[test]]
+name = "derive_structs"
+required-features = ["derive"]
+
+[[test]]
+name = "ns"
+required-features = ["ns"]
