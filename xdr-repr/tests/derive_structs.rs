@@ -3,6 +3,10 @@ use xdr_repr::{check_format, assert_formatted, lines};
 use xdr_repr::format::*;
 use xdr_derive::XDR;
 
+// // compile error: XDR: can't represent struct with no fields
+// #[derive(XDR)]
+// pub struct Bare;
+
 #[derive(XDR)]
 pub struct Boo {
     pub boonum: u32,
