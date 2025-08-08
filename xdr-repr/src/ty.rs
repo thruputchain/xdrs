@@ -59,6 +59,26 @@ impl Declare for bool {
     }
 }
 
+// TODO: something better
+impl Declare for u128 {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::Named {
+            name,
+            ty: TypeSpec::Ident(Ident("uint128_xdr".to_owned())),
+        }
+    }
+}
+
+// TODO: something better
+impl Declare for i128 {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::Named {
+            name,
+            ty: TypeSpec::Ident(Ident("int128_xdr".to_owned())),
+        }
+    }
+}
+
 impl<const N: usize> Declare for [u8; N] {
     fn declare(name: Ident) -> Declaration {
         Declaration::FixedOpaque {
