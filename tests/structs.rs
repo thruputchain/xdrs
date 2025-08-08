@@ -83,7 +83,7 @@ fn newtype() {
 }
 
 #[test]
-fn as_type() {
+fn field_as_type() {
     #[derive(Debug, PartialEq, Eq)]
     struct Blob(u32);
 
@@ -102,7 +102,10 @@ fn as_type() {
     }
 
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
-    struct New(#[xdrs(as_type = "u32")] Blob);
+    struct New(
+        #[xdrs(as_type = "u32")]
+        Blob
+    );
 
     let n: u32 = 7;
     let val = New(Blob::from(n));
@@ -111,6 +114,38 @@ fn as_type() {
     CXS::check_codec(&val, expected);
 
     let expected = &hex!("00000007");
+    TXS::check_codec(&val, expected);
+}
+
+#[test]
+fn struct_as_type() {
+    #[derive(ReadXDR, WriteXDR)]
+    struct Thing(u64);
+
+    // Wrap a u32 and serialize it like a Thing
+    #[derive(ReadXDR, WriteXDR)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[xdrs(as_type = "Thing")]
+    struct U32(u32);
+
+    impl From<Thing> for U32 {
+        fn from(t: Thing) -> Self {
+            U32(t.0 as u32)
+        }
+    }
+
+    impl From<U32> for Thing {
+        fn from(u: U32) -> Self {
+            Thing(u.0 as u64)
+        }
+    }
+
+    let val = U32(7);
+
+    let expected = &hex!("07");
+    CXS::check_codec(&val, expected);
+
+    let expected = &hex!("0000000000000007");
     TXS::check_codec(&val, expected);
 }
 
