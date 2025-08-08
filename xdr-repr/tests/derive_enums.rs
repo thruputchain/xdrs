@@ -1,8 +1,6 @@
-use xdr_repr::ty::*;
 use xdr_repr::{check_format, assert_formatted, lines};
-use xdr_repr::format::*;
-use xdr_repr::construct::*;
 use xdr_derive::XDR;
+use xdr_repr::*;
 
 pub mod unit_only_enum {
     use super::*;

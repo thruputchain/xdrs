@@ -36,7 +36,7 @@ const _: () = {
     }
 };
 
-pub struct Formatter {
+pub(crate) struct Formatter {
     depth: usize,
     output: String,
 }
@@ -85,11 +85,11 @@ impl From<Formatter> for String {
     }
 }
 
-pub trait Format {
+pub(crate) trait Format {
     fn fmt(&self, f: &mut Formatter);
 }
 
-pub fn format<T: Format>(x: &T) -> String {
+pub(crate) fn format<T: Format>(x: &T) -> String {
     let mut f = Formatter::new();
     x.fmt(&mut f);
     f.into()

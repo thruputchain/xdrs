@@ -1,7 +1,5 @@
-use xdr_repr::xdr::*;
-use xdr_repr::ty::*;
+use xdr_repr::*;
 use xdr_repr::{check_format, assert_formatted, lines};
-use xdr_repr::format::*;
 use xdr_repr::construct::*;
 
 pub struct Boo {

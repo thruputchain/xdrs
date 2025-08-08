@@ -12,6 +12,7 @@ pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
                 pub use ::xdr_repr::ty::*;
                 pub use ::xdr_repr::xdr::*;
                 pub use ::xdr_repr::construct::*;
+                pub use ::std::vec;
             }
 
             #imp
@@ -38,7 +39,7 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let declare_fields = item.fields.iter().map(declare_struct_field);
     let struct_typedef = quote! {
-        __xdrs::struct_def(#ty_name, vec![
+        __xdrs::struct_def(#ty_name, __xdrs::vec![
             #(#declare_fields)*
         ])
     };
@@ -91,7 +92,7 @@ fn from_enum_with_fields(
         impl #impl_generics __xdrs::HasSpecification for #ty_ident #ty_generics #where_clause {
             fn spec() -> __xdrs::Specification {
                 __xdrs::Specification {
-                    definitions: vec![#enum_def, #union_def]
+                    definitions: __xdrs::vec![#enum_def, #union_def]
                 }
             }
         }
@@ -141,7 +142,7 @@ fn enum_typedef(
         declare_enum_variant(i, v, input, cfg));
 
     Ok(quote! {
-            __xdrs::enum_def(#enum_name, vec![
+            __xdrs::enum_def(#enum_name, __xdrs::vec![
                 #(#declare_variants)*
             ])
     })
@@ -158,7 +159,7 @@ fn union_def(
     let discrim_type = quote! { __xdrs::named_type(#discrim_type_name) };
     let discrim_name = "which";
     let specs = item.variants.iter().filter_map(variant_case_spec);
-    let case_specs = quote! { vec![#(#specs),*] };
+    let case_specs = quote! { __xdrs::vec![#(#specs),*] };
     let default_variant = find_default_variant(item);
     let default_decl = option_tok(default_variant.map(|_v|
         quote! {
@@ -205,7 +206,7 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
             let mut decls = fields_named.named.iter().map(|field| {
                 let field_ty = &field.ty;
                 let field_name = field.ident.as_ref().unwrap().to_string();
-                quote! { <#field_ty as __xdrs::Declare>::declare(ident(#field_name)) }
+                quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) }
             });
             if decls.len() == 1 {
                 decls.next().unwrap()
@@ -214,7 +215,7 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
                 // declaration containing them.
                 quote! {
                     __xdrs::declare_type(#variant_name,
-                        __xdrs::struct_type(vec![ #(#decls),* ]))
+                        __xdrs::struct_type(__xdrs::vec![ #(#decls),* ]))
                 }
             }
         }
@@ -260,6 +261,6 @@ fn declare_enum_variant(
     let discriminant = discriminant_expr.as_ref().unwrap_or(&index_expr);
 
     quote! {
-        (ident(#ident), signed(#discriminant)),
+        (__xdrs::ident(#ident), __xdrs::signed(#discriminant)),
     }
 }
