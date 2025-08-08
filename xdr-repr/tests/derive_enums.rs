@@ -135,7 +135,24 @@ pub mod enum_with_data {
         Omega = -1,
     }
 
-    check_format! { derive
+    check_format! { derive_enum
+        Data::def()
+        =>
+            "union Data switch (DataType which)"
+            "{"
+            "case Alpha:"
+            "	struct {"
+            "		unsigned int n;"
+            "		bool okay;"
+            "	} alpha;"
+            "case Beta:"
+            "	int b;"
+            "case Omega:"
+            "	void;"
+            "};"
+    }
+
+    check_format! { derive_spec
         Data::spec()
         =>
             "enum DataType {"
@@ -224,14 +241,13 @@ pub mod implicit_unit {
     }
 
     check_format! { derive_enum_implicit_unit
-        ImplicitUnit::spec()
+        ImplicitUnit::def()
         =>
             "enum ImplicitUnit {"
             "	Alpha = 0;"
             "	Beta = 1;"
             "	Omega = 2;"
             "};"
-            ""
     }
 }
 

@@ -6,6 +6,7 @@ pub trait HasSpecification {
     fn spec() -> Specification;
 }
 
+/*
 impl<T: XDR> HasSpecification for T {
     fn spec() -> Specification {
         Specification {
@@ -13,6 +14,7 @@ impl<T: XDR> HasSpecification for T {
         }
     }
 }
+*/
 
 pub trait XDR {
     fn def() -> Definition;
