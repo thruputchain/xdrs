@@ -43,7 +43,7 @@ impl<'a> BufReader<'a> {
         Ok(buf)
     }
 
-    fn skip_input(&mut self, skip_bytes: u32) -> Result<()> {
+    pub fn skip_input(&mut self, skip_bytes: u32) -> Result<()> {
         debug_assert!(skip_bytes <= 3);
 
         let _ = self.get_input(skip_bytes)?;
