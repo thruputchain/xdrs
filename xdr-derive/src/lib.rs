@@ -1,3 +1,5 @@
+//! Generate traits ReadXDR, WriteXDR, XDR
+
 mod generate;
 mod generate_type;
 mod util;
