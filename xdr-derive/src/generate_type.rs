@@ -76,9 +76,10 @@ fn from_enum_with_fields(
     item: &syn::DataEnum,
     cfg: &EnumCfg
 ) -> Result<TokenStream> {
-    // The enum will produce two definitions:
+    // The enum will produce two definitions, provided by HasSpecification on the rust type
     // - an XDR enumeration with the discriminant values
     // - an XDR union with the variant fields
+    // It will also implement HasTypeDef on the rust type (giving the def of the union)
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -86,13 +87,19 @@ fn from_enum_with_fields(
     let enum_name = Some(input.ident.to_string() + "Type");
     let enum_def = enum_def(input, item, &EnumCfg { enum_name, .. *cfg })?;
 
-    let union_def = union_def(input, item, cfg)?;
+    let union_typedef = union_typedef(input, item, cfg)?;
 
     Ok(quote! {
+        impl #impl_generics __xdrs::HasTypeDef for #ty_ident #ty_generics #where_clause {
+            fn type_def() -> __xdrs::TypeDef {
+                #union_typedef
+            }
+        }
+
         impl #impl_generics __xdrs::HasSpecification for #ty_ident #ty_generics #where_clause {
             fn spec() -> __xdrs::Specification {
                 __xdrs::Specification {
-                    definitions: __xdrs::vec![#enum_def, #union_def]
+                    definitions: __xdrs::vec![#enum_def, #ty_ident::def()]
                 }
             }
         }
@@ -148,7 +155,20 @@ fn enum_typedef(
     })
 }
 
+#[allow(dead_code)]
 fn union_def(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    cfg: &EnumCfg
+) -> Result<TokenStream> {
+    let union_typedef = union_typedef(input, item, cfg)?;
+
+    Ok(quote! {
+        __xdrs::Definition::Type(#union_typedef)
+    })
+}
+
+fn union_typedef(
     input: &syn::DeriveInput,
     item: &syn::DataEnum,
     cfg: &EnumCfg
@@ -166,7 +186,7 @@ fn union_def(
             __xdrs::declare_void()
         }));
 
-    let union_typedef = quote! {
+    Ok(quote! {
         __xdrs::union_def(
             #ty_name,
             #discrim_name,
@@ -174,10 +194,6 @@ fn union_def(
             #case_specs,
             #default_decl,
             )
-    };
-
-    Ok(quote! {
-        __xdrs::Definition::Type(#union_typedef)
     })
 }
 
