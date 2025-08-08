@@ -65,6 +65,11 @@ check_format! { foo_format
         "} Foo;"
 }
 
+#[test]
+fn type_ref() {
+    assert_eq!(Foo::type_def(), <&Foo>::type_def());
+}
+
 const FOURTEEN: Constant = Constant::Signed(-14);
 
 check_format! { specification_format

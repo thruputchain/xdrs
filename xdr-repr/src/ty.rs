@@ -59,7 +59,7 @@ impl Declare for bool {
     }
 }
 
-// TODO: something better
+// TODO: use attrs to derive this project-specific typespec?
 impl Declare for u128 {
     fn declare(name: Ident) -> Declaration {
         Declaration::Named {
@@ -69,7 +69,7 @@ impl Declare for u128 {
     }
 }
 
-// TODO: something better
+// TODO: use attrs to derive this project-specific typespec?
 impl Declare for i128 {
     fn declare(name: Ident) -> Declaration {
         Declaration::Named {
@@ -120,5 +120,12 @@ impl<T> Declare for T
             TypeDef::Enum(ty_ident, _) => declare_named(ty_ident),
             TypeDef::Union(ty_ident, _) => declare_named(ty_ident),
         }
+    }
+}
+
+// TODO: feature-gate this, as some users may not want?
+impl<'a, T: HasTypeDef> HasTypeDef for &'a T {
+    fn type_def() -> TypeDef {
+        T::type_def()
     }
 }
