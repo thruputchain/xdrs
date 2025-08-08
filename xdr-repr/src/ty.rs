@@ -32,51 +32,32 @@ pub trait Declare {
     fn declare(name: Ident) -> Declaration;
 }
 
-impl Declare for u32 {
-    fn declare(name: Ident) -> Declaration {
-        Declaration::Named {
-            name,
-            ty: TypeSpec::Unsigned,
+macro_rules! impl_declare_named {
+    { $( $ty:ty => $spec:expr ),* $(,)? } =>
+    {$(
+        impl Declare for $ty {
+            fn declare(name: Ident) -> Declaration {
+                Declaration::Named {
+                    name,
+                    ty: $spec
+                }
+            }
         }
-    }
+    )*};
 }
 
-impl Declare for i32 {
-    fn declare(name: Ident) -> Declaration {
-        Declaration::Named {
-            name,
-            ty: TypeSpec::Int,
-        }
-    }
+impl_declare_named! {
+    i32 => TypeSpec::Int,
+    u32 => TypeSpec::Unsigned,
+    i64 => TypeSpec::Hyper,
+    u64 => TypeSpec::UnsignedHyper,
+    bool => TypeSpec::Bool,
 }
 
-impl Declare for bool {
-    fn declare(name: Ident) -> Declaration {
-        Declaration::Named {
-            name,
-            ty: TypeSpec::Bool,
-        }
-    }
-}
-
-// TODO: use attrs to derive this project-specific typespec?
-impl Declare for u128 {
-    fn declare(name: Ident) -> Declaration {
-        Declaration::Named {
-            name,
-            ty: TypeSpec::Ident(Ident("uint128_xdr".to_owned())),
-        }
-    }
-}
-
-// TODO: use attrs to derive this project-specific typespec?
-impl Declare for i128 {
-    fn declare(name: Ident) -> Declaration {
-        Declaration::Named {
-            name,
-            ty: TypeSpec::Ident(Ident("int128_xdr".to_owned())),
-        }
-    }
+// TODO: use attrs to derive these project-specific typespecs?
+impl_declare_named! {
+    i128 => TypeSpec::Ident(Ident("int128_xdr".to_owned())),
+    u128 => TypeSpec::Ident(Ident("uint128_xdr".to_owned())),
 }
 
 impl<const N: usize> Declare for [u8; N] {
