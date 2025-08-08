@@ -1,7 +1,6 @@
-use xdr_repr::ty::*;
-use xdr_repr::{check_format, assert_formatted, lines};
-use xdr_repr::format::*;
 use xdr_derive::XDR;
+use xdr_repr::*;
+use xdr_repr::{check_format, assert_formatted, lines};
 
 // // compile error: XDR: can't represent struct with no fields
 // #[derive(XDR)]

@@ -25,7 +25,7 @@ macro_rules! assert_formatted {
         {
             let value = $value;
             let expected = $expected;
-            let actual = format(&value);
+            let actual = value.to_string();
 
             ::pretty_assertions::assert_eq!(expected, actual);
 
