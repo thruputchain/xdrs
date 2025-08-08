@@ -1,24 +1,24 @@
 //! Representation of an XDR specification
 
 #[cfg(feature = "ns")]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Namespace {
     pub name: String,
     pub spec: Specification,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Specification {
     pub definitions: Vec<Definition>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Definition {
     Type(TypeDef),
     Const(ConstDef),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeDef {
     Def(Declaration),
     Enum(Ident, EnumBody),
@@ -26,47 +26,47 @@ pub enum TypeDef {
     Union(Ident, UnionBody)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstDef {
     pub ident: Ident,
     pub constant: Constant,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident(pub String);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructBody(pub Vec<Declaration>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumBody(pub Vec<(Ident, Value)>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnionBody {
     pub discriminant_decl: Declaration,
     pub case_specs: Vec<CaseSpec>, // must be non-empty
     pub default_decl: Option<Declaration>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaseSpec {
     pub cases: Vec<Value>, // must be non-empty
     pub decl: Declaration,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Constant {
     Unsigned(u32),
     Signed(i32),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Const(Constant),
     Ident(Ident),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Declaration {
     Named { name: Ident, ty: TypeSpec },
     FixedOpaque { name: Ident, size: Value },
@@ -77,7 +77,7 @@ pub enum Declaration {
     Void,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeSpec {
     Int,
     Unsigned,
