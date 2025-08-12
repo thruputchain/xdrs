@@ -74,12 +74,6 @@ pub fn declare_int(s: &str) -> Declaration {
     declare_type(s, TypeSpec::Int)
 }
 
-/*
-pub fn declare_named_type(s: &str, ident: Ident) -> Declaration {
-    declare_type(s, TypeSpec::Ident(ident))
-}
-*/
-
 pub fn named_type(name: &str) -> TypeSpec {
     TypeSpec::Ident(ident(name))
 }

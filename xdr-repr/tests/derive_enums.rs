@@ -1,6 +1,6 @@
 use xdr_repr::{check_format, assert_formatted, lines};
-use xdr_derive::XDR;
 use xdr_repr::*;
+use xdr_derive::XDR;
 
 pub mod unit_only_enum {
     use super::*;
@@ -46,7 +46,7 @@ pub mod fieldless_enum {
     }
 }
 
-// Discriminants named by separate enum
+// Discriminant named by separate enum
 pub mod separate_discriminant {
     use super::*;
 
@@ -67,35 +67,30 @@ pub mod separate_discriminant {
     }
 
     #[derive(XDR)]
+    #[xdr(discrim_type = "Status", discrim_var = "stat")]
     #[repr(i32)]
     pub enum Message {
-        Good {
+        Ok {
             contents: [u8; 100],
         } = Status::Ok as i32,
-        Bad {
+        Err {
             err_msg: [u8; 20],
             code: i32,
         } = Status::Err as i32,
     }
 
-    // TODO: use attrs to avoid production of the additional enum
     check_format! { check
         Message::spec()
         =>
-            "enum MessageType {"
-            "	Good = 0;"
-            "	Bad = -1;"
-            "};"
-            ""
-            "union Message switch (MessageType which)"
+            "union Message switch (Status stat)"
             "{"
-            "case Good:"
+            "case Ok:"
             "	opaque contents[100];"
-            "case Bad:"
+            "case Err:"
             "	struct {"
             "		opaque err_msg[20];"
             "		int code;"
-            "	} bad;"
+            "	} err;"
             "};"
             ""
     }

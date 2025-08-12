@@ -33,6 +33,25 @@ check_format! { derive_foo
         "};"
 }
 
+pub mod unnamed {
+    use super::*;
+
+    #[derive(XDR)]
+    pub struct Unnamed(
+        pub u32,
+        pub i32,
+    );
+
+    check_format! { derive
+        Unnamed::def()
+        =>
+            "struct Unnamed {"
+            "	unsigned int f0;"
+            "	int f1;"
+            "};"
+    }
+}
+
 #[cfg(feature = "xdr_common")]
 pub mod test_common {
     use super::*;

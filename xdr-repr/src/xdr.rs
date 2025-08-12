@@ -89,6 +89,6 @@ pub enum TypeSpec {
     Bool,
     Enum(EnumBody),
     Struct(StructBody),
-    // Union(UnionBody),
+    Union(Box<UnionBody>),
     Ident(Ident),
 }
