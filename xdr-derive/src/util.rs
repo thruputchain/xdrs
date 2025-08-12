@@ -146,7 +146,7 @@ pub fn check_variants(
     }
 }
 
-pub fn check_enum_attrs(input: &syn::DeriveInput) -> Result<()> {
+pub fn check_enum_repr(input: &syn::DeriveInput) -> Result<()> {
     if let Some(repr_attr) = input.attrs.iter().find(|a|
         a.path().get_ident().map(|i| &i.to_string() == "repr").unwrap_or(false))
     {

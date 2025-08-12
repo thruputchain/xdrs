@@ -31,5 +31,9 @@ name = "derive_structs"
 required-features = ["derive"]
 
 [[test]]
+name = "derive_arrays"
+required-features = ["derive"]
+
+[[test]]
 name = "ns"
 required-features = ["ns"]

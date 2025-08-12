@@ -210,10 +210,30 @@ impl Format for Declaration {
                 max.fmt(f);
                 f.write_str(">");
             }
+            Declaration::FixedArray { name, elt_ty, len } => {
+                elt_ty.fmt(f);
+                f.write_str(" ");
+                name.fmt(f);
+                f.write_str("[");
+                len.fmt(f);
+                f.write_str("]");
+            }
+            Declaration::VariableArray { name, elt_ty, max } => {
+                elt_ty.fmt(f);
+                f.write_str(" ");
+                name.fmt(f);
+                f.write_str("<");
+                max.fmt(f);
+                f.write_str(">");
+            }
+            Declaration::Optional { name, opt_ty } => {
+                opt_ty.fmt(f);
+                f.write_str(" *");
+                name.fmt(f);
+            }
             Declaration::Void => {
                 f.write_str("void");
             }
-            _ => unimplemented!()
         }
     }
 }

@@ -12,7 +12,7 @@ cargo test -F "alloc,${additive_features}"
 cargo test -F "alloc,${additive_features}" --benches
 
 # test the xdr-repr crate
-cargo test -F derive,ns,xdr_common -p xdr-repr
+cargo test -p xdr-repr -F derive,ns,xdr_common
 
 if [ "${1}" == "all" ]; then
     # test with various feature combinations

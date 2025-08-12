@@ -6,28 +6,69 @@ pub trait HasSpecification {
     fn spec() -> Specification;
 }
 
-/*
-impl<T: XDR> HasSpecification for T {
-    fn spec() -> Specification {
-        Specification {
-            definitions: vec![T::def()]
-        }
-    }
-}
-*/
-
 pub trait XDR {
     fn def() -> Definition;
-}
-
-pub trait HasTypeDef {
-    fn type_def() -> TypeDef;
 }
 
 impl<T: HasTypeDef> XDR for T {
     fn def() -> Definition {
         Definition::Type(T::type_def())
     }
+}
+
+pub trait HasTypeDef {
+    fn type_def() -> TypeDef;
+}
+
+pub trait HasTypeSpec {
+    fn type_spec() -> TypeSpec;
+}
+
+impl<T: HasTypeDef> HasTypeSpec for T {
+    fn type_spec() -> TypeSpec {
+        let ident = type_def_ident(T::type_def());
+        TypeSpec::Ident(ident.clone())
+    }
+}
+
+fn type_def_ident(type_def: TypeDef) -> Ident {
+    match type_def {
+        TypeDef::Def(decl) => decl_ident(decl),
+        TypeDef::Enum(ident, _) => ident,
+        TypeDef::Struct(ident, _) => ident,
+        TypeDef::Union(ident, _) => ident,
+    }
+}
+
+fn decl_ident(decl: Declaration) -> Ident {
+    match decl {
+        Declaration::Named { name: ident, .. } => ident,
+        Declaration::FixedOpaque { name: ident, .. } => ident,
+        Declaration::VariableOpaque { name: ident, .. } => ident,
+        Declaration::FixedArray { name: ident, .. } => ident,
+        Declaration::VariableArray { name: ident, .. } => ident,
+        Declaration::Optional { name: ident, .. } => ident,
+        Declaration::Void => Ident("void".to_string())
+    }
+}
+
+macro_rules! impl_has_type_spec {
+    { $( $ty:ty => $spec:expr ),* $(,)? } =>
+    {$(
+        impl HasTypeSpec for $ty {
+            fn type_spec() -> TypeSpec {
+                $spec
+            }
+        }
+    )*};
+}
+
+impl_has_type_spec! {
+    i32 => TypeSpec::Int,
+    u32 => TypeSpec::Unsigned,
+    i64 => TypeSpec::Hyper,
+    u64 => TypeSpec::UnsignedHyper,
+    bool => TypeSpec::Bool,
 }
 
 pub trait Declare {
@@ -72,9 +113,20 @@ impl<const N: usize> Declare for [u8; N] {
     }
 }
 
+impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::FixedArray {
+            name,
+            elt_ty: T::type_spec(),
+            // TODO: use compile-time asserts to check N fits in u32
+            len: Value::Const((N as u32).into()),
+        }
+    }
+}
+
 #[cfg(feature = "xdr_common")]
 const _: () = {
-    use xdr_common::BytesM;
+    use xdr_common::{BytesM, VecM};
 
     impl<const MAX: u32> Declare for BytesM<MAX> {
         fn declare(name: Ident) -> Declaration {
@@ -85,7 +137,21 @@ const _: () = {
             }
         }
     }
+
+    impl<T, const MAX: u32> Declare for VecM<T, MAX>
+        where T: HasTypeSpec
+    {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::VariableArray {
+                name,
+                elt_ty: T::type_spec(),
+                // TODO: use compile-time asserts to check MAX fits in u32
+                max: Value::Const(Constant::Unsigned(MAX as u32))
+            }
+        }
+    }
 };
+
 
 impl<T> Declare for T
     where T: HasTypeDef
@@ -106,7 +172,7 @@ impl<T> Declare for T
     }
 }
 
-// TODO: feature-gate this, as some users may not want?
+// TODO: feature-gate this, as some users may not want it?
 impl<'a, T: HasTypeDef> HasTypeDef for &'a T {
     fn type_def() -> TypeDef {
         T::type_def()
