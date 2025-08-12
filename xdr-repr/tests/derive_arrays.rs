@@ -7,6 +7,23 @@ use xdr_derive::XDR;
 #[derive(XDR)]
 struct Thing { okay: bool }
 
+pub mod opaque_fixed {
+    use super::*;
+
+    #[derive(XDR)]
+    struct Bytes {
+        bytes: [u8; 100],
+    }
+
+    check_format! { derive
+        Bytes::def()
+        =>
+            "struct Bytes {"
+            "	opaque bytes[100];"
+            "};"
+    }
+}
+
 pub mod arrays_fixed {
     use super::*;
 
@@ -24,6 +41,48 @@ pub mod arrays_fixed {
             "	unsigned int n_valid;"
             "	unsigned int numbers[100];"
             "	Thing some_things[3];"
+            "};"
+    }
+}
+
+pub mod optional {
+    use super::*;
+
+    #[derive(XDR)]
+    struct Bytes {
+        bytes: [u8; 100],
+    }
+
+    #[derive(XDR)]
+    struct OptStruct {
+        maybe_bytes: Option<Bytes>,
+    }
+
+    check_format! { derive
+        OptStruct::def()
+        =>
+            "struct OptStruct {"
+            "	Bytes *maybe_bytes;"
+            "};"
+    }
+}
+
+
+#[cfg(feature = "xdr_common")]
+pub mod opaque_variable {
+    use xdr_common::*;
+    use super::*;
+
+    #[derive(XDR)]
+    struct Bytes {
+        bytes: BytesM<1000>,
+    }
+
+    check_format! { derive
+        Bytes::def()
+        =>
+            "struct Bytes {"
+            "	opaque bytes<1000>;"
             "};"
     }
 }

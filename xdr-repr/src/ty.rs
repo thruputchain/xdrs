@@ -103,6 +103,15 @@ impl_declare_named! {
     u128 => TypeSpec::Ident(Ident("uint128_xdr".to_owned())),
 }
 
+impl<T: HasTypeSpec> Declare for Option<T> {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::Optional {
+            name,
+            opt_ty: T::type_spec(),
+        }
+    }
+}
+
 impl<const N: usize> Declare for [u8; N] {
     fn declare(name: Ident) -> Declaration {
         Declaration::FixedOpaque {
