@@ -7,14 +7,14 @@
 //! See [RFC 5531, section 12](https://datatracker.ietf.org/doc/html/rfc5531#section-12) for the
 //! RPC language
 
-mod test;
 mod display_rpc;
+mod test;
 
-pub mod xdr;
-pub mod rpc;
-pub mod ty;
 pub mod construct;
 pub mod format;
+pub mod rpc;
+pub mod ty;
+pub mod xdr;
 
 // export the types that represent XDR specs
 pub use xdr::*;

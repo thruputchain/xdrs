@@ -102,10 +102,7 @@ fn field_as_type() {
     }
 
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
-    struct New(
-        #[xdrs(as_type = "u32")]
-        Blob
-    );
+    struct New(#[xdrs(as_type = "u32")] Blob);
 
     let n: u32 = 7;
     let val = New(Blob::from(n));
@@ -123,8 +120,7 @@ fn struct_as_type() {
     struct Thing(u64);
 
     // Wrap a u32 and serialize it like a Thing
-    #[derive(ReadXDR, WriteXDR)]
-    #[derive(Debug, PartialEq, Eq, Clone)]
+    #[derive(ReadXDR, WriteXDR, Debug, PartialEq, Eq, Clone)]
     #[xdrs(as_type = "Thing")]
     struct U32(u32);
 

@@ -29,7 +29,7 @@ pub mod fieldless_enum {
     #[repr(i32)]
     pub enum Fieldless {
         Tuple(),
-        Struct{},
+        Struct {},
         Unit,
     }
 
@@ -68,13 +68,8 @@ pub mod separate_discriminant {
     #[xdr(discrim_type = "Status", discrim_var = "stat")]
     #[repr(i32)]
     pub enum Message {
-        Ok {
-            contents: [u8; 100],
-        } = Status::Ok as i32,
-        Err {
-            err_msg: [u8; 20],
-            code: i32,
-        } = Status::Err as i32,
+        Ok { contents: [u8; 100] } = Status::Ok as i32,
+        Err { err_msg: [u8; 20], code: i32 } = Status::Err as i32,
     }
 
     check_format! { check
@@ -120,10 +115,7 @@ pub mod enum_with_data {
     #[derive(XDR)]
     #[repr(i32)]
     pub enum Data {
-        Alpha {
-            n: u32,
-            okay: bool,
-        } = 1,
+        Alpha { n: u32, okay: bool } = 1,
         Beta { b: i32 } = 2,
         Omega = -1,
     }
@@ -183,7 +175,7 @@ pub mod fieldless_with_default {
         Beta = 20,
 
         #[xdr(enum_default)]
-        Default
+        Default,
     }
 }
 
@@ -193,11 +185,15 @@ pub mod enum_with_default {
     #[derive(XDR)]
     #[repr(i32)]
     pub enum EnumWithDefault {
-        Alpha { a: u32 } = 10,
+        Alpha {
+            a: u32,
+        } = 10,
         Beta = 20,
 
         #[xdr(enum_default)]
-        Default { which: i32 },
+        Default {
+            which: i32,
+        },
     }
 
     check_format! { derive
@@ -251,10 +247,7 @@ pub mod enum_implicit {
     #[derive(XDR)]
     #[repr(i32)]
     pub enum Implicit {
-        Alpha {
-            n: u32,
-            okay: bool,
-        },
+        Alpha { n: u32, okay: bool },
         Beta,
         Omega,
     }

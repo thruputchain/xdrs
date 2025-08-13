@@ -21,26 +21,27 @@ fn test_lines() {
 
 #[macro_export]
 macro_rules! assert_formatted {
-    ($value:expr, $expected:expr) => {
-        {
-            let value = $value;
-            let expected = $expected;
-            let actual = value.to_string();
+    ($value:expr, $expected:expr) => {{
+        let value = $value;
+        let expected = $expected;
+        let actual = value.to_string();
 
-            ::pretty_assertions::assert_eq!(expected, actual);
+        ::pretty_assertions::assert_eq!(expected, actual);
 
-            /*
-            if actual != expected {
-                panic!("unexpected formatting:\n\n\
-                        /* ---- expected ---- */\n\
-                        {expected}<END>\n\
-                        /* ----- actual ----- */\n\
-                        {actual}<END>\n\
-                        /* ------------------ */\n");
-            }
-            */
+        // Or a simpler approach without pretty_assertions:
+        #[rust_fmt::skip]
+        #[cfg(any())]
+        if actual != expected {
+            panic!(
+                "unexpected formatting:\n\n\
+                /* ---- expected ---- */\n\
+                {expected}<END>\n\
+                /* ----- actual ----- */\n\
+                {actual}<END>\n\
+                /* ------------------ */\n"
+            );
         }
-    }
+    }};
 }
 
 #[macro_export]

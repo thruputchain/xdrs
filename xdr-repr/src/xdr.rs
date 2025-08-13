@@ -23,7 +23,7 @@ pub enum TypeDef {
     Def(Declaration),
     Enum(Ident, EnumBody),
     Struct(Ident, StructBody),
-    Union(Ident, UnionBody)
+    Union(Ident, UnionBody),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,12 +68,32 @@ pub enum Value {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Declaration {
-    Named { name: Ident, ty: TypeSpec },
-    FixedOpaque { name: Ident, size: Value },
-    VariableOpaque { name: Ident, max: Value },
-    FixedArray { name: Ident, elt_ty: TypeSpec, len: Value },
-    VariableArray { name: Ident, elt_ty: TypeSpec, max: Value },
-    Optional { name: Ident, opt_ty: TypeSpec },
+    Named {
+        name: Ident,
+        ty: TypeSpec,
+    },
+    FixedOpaque {
+        name: Ident,
+        size: Value,
+    },
+    VariableOpaque {
+        name: Ident,
+        max: Value,
+    },
+    FixedArray {
+        name: Ident,
+        elt_ty: TypeSpec,
+        len: Value,
+    },
+    VariableArray {
+        name: Ident,
+        elt_ty: TypeSpec,
+        max: Value,
+    },
+    Optional {
+        name: Ident,
+        opt_ty: TypeSpec,
+    },
     Void,
 }
 

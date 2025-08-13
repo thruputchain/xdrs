@@ -79,19 +79,23 @@ pub fn named_type(name: &str) -> TypeSpec {
 }
 
 pub fn struct_type(fields: Vec<Declaration>) -> TypeSpec {
-    assert!(!fields.is_empty(), "XDR struct must contain at least one field");
+    assert!(
+        !fields.is_empty(),
+        "XDR struct must contain at least one field"
+    );
 
-    TypeSpec::Struct(
-        StructBody(fields))
+    TypeSpec::Struct(StructBody(fields))
 }
 
 pub fn enum_type(variants: Vec<(Ident, Value)>) -> TypeSpec {
-    TypeSpec::Enum(
-        EnumBody(variants))
+    TypeSpec::Enum(EnumBody(variants))
 }
 
 pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
-    assert!(!fields.is_empty(), "XDR struct must contain at least one field");
+    assert!(
+        !fields.is_empty(),
+        "XDR struct must contain at least one field"
+    );
 
     TypeDef::Struct(ident(name), StructBody(fields))
 }
@@ -105,25 +109,35 @@ pub fn union_def(
     discrim_name: &str,
     discrim_type: TypeSpec,
     case_specs: Vec<CaseSpec>,
-    default_decl: Option<Declaration>
+    default_decl: Option<Declaration>,
 ) -> TypeDef {
-    assert!(!case_specs.is_empty(), "XDR Union: must have at least one case-spec");
+    assert!(
+        !case_specs.is_empty(),
+        "XDR Union: must have at least one case-spec"
+    );
 
-    TypeDef::Union(ident(name),
+    TypeDef::Union(
+        ident(name),
         UnionBody {
             discriminant_decl: declare_type(discrim_name, discrim_type),
             case_specs,
             default_decl,
-        })
+        },
+    )
 }
 
 pub fn single_case_spec(case: &str, decl: Declaration) -> CaseSpec {
-    CaseSpec { cases: vec![Value::Ident(ident(case))], decl }
+    CaseSpec {
+        cases: vec![Value::Ident(ident(case))],
+        decl,
+    }
 }
 
 pub fn def_const(name: &str, constant: Constant) -> Definition {
-    Definition::Const(
-        ConstDef { ident: ident(name), constant })
+    Definition::Const(ConstDef {
+        ident: ident(name),
+        constant,
+    })
 }
 
 pub fn specification(definitions: Vec<Definition>) -> Specification {
