@@ -3,7 +3,9 @@
 use xdr_repr::*;
 
 #[derive(XDR)]
-struct Thing { okay: bool }
+struct Thing {
+    okay: bool,
+}
 
 pub mod opaque_fixed {
     use super::*;
@@ -65,11 +67,10 @@ pub mod optional {
     }
 }
 
-
 #[cfg(feature = "xdr_common")]
 pub mod opaque_variable {
-    use xdr_common::*;
     use super::*;
+    use xdr_common::*;
 
     #[derive(XDR)]
     struct Bytes {
@@ -87,8 +88,8 @@ pub mod opaque_variable {
 
 #[cfg(feature = "xdr_common")]
 pub mod arrays_variable {
-    use xdr_common::*;
     use super::*;
+    use xdr_common::*;
 
     type T = VecM<u32, 100>;
 
@@ -105,7 +106,9 @@ pub mod arrays_variable {
     }
 
     #[derive(XDR)]
-    struct Thing { okay: bool }
+    struct Thing {
+        okay: bool,
+    }
 
     #[derive(XDR)]
     struct ContainsMultitudes {

@@ -7,9 +7,7 @@ fn show_prog() {
         id: Id("ping".into()),
         value: Constant(1),
         return_type: None,
-        arg_types: vec![
-            TypeSpec::Int,
-        ],
+        arg_types: vec![TypeSpec::Int],
     };
 
     let proc2 = Procedure {
@@ -31,8 +29,7 @@ fn show_prog() {
         versions: vec![version10],
     };
 
-    let expected =
-"program PingPong {
+    let expected = "program PingPong {
 	version v0.1.0 {
 		void ping (
 			int

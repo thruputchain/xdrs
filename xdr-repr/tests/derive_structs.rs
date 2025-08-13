@@ -35,10 +35,7 @@ pub mod unnamed {
     use super::*;
 
     #[derive(XDR)]
-    pub struct Unnamed(
-        pub u32,
-        pub i32,
-    );
+    pub struct Unnamed(pub u32, pub i32);
 
     check_format! { derive
         Unnamed::def()

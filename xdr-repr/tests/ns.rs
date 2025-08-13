@@ -6,9 +6,7 @@ pub struct Garbage {
 
 impl HasTypeDef for Garbage {
     fn type_def() -> TypeDef {
-        struct_def("Garbage", vec![
-            <u32>::declare(ident("weight")),
-        ])
+        struct_def("Garbage", vec![<u32>::declare(ident("weight"))])
     }
 }
 

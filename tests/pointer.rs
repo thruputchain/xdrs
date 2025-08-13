@@ -1,7 +1,6 @@
 mod common;
 use common::*;
 
-
 #[cfg(feature = "alloc")]
 #[test]
 fn vecm_empty() {
@@ -57,10 +56,7 @@ fn slice_in_struct() {
         pub b: bool,
     }
 
-    let val = Two {
-        a: buf,
-        b: true,
-    };
+    let val = Two { a: buf, b: true };
 
     CXS::check_codec(&val, &hex!("0001"));
     TXS::check_codec(&val, &hex!("0000000000000001"));
@@ -121,8 +117,8 @@ fn recursive_struct_box() {
 
 #[test]
 fn option_test() {
-    let x : Option<i32> = None;
-    let y : Option<i32> = Some(1);
+    let x: Option<i32> = None;
+    let y: Option<i32> = Some(1);
 
     CXS::check_codec(&x, &hex!("00"));
     TXS::check_codec(&x, &hex!("00000000"));
@@ -134,8 +130,8 @@ fn option_test() {
 #[cfg(feature = "alloc")]
 #[test]
 fn option_box_test() {
-    let x : Option<Box<i32>> = None;
-    let y : Option<Box<i32>> = Some(Box::new(1));
+    let x: Option<Box<i32>> = None;
+    let y: Option<Box<i32>> = Some(Box::new(1));
 
     CXS::check_codec(&x, &hex!("00"));
     TXS::check_codec(&x, &hex!("00000000"));

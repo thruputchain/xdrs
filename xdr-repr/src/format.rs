@@ -45,7 +45,7 @@ impl Formatter {
     pub const fn new() -> Self {
         Self {
             depth: 0,
-            output: String::new()
+            output: String::new(),
         }
     }
 
@@ -261,7 +261,7 @@ impl Format for TypeSpec {
                 f.write_str("enum ");
                 body.fmt(f);
             }
-            _ => panic!("Format unimplemented for {self:?}")
+            _ => panic!("Format unimplemented for {self:?}"),
         }
     }
 }

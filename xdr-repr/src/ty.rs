@@ -48,7 +48,7 @@ fn decl_ident(decl: Declaration) -> Ident {
         Declaration::FixedArray { name: ident, .. } => ident,
         Declaration::VariableArray { name: ident, .. } => ident,
         Declaration::Optional { name: ident, .. } => ident,
-        Declaration::Void => Ident("void".to_string())
+        Declaration::Void => Ident("void".to_string()),
     }
 }
 
@@ -142,35 +142,35 @@ const _: () = {
             Declaration::VariableOpaque {
                 name,
                 // TODO: use compile-time asserts to check MAX fits in u32
-                max: Value::Const(Constant::Unsigned(MAX))
+                max: Value::Const(Constant::Unsigned(MAX)),
             }
         }
     }
 
     impl<T, const MAX: u32> Declare for VecM<T, MAX>
-        where T: HasTypeSpec
+    where
+        T: HasTypeSpec,
     {
         fn declare(name: Ident) -> Declaration {
             Declaration::VariableArray {
                 name,
                 elt_ty: T::type_spec(),
                 // TODO: use compile-time asserts to check MAX fits in u32
-                max: Value::Const(Constant::Unsigned(MAX))
+                max: Value::Const(Constant::Unsigned(MAX)),
             }
         }
     }
 };
 
-
 impl<T> Declare for T
-    where T: HasTypeDef
+where
+    T: HasTypeDef,
 {
     fn declare(name: Ident) -> Declaration {
-        let declare_named = |ty_ident|
-            Declaration::Named {
-                name,
-                ty: TypeSpec::Ident(ty_ident)
-            };
+        let declare_named = |ty_ident| Declaration::Named {
+            name,
+            ty: TypeSpec::Ident(ty_ident),
+        };
 
         match T::type_def() {
             TypeDef::Def(decl) => decl,

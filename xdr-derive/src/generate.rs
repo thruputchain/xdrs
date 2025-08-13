@@ -1,8 +1,8 @@
 use crate::util::*;
+use darling::{FromDeriveInput, FromField};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
-use darling::{FromField, FromDeriveInput};
 
 #[derive(Debug, FromField, FromDeriveInput)]
 #[darling(attributes(xdrs))]
@@ -61,8 +61,11 @@ fn write_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> TokenStream {
 fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let write_fields = item.fields.iter().enumerate().map(|(i, f)|
-        write_field(i, f));
+    let write_fields = item
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| write_field(i, f));
 
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
@@ -102,9 +105,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let write_variants = token_reduce(&item.variants, |i, v| {
-        write_variant(i, v, input)
-    });
+    let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input));
 
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
@@ -149,11 +150,7 @@ fn write_enum_fast(_input: &syn::DeriveInput, _item: &syn::DataEnum) -> Option<T
     */
 }
 
-fn write_variant(
-    index: usize,
-    v: &syn::Variant,
-    input: &syn::DeriveInput,
-) -> TokenStream {
+fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
     let is_default_arm = variant_is_default(v);
 
     let var_ident = &v.ident;
@@ -340,8 +337,11 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     let generics = modify_for_reader_impl(input.generics.clone());
     let (impl_generics, _, _) = generics.split_for_impl();
 
-    let read_variants = item.variants.iter().enumerate().map(|(i, v)|
-        read_variant(i, v, input));
+    let read_variants = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| read_variant(i, v, input));
 
     let catch_bad_index = if default_variant.is_none() {
         quote! { _ => Err(__xdrs::Error::BadDiscriminator(d)) }
@@ -363,11 +363,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     })
 }
 
-fn read_variant(
-    index_u: usize,
-    variant: &syn::Variant,
-    input: &syn::DeriveInput,
-) -> TokenStream {
+fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
     let index = index_u as i32;
     let is_default = variant_is_default(variant);
     let var_match = if is_default {

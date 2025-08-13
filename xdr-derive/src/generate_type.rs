@@ -1,8 +1,8 @@
 use crate::util::*;
+use darling::{FromDeriveInput, FromField};
 use proc_macro2::TokenStream;
-use quote::{quote, ToTokens, format_ident};
+use quote::{ToTokens, format_ident, quote};
 use syn::Result;
-use darling::{FromField, FromDeriveInput};
 
 #[derive(Clone, Debug, FromField, FromDeriveInput)]
 #[darling(attributes(xdr))]
@@ -20,14 +20,14 @@ struct Attrs {
 
 impl Attrs {
     fn discrim_type_name(&self, rust_enum_name: &str) -> String {
-        self.discrim_type.clone()
+        self.discrim_type
+            .clone()
             .map(|t| t.to_string())
             .unwrap_or_else(|| rust_enum_name.to_string() + "Type")
     }
 
     fn discrim_var_name(&self) -> String {
-        self.discrim_var.clone()
-            .unwrap_or("which".to_string())
+        self.discrim_var.clone().unwrap_or("which".to_string())
     }
 }
 
@@ -66,8 +66,11 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let ty_ident = &input.ident;
     let ty_name = ty_ident.to_string();
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let declare_fields = item.fields.iter().enumerate().map(|(i, field)|
-            declare_struct_field(i, field));
+    let declare_fields = item
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| declare_struct_field(i, field));
     let struct_typedef = quote! {
         __xdrs::struct_def(#ty_name, __xdrs::vec![
             #(#declare_fields)*
@@ -121,7 +124,6 @@ fn from_enum_with_fields(
     item: &syn::DataEnum,
     attrs: &Attrs,
 ) -> Result<TokenStream> {
-
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -149,7 +151,7 @@ fn from_enum_with_fields(
         let rust_enum_name = ty_ident.to_string();
         let attrs = Attrs {
             name: Some(attrs.discrim_type_name(&rust_enum_name)),
-            .. attrs.clone()
+            ..attrs.clone()
         };
 
         spec_definitions.insert(0, enum_def(input, item, &attrs)?);
@@ -169,11 +171,7 @@ fn from_enum_with_fields(
 }
 
 // Make an expression that produces an XDR enumeration definition
-fn enum_def(
-    input: &syn::DeriveInput,
-    item: &syn::DataEnum,
-    attrs: &Attrs,
-) -> Result<TokenStream> {
+fn enum_def(input: &syn::DeriveInput, item: &syn::DataEnum, attrs: &Attrs) -> Result<TokenStream> {
     let typedef = enum_typedef(input, item, attrs)?;
 
     Ok(quote! {
@@ -188,10 +186,16 @@ fn enum_typedef(
     attrs: &Attrs,
 ) -> Result<TokenStream> {
     // The XDR enum has the same name as the rust type, unless the attrs override that
-    let enum_name = attrs.name.clone().unwrap_or_else(|| input.ident.to_string());
+    let enum_name = attrs
+        .name
+        .clone()
+        .unwrap_or_else(|| input.ident.to_string());
 
-    let declare_variants = item.variants.iter().enumerate().map(|(i, v)|
-        declare_enum_variant(i, v));
+    let declare_variants = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| declare_enum_variant(i, v));
 
     Ok(quote! {
         __xdrs::enum_def(
@@ -202,11 +206,7 @@ fn enum_typedef(
 
 // Make an expression that produces an XDR union definition
 #[allow(dead_code)]
-fn union_def(
-    input: &syn::DeriveInput,
-    item: &syn::DataEnum,
-    attrs: &Attrs,
-) -> Result<TokenStream> {
+fn union_def(input: &syn::DeriveInput, item: &syn::DataEnum, attrs: &Attrs) -> Result<TokenStream> {
     let union_typedef = union_typedef(input, item, attrs)?;
 
     Ok(quote! {
@@ -229,10 +229,11 @@ fn union_typedef(
     let specs = item.variants.iter().filter_map(variant_case_spec);
     let case_specs = quote! { __xdrs::vec![#(#specs),*] };
     let default_variant = find_default_variant(item);
-    let default_decl = option_tok(default_variant.map(|_v|
+    let default_decl = option_tok(default_variant.map(|_v| {
         quote! {
             __xdrs::declare_void()
-        }));
+        }
+    }));
 
     Ok(quote! {
         __xdrs::union_def(
@@ -269,7 +270,10 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
         syn::Fields::Named(fields_named) => {
             let mut decls = fields_named.named.iter().map(|field| {
                 let field_ty = &field.ty;
-                let field_name = field.ident.as_ref().map(|i| i.to_string())
+                let field_name = field
+                    .ident
+                    .as_ref()
+                    .map(|i| i.to_string())
                     .unwrap_or("inner".to_string());
                 quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) }
             });
@@ -307,21 +311,20 @@ fn declare_struct_field(i: usize, field: &syn::Field) -> TokenStream {
 }
 
 // Generate a variant declaration for an XDR enumeration
-fn declare_enum_variant(
-    index: usize,
-    variant: &syn::Variant,
-) -> TokenStream {
+fn declare_enum_variant(index: usize, variant: &syn::Variant) -> TokenStream {
     if variant_is_default(variant) {
         // Ignore default arm
-        return quote!{}
+        return quote! {};
     }
 
     let ident = &variant.ident.to_string();
 
     let index = index as i32;
     let index_expr = quote! { #index };
-    let discriminant_expr = variant.discriminant.as_ref().map(|(_, expr)|
-        expr.to_token_stream());
+    let discriminant_expr = variant
+        .discriminant
+        .as_ref()
+        .map(|(_, expr)| expr.to_token_stream());
     let discriminant = discriminant_expr.as_ref().unwrap_or(&index_expr);
 
     quote! {

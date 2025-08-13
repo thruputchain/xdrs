@@ -6,9 +6,7 @@ pub struct Boo {
 
 impl HasTypeDef for Boo {
     fn type_def() -> TypeDef {
-        struct_def("Boo", vec![
-            <u32 as Declare>::declare(ident("boonum"))
-        ])
+        struct_def("Boo", vec![<u32 as Declare>::declare(ident("boonum"))])
     }
 }
 
@@ -22,17 +20,17 @@ pub struct Foo {
 
 impl HasTypeDef for Foo {
     fn type_def() -> TypeDef {
-        declare_type("Foo",
+        declare_type(
+            "Foo",
             struct_type(vec![
                 <u32>::declare(ident("num")),
                 <[u8; 3]>::declare(ident("bytes")),
                 <Boo>::declare(ident("boo_by_name")),
-
                 // We won't need to generate inline structs like this
-                declare_type("boo_inline", struct_type(vec![
-                    declare_unsigned("boonum"),
-                ])),
-            ])).into()
+                declare_type("boo_inline", struct_type(vec![declare_unsigned("boonum")])),
+            ]),
+        )
+        .into()
     }
 }
 
@@ -42,9 +40,7 @@ pub struct Garbage {
 
 impl HasTypeDef for Garbage {
     fn type_def() -> TypeDef {
-        struct_def("Garbage", vec![
-            <u32>::declare(ident("weight")),
-        ])
+        struct_def("Garbage", vec![<u32>::declare(ident("weight"))])
     }
 }
 
@@ -99,9 +95,7 @@ pub mod test_common {
 
     impl HasTypeDef for Varry {
         fn type_def() -> TypeDef {
-            struct_def("Varry", vec![
-                <BytesM<100>>::declare(ident("stuff")),
-            ])
+            struct_def("Varry", vec![<BytesM<100>>::declare(ident("stuff"))])
         }
     }
 

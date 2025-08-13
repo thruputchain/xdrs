@@ -9,11 +9,14 @@ pub enum E {
 
 impl HasTypeDef for E {
     fn type_def() -> TypeDef {
-        enum_def("E", vec![
-            (ident("Alpha"), signed(1)),
-            (ident("Beta"), signed(2)),
-            (ident("Omega"), signed(-1)),
-        ])
+        enum_def(
+            "E",
+            vec![
+                (ident("Alpha"), signed(1)),
+                (ident("Beta"), signed(2)),
+                (ident("Omega"), signed(-1)),
+            ],
+        )
     }
 }
 
@@ -34,15 +37,20 @@ pub struct S {
 
 impl HasTypeDef for S {
     fn type_def() -> TypeDef {
-        struct_def("S", vec![
-            <E>::declare(ident("my_enum")),
-
-            declare_type("my_enum_inline", enum_type(vec![
-                (ident("Alpha"), signed(1)),
-                (ident("Beta"), signed(2)),
-                (ident("Omega"), signed(-1)),
-            ]))
-        ])
+        struct_def(
+            "S",
+            vec![
+                <E>::declare(ident("my_enum")),
+                declare_type(
+                    "my_enum_inline",
+                    enum_type(vec![
+                        (ident("Alpha"), signed(1)),
+                        (ident("Beta"), signed(2)),
+                        (ident("Omega"), signed(-1)),
+                    ]),
+                ),
+            ],
+        )
     }
 }
 

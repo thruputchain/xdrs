@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Result, Error};
 use syn::spanned::Spanned;
+use syn::{Error, Result};
 
 // Produce an error result referencing a particular code span
 pub fn err<T, S, M>(item: &S, msg: M) -> Result<T>
@@ -114,24 +114,17 @@ pub fn enum_is_fieldless(e: &syn::DataEnum) -> bool {
 }
 
 pub fn find_default_variant(item: &syn::DataEnum) -> Option<&syn::Variant> {
-    item.variants.iter().find(|v|
-        variant_is_default(v))
+    item.variants.iter().find(|v| variant_is_default(v))
 }
 
-pub fn check_variants(
-    input: &syn::DeriveInput,
-    item: &syn::DataEnum,
-) -> Result<()> {
+pub fn check_variants(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<()> {
     let variants = &item.variants;
-    let default_variant = item.variants.iter().find(|v|
-        variant_is_default(v));
+    let default_variant = item.variants.iter().find(|v| variant_is_default(v));
 
     let n_variants = variants.iter().count();
-    let n_explicit = variants.iter().filter(|v|
-        v.discriminant.is_some()).count();
-    let n_implicit = n_variants - n_explicit - 
-        // we don't consider a default variant implicit or explicit
-        if default_variant.is_some() { 1 } else { 0 };
+    let n_explicit = variants.iter().filter(|v| v.discriminant.is_some()).count();
+    let n_default = if default_variant.is_some() { 1 } else { 0 };
+    let n_implicit = n_variants - n_explicit - n_default;
 
     if n_explicit > 0 && n_implicit > 0 {
         err(
@@ -140,26 +133,38 @@ pub fn check_variants(
              all explicit, and may optionally also include a default \
              variant (with no explicit discriminant) named \"Default\", \
              which must have one i32 field",
-             )
+        )
     } else {
         Ok(())
     }
 }
 
 pub fn check_enum_repr(input: &syn::DeriveInput) -> Result<()> {
-    if let Some(repr_attr) = input.attrs.iter().find(|a|
-        a.path().get_ident().map(|i| &i.to_string() == "repr").unwrap_or(false))
-    {
+    if let Some(repr_attr) = input.attrs.iter().find(|a| {
+        a.path()
+            .get_ident()
+            .map(|i| &i.to_string() == "repr")
+            .unwrap_or(false)
+    }) {
         if let Ok(repr_ident) = repr_attr.parse_args::<syn::Ident>() {
             let repr_str = repr_ident.to_string();
             if &repr_str != "i32" {
-                return err(repr_attr, format!("enum must use #[repr(i32)] to derive XDR; found {repr_str}"));
+                return err(
+                    repr_attr,
+                    format!("enum must use #[repr(i32)] to derive XDR; found {repr_str}"),
+                );
             }
         } else {
-            return err(input, "enum must use #[repr(i32)] to derive XDR; couldn't parse repr args");
+            return err(
+                input,
+                "enum must use #[repr(i32)] to derive XDR; couldn't parse repr args",
+            );
         }
     } else {
-        return err(input, "enum must use #[repr(i32)] to derive XDR; no #[repr(_)] found");
+        return err(
+            input,
+            "enum must use #[repr(i32)] to derive XDR; no #[repr(_)] found",
+        );
     }
     Ok(())
 }
