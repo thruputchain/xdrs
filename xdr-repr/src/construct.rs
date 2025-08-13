@@ -79,7 +79,7 @@ pub fn named_type(name: &str) -> TypeSpec {
 }
 
 pub fn struct_type(fields: Vec<Declaration>) -> TypeSpec {
-    assert!(fields.len() > 0, "XDR struct must contain at least one field");
+    assert!(!fields.is_empty(), "XDR struct must contain at least one field");
 
     TypeSpec::Struct(
         StructBody(fields))
@@ -91,7 +91,7 @@ pub fn enum_type(variants: Vec<(Ident, Value)>) -> TypeSpec {
 }
 
 pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
-    assert!(fields.len() > 0, "XDR struct must contain at least one field");
+    assert!(!fields.is_empty(), "XDR struct must contain at least one field");
 
     TypeDef::Struct(ident(name), StructBody(fields))
 }

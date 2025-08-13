@@ -115,7 +115,7 @@ pub fn enum_is_fieldless(e: &syn::DataEnum) -> bool {
 
 pub fn find_default_variant(item: &syn::DataEnum) -> Option<&syn::Variant> {
     item.variants.iter().find(|v|
-        variant_is_default(*v))
+        variant_is_default(v))
 }
 
 pub fn check_variants(
@@ -124,7 +124,7 @@ pub fn check_variants(
 ) -> Result<()> {
     let variants = &item.variants;
     let default_variant = item.variants.iter().find(|v|
-        variant_is_default(*v));
+        variant_is_default(v));
 
     let n_variants = variants.iter().count();
     let n_explicit = variants.iter().filter(|v|

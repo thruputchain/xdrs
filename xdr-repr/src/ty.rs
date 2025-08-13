@@ -142,7 +142,7 @@ const _: () = {
             Declaration::VariableOpaque {
                 name,
                 // TODO: use compile-time asserts to check MAX fits in u32
-                max: Value::Const(Constant::Unsigned(MAX as u32))
+                max: Value::Const(Constant::Unsigned(MAX))
             }
         }
     }
@@ -155,7 +155,7 @@ const _: () = {
                 name,
                 elt_ty: T::type_spec(),
                 // TODO: use compile-time asserts to check MAX fits in u32
-                max: Value::Const(Constant::Unsigned(MAX as u32))
+                max: Value::Const(Constant::Unsigned(MAX))
             }
         }
     }
@@ -182,7 +182,7 @@ impl<T> Declare for T
 }
 
 // TODO: feature-gate this, as some users may not want it?
-impl<'a, T: HasTypeDef> HasTypeDef for &'a T {
+impl<T: HasTypeDef> HasTypeDef for &T {
     fn type_def() -> TypeDef {
         T::type_def()
     }

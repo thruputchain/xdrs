@@ -59,7 +59,7 @@ fn from_input(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
-    if item.fields.len() == 0 {
+    if item.fields.is_empty() {
         return Err(error(input, "XDR: can't represent a struct with no fields"));
     }
 
@@ -142,7 +142,7 @@ fn from_enum_with_fields(
     // which, instead of generating again, we can get via the above HasTypeDef impl:
     let mut spec_definitions = vec![quote! { #ty_ident::def() }];
 
-    if !attrs.discrim_type.is_some() {
+    if attrs.discrim_type.is_none() {
         // No existing discriminant type was provided, so we also define
         // an XDR enumeration to serve as the discriminant
 

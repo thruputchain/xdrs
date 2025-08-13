@@ -158,6 +158,7 @@ fn write_variant(
 
     let var_ident = &v.ident;
     let ty_ident = &input.ident;
+
     let var_bindings = var_bindings(&v.fields);
     let write_bindings = if is_default_arm {
         // Write only the discriminant
@@ -165,19 +166,19 @@ fn write_variant(
     } else {
         token_reduce(&v.fields, write_binding)
     };
+
     let variant_idx = index as i32;
     let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
         // An explicit-discriminant variant should never be considered a default arm
         assert!(!is_default_arm);
 
         quote! { #d }
+    } else if is_default_arm {
+        // Use the default-arm value as the discriminant
+        quote! { *_self_0 }
     } else {
-        if is_default_arm {
-            // Use the default-arm value as the discriminant
-            quote! { *_self_0 }
-        } else {
-            quote! { #variant_idx }
-        }
+        // Use the zero-based index
+        quote! { #variant_idx }
     };
 
     quote! {
@@ -253,7 +254,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 
 fn read_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
     if let Some(as_type) = attrs.as_type.as_ref() {
-        return Ok(read_as_type(input, as_type)?);
+        return read_as_type(input, as_type);
     }
 
     match &input.data {
