@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
-use xdr_repr::*;
+use xdrs::*;
+use xdrs::xdr_repr::*;
 
 #[derive(XDR)]
 struct Thing {
@@ -70,7 +71,6 @@ pub mod optional {
 #[cfg(feature = "xdr_common")]
 pub mod opaque_variable {
     use super::*;
-    use xdr_common::*;
 
     #[derive(XDR)]
     struct Bytes {
@@ -89,7 +89,6 @@ pub mod opaque_variable {
 #[cfg(feature = "xdr_common")]
 pub mod arrays_variable {
     use super::*;
-    use xdr_common::*;
 
     type T = VecM<u32, 100>;
 

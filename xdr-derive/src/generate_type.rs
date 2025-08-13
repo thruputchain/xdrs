@@ -38,9 +38,8 @@ pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     Ok(quote! {
         const _: () = {
             mod __xdrs {
-                pub use ::xdr_repr::ty::*;
-                pub use ::xdr_repr::xdr::*;
-                pub use ::xdr_repr::construct::*;
+                pub use ::xdrs::*;
+                pub use ::xdrs::xdr_repr::*;
                 pub use ::std::vec;
             }
 

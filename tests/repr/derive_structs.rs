@@ -1,3 +1,4 @@
+use xdrs::*;
 use xdr_repr::*;
 
 // // compile error: XDR: can't represent struct with no fields
@@ -50,7 +51,6 @@ pub mod unnamed {
 #[cfg(feature = "xdr_common")]
 pub mod test_common {
     use super::*;
-    use xdr_common::*;
 
     #[derive(XDR)]
     pub struct Varry {
