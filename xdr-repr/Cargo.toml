@@ -17,6 +17,7 @@ unsafe_code = "forbid"
 [features]
 derive = ["dep:xdr-derive"] # derive XDR trait
 xdr_common = ["dep:xdr_common"] # types for variable-length arrays
+i128 = []
 ns = [] # C++-like namespaces for XDR specs
 
 [dev-dependencies]
