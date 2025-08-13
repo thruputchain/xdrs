@@ -21,3 +21,7 @@ pub use xdr::*;
 
 // export the traits that produce XDR representations
 pub use ty::*;
+
+// Re-export XDR derive-macro
+#[cfg(feature = "derive")]
+pub use xdr_derive::XDR;

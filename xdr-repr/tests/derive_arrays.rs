@@ -2,7 +2,6 @@
 
 use xdr_repr::{check_format, assert_formatted, lines};
 use xdr_repr::*;
-use xdr_derive::XDR;
 
 #[derive(XDR)]
 struct Thing { okay: bool }
