@@ -42,6 +42,9 @@ pub mod prelude {
     pub use xdr_derive::*;
 
     #[cfg(feature = "xdr_common")]
+    pub use xdr_common;
+
+    #[cfg(feature = "xdr_common")]
     pub use xdr_common::*;
 }
 
