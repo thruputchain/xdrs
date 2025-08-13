@@ -1,3 +1,4 @@
+use xdrs::*;
 use xdr_repr::*;
 
 pub mod unit_only_enum {

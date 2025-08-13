@@ -21,19 +21,7 @@ i128 = []
 ns = [] # C++-like namespaces for XDR specs
 
 [dev-dependencies]
-pretty_assertions = "1.4.1"
-
-[[test]]
-name = "derive_enums"
-required-features = ["derive"]
-
-[[test]]
-name = "derive_structs"
-required-features = ["derive"]
-
-[[test]]
-name = "derive_arrays"
-required-features = ["derive"]
+pretty_assertions = { workspace = true }
 
 [[test]]
 name = "ns"

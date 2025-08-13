@@ -706,6 +706,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "hex",
+ "pretty_assertions",
  "thiserror",
  "xdr-derive",
  "xdr-repr",

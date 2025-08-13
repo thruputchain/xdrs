@@ -13,6 +13,7 @@ xdr-derive = { path = "xdr-derive" }
 xdr-repr = { path = "xdr-repr" }
 xdr_common = { git = "ssh://git@github.com/groundhogchain/xdr_common.git" }
 thiserror = { version = "2.0.12", default-features = false }
+pretty_assertions = "1.4.1"
 
 [workspace.lints.rust]
 unsafe_code = "allow"
@@ -32,6 +33,7 @@ thiserror = { workspace = true }
 criterion = "0.6.0"
 hex = "0.4.3"
 xdrs = { path = ".", features = ["derive", "xdr_common"] }
+pretty_assertions = { workspace = true }
 
 [features]
 default = ["strict", "cxs", "txs"]
@@ -56,3 +58,18 @@ bench = false # disable libtest benchmarks, in favor of Criterion
 name = "bench1"
 harness = false
 required-features = ["alloc", "extras"]
+
+[[test]]
+name = "derive_enums"
+path = "tests/repr/derive_enums.rs"
+required-features = ["derive"]
+
+[[test]]
+name = "derive_structs"
+path = "tests/repr/derive_structs.rs"
+required-features = ["derive"]
+
+[[test]]
+name = "derive_arrays"
+path = "tests/repr/derive_arrays.rs"
+required-features = ["derive"]
