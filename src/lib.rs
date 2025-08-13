@@ -36,6 +36,8 @@ pub mod prelude {
     pub use crate::serialize::writer::Result as WriteResult;
     pub use crate::serialize::writer::*;
 
+    pub use xdr_repr;
+
     #[cfg(feature = "derive")]
     pub use xdr_derive::*;
 
