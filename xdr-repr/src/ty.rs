@@ -160,6 +160,22 @@ impl<E> HasTypeSpec for Result<(), E> {
     }
 }
 
+// TODO: feature-gate this, as some users may not want it?
+impl<E> HasTypeSpec for Result<u128, E> {
+    fn type_spec() -> TypeSpec {
+        let result_ty_ident = Ident("ExpectedU128".to_owned());
+        TypeSpec::Ident(result_ty_ident)
+    }
+}
+
+// TODO: feature-gate this, as some users may not want it?
+impl<E> HasTypeSpec for Result<i128, E> {
+    fn type_spec() -> TypeSpec {
+        let result_ty_ident = Ident("ExpectedI128".to_owned());
+        TypeSpec::Ident(result_ty_ident)
+    }
+}
+
 #[cfg(feature = "xdr_common")]
 const _: () = {
     use xdr_common::{BytesM, VecM};
