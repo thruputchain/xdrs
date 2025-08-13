@@ -42,6 +42,7 @@ txs = [] # include TXS codec
 extras = [] # include convenient extensions to the spec
 xdr_common = ["dep:xdr_common", "xdr-repr/xdr_common"]
 alloc = ["xdr_common/alloc"] # enable allocating interfaces
+int128_xdr = []
 
 [lints]
 workspace = true
