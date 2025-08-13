@@ -27,7 +27,7 @@ impl Display for Procedure {
 
         let mut arg_types = self.arg_types.iter().peekable();
         while let Some(arg_type) = arg_types.next() {
-            write!(f, "\t\t\t{}", arg_type)?;
+            write!(f, "\t\t\t{arg_type}")?;
             if arg_types.peek().is_some() {
                 f.write_str(",")?;
             }
@@ -44,7 +44,7 @@ impl Display for Version {
         writeln!(f, "version {} {{", self.id)?;
 
         for p in self.procedures.iter() {
-            write!(f, "{}", p)?;
+            write!(f, "{p}")?;
         }
 
         writeln!(f, "\t}} = {};", self.value)
