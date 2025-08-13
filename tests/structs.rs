@@ -124,7 +124,7 @@ fn struct_as_type() {
 
     // Wrap a u32 and serialize it like a Thing
     #[derive(ReadXDR, WriteXDR)]
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone)]
     #[xdrs(as_type = "Thing")]
     struct U32(u32);
 
