@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use xdr_repr::{check_format, assert_formatted, lines};
 use xdr_repr::*;
 
 #[derive(XDR)]

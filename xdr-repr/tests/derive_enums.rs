@@ -1,4 +1,3 @@
-use xdr_repr::{check_format, assert_formatted, lines};
 use xdr_repr::*;
 
 pub mod unit_only_enum {

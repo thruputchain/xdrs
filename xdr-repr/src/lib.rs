@@ -19,6 +19,9 @@ pub mod format;
 // export the types that represent XDR specs
 pub use xdr::*;
 
+// export XDR-spec constructors
+pub use construct::*;
+
 // export the traits that produce XDR representations
 pub use ty::*;
 
