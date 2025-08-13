@@ -27,7 +27,9 @@ impl Display for Procedure {
 
         let mut arg_types = self.arg_types.iter().peekable();
         while let Some(arg_type) = arg_types.next() {
-            write!(f, "\t\t\t{arg_type}")?;
+            let ty = &arg_type.ty;
+            let name = arg_type.name.as_str();
+            write!(f, "\t\t\t{ty} /* {name} */")?;
             if arg_types.peek().is_some() {
                 f.write_str(",")?;
             }
