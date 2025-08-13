@@ -49,7 +49,7 @@ macro_rules! check_format {
         #[test]
         $(#[$attr])?
         fn $test_name() {
-            crate::assert_formatted!($val, crate::lines![$($ln),*]);
+            $crate::assert_formatted!($val, $crate::lines![$($ln),*]);
         }
     };
 }

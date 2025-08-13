@@ -1,6 +1,4 @@
-use xdr_repr::{check_format, assert_formatted, lines};
 use xdr_repr::*;
-use xdr_repr::construct::*;
 
 #[repr(i32)]
 pub enum E {

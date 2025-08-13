@@ -1,6 +1,4 @@
 use xdr_repr::*;
-use xdr_repr::construct::*;
-use xdr_repr::{check_format, assert_formatted, lines};
 
 pub struct Garbage {
     pub weight: u32,
