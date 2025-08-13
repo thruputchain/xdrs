@@ -3,6 +3,8 @@
 set -x  # print commands
 set -e  # fail on error
 
+export RUSTFLAGS="--deny warnings"
+
 additive_features="extras,xdr_common"
 
 # test the root library
