@@ -133,6 +133,25 @@ impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
     }
 }
 
+// TODO: feature-gate this, as some users may not want it?
+impl<T, E> HasTypeSpec for Result<T, E>
+    where T: HasTypeDef
+{
+    fn type_spec() -> TypeSpec {
+        let ok_ty_name = type_def_ident(T::type_def()).0;
+        let result_ty_ident = Ident("Expected".to_owned() + ok_ty_name.as_str());
+        TypeSpec::Ident(result_ty_ident)
+    }
+}
+
+// TODO: feature-gate this, as some users may not want it?
+impl<E> HasTypeSpec for Result<(), E> {
+    fn type_spec() -> TypeSpec {
+        let result_ty_ident = Ident("ExpectedVoid".to_owned());
+        TypeSpec::Ident(result_ty_ident)
+    }
+}
+
 #[cfg(feature = "xdr_common")]
 const _: () = {
     use xdr_common::{BytesM, VecM};
