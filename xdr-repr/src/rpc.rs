@@ -22,5 +22,10 @@ pub struct Procedure {
     pub id: Id,
     pub value: Constant,
     pub return_type: Option<TypeSpec>,
-    pub arg_types: Vec<TypeSpec>,
+    pub arg_types: Vec<Arg>,
+}
+
+pub struct Arg {
+    pub ty: TypeSpec,
+    pub name: String,
 }
