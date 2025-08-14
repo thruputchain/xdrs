@@ -44,7 +44,8 @@ cxs = [] # include CXS codec
 txs = [] # include TXS codec
 extras = ["xdr-repr/i128"] # include convenient extensions to the spec
 xdr_common = ["dep:xdr_common", "xdr-repr/xdr_common"]
-alloc = ["xdr_common/alloc", "dep:xdr-repr"] # enable allocating interfaces
+alloc = ["xdr_common/alloc"] # enable allocating interfaces
+repr = ["dep:xdr-repr", "alloc"]
 int128_xdr = []
 
 [lints]
