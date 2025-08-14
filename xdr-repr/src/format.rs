@@ -207,7 +207,9 @@ impl Format for Declaration {
                 f.write_str("opaque ");
                 name.fmt(f);
                 f.write_str("<");
-                max.fmt(f);
+                if max != &Value::Const(Constant::Unsigned(u32::MAX)) {
+                    max.fmt(f);
+                }
                 f.write_str(">");
             }
             Declaration::FixedArray { name, elt_ty, len } => {
@@ -223,7 +225,9 @@ impl Format for Declaration {
                 f.write_str(" ");
                 name.fmt(f);
                 f.write_str("<");
-                max.fmt(f);
+                if max != &Value::Const(Constant::Unsigned(u32::MAX)) {
+                    max.fmt(f);
+                }
                 f.write_str(">");
             }
             Declaration::Optional { name, opt_ty } => {
