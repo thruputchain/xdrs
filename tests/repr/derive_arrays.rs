@@ -110,10 +110,11 @@ pub mod arrays_variable {
     }
 
     #[derive(XDR)]
-    struct ContainsMultitudes {
+    struct ContainsMultitudes<'a> {
         n_valid: u32,
         numbers: VecM<u32, 100>,
         some_things: [Thing; 3],
+        more_things: &'a [Thing],
         many_things: VecM<Thing, 3>,
     }
 
@@ -124,6 +125,7 @@ pub mod arrays_variable {
             "	unsigned int n_valid;"
             "	unsigned int numbers<100>;"
             "	Thing some_things[3];"
+            "	Thing more_things<>;"
             "	Thing many_things<3>;"
             "};"
     }

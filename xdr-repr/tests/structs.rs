@@ -89,13 +89,17 @@ pub mod test_common {
     use super::*;
     use xdr_common::*;
 
-    pub struct Varry {
+    pub struct Varry<'a> {
         pub stuff: BytesM<100>,
+        pub slice: &'a[u8],
     }
 
-    impl HasTypeDef for Varry {
+    impl<'a> HasTypeDef for Varry<'a> {
         fn type_def() -> TypeDef {
-            struct_def("Varry", vec![<BytesM<100>>::declare(ident("stuff"))])
+            struct_def("Varry", vec![
+                <BytesM<100>>::declare(ident("stuff")),
+                <&[u8]>::declare(ident("slice"))
+            ])
         }
     }
 
@@ -104,6 +108,7 @@ pub mod test_common {
         =>
         "struct Varry {"
         "	opaque stuff<100>;"
+        "	opaque slice<>;"
         "};"
     }
 }
