@@ -38,7 +38,7 @@ pub use crate::serialize::writer::Error as WriteError;
 pub use crate::serialize::writer::Result as WriteResult;
 pub use crate::serialize::writer::*;
 
-#[cfg(feature = "alloc")]
+#[cfg(feature = "repr")]
 pub use xdr_repr;
 
 #[cfg(feature = "derive")]

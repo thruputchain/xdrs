@@ -5,7 +5,7 @@ set -e  # fail on error
 
 export RUSTFLAGS="--deny warnings"
 
-additive_features="derive,ns,extras,xdr_common"
+additive_features="derive,repr,ns,extras,xdr_common"
 
 # test the root library
 cargo test -F "alloc,${additive_features}"
@@ -16,11 +16,9 @@ cargo test -F "alloc,extras,int128_xdr" --test ints -- u128 i128
 # check that the benchmarks compile
 cargo test -F "alloc,${additive_features}" --benches
 
-# test the xdr-repr crate
-cargo test -p xdr-repr --all-features
-
 if [ "${1}" == "all" ]; then
-    # test with various other feature combinations
+    # test the xdr-repr crate alone
+    cargo test -p xdr-repr --all-features
 
     # root library without alloc
     cargo test -F "${additive_features}"
