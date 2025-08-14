@@ -26,7 +26,7 @@ edition.workspace = true
 [dependencies]
 xdr-derive = { workspace = true, optional = true }
 xdr_common = { workspace = true, optional = true }
-xdr-repr = { workspace = true }
+xdr-repr = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
@@ -44,7 +44,7 @@ cxs = [] # include CXS codec
 txs = [] # include TXS codec
 extras = ["xdr-repr/i128"] # include convenient extensions to the spec
 xdr_common = ["dep:xdr_common", "xdr-repr/xdr_common"]
-alloc = ["xdr_common/alloc"] # enable allocating interfaces
+alloc = ["xdr_common/alloc", "dep:xdr-repr"] # enable allocating interfaces
 int128_xdr = []
 
 [lints]
