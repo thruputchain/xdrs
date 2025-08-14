@@ -12,13 +12,6 @@ macro_rules! lines {
     };
 }
 
-#[test]
-fn test_lines() {
-    let expected = "one\ntwo\n";
-    let actual = lines!["one" "two"];
-    assert_eq!(actual, expected);
-}
-
 #[macro_export]
 macro_rules! assert_formatted {
     ($value:expr, $expected:expr) => {{

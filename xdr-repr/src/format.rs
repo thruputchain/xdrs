@@ -1,9 +1,11 @@
 // Display impls for XDR-spec types
 
 use super::xdr::*;
+use alloc::string::String;
+use alloc::format;
 
 const _: () = {
-    use std::fmt;
+    use core::fmt;
 
     macro_rules! impl_display {
         { $( $(#[$attr:meta])? $ty:ty ),* $(,)? } => { $(

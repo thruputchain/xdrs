@@ -1,6 +1,8 @@
 //! Representation of a SunRPC program definition
 
 pub use super::xdr::TypeSpec;
+use alloc::vec::Vec;
+use alloc::string::String;
 
 pub struct Id(pub String);
 

@@ -1,5 +1,6 @@
 use crate::xdr::*;
 use crate::ty::*;
+use alloc::string::*;
 
 // As XDR has no generics, we make do here by mashing
 // names together to get, e.g., ExpectedInt.  But you'll
@@ -9,7 +10,7 @@ impl<T, E> HasTypeSpec for Result<T, E>
     where T: HasTypeName
 {
     fn type_spec() -> TypeSpec {
-        TypeSpec::Ident(Ident("Expected".to_owned() + &T::name()))
+        TypeSpec::Ident(Ident("Expected".to_string() + &T::name()))
     }
 }
 
@@ -22,7 +23,7 @@ macro_rules! impl_has_type_name {
     {$(
         impl HasTypeName for $ty {
             fn name() -> String {
-                $name.to_owned()
+                $name.to_string()
             }
         }
     )*};
