@@ -1,5 +1,9 @@
 //! Representation of an XDR specification
 
+use alloc::vec::Vec;
+use alloc::string::String;
+use alloc::boxed::Box;
+
 #[cfg(feature = "ns")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Namespace {

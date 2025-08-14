@@ -1,4 +1,7 @@
 use crate::xdr::*;
+use alloc::vec::Vec;
+use alloc::vec;
+use alloc::string::*;
 
 pub fn ident(s: &str) -> Ident {
     Ident(s.to_string())
@@ -147,7 +150,7 @@ pub fn specification(definitions: Vec<Definition>) -> Specification {
 #[cfg(feature = "ns")]
 pub fn namespace(name: &str, spec: Specification) -> Namespace {
     Namespace {
-        name: name.to_owned(),
+        name: name.to_string(),
         spec,
     }
 }

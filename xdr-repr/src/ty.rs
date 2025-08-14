@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::xdr::*;
+use alloc::string::*;
 
 pub trait HasSpecification {
     fn spec() -> Specification;
@@ -74,8 +75,8 @@ impl_has_type_spec! {
 #[cfg(feature = "i128")]
 // These refer to double-u64 structures defined outside this package
 impl_has_type_spec! {
-    i128 => TypeSpec::Ident(Ident("int128_xdr".to_owned())),
-    u128 => TypeSpec::Ident(Ident("uint128_xdr".to_owned())),
+    i128 => TypeSpec::Ident(Ident("int128_xdr".to_string())),
+    u128 => TypeSpec::Ident(Ident("uint128_xdr".to_string())),
 }
 
 pub trait Declare {
@@ -107,8 +108,8 @@ impl_declare_named! {
 #[cfg(feature = "i128")]
 // These refer to double-u64 structures defined outside this package
 impl_declare_named! {
-    i128 => TypeSpec::Ident(Ident("int128_xdr".to_owned())),
-    u128 => TypeSpec::Ident(Ident("uint128_xdr".to_owned())),
+    i128 => TypeSpec::Ident(Ident("int128_xdr".to_string())),
+    u128 => TypeSpec::Ident(Ident("uint128_xdr".to_string())),
 }
 
 impl<T: HasTypeSpec> Declare for Option<T> {

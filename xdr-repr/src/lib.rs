@@ -7,8 +7,13 @@
 //! See [RFC 5531, section 12](https://datatracker.ietf.org/doc/html/rfc5531#section-12) for the
 //! RPC language
 
+#![no_std]
+
+extern crate alloc;
+
 mod display_rpc;
-mod test;
+
+pub mod test;
 
 pub mod construct;
 pub mod format;
