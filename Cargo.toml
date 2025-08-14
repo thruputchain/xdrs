@@ -60,16 +60,5 @@ harness = false
 required-features = ["alloc", "extras"]
 
 [[test]]
-name = "derive_enums"
-path = "tests/repr/derive_enums.rs"
-required-features = ["derive"]
-
-[[test]]
-name = "derive_structs"
-path = "tests/repr/derive_structs.rs"
-required-features = ["derive"]
-
-[[test]]
-name = "derive_arrays"
-path = "tests/repr/derive_arrays.rs"
-required-features = ["derive"]
+name = "repr"
+required-features = ["alloc", "derive"]
