@@ -22,30 +22,30 @@ pub mod serialize_txs;
 pub mod mu; // used by integration tests
 pub(crate) mod valid_u32;
 
-pub mod prelude {
-    pub use crate::read_xdr::*;
-    pub use crate::write_xdr::*;
 
-    pub use crate::discrim::*;
 
-    pub use crate::serialize::reader::Error as ReadError;
-    pub use crate::serialize::reader::Result as ReadResult;
-    pub use crate::serialize::reader::*;
 
-    pub use crate::serialize::writer::Error as WriteError;
-    pub use crate::serialize::writer::Result as WriteResult;
-    pub use crate::serialize::writer::*;
+pub use crate::read_xdr::*;
+pub use crate::write_xdr::*;
 
-    pub use xdr_repr;
+pub use crate::discrim::*;
 
-    #[cfg(feature = "derive")]
-    pub use xdr_derive::*;
+pub use crate::serialize::reader::Error as ReadError;
+pub use crate::serialize::reader::Result as ReadResult;
+pub use crate::serialize::reader::*;
 
-    #[cfg(feature = "xdr_common")]
-    pub use xdr_common;
+pub use crate::serialize::writer::Error as WriteError;
+pub use crate::serialize::writer::Result as WriteResult;
+pub use crate::serialize::writer::*;
 
-    #[cfg(feature = "xdr_common")]
-    pub use xdr_common::*;
-}
+#[cfg(feature = "alloc")]
+pub use xdr_repr;
 
-pub use prelude::*;
+#[cfg(feature = "derive")]
+pub use xdr_derive::*;
+
+#[cfg(feature = "xdr_common")]
+pub use xdr_common;
+
+#[cfg(feature = "xdr_common")]
+pub use xdr_common::*;

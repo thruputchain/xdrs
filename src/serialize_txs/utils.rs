@@ -1,6 +1,6 @@
 //! Convenient interfaces to CXS serialization
 
-use crate::prelude::*;
+use crate::*;
 use crate::serialize_txs::buf_reader::*;
 use crate::serialize_txs::into_buf_writer::*;
 use core::mem::MaybeUninit as MU;
@@ -37,7 +37,7 @@ where
 
 #[cfg(feature = "alloc")]
 mod utils_alloc {
-    use crate::prelude::*;
+    use crate::*;
     use crate::serialize_txs::buf_writer::*;
     use alloc::vec::Vec;
 
