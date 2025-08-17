@@ -2,6 +2,7 @@
 
 use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::string::ToString;
 use alloc::boxed::Box;
 
 #[cfg(feature = "ns")]
@@ -101,6 +102,35 @@ pub enum Declaration {
     Void,
 }
 
+impl Declaration {
+    pub fn get_type_json(&self) -> String {
+        use alloc::format;
+        match self {
+            Declaration::Named { name: _, ty } => {
+                format!("{{ \"type\": \"{}\" }}", ty.get_type_json())
+            },
+            Declaration::FixedOpaque { name: _, size } => {
+                format!("{{ \"type\": \"fixed opaque\", \"len\": {} }}", size)
+            },
+            Declaration::VariableOpaque { name: _, max } => {
+                format!("{{ \"type\": \"variable opaque\", \"max\": {} }}", max)
+            },
+            Declaration::FixedArray { name: _, elt_ty, len } => {
+                format!("{{ \"type\": \"fixed array\", \"elt_ty\": {}, \"len\": {} }}", elt_ty.get_type_json(), len)
+            },
+            Declaration::VariableArray { name: _, elt_ty, max } => {
+                format!("{{ \"type\": \"variable array\", \"elt_ty\": {}, \"max\": {} }}", elt_ty.get_type_json(), max)
+            },
+            Declaration::Optional { name: _, opt_ty } => {
+                format!("{{ \"type\": \"optional\", \"opt_ty\": {} }}", opt_ty.get_type_json())
+            },
+            Declaration::Void => {
+                format!("{{ \"type\": \"void\" }}")
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeSpec {
     Int,
@@ -115,4 +145,23 @@ pub enum TypeSpec {
     Struct(StructBody),
     Union(Box<UnionBody>),
     Ident(Ident),
+}
+
+impl TypeSpec {
+    pub fn get_type_json(&self) -> alloc::string::String {
+        match self {
+            TypeSpec::Int => "int".to_string(),
+            TypeSpec::Unsigned => "unsigned".to_string(),
+            TypeSpec::Hyper => "hyper".to_string(),
+            TypeSpec::UnsignedHyper => "unsigned hyper".to_string(),
+            TypeSpec::Float => "float".to_string(),
+            TypeSpec::Double => "double".to_string(),
+            TypeSpec::Quadruple => "quadruple".to_string(),
+            TypeSpec::Bool => "bool".to_string(),
+            TypeSpec::Enum(_body) => panic!("Embedded enum type not supported"),
+            TypeSpec::Struct(_body) => panic!("Embedded struct type not supported"),
+            TypeSpec::Union(_body) => panic!("Embedded union type not supported"),
+            TypeSpec::Ident(ident) => ident.0.clone(),
+        }
+    }
 }
