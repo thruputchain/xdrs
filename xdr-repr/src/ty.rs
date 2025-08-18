@@ -189,12 +189,12 @@ const _: () = {
         }
     }
 
-    impl<const MAX: u32> HasTypeDef for BytesM<MAX> {
-        fn type_def() -> TypeDef {
-            TypeDef::Def(Declaration::VariableOpaque {
-                name: Ident("bytes".to_string()),
+    impl<const MAX: u32> Declare for BytesM<MAX> {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::VariableOpaque {
+                name,
                 max: Value::Const(Constant::Unsigned(MAX)),
-            })
+            }
         }
     }
 };
@@ -211,6 +211,12 @@ const _: () = {
         }
     }
 };
+
+impl HasTypeDef for () {
+    fn type_def() -> TypeDef {
+        TypeDef::Def(Declaration::Void)
+    }
+}
 
 impl<T> Declare for T
 where

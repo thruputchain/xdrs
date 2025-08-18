@@ -1,6 +1,5 @@
 use crate::xdr::*;
 use crate::ty::*;
-use alloc::string::*;
 
 // Geoff note: I don't know what the optimial design for doing this is.
 // What I've done here is to move the generic handling from the xdrs crate to the spec generation
@@ -13,13 +12,6 @@ impl <T, E> HasTypeSpec for Result<T, E>
 {
     fn type_spec() -> TypeSpec {
         T::type_spec()
-    }
-}
-
-// TODO(geoff): is there a better way to handle void?
-impl<E> HasTypeSpec for Result<(), E> {
-    fn type_spec() -> TypeSpec {
-        TypeSpec::Ident(Ident("void".to_string()))
     }
 }
 
