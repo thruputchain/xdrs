@@ -121,6 +121,16 @@ impl<T: HasTypeSpec> Declare for Option<T> {
     }
 }
 
+const _: () = {
+    use alloc::boxed::Box;
+
+    impl<T :HasTypeDef> HasTypeDef for Box<T> {
+        fn type_def() -> TypeDef {
+            T::type_def()
+        }
+    }
+};
+
 impl<const N: usize> Declare for [u8; N] {
     fn declare(name: Ident) -> Declaration {
         Declaration::FixedOpaque {
@@ -165,16 +175,6 @@ impl<T: HasTypeSpec> Declare for &[T] {
 const _: () = {
     use xdr_common::{BytesM, VecM};
 
-    impl<const MAX: u32> Declare for BytesM<MAX> {
-        fn declare(name: Ident) -> Declaration {
-            Declaration::VariableOpaque {
-                name,
-                // TODO: use compile-time asserts to check MAX fits in u32
-                max: Value::Const(Constant::Unsigned(MAX)),
-            }
-        }
-    }
-
     impl<T, const MAX: u32> Declare for VecM<T, MAX>
     where
         T: HasTypeSpec,
@@ -186,6 +186,28 @@ const _: () = {
                 // TODO: use compile-time asserts to check MAX fits in u32
                 max: Value::Const(Constant::Unsigned(MAX)),
             }
+        }
+    }
+
+    impl<const MAX: u32> HasTypeDef for BytesM<MAX> {
+        fn type_def() -> TypeDef {
+            TypeDef::Def(Declaration::VariableOpaque {
+                name: Ident("bytes".to_string()),
+                max: Value::Const(Constant::Unsigned(MAX)),
+            })
+        }
+    }
+};
+
+const _: () = {
+    use alloc::vec::Vec;
+
+    impl HasTypeDef for Vec<u8> {
+        fn type_def() -> TypeDef {
+            TypeDef::Def(Declaration::VariableOpaque {
+                name: Ident("vec".to_string()),
+                max: Value::Const(Constant::Unsigned(u32::MAX)),
+            })
         }
     }
 };
@@ -215,3 +237,5 @@ impl<T: HasTypeDef> HasTypeDef for &T {
         T::type_def()
     }
 }
+
+

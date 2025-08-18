@@ -111,4 +111,22 @@ pub mod test_common {
         "	opaque slice<>;"
         "};"
     }
+
+    pub struct VecTest {
+        pub vec: Vec<u8>,
+    }
+
+    impl HasTypeDef for VecTest {
+        fn type_def() -> TypeDef {
+            struct_def("VecTest", vec![<Vec<u8>>::declare(ident("vec"))])
+        }
+    }
+
+    check_format! { format_variable_array
+        VecTest::def()
+        =>
+        "struct VecTest {"
+        "	opaque vec<>;"
+        "};"
+    }
 }
