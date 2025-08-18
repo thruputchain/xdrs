@@ -7,11 +7,36 @@ use crate::ty::*;
 // at the top layer (so we can list out the types that need to be generated),
 // instead of here.
 
+/*
 impl <T, E> HasTypeSpec for Result<T, E>
     where T: HasTypeSpec
 {
     fn type_spec() -> TypeSpec {
         T::type_spec()
+    }
+}*/
+
+impl<T, E> Declare for Result<T, E>
+    where T: Declare
+{
+    fn declare(name: Ident) -> Declaration {
+        T::declare(name)
+    }
+}
+
+// Add an assertion that the Result<T, E> error type
+// matches the expected error type
+pub trait GetErrorType {
+    fn get_error_type() -> Option<TypeSpec> {
+        None
+    }
+}
+
+impl<T, E> GetErrorType for Result<T, E> 
+    where E: HasTypeSpec
+{
+    fn get_error_type() -> Option<TypeSpec> {
+        Some(E::type_spec())
     }
 }
 
