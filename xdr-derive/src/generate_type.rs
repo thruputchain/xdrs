@@ -58,18 +58,30 @@ fn from_input(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
-    if item.fields.is_empty() {
-        return Err(error(input, "XDR: can't represent a struct with no fields"));
-    }
+    // Structs with no fields are allowed per RFC4506:
+    // ```
+    // struct Empty {
+    //    void;
+    // };
+    // ```
+    // if item.fields.is_empty() {
+    //     return Err(error(input, "XDR: can't represent a struct with no fields"));
+    // }
 
     let ty_ident = &input.ident;
     let ty_name = ty_ident.to_string();
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let declare_fields = item
-        .fields
-        .iter()
-        .enumerate()
-        .map(|(i, field)| declare_struct_field(i, field));
+    let declare_fields = if item.fields.is_empty() {
+        vec![quote! { __xdrs::declare_void() }]
+    } else {
+        item
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(i, field)| declare_struct_field(i, field))
+            .collect()
+    };
+
     let struct_typedef = quote! {
         __xdrs::struct_def(#ty_name, __xdrs::vec![
             #(#declare_fields)*

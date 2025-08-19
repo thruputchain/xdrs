@@ -1,9 +1,16 @@
 use xdrs::*;
 use xdr_repr::*;
 
-// // compile error: XDR: can't represent struct with no fields
-// #[derive(XDR)]
-// pub struct Bare;
+#[derive(XDR)]
+pub struct Bare;
+
+check_format! { derive_bare
+    Bare::def()
+    =>
+        "struct Bare {"
+        "	void;"
+        "};"
+}
 
 #[derive(XDR)]
 pub struct Boo {
