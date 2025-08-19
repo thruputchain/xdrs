@@ -346,7 +346,7 @@ impl Format for EnumBody {
             ident.fmt(f);
             f.write_str(" = ");
             value.fmt(f);
-            f.write_str(";");
+            f.write_str(",");
             f.endln();
         }
         f.end_indent();

@@ -24,9 +24,9 @@ check_format! { enum_format
     E::def()
     =>
         "enum E {"
-        "	Alpha = 1;"
-        "	Beta = 2;"
-        "	Omega = -1;"
+        "	Alpha = 1,"
+        "	Beta = 2,"
+        "	Omega = -1,"
         "};"
 }
 
@@ -60,9 +60,9 @@ check_format! { inline_enum_format
         "struct S {"
         "	E my_enum;"
         "	enum {"
-        "		Alpha = 1;"
-        "		Beta = 2;"
-        "		Omega = -1;"
+        "		Alpha = 1,"
+        "		Beta = 2,"
+        "		Omega = -1,"
         "	} my_enum_inline;"
         "};"
 }

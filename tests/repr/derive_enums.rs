@@ -16,9 +16,9 @@ pub mod unit_only_enum {
         UnitOnly::def()
         =>
             "enum UnitOnly {"
-            "	Alpha = 1;"
-            "	Beta = 2;"
-            "	Omega = -1;"
+            "	Alpha = 1,"
+            "	Beta = 2,"
+            "	Omega = -1,"
             "};"
     }
 }
@@ -38,9 +38,9 @@ pub mod fieldless_enum {
         Fieldless::def()
         =>
             "enum Fieldless {"
-            "	Tuple = 0;"
-            "	Struct = 1;"
-            "	Unit = 2;"
+            "	Tuple = 0,"
+            "	Struct = 1,"
+            "	Unit = 2,"
             "};"
     }
 }
@@ -60,8 +60,8 @@ pub mod separate_discriminant {
         Status::def()
         =>
             "enum Status {"
-            "	Ok = 0;"
-            "	Err = -1;"
+            "	Ok = 0,"
+            "	Err = -1,"
             "};"
     }
 
@@ -105,7 +105,7 @@ pub mod wrong_discriminant {
         EnumBadRepr::def()
         =>
             "enum EnumBadRepr {"
-            "	Alpha = 1;"
+            "	Alpha = 1,"
             "};"
     }
 }
@@ -142,9 +142,9 @@ pub mod enum_with_data {
         Data::spec()
         =>
             "enum DataType {"
-            "	Alpha = 1;"
-            "	Beta = 2;"
-            "	Omega = -1;"
+            "	Alpha = 1,"
+            "	Beta = 2,"
+            "	Omega = -1,"
             "};"
             ""
             "union Data switch (DataType which)"
@@ -201,8 +201,8 @@ pub mod enum_with_default {
         EnumWithDefault::spec()
         =>
             "enum EnumWithDefaultType {"
-            "	Alpha = 10;"
-            "	Beta = 20;"
+            "	Alpha = 10,"
+            "	Beta = 20,"
             "};"
             ""
             "union EnumWithDefault switch (EnumWithDefaultType which)"
@@ -234,9 +234,9 @@ pub mod implicit_unit {
         ImplicitUnit::def()
         =>
             "enum ImplicitUnit {"
-            "	Alpha = 0;"
-            "	Beta = 1;"
-            "	Omega = 2;"
+            "	Alpha = 0,"
+            "	Beta = 1,"
+            "	Omega = 2,"
             "};"
     }
 }
@@ -257,9 +257,9 @@ pub mod enum_implicit {
         Implicit::spec()
         =>
             "enum ImplicitType {"
-            "	Alpha = 0;"
-            "	Beta = 1;"
-            "	Omega = 2;"
+            "	Alpha = 0,"
+            "	Beta = 1,"
+            "	Omega = 2,"
             "};"
             ""
             "union Implicit switch (ImplicitType which)"
@@ -294,8 +294,8 @@ pub mod unnamed_fields {
         Unnamed::spec()
         =>
             "enum UnnamedType {"
-            "	Beta = 0;"
-            "   Omega = 1;"
+            "	Beta = 0,"
+            "   Omega = 1,"
             "};"
             ""
             "union Unnamed switch(UnnamedType which)"
@@ -327,8 +327,8 @@ pub mod mixed {
         Mixed::spec()
         =>
             "enum Mixed {"
-            "	Beta = 0;"
-            "	Omega = 3;"
+            "	Beta = 0,"
+            "	Omega = 3,"
             "};"
     }
 }
