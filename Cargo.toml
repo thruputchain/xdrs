@@ -62,3 +62,15 @@ required-features = ["alloc", "extras"]
 [[test]]
 name = "repr"
 required-features = ["repr", "alloc", "derive"]
+
+[[test]]
+name = "enums"
+required-features = ["alloc", "derive"]
+
+[[test]]
+name = "structs"
+required-features = ["alloc", "derive"]
+
+[[test]]
+name = "pointer"
+required-features = ["alloc", "derive"]

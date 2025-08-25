@@ -21,13 +21,7 @@ jobs:
           override: true
       - name: Test (No Features)
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace
-      - name: Test (Extras)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F extras
-      - name: Test (Extras, Alloc)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F extras,alloc
+      - name: Test (All Features)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace --all-features
       - name: Test Benches
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F extras,alloc --benches
-      - name: Test (xdr_common)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F xdr_common
-      - name: Test (xdr_common, Alloc)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F xdr_common,alloc
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F extras,alloc,derive --benches
