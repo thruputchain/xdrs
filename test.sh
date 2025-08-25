@@ -5,6 +5,8 @@ set -e  # fail on error
 
 export RUSTFLAGS="--deny warnings"
 
+cargo doc --all-features
+
 additive_features="derive,repr,ns,extras,xdr_common"
 
 # test the root library

@@ -32,7 +32,6 @@ thiserror = { workspace = true }
 [dev-dependencies]
 criterion = "0.6.0"
 hex = "0.4.3"
-xdrs = { path = ".", features = ["derive", "xdr_common"] }
 pretty_assertions = { workspace = true }
 
 [features]
@@ -62,4 +61,4 @@ required-features = ["alloc", "extras"]
 
 [[test]]
 name = "repr"
-required-features = ["alloc", "derive"]
+required-features = ["repr", "alloc", "derive"]
