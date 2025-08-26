@@ -24,7 +24,7 @@ where
     Ok(value)
 }
 
-pub fn encode_into<T: WriteXDR>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
+pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
     let mut writer = IntoBufWriter::new(buf);
 
     value.write_xdr(&mut writer)?;
@@ -39,7 +39,7 @@ mod utils_alloc {
     use alloc::vec::Vec;
 
     #[cfg(feature = "alloc")]
-    pub fn encode<T: WriteXDR>(value: &T) -> WriteResult<Vec<u8>> {
+    pub fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
         let mut writer = BufWriter::new();
 
         value.write_xdr(&mut writer)?;

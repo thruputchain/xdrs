@@ -7,17 +7,17 @@ use xdrs::*;
 
 pub trait Format {
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T>;
-    fn encode_into<T: WriteXDR>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>;
+    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>;
 
     #[cfg(feature = "alloc")]
-    fn encode<T: WriteXDR>(value: &T) -> WriteResult<Vec<u8>>;
+    fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>>;
 
     // Allocate a buffer of the expected size and encode
     // the value into it
     #[cfg(feature = "alloc")]
     fn encode_into_alloc<T>(value: &T, expected_len: usize) -> Vec<u8>
     where
-        T: WriteXDR,
+        T: WriteXDR + ?Sized,
     {
         let mut encoded = Vec::with_capacity(expected_len);
         let written = Self::encode_into(value, encoded.spare_capacity_mut()).unwrap();
@@ -43,12 +43,12 @@ impl Format for CXS {
         serialize_cxs::decode(buf)
     }
 
-    fn encode_into<T: WriteXDR>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
+    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
         serialize_cxs::encode_into(value, buf)
     }
 
     #[cfg(feature = "alloc")]
-    fn encode<T: WriteXDR>(value: &T) -> WriteResult<Vec<u8>> {
+    fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
         serialize_cxs::encode(value)
     }
 }
@@ -62,12 +62,12 @@ impl Format for TXS {
         serialize_txs::decode(buf)
     }
 
-    fn encode_into<T: WriteXDR>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
+    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
         serialize_txs::encode_into(value, buf)
     }
 
     #[cfg(feature = "alloc")]
-    fn encode<T: WriteXDR>(value: &T) -> WriteResult<Vec<u8>> {
+    fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
         serialize_txs::encode(value)
     }
 }
@@ -91,7 +91,7 @@ pub trait Check: Format {
 
     fn check_encode<T>(val: &T, expected: &[u8])
     where
-        T: WriteXDR,
+        T: WriteXDR + ?Sized,
     {
         // Check the allocating encoder
         #[cfg(feature = "alloc")]
@@ -104,7 +104,7 @@ pub trait Check: Format {
     #[cfg(feature = "alloc")]
     fn check_encode_alloc<T>(value: &T, expected: &[u8])
     where
-        T: WriteXDR,
+        T: WriteXDR + ?Sized,
     {
         let encoded = Self::encode(value).unwrap();
         check_eq(&encoded, expected);
@@ -112,7 +112,7 @@ pub trait Check: Format {
 
     fn check_encode_into_static<T>(value: &T, expected: &[u8])
     where
-        T: WriteXDR,
+        T: WriteXDR + ?Sized,
     {
         const BUFSZ: usize = 1000;
         assert!(expected.len() <= BUFSZ);
@@ -130,7 +130,7 @@ pub trait Check: Format {
     #[cfg(feature = "alloc")]
     fn check_encode_into_alloc<T>(value: &T, expected: &[u8])
     where
-        T: WriteXDR,
+        T: WriteXDR + ?Sized,
     {
         let encoded = Self::encode_into_alloc(value, expected.len());
         check_eq(&encoded, expected);
