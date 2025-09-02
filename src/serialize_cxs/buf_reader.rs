@@ -2,15 +2,25 @@
 use super::limits::*;
 use crate::serialize::reader::*;
 
-pub struct BufReader<'r> {
+pub struct BufReader<'r, S = ()> {
     data: &'r [u8],
     pos: usize,
+    structure: S,
 }
 
-impl<'a> BufReader<'a> {
+impl<'a> BufReader<'a, ()> {
     pub fn new(data: &'a [u8]) -> Self {
-        let pos = 0;
-        Self { data, pos }
+        Self::new_structured(data, ())
+    }
+}
+
+impl<'a, S> BufReader<'a, S> {
+    pub fn new_structured(data: &'a [u8], structure: S) -> Self {
+        Self { data, pos: 0, structure }
+    }
+
+    pub fn structure(&self) -> &S {
+        &self.structure
     }
 
     pub fn position(&self) -> usize {
@@ -182,7 +192,29 @@ macro_rules! read_unsigned {
     )* };
 }
 
-impl<'r> Reader<'r> for BufReader<'r> {
+impl<'r, S> ReaderStructure<S> for BufReader<'r, S>
+    where S: ReaderStructure<S>
+{
+    fn structure(&self) -> &S {
+        &self.structure
+    }
+
+    fn seq(&mut self, len: Option<usize>) -> Result<()> {
+        self.structure.seq(len)
+    }
+
+    fn next(&mut self) -> Result<()> {
+        self.structure.next()
+    }
+
+    fn end(&mut self) -> Result<()> {
+        self.structure.end()
+    }
+}
+
+impl<'r, S> Reader<'r, S> for BufReader<'r, S>
+    where BufReader<'r, S>: ReaderStructure<S>
+{
     read_signed! {
         [read_i64, i64],
         [read_i32, i32],

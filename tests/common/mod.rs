@@ -34,6 +34,8 @@ pub trait Format {
     }
 }
 
+// --------- CXS ------------------------------
+
 #[cfg(feature = "cxs")]
 pub struct CXS;
 
@@ -53,6 +55,15 @@ impl Format for CXS {
     }
 }
 
+#[cfg(feature = "cxs")]
+impl CXS {
+    pub fn decode_structured<'r, 'a: 'r, S, T: ReadXDR<'r, S>>(buf: &'a [u8], structure: S) -> ReadResult<T> {
+        serialize_cxs::decode_structured(buf, structure)
+    }
+}
+
+// --------- TXS ------------------------------
+
 #[cfg(feature = "txs")]
 pub struct TXS;
 
@@ -71,6 +82,8 @@ impl Format for TXS {
         serialize_txs::encode(value)
     }
 }
+
+// ---------- Check ---------------------------------
 
 pub trait Check: Format {
     fn check_decode<'r, T>(val: &T, expected: &'r [u8])

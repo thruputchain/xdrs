@@ -7,8 +7,19 @@ use crate::mu;
 use core::mem::MaybeUninit as MU;
 use thiserror::Error;
 
-/// Something that can produce XDR values, some borrowed with lifetime 'r
-pub trait Reader<'r>: Sized {
+pub trait ReaderStructure<S> {
+    fn seq(&mut self, _len: Option<usize>) -> Result<()> { Ok(()) }
+    fn next(&mut self) -> Result<()> { Ok(()) }
+    fn end(&mut self) -> Result<()> { Ok(()) }
+
+    fn structure(&self) -> &S;
+}
+
+/// Something that can produce XDR values, where
+/// values may be borrowed with lifetime 'r and
+/// an ambient structure value `S` is available
+pub trait Reader<'r, S = ()>: ReaderStructure<S> + Sized {
+
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;
     fn read_i16(&mut self) -> Result<i16>;

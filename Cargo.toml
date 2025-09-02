@@ -28,6 +28,7 @@ xdr-derive = { workspace = true, optional = true }
 xdr_common = { workspace = true, optional = true }
 xdr-repr = { workspace = true, optional = true }
 thiserror = { workspace = true }
+heapless = "0.9.1"
 
 [dev-dependencies]
 criterion = "0.6.0"
