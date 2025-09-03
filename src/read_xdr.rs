@@ -191,6 +191,16 @@ read_tuple!(T1, T2, T3, T4);
 read_tuple!(T1, T2, T3, T4, T5);
 read_tuple!(T1, T2, T3, T4, T5, T6);
 
+// impl for single-element tuples
+impl<'r, T> ReadXDR<'r> for (T,)
+where
+    T: ReadXDR<'r>,
+{
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        Ok((read_xdr(r)?,))
+    }
+}
+
 impl<'r, T> ReadXDR<'r> for Option<T>
 where
     T: ReadXDR<'r>,
