@@ -77,6 +77,12 @@ mod tests {
 
         let response = client_handle.as_ref().send_call(ProgVers::new(1, 1), 1, b"hello").await.unwrap();
         assert_eq!(response, b"hello");
+        assert_eq!(client_handle.as_ref().client_state.read().await.pending_requests.len(), 0);
+
+        // some error cases
+        assert_eq!(client_handle.as_ref().send_call(ProgVers::new(1, 1), 2, b"hello").await.unwrap_err(), RpcError::InvalidProcedure);
+        assert_eq!(client_handle.as_ref().send_call(ProgVers::new(2, 1), 1, b"hello").await.unwrap_err(), RpcError::ProgUnavail);
+        assert_eq!(client_handle.as_ref().send_call(ProgVers::new(1, 2), 1, b"hello").await.unwrap_err(), RpcError::InvalidVersion { low: 1, high: 1 });
 
         // Verify tasks are running by checking they haven't completed yet
         assert!(!client_write_task.is_finished());

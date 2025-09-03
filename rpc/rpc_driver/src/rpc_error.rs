@@ -2,7 +2,7 @@ use xdrs::BytesM;
 
 use crate::rpc_msg;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RpcError {
     #[error("Invalid procedure")]
     InvalidProcedure,
