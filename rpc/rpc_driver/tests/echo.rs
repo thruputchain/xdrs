@@ -77,8 +77,7 @@ impl TestProgram_TestVersion_Client {
         let buf = self
             .handle
             .send_call(Self::prog_vers(), 1, &data)
-            .await
-            .unwrap();
+            .await?;
         xdrs::serialize_txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
     pub async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, RpcError> {
