@@ -63,14 +63,14 @@ pub async fn launch_read_task(
                     Ok(response) => {
                         prepare_success_response(msg.xid, &response, &mut write_buffer);
                         client_cbs
-                            .channel
-                            .send(write_buffer)
+                            .send_msg(&write_buffer)
                             .map_err(ReadTaskError::WriteError)?;
                     }
                     Err(e) => {
+                        let out_bytes = e.to_error_record(msg.xid);
+
                         client_cbs
-                            .channel
-                            .send(xdrs::serialize_txs::encode(&e.to_rpc_msg(msg.xid)).unwrap())
+                            .send_msg(&out_bytes)
                             .map_err(ReadTaskError::WriteError)?;
                     }
                 }

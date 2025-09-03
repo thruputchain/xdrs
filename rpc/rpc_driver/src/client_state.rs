@@ -53,7 +53,7 @@ impl Drop for ClientState {
 
 pub struct ClientHandle {
     pub client_state: RwLock<ClientState>,
-    pub channel: mpsc::UnboundedSender<Vec<u8>>,
+    channel: mpsc::UnboundedSender<Vec<u8>>,
 }
 
 impl ClientHandle {
@@ -62,6 +62,10 @@ impl ClientHandle {
             client_state: RwLock::new(ClientState::new()),
             channel,
         }
+    }
+
+    pub fn send_msg(&self, msg: &[u8]) -> Result<(), tokio::sync::mpsc::error::SendError<Vec<u8>>> {
+        self.channel.send(msg.to_vec())
     }
 
     pub fn make_call_msg(&self, xid: u32, progvers: ProgVers, proc: u32, data: &[u8]) -> Vec<u8> {

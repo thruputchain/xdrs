@@ -45,6 +45,7 @@ impl From<rpc_msg::accepted_reply_reply_data> for RpcError {
             }
             rpc_msg::accepted_reply_reply_data::Default { stat } => match stat {
                 s if s == rpc_msg::accept_stat::PROC_UNAVAIL as i32 => RpcError::InvalidProcedure,
+                s if s == rpc_msg::accept_stat::PROG_UNAVAIL as i32 => RpcError::ProgUnavail,
                 s if s == rpc_msg::accept_stat::GARBAGE_ARGS as i32 => RpcError::GarbageArguments,
                 s if s == rpc_msg::accept_stat::SYSTEM_ERR as i32 => RpcError::SystemError,
                 _ => RpcError::SystemError,
@@ -164,5 +165,15 @@ impl RpcError {
                 }
             }
         }
+    }
+
+    pub fn to_error_record(&self, xid: u32) -> Vec<u8> {
+        let msg = self.to_rpc_msg(xid);
+        let header_bytes = xdrs::serialize_txs::encode(&msg).unwrap();
+        let msg_len: u32 = header_bytes.len() as u32;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&msg_len.to_be_bytes());
+        buf.extend_from_slice(&header_bytes);
+        buf
     }
 }
