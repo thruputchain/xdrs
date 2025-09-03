@@ -64,11 +64,11 @@ impl ClientHandle {
         }
     }
 
-    pub fn send_msg(&self, msg: &[u8]) -> Result<(), tokio::sync::mpsc::error::SendError<Vec<u8>>> {
+    pub(crate) fn send_msg(&self, msg: &[u8]) -> Result<(), tokio::sync::mpsc::error::SendError<Vec<u8>>> {
         self.channel.send(msg.to_vec())
     }
 
-    pub fn make_call_msg(&self, xid: u32, progvers: ProgVers, proc: u32, data: &[u8]) -> Vec<u8> {
+    fn make_call_msg(&self, xid: u32, progvers: ProgVers, proc: u32, data: &[u8]) -> Vec<u8> {
         let mut msg_bytes = Vec::new();
 
         let msg = rpc_msg::rpc_msg {
@@ -104,9 +104,8 @@ impl ClientHandle {
             .write()
             .await
             .add_callback(CallbackHandle { tx });
-        self.channel
-            .send(self.make_call_msg(xid, progvers, proc, data))
-            .map_err(|_| RpcError::SystemError)?;
+        self.send_msg(&self.make_call_msg(xid, progvers, proc, data))
+             .map_err(|_| RpcError::SystemError)?;
         rx.await.map_err(|_| RpcError::SystemError)?
     }
 }

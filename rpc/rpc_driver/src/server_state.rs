@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 #[async_trait]
 pub trait ServerDispatch: Send + Sync {
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError>;
+
+    fn prog_vers(&self) -> ProgVers;
 }
 
 pub struct ServiceMap {
@@ -18,8 +20,8 @@ impl ServiceMap {
         }
     }
 
-    pub fn add_service(&mut self, srv: ProgVers, dispatch: Box<dyn ServerDispatch>) {
-        self.services.insert(srv, dispatch);
+    pub fn add_service(&mut self, dispatch: Box<dyn ServerDispatch>) {
+        self.services.insert(dispatch.prog_vers(), dispatch);
     }
 
     pub async fn dispatch(

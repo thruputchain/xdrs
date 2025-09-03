@@ -26,6 +26,10 @@ mod tests {
             println!("EchoCallbackSerivce: dispatch: proc={}, data={:?}", proc, data);
             Ok(data.to_vec())
         }
+
+        fn prog_vers(&self) -> ProgVers {
+            ProgVers::new(1, 1)
+        }
     }
 
     #[tokio::test]
@@ -36,7 +40,7 @@ mod tests {
 
         // Create service map
         let mut service_map = ServiceMap::new();
-        service_map.add_service(ProgVers::new(1, 1), Box::new(EchoCallbackSerivce {}));
+        service_map.add_service(Box::new(EchoCallbackSerivce {}));
 
         // Set up write channel
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
