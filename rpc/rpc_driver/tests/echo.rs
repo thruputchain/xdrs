@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use rpc_driver::{client_state::ClientHandle, rpc_error::RpcError, ProgVers};
 
+#[allow(non_camel_case_types)]
 #[async_trait]
 pub trait TestProgram_TestVersion: Send + Sync {
     async fn null(&self) -> ();
@@ -10,40 +11,38 @@ pub trait TestProgram_TestVersion: Send + Sync {
     async fn takes_two_ints(&self, i1: i32, i2: i32) -> i32;
 }
 
-pub struct TestProgram_TestVersionDispatcher {
+#[allow(non_camel_case_types)]
+pub struct TestProgram_TestVersion_Dispatcher {
     inner: Box<dyn TestProgram_TestVersion>,
 }
 
-impl TestProgram_TestVersionDispatcher {
+impl TestProgram_TestVersion_Dispatcher {
     pub fn new(inner: Box<dyn TestProgram_TestVersion>) -> Self {
         Self { inner }
     }
 }
 
 #[async_trait]
-impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersionDispatcher {
+impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersion_Dispatcher {
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
         match proc {
             0 => {
                 let _args: () =
                     xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
                 let res = self.inner.null().await;
-                let out = xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)?;
-                Ok(out)
+                xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             1 => {
                 let args: (i32,) =
                     xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
                 let res = self.inner.takes_int(args.0).await;
-                let out = xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)?;
-                Ok(out)
+                xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             2 => {
                 let args: (i32, i32) =
                     xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
                 let res = self.inner.takes_two_ints(args.0, args.1).await;
-                let out = xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)?;
-                Ok(out)
+                xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             _ => Err(RpcError::InvalidProcedure),
         }
@@ -54,6 +53,7 @@ impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersionDispatc
     }
 }
 
+#[allow(non_camel_case_types)]
 pub struct TestProgram_TestVersion_Client {
     handle: Arc<ClientHandle>,
 }
@@ -121,7 +121,7 @@ mod tests {
 
         // Create service map
         let mut service_map = ServiceMap::new();
-        service_map.add_service(Box::new(TestProgram_TestVersionDispatcher {
+        service_map.add_service(Box::new(TestProgram_TestVersion_Dispatcher {
             inner: Box::new(EchoCallbackSerivce {}),
         }));
 
@@ -129,7 +129,7 @@ mod tests {
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
         let client_handle = Arc::new(ClientHandle::new(client_write_tx));
         let (server_write_tx, server_write_rx) = mpsc::unbounded_channel();
-        let server_handle = Arc::new(ClientHandle::new(server_write_tx));
+        let server_handle: Arc<ClientHandle> = Arc::new(ClientHandle::new(server_write_tx));
 
         // Accept incoming connection in background task - we'll use this for the server side
         let listener_handle = tokio::spawn(async move { accept(&listener).await.unwrap() });
