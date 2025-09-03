@@ -1,5 +1,5 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, ToSocketAddrs};
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
 pub struct WriteHalf {
     // We may choose to multiplex this over multiple connections later.
@@ -22,6 +22,12 @@ pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<(ReadHalf, WriteHalf),
         },
         WriteHalf { write_half },
     ))
+}
+
+pub async fn accept(listener: &TcpListener) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
+    let (stream, _) = listener.accept().await?;
+    let (read_half, write_half) = stream.into_split();
+    Ok((ReadHalf { read_half, buffer: [0u8; 8192] }, WriteHalf { write_half }))
 }
 
 impl WriteHalf {

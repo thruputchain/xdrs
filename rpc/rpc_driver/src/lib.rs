@@ -10,7 +10,13 @@ pub mod rpc_error;
 pub mod tasks;
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ProcVers {
-    proc: u32,
+pub struct ProgVers {
+    prog: u32,
     vers: u32,
+}
+
+impl ProgVers {
+    pub fn new(prog: u32, vers: u32) -> Self {
+        Self { prog, vers }
+    }
 }

@@ -6,6 +6,8 @@ use crate::rpc_msg;
 pub enum RpcError {
     #[error("Invalid procedure")]
     InvalidProcedure,
+    #[error("Program unavailable")]
+    ProgUnavail,
     #[error("Invalid version: low {low}, high {high}")]
     InvalidVersion { low: u32, high: u32 },
     #[error("Rpc Mismatch")]
@@ -141,6 +143,21 @@ impl RpcError {
                         rbody: rpc_msg::reply_body::MSG_DENIED {
                             rreply: rpc_msg::rejected_reply::AUTH_ERROR {
                                 rj_why: rpc_msg::auth_stat::AUTH_FAILED,
+                            },
+                        },
+                    },
+                }
+            }
+            RpcError::ProgUnavail => {
+                return rpc_msg::rpc_msg {
+                    xid,
+                    body: rpc_msg::rpc_msg_body::REPLY {
+                        rbody: rpc_msg::reply_body::MSG_ACCEPTED {
+                            areply: rpc_msg::accepted_reply {
+                                verf: DEFAULT_OPAQUE_AUTH,
+                                reply_data: rpc_msg::accepted_reply_reply_data::Default {
+                                    stat: rpc_msg::accept_stat::PROG_UNAVAIL as i32,
+                                },
                             },
                         },
                     },

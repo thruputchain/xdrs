@@ -1,8 +1,10 @@
-use tokio::sync::{mpsc, RwLock};
+use std::sync::Arc;
+
+use tokio::sync::mpsc;
 
 use crate::{
-    client_state::ClientState, rpc_error::DEFAULT_OPAQUE_AUTH, rpc_msg, server_state::ServiceMap,
-    tcp_connection::ReadHalf, ProcVers,
+    client_state::ClientHandle, rpc_error::DEFAULT_OPAQUE_AUTH, rpc_msg, server_state::ServiceMap,
+    tcp_connection::{ReadHalf, WriteHalf}, ProgVers,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -15,11 +17,20 @@ pub enum ReadTaskError {
     WriteError(#[from] mpsc::error::SendError<Vec<u8>>),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum WriteTaskError {
+    #[error("Shutdown")]
+    Shutdown,
+    #[error("Write error: {0}")]
+    WriteError(#[from] std::io::Error),
+    #[error("Recv error")]
+    RecvError,
+}
+
 pub async fn launch_read_task(
     service_map: ServiceMap,
-    client_cbs: &RwLock<ClientState>,
+    client_cbs: Arc<ClientHandle>,
     mut read_half: ReadHalf,
-    write_queue: mpsc::UnboundedSender<Vec<u8>>,
 ) -> Result<(), ReadTaskError> {
     loop {
         let record = read_half.read_record().await?;
@@ -41,22 +52,24 @@ pub async fn launch_read_task(
 
         match msg.body {
             rpc_msg::rpc_msg_body::CALL { cbody } => {
-                let vers = ProcVers {
-                    proc: cbody.proc,
+                let vers = ProgVers {
+                    prog: cbody.prog,
                     vers: cbody.vers,
                 };
                 let res = service_map
-                    .dispatch(cbody.rpcvers, vers, msg.xid, remaining_bytes)
+                    .dispatch(cbody.rpcvers, vers, cbody.proc,  remaining_bytes)
                     .await;
                 match res {
                     Ok(response) => {
                         prepare_success_response(msg.xid, &response, &mut write_buffer);
-                        write_queue
+                        client_cbs
+                            .channel
                             .send(write_buffer)
                             .map_err(ReadTaskError::WriteError)?;
                     }
                     Err(e) => {
-                        write_queue
+                        client_cbs
+                            .channel
                             .send(xdrs::serialize_txs::encode(&e.to_rpc_msg(msg.xid)).unwrap())
                             .map_err(ReadTaskError::WriteError)?;
                     }
@@ -64,15 +77,19 @@ pub async fn launch_read_task(
             }
             rpc_msg::rpc_msg_body::REPLY { rbody } => match rbody {
                 rpc_msg::reply_body::MSG_ACCEPTED { areply } => {
+                    // Handle_reply only returns an error if the client xid is not found,
+                    // which signals bizarre error and is handled by shutting down the connection.
                     if let rpc_msg::accepted_reply_reply_data::SUCCESS { results: _results } =
                         areply.reply_data
                     {
                         client_cbs
+                            .client_state
                             .write()
                             .await
                             .handle_reply(msg.xid, Ok(remaining_bytes.to_vec()));
                     } else {
                         client_cbs
+                            .client_state
                             .write()
                             .await
                             .handle_reply(msg.xid, Err(areply.reply_data.into()));
@@ -80,6 +97,7 @@ pub async fn launch_read_task(
                 }
                 rpc_msg::reply_body::MSG_DENIED { rreply } => {
                     client_cbs
+                        .client_state
                         .write()
                         .await
                         .handle_reply(msg.xid, Err(rreply.into()));
@@ -113,4 +131,14 @@ fn prepare_success_response(xid: u32, results: &[u8], buf: &mut Vec<u8>) {
     buf.extend_from_slice(&msg_len.to_be_bytes());
     buf.extend_from_slice(&header_bytes);
     buf.extend_from_slice(results);
+}
+
+pub async fn launch_write_task(
+    mut receive_channel: mpsc::UnboundedReceiver<Vec<u8>>,
+    mut write_half: WriteHalf,
+) -> Result<(), WriteTaskError> {
+    loop {
+        let msg = receive_channel.recv().await.ok_or(WriteTaskError::RecvError)?;
+        write_half.write_data(&msg).await.map_err(WriteTaskError::WriteError)?;
+    }
 }
