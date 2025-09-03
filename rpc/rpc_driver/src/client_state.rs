@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot, RwLock};
 
 use crate::{
@@ -64,7 +64,10 @@ impl ClientHandle {
         }
     }
 
-    pub(crate) fn send_msg(&self, msg: &[u8]) -> Result<(), tokio::sync::mpsc::error::SendError<Vec<u8>>> {
+    pub(crate) fn send_msg(
+        &self,
+        msg: &[u8],
+    ) -> Result<(), tokio::sync::mpsc::error::SendError<Vec<u8>>> {
         self.channel.send(msg.to_vec())
     }
 
@@ -105,7 +108,7 @@ impl ClientHandle {
             .await
             .add_callback(CallbackHandle { tx });
         self.send_msg(&self.make_call_msg(xid, progvers, proc, data))
-             .map_err(|_| RpcError::SystemError)?;
+            .map_err(|_| RpcError::SystemError)?;
         rx.await.map_err(|_| RpcError::SystemError)?
     }
 }

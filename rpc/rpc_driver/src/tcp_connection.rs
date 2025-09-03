@@ -27,7 +27,13 @@ pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<(ReadHalf, WriteHalf),
 pub async fn accept(listener: &TcpListener) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let (stream, _) = listener.accept().await?;
     let (read_half, write_half) = stream.into_split();
-    Ok((ReadHalf { read_half, buffer: [0u8; 8192] }, WriteHalf { write_half }))
+    Ok((
+        ReadHalf {
+            read_half,
+            buffer: [0u8; 8192],
+        },
+        WriteHalf { write_half },
+    ))
 }
 
 impl WriteHalf {

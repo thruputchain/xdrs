@@ -12,7 +12,9 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
-    use rpc_driver::{rpc_error::RpcError, server_state::ServerDispatch, tcp_connection::accept, ProgVers};
+    use rpc_driver::{
+        rpc_error::RpcError, server_state::ServerDispatch, tcp_connection::accept, ProgVers,
+    };
 
     use super::*;
     struct EchoCallbackSerivce {}
@@ -23,7 +25,10 @@ mod tests {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
-            println!("EchoCallbackSerivce: dispatch: proc={}, data={:?}", proc, data);
+            println!(
+                "EchoCallbackSerivce: dispatch: proc={}, data={:?}",
+                proc, data
+            );
             Ok(data.to_vec())
         }
 
@@ -48,45 +53,84 @@ mod tests {
         let (server_write_tx, server_write_rx) = mpsc::unbounded_channel();
         let server_handle = Arc::new(ClientHandle::new(server_write_tx));
 
-
         // Accept incoming connection in background task - we'll use this for the server side
-        let listener_handle= tokio::spawn(async move {
-            accept(&listener).await.unwrap()
-        });
+        let listener_handle = tokio::spawn(async move { accept(&listener).await.unwrap() });
 
         // Connect from client side
         let (client_read, client_write) = connect(addr).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
         let client_write_task = tokio::spawn(async move {
-            launch_write_task(client_write_rx, client_write).await.unwrap();
+            launch_write_task(client_write_rx, client_write)
+                .await
+                .unwrap();
         });
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
             async move {
-                launch_read_task(ServiceMap::new(), client_handle, client_read).await.unwrap();
+                launch_read_task(ServiceMap::new(), client_handle, client_read)
+                    .await
+                    .unwrap();
             }
         });
 
         let server_write_task = tokio::spawn(async move {
-            launch_write_task(server_write_rx, server_write).await.unwrap();
+            launch_write_task(server_write_rx, server_write)
+                .await
+                .unwrap();
         });
 
         let server_read_task = tokio::spawn(async move {
-            launch_read_task(service_map, server_handle.clone(), server_read).await.unwrap();
+            launch_read_task(service_map, server_handle.clone(), server_read)
+                .await
+                .unwrap();
         });
 
         // Give tasks a moment to start up
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        let response = client_handle.as_ref().send_call(ProgVers::new(1, 1), 1, b"hello").await.unwrap();
+        let response = client_handle
+            .as_ref()
+            .send_call(ProgVers::new(1, 1), 1, b"hello")
+            .await
+            .unwrap();
         assert_eq!(response, b"hello");
-        assert_eq!(client_handle.as_ref().client_state.read().await.pending_requests.len(), 0);
+        assert_eq!(
+            client_handle
+                .as_ref()
+                .client_state
+                .read()
+                .await
+                .pending_requests
+                .len(),
+            0
+        );
 
         // some error cases
-        assert_eq!(client_handle.as_ref().send_call(ProgVers::new(1, 1), 2, b"world").await.unwrap_err(), RpcError::InvalidProcedure);
-        assert_eq!(client_handle.as_ref().send_call(ProgVers::new(2, 1), 1, b"world2").await.unwrap_err(), RpcError::ProgUnavail);
-        assert_eq!(client_handle.as_ref().send_call(ProgVers::new(1, 2), 1, b"world3").await.unwrap_err(), RpcError::InvalidVersion { low: 1, high: 1 });
+        assert_eq!(
+            client_handle
+                .as_ref()
+                .send_call(ProgVers::new(1, 1), 2, b"world")
+                .await
+                .unwrap_err(),
+            RpcError::InvalidProcedure
+        );
+        assert_eq!(
+            client_handle
+                .as_ref()
+                .send_call(ProgVers::new(2, 1), 1, b"world2")
+                .await
+                .unwrap_err(),
+            RpcError::ProgUnavail
+        );
+        assert_eq!(
+            client_handle
+                .as_ref()
+                .send_call(ProgVers::new(1, 2), 1, b"world3")
+                .await
+                .unwrap_err(),
+            RpcError::InvalidVersion { low: 1, high: 1 }
+        );
 
         // Verify tasks are running by checking they haven't completed yet
         assert!(!client_write_task.is_finished());

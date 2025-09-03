@@ -35,7 +35,7 @@ impl ServiceMap {
             return Err(RpcError::RpcMismatch);
         }
         if let Some(srv) = self.services.get(&srv) {
-            return srv.dispatch( proc, data).await;
+            return srv.dispatch(proc, data).await;
         }
 
         // Find the first service with matching program number

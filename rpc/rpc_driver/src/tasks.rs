@@ -3,8 +3,12 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::{
-    client_state::ClientHandle, rpc_error::DEFAULT_OPAQUE_AUTH, rpc_msg, server_state::ServiceMap,
-    tcp_connection::{ReadHalf, WriteHalf}, ProgVers,
+    client_state::ClientHandle,
+    rpc_error::DEFAULT_OPAQUE_AUTH,
+    rpc_msg,
+    server_state::ServiceMap,
+    tcp_connection::{ReadHalf, WriteHalf},
+    ProgVers,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -57,7 +61,7 @@ pub async fn launch_read_task(
                     vers: cbody.vers,
                 };
                 let res = service_map
-                    .dispatch(cbody.rpcvers, vers, cbody.proc,  remaining_bytes)
+                    .dispatch(cbody.rpcvers, vers, cbody.proc, remaining_bytes)
                     .await;
                 match res {
                     Ok(response) => {
@@ -138,7 +142,13 @@ pub async fn launch_write_task(
     mut write_half: WriteHalf,
 ) -> Result<(), WriteTaskError> {
     loop {
-        let msg = receive_channel.recv().await.ok_or(WriteTaskError::RecvError)?;
-        write_half.write_data(&msg).await.map_err(WriteTaskError::WriteError)?;
+        let msg = receive_channel
+            .recv()
+            .await
+            .ok_or(WriteTaskError::RecvError)?;
+        write_half
+            .write_data(&msg)
+            .await
+            .map_err(WriteTaskError::WriteError)?;
     }
 }
