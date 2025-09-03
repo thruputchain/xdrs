@@ -74,10 +74,7 @@ impl TestProgram_TestVersion_Client {
     }
     pub async fn takes_int(&self, i: i32) -> Result<i32, RpcError> {
         let data = xdrs::serialize_txs::encode(&(i,)).map_err(|_| RpcError::GarbageArguments)?;
-        let buf = self
-            .handle
-            .send_call(Self::prog_vers(), 1, &data)
-            .await?;
+        let buf = self.handle.send_call(Self::prog_vers(), 1, &data).await?;
         xdrs::serialize_txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
     pub async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, RpcError> {
