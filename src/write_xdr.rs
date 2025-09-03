@@ -190,6 +190,14 @@ write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3) }
 write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4) }
 write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5) }
 
+// impl for single-element tuples
+impl<T: WriteXDR> WriteXDR for (T,) {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        let (t,) = self;
+        t.write_xdr(w)
+    }
+}
+
 impl<T: WriteXDR> WriteXDR for Option<T> {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
         if let Some(val) = self {
