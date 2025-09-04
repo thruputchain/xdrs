@@ -57,7 +57,11 @@ impl Format for CXS {
 
 #[cfg(feature = "cxs")]
 impl CXS {
-    pub fn decode_structured<'r, 'a: 'r, S, T: ReadXDR<'r, S>>(buf: &'a [u8], structure: S) -> ReadResult<T> {
+    pub fn decode_structured<'r, 'a: 'r, S, T>(buf: &'a [u8], structure: S) -> ReadResult<T>
+        where
+            T: ReadStructuredXDR<'r, S>,
+            S: Structured<S>,
+    {
         serialize_cxs::decode_structured(buf, structure)
     }
 }

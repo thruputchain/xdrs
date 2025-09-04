@@ -3,32 +3,56 @@ use crate::serialize::reader::*;
 use crate::valid_u32::*;
 use core::mem::MaybeUninit as MU;
 
-pub fn read_xdr<'r, S, R, T>(r: &mut R) -> Result<T>
-where
-    R: Reader<'r, S>,
-    T: ReadXDR<'r, S>,
-{
-    <T as ReadXDR<S>>::read_xdr(r)
-}
-
 /// Types that can be constructed by reading XDR data,
 /// possibly sharing data from the input
-pub trait ReadXDR<'r, S>: Sized {
-    fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self>;
+pub trait ReadXDR<'r>: Sized {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self>;
 }
+
+pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
+where
+    R: Reader<'r>,
+    T: ReadXDR<'r>,
+{
+    <T as ReadXDR>::read_xdr(r)
+}
+
+pub trait ReadStructuredXDR<'r, S>: Sized {
+    fn read_structured_xdr<R>(r: &mut R) -> Result<Self>
+       where R: Reader<'r> + Structured<S>;
+}
+
+pub fn read_structured_xdr<'r, R, S, T>(r: &mut R) -> Result<T>
+where
+    R: Reader<'r> + Structured<S>,
+    T: ReadStructuredXDR<'r, S>,
+{
+    <T as ReadStructuredXDR<S>>::read_structured_xdr(r)
+}
+
 
 /// Types that can be constructed by reading XDR data
 /// of any lifetime
-pub trait ReadXDROwned<S>: for<'r> ReadXDR<'r, S> {}
+pub trait ReadXDROwned: for<'r> ReadXDR<'r> {}
 
-impl<S, T> ReadXDROwned<S> for T
-    where T: for<'r> ReadXDR<'r, S> {}
+impl<T> ReadXDROwned for T
+    where T: for<'r> ReadXDR<'r> {}
+
+/*
+impl<'r, S, T> ReadStructuredXDR<'r, S> for T
+    where T: ReadXDR<'r>
+{
+    fn read_structured_xdr<R: Reader<'r> + Structured<S>>(r: &mut R) -> Result<Self> {
+        read_xdr(r)
+    }
+}
+*/
 
 macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
-        impl<'r, S> ReadXDR<'r, S> for $int_ty {
-            fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<$int_ty> {
+        impl<'r> ReadXDR<'r> for $int_ty {
+            fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<$int_ty> {
                 r.$read_method()
             }
         }
@@ -50,8 +74,8 @@ construct_int_impls! {
 
 #[cfg(all(feature = "extras", not(feature = "int128_xdr")))]
 const _: () = {
-    impl<'r, S> ReadXDR<'r, S> for i128 {
-        fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+    impl<'r> ReadXDR<'r> for i128 {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let mut uninit = [MU::<u8>::zeroed(); 16];
 
             let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
@@ -62,8 +86,8 @@ const _: () = {
         }
     }
 
-    impl<'r, S> ReadXDR<'r, S> for u128 {
-        fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+    impl<'r> ReadXDR<'r> for u128 {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let mut uninit = [MU::<u8>::zeroed(); 16];
 
             let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
@@ -78,8 +102,8 @@ const _: () = {
 // Another way to serialize 128-bit ints
 #[cfg(all(feature = "extras", feature = "int128_xdr"))]
 const _: () = {
-    impl<'r, S> ReadXDR<'r, S> for i128 {
-        fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+    impl<'r> ReadXDR<'r> for i128 {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let highbits: i64 = read_xdr(r)?;
             let lowbits: u64 = read_xdr(r)?;
             let i: i128 = ((highbits as i128) << 64) | (lowbits as i128);
@@ -88,8 +112,8 @@ const _: () = {
         }
     }
 
-    impl<'r, S> ReadXDR<'r, S> for u128 {
-        fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+    impl<'r> ReadXDR<'r> for u128 {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let highbits: u64 = read_xdr(r)?;
             let lowbits: u64 = read_xdr(r)?;
             let u: u128 = ((highbits as u128) << 64) | (lowbits as u128);
@@ -99,11 +123,11 @@ const _: () = {
     }
 };
 
-impl<'r, S, T, const N: usize> ReadXDR<'r, S> for [T; N]
+impl<'r, S, T, const N: usize> ReadStructuredXDR<'r, S> for [T; N]
 where
-    T: ReadXDR<'r, S>,
+    T: ReadStructuredXDR<'r, S>,
 {
-    fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+    fn read_structured_xdr<R: Reader<'r> + Structured<S>>(r: &mut R) -> Result<Self> {
         let () = ValidU32::<N>::OK;
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
@@ -112,7 +136,7 @@ where
 
         // TODO: catch errors to avoid memory leaks
         for elt in arr.iter_mut() {
-            elt.write(read_xdr(r)?);
+            elt.write(read_structured_xdr(r)?);
             r.next()?;
         }
 
@@ -124,13 +148,13 @@ where
     }
 }
 
-impl<'r, S> ReadXDR<'r, S> for &'r [u8] {
+impl<'r> ReadXDR<'r> for &'r [u8] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         r.read_opaque_variable(u32::MAX)
     }
 }
 
-impl<'r, S, const N: usize> ReadXDR<'r, S> for &'r [u8; N] {
+impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let () = ValidU32::<N>::OK;
         let len = N as u32;
@@ -142,8 +166,8 @@ impl<'r, S, const N: usize> ReadXDR<'r, S> for &'r [u8; N] {
     }
 }
 
-impl<'r, S, const N: usize> ReadXDR<'r, S> for [u8; N] {
-    fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let () = ValidU32::<N>::OK;
 
         let mut arr: [MU<u8>; N] = [MU::uninit(); N];
@@ -158,7 +182,7 @@ impl<'r, S, const N: usize> ReadXDR<'r, S> for [u8; N] {
 }
 
 #[cfg(feature = "alloc")]
-impl<'r, S> ReadXDR<'r, S> for alloc::string::String {
+impl<'r> ReadXDR<'r> for alloc::string::String {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
         let v = alloc::vec::Vec::from(bytes);
@@ -167,7 +191,7 @@ impl<'r, S> ReadXDR<'r, S> for alloc::string::String {
     }
 }
 
-impl<'r, S> ReadXDR<'r, S> for () {
+impl<'r> ReadXDR<'r> for () {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
         Ok(())
     }
@@ -176,13 +200,15 @@ impl<'r, S> ReadXDR<'r, S> for () {
 macro_rules! read_tuple {
     { $n:expr => $( $t:ident ),+ } => {
 
-        impl<'r, S, $($t),+> ReadXDR<'r, S> for ($($t),+)
+        impl<'r, S, $($t),+> ReadStructuredXDR<'r, S> for ($($t),+)
         where
-            $( $t: ReadXDR<'r, S>, )+
+            $( $t: ReadStructuredXDR<'r, S>, )+
         {
-            fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+            fn read_structured_xdr<R>(r: &mut R) -> Result<Self>
+                where R: Reader<'r> + Structured<S>
+            {
                 r.seq(Some($n))?;
-                let v = ( $({ let v: $t = read_xdr(r)?; r.next()?; v }),+ );
+                let v = ( $({ let v: $t = read_structured_xdr(r)?; r.next()?; v }),+ );
                 r.end()?;
                 Ok(v)
             }
@@ -197,11 +223,11 @@ read_tuple!(4 => T1, T2, T3, T4);
 read_tuple!(5 => T1, T2, T3, T4, T5);
 read_tuple!(6 => T1, T2, T3, T4, T5, T6);
 
-impl<'r, T> ReadXDR<'r, S> for Option<T>
+impl<'r, T> ReadXDR<'r> for Option<T>
 where
-    T: ReadXDR<'r, S>,
+    T: ReadXDR<'r>,
 {
-    fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let is_present = r.read_bool()?;
         if is_present {
             Ok(Some(read_xdr(r)?))
@@ -212,11 +238,11 @@ where
 }
 
 #[cfg(all(feature = "xdr_common", feature = "alloc"))]
-impl<'r, T> ReadXDR<'r, S> for xdr_common::Box<T>
+impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
-    T: ReadXDR<'r, S>,
+    T: ReadXDR<'r>,
 {
-    fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         Ok(Self::new(read_xdr(r)?))
     }
 }
@@ -255,11 +281,13 @@ const _: () = {
         }
     }
 
-    impl<'r, T> ReadXDR<'r> for Vec<T>
+    impl<'r, S, T> ReadStructuredXDR<'r, S> for Vec<T>
     where
-        T: ReadXDR<'r>,
+        T: ReadStructuredXDR<'r, S>,
     {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        fn read_structured_xdr<R>(r: &mut R) -> Result<Self>
+            where R: Reader<'r> + Structured<S>
+        {
             let len = r.read_u32()? as usize;
             r.seq(Some(len))?;
 
@@ -268,7 +296,7 @@ const _: () = {
 
             // TODO: catch errors to avoid memory leaks
             for elt in slice.iter_mut() {
-                elt.write(read_xdr(r)?);
+                elt.write(read_structured_xdr(r)?);
                 r.next()?;
             }
 
@@ -301,12 +329,14 @@ const _: () = {
         }
     }
 
-    impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
+    impl<'r, const MAX: u32, S, T> ReadStructuredXDR<'r, S> for VecM<T, MAX>
     where
-        T: ReadXDR<'r>,
+        T: ReadStructuredXDR<'r, S>,
     {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let vec: Vec<T> = read_xdr(r)?;
+        fn read_structured_xdr<R>(r: &mut R) -> Result<Self>
+            where R: Reader<'r> + Structured<S>
+        {
+            let vec: Vec<T> = read_structured_xdr(r)?;
             if vec.len() > MAX as usize {
                 return Err(Error::MaxLengthExceeded);
             }

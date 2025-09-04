@@ -14,7 +14,9 @@ impl<'a> BufReader<'a, ()> {
     }
 }
 
-impl<'a, S> BufReader<'a, S> {
+impl<'a, S> BufReader<'a, S>
+    where Self: Reader<'a>
+{
     pub fn new_structured(data: &'a [u8], structure: S) -> Self {
         Self { data, pos: 0, structure }
     }
@@ -192,8 +194,8 @@ macro_rules! read_unsigned {
     )* };
 }
 
-impl<'r, S> ReaderStructure<S> for BufReader<'r, S>
-    where S: ReaderStructure<S>
+impl<'r, S> Structured<S> for BufReader<'r, S>
+    where S: Structured<S>
 {
     fn structure(&self) -> &S {
         &self.structure
@@ -212,8 +214,7 @@ impl<'r, S> ReaderStructure<S> for BufReader<'r, S>
     }
 }
 
-impl<'r, S> Reader<'r, S> for BufReader<'r, S>
-    where BufReader<'r, S>: ReaderStructure<S>
+impl<'r, S> Reader<'r> for BufReader<'r, S>
 {
     read_signed! {
         [read_i64, i64],

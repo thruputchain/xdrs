@@ -5,8 +5,6 @@ pub struct BufReader<'r> {
     pos: usize,
 }
 
-impl<'r> ReaderStructure for BufReader<'r> {}
-
 macro_rules! read_int {
     [ $($read:ident($nbytes:expr): $ty:ty),* $(,)? ] => { $(
         fn $read(&mut self) -> Result<$ty> {

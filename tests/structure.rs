@@ -21,7 +21,7 @@ impl Path {
     }
 }
 
-impl ReaderStructure<Path> for Path {
+impl Structured<Path> for Path {
     fn seq(&mut self, len: Option<usize>) -> Result<()> {
         self.depth += 1;
         self.index = 0;
@@ -44,20 +44,5 @@ impl ReaderStructure<Path> for Path {
 }
 
 #[test]
-fn optional_data() {
-    let n: i32 = 5;
-    let mut v = Some(n);
-
-    CXS::decode_structured(v, expected);
-
-    let expected = &hex!("0000000100000005");
-    TXS::check_codec(&v, expected);
-
-    v = None;
-
-    let expected = &hex!("00");
-    CXS::check_codec(&v, expected);
-
-    let expected = &hex!("00000000");
-    TXS::check_codec(&v, expected);
+fn array() {
 }
