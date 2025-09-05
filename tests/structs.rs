@@ -87,11 +87,9 @@ fn field_as_type() {
     #[derive(Debug, PartialEq, Eq)]
     struct Blob(u32);
 
-    impl core::ops::Deref for Blob {
-        type Target = u32;
-
-        fn deref(&self) -> &u32 {
-            &self.0
+    impl Into<u32> for &Blob {
+        fn into(self) -> u32 {
+            self.0
         }
     }
 

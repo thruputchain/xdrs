@@ -7,24 +7,18 @@ use crate::mu;
 use core::mem::MaybeUninit as MU;
 use thiserror::Error;
 
-pub trait Structured<S> {
+pub trait Structured {
     fn seq(&mut self, _len: Option<usize>) -> Result<()> { Ok(()) }
     fn next(&mut self) -> Result<()> { Ok(()) }
     fn end(&mut self) -> Result<()> { Ok(()) }
-
-    fn structure(&self) -> &S;
 }
 
-impl Structured<()> for () {
-    fn structure(&self) -> &() {
-        self
-    }
-}
+impl Structured for () {}
 
 /// Something that can produce XDR values, where
 /// values may be borrowed with lifetime 'r and
 /// an ambient structure value `S` is available
-pub trait Reader<'r>: Sized {
+pub trait Reader<'r>: Structured + Sized {
 
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;

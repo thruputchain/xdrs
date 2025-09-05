@@ -59,8 +59,8 @@ impl Format for CXS {
 impl CXS {
     pub fn decode_structured<'r, 'a: 'r, S, T>(buf: &'a [u8], structure: S) -> ReadResult<T>
         where
+            S: Structured,
             T: ReadStructuredXDR<'r, S>,
-            S: Structured<S>,
     {
         serialize_cxs::decode_structured(buf, structure)
     }
@@ -154,7 +154,10 @@ pub trait Check: Format {
     }
 }
 
+#[cfg(feature = "cxs")]
 impl Check for CXS {}
+
+#[cfg(feature = "txs")]
 impl Check for TXS {}
 
 // panic with readable output

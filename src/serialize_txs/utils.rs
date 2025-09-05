@@ -9,7 +9,7 @@ pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
 where
     T: ReadXDR<'r>,
 {
-    let mut reader = BufReader::new(buf);
+    let mut reader: BufReader<'r, ()> = BufReader::new(buf);
 
     let value = read_xdr(&mut reader)?;
 

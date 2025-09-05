@@ -42,7 +42,7 @@ fn write_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
 }
 
 // TODO: for better error messages, assert that the type for which WriteXDR is being derived (i.e.,
-// #ty_ident) implements Copy
+// #ty_ident) implements Clone
 fn write_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> TokenStream {
     let ty_ident = &input.ident;
 
@@ -84,8 +84,9 @@ fn write_field(index: usize, field: &syn::Field) -> TokenStream {
 
     if let Some(as_ty) = attrs.as_type {
         quote! {
-            let v: &#as_ty = ::core::ops::Deref::deref(&self.#fa);
-            <#as_ty as __xdrs::WriteXDR>::write_xdr(v, w)?;
+            let v: &#ty = &(self.#fa);
+            let as_val: #as_ty = v.into();
+            <#as_ty as __xdrs::WriteXDR>::write_xdr(&as_val, w)?;
         }
     } else {
         quote! {

@@ -14,22 +14,22 @@ where
     R: Reader<'r>,
     T: ReadXDR<'r>,
 {
-    <T as ReadXDR>::read_xdr(r)
+    T::read_xdr(r)
 }
 
+/// Like ReadXDR, but a "structure" type S is available
 pub trait ReadStructuredXDR<'r, S>: Sized {
     fn read_structured_xdr<R>(r: &mut R) -> Result<Self>
-       where R: Reader<'r> + Structured<S>;
+        where R: Reader<'r> + AsRef<S>;
 }
 
 pub fn read_structured_xdr<'r, R, S, T>(r: &mut R) -> Result<T>
 where
-    R: Reader<'r> + Structured<S>,
+    R: Reader<'r> + AsRef<S>,
     T: ReadStructuredXDR<'r, S>,
 {
-    <T as ReadStructuredXDR<S>>::read_structured_xdr(r)
+    T::read_structured_xdr(r)
 }
-
 
 /// Types that can be constructed by reading XDR data
 /// of any lifetime
@@ -37,16 +37,6 @@ pub trait ReadXDROwned: for<'r> ReadXDR<'r> {}
 
 impl<T> ReadXDROwned for T
     where T: for<'r> ReadXDR<'r> {}
-
-/*
-impl<'r, S, T> ReadStructuredXDR<'r, S> for T
-    where T: ReadXDR<'r>
-{
-    fn read_structured_xdr<R: Reader<'r> + Structured<S>>(r: &mut R) -> Result<Self> {
-        read_xdr(r)
-    }
-}
-*/
 
 macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
@@ -123,11 +113,11 @@ const _: () = {
     }
 };
 
-impl<'r, S, T, const N: usize> ReadStructuredXDR<'r, S> for [T; N]
+impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
 where
-    T: ReadStructuredXDR<'r, S>,
+    T: ReadXDR<'r>,
 {
-    fn read_structured_xdr<R: Reader<'r> + Structured<S>>(r: &mut R) -> Result<Self> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let () = ValidU32::<N>::OK;
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
@@ -136,7 +126,7 @@ where
 
         // TODO: catch errors to avoid memory leaks
         for elt in arr.iter_mut() {
-            elt.write(read_structured_xdr(r)?);
+            elt.write(read_xdr(r)?);
             r.next()?;
         }
 
@@ -200,15 +190,14 @@ impl<'r> ReadXDR<'r> for () {
 macro_rules! read_tuple {
     { $n:expr => $( $t:ident ),+ } => {
 
-        impl<'r, S, $($t),+> ReadStructuredXDR<'r, S> for ($($t),+)
+        impl<'r, $($t),+> ReadXDR<'r> for ($($t),+)
         where
-            $( $t: ReadStructuredXDR<'r, S>, )+
+            $( $t: ReadXDR<'r>, )+
         {
-            fn read_structured_xdr<R>(r: &mut R) -> Result<Self>
-                where R: Reader<'r> + Structured<S>
+            fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self>
             {
                 r.seq(Some($n))?;
-                let v = ( $({ let v: $t = read_structured_xdr(r)?; r.next()?; v }),+ );
+                let v = ( $({ let v: $t = read_xdr(r)?; r.next()?; v }),+ );
                 r.end()?;
                 Ok(v)
             }
@@ -237,6 +226,20 @@ where
     }
 }
 
+impl<'r, S, T> ReadStructuredXDR<'r, S> for Option<T>
+where
+    T: ReadStructuredXDR<'r, S>,
+{
+    fn read_structured_xdr<R: Reader<'r> + AsRef<S>>(r: &mut R) -> Result<Self> {
+        let is_present = r.read_bool()?;
+        if is_present {
+            Ok(Some(read_structured_xdr(r)?))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
 #[cfg(all(feature = "xdr_common", feature = "alloc"))]
 impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
@@ -244,6 +247,16 @@ where
 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         Ok(Self::new(read_xdr(r)?))
+    }
+}
+
+#[cfg(all(feature = "xdr_common", feature = "alloc"))]
+impl<'r, S, T> ReadStructuredXDR<'r, S> for xdr_common::Box<T>
+where
+    T: ReadStructuredXDR<'r, S>,
+{
+    fn read_structured_xdr<R: Reader<'r> + AsRef<S>>(r: &mut R) -> Result<Self> {
+        Ok(Self::new(read_structured_xdr(r)?))
     }
 }
 
@@ -281,13 +294,11 @@ const _: () = {
         }
     }
 
-    impl<'r, S, T> ReadStructuredXDR<'r, S> for Vec<T>
+    impl<'r, T> ReadXDR<'r> for Vec<T>
     where
-        T: ReadStructuredXDR<'r, S>,
+        T: ReadXDR<'r>,
     {
-        fn read_structured_xdr<R>(r: &mut R) -> Result<Self>
-            where R: Reader<'r> + Structured<S>
-        {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let len = r.read_u32()? as usize;
             r.seq(Some(len))?;
 
@@ -296,7 +307,7 @@ const _: () = {
 
             // TODO: catch errors to avoid memory leaks
             for elt in slice.iter_mut() {
-                elt.write(read_structured_xdr(r)?);
+                elt.write(read_xdr(r)?);
                 r.next()?;
             }
 
@@ -329,14 +340,12 @@ const _: () = {
         }
     }
 
-    impl<'r, const MAX: u32, S, T> ReadStructuredXDR<'r, S> for VecM<T, MAX>
+    impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
-        T: ReadStructuredXDR<'r, S>,
+        T: ReadXDR<'r>,
     {
-        fn read_structured_xdr<R>(r: &mut R) -> Result<Self>
-            where R: Reader<'r> + Structured<S>
-        {
-            let vec: Vec<T> = read_structured_xdr(r)?;
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+            let vec: Vec<T> = read_xdr(r)?;
             if vec.len() > MAX as usize {
                 return Err(Error::MaxLengthExceeded);
             }

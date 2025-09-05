@@ -1,8 +1,15 @@
 use crate::serialize::reader::*;
 
-pub struct BufReader<'r> {
+pub struct BufReader<'r, S = ()> {
     data: &'r [u8],
     pos: usize,
+    structure: S,
+}
+
+impl<'r, S> AsRef<S> for BufReader<'r, S> {
+    fn as_ref(&self) -> &S {
+        &self.structure
+    }
 }
 
 macro_rules! read_int {
@@ -15,10 +22,12 @@ macro_rules! read_int {
     )* };
 }
 
-impl<'a> BufReader<'a> {
-    pub fn new(data: &'a [u8]) -> Self {
+impl<'a, S> BufReader<'a, S> {
+    pub fn new(data: &'a [u8]) -> Self
+        where S: Default
+    {
         let pos = 0;
-        Self { data, pos }
+        Self { data, pos, structure: Default::default() }
     }
 
     pub fn position(&self) -> usize {
@@ -51,7 +60,9 @@ impl<'a> BufReader<'a> {
     }
 }
 
-impl<'r> Reader<'r> for BufReader<'r> {
+impl<'r, S> Reader<'r> for BufReader<'r, S>
+    where S: Structured
+{
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
         let buf = self.get_input(len)?;
 
@@ -83,4 +94,20 @@ impl<'r> Reader<'r> for BufReader<'r> {
         read_i32(4): i32,
         read_i16(2): i16,
     ];
+}
+
+impl<'r, S> Structured for BufReader<'r, S>
+    where S: Structured
+{
+    fn seq(&mut self, len: Option<usize>) -> Result<()> {
+        self.structure.seq(len)
+    }
+
+    fn next(&mut self) -> Result<()> {
+        self.structure.next()
+    }
+
+    fn end(&mut self) -> Result<()> {
+        self.structure.end()
+    }
 }

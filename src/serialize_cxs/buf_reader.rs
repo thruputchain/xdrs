@@ -8,21 +8,23 @@ pub struct BufReader<'r, S = ()> {
     structure: S,
 }
 
-impl<'a> BufReader<'a, ()> {
-    pub fn new(data: &'a [u8]) -> Self {
-        Self::new_structured(data, ())
+impl<'r, S> AsRef<S> for BufReader<'r, S> {
+    fn as_ref(&self) -> &S {
+        &self.structure
     }
 }
 
 impl<'a, S> BufReader<'a, S>
     where Self: Reader<'a>
 {
-    pub fn new_structured(data: &'a [u8], structure: S) -> Self {
-        Self { data, pos: 0, structure }
+    pub fn new(data: &'a [u8]) -> Self
+        where S: Default
+    {
+        Self::new_structured(data, Default::default())
     }
 
-    pub fn structure(&self) -> &S {
-        &self.structure
+    pub fn new_structured(data: &'a [u8], structure: S) -> Self {
+        Self { data, pos: 0, structure }
     }
 
     pub fn position(&self) -> usize {
@@ -194,27 +196,8 @@ macro_rules! read_unsigned {
     )* };
 }
 
-impl<'r, S> Structured<S> for BufReader<'r, S>
-    where S: Structured<S>
-{
-    fn structure(&self) -> &S {
-        &self.structure
-    }
-
-    fn seq(&mut self, len: Option<usize>) -> Result<()> {
-        self.structure.seq(len)
-    }
-
-    fn next(&mut self) -> Result<()> {
-        self.structure.next()
-    }
-
-    fn end(&mut self) -> Result<()> {
-        self.structure.end()
-    }
-}
-
 impl<'r, S> Reader<'r> for BufReader<'r, S>
+    where S: Structured
 {
     read_signed! {
         [read_i64, i64],
@@ -240,5 +223,21 @@ impl<'r, S> Reader<'r> for BufReader<'r, S>
         }
 
         self.read_opaque_fixed(len)
+    }
+}
+
+impl<'r, S> Structured for BufReader<'r, S>
+    where S: Structured
+{
+    fn seq(&mut self, len: Option<usize>) -> Result<()> {
+        self.structure.seq(len)
+    }
+
+    fn next(&mut self) -> Result<()> {
+        self.structure.next()
+    }
+
+    fn end(&mut self) -> Result<()> {
+        self.structure.end()
     }
 }

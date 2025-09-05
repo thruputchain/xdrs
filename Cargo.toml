@@ -58,20 +58,24 @@ bench = false # disable libtest benchmarks, in favor of Criterion
 [[bench]]
 name = "bench1"
 harness = false
-required-features = ["alloc", "extras"]
+required-features = ["cxs", "alloc", "extras"]
 
 [[test]]
 name = "repr"
-required-features = ["repr", "alloc", "derive"]
+required-features = ["txs", "cxs", "repr", "alloc", "derive"]
 
 [[test]]
 name = "enums"
-required-features = ["alloc", "derive"]
+required-features = ["txs", "cxs", "alloc", "derive"]
 
 [[test]]
 name = "structs"
-required-features = ["alloc", "derive"]
+required-features = ["txs", "cxs", "alloc", "derive"]
 
 [[test]]
 name = "pointer"
-required-features = ["alloc", "derive"]
+required-features = ["txs", "cxs", "alloc", "derive"]
+
+[[test]]
+name = "tuples"
+required-features = ["txs", "cxs", "alloc"]

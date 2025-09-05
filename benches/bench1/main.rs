@@ -7,7 +7,6 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 const N_CODEC_ITERATIONS: usize = 100;
 
 use xdrs::serialize_cxs as cxs;
-use xdrs::*;
 
 fn bench_codec(c: &mut Criterion) {
     let mut group = c.benchmark_group("Codec");
@@ -52,7 +51,7 @@ fn run_encode(values: &[Value; N_VALUES]) {
         // Extract the now-initialized portion of the buffer
         let encoded = unsafe { buf.assume_init() };
 
-        let values2: [Value; N_VALUES] = serialize_cxs::decode(encoded).unwrap();
+        let values2: [Value; N_VALUES] = cxs::decode(encoded).unwrap();
         debug_assert_eq!(&values2, &VALUES);
     }
 }
