@@ -125,9 +125,18 @@ where
     }
 }
 
-impl<'r, S> ReadXDR<'r, S> for &'r [u8] {
+impl<'r, S, const N: usize> ReadXDR<'r, S> for [u8; N] {
     fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
-        r.read_opaque_variable(u32::MAX)
+        let () = ValidU32::<N>::OK;
+
+        let mut arr: [MU<u8>; N] = [MU::uninit(); N];
+
+        r.read_opaque_fixed_into(&mut arr, N as u32)?;
+
+        // SAFETY: We rely on `read_opaque_fixed_into` to init all elements
+        let arr = unsafe { mu::array_assume_init(arr) };
+
+        Ok(arr)
     }
 }
 
@@ -143,18 +152,9 @@ impl<'r, S, const N: usize> ReadXDR<'r, S> for &'r [u8; N] {
     }
 }
 
-impl<'r, S, const N: usize> ReadXDR<'r, S> for [u8; N] {
+impl<'r, S> ReadXDR<'r, S> for &'r [u8] {
     fn read_xdr<R: Reader<'r, S>>(r: &mut R) -> Result<Self> {
-        let () = ValidU32::<N>::OK;
-
-        let mut arr: [MU<u8>; N] = [MU::uninit(); N];
-
-        r.read_opaque_fixed_into(&mut arr, N as u32)?;
-
-        // SAFETY: We rely on `read_opaque_fixed_into` to init all elements
-        let arr = unsafe { mu::array_assume_init(arr) };
-
-        Ok(arr)
+        r.read_opaque_variable(u32::MAX)
     }
 }
 

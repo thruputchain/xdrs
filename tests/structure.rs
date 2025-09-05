@@ -71,7 +71,7 @@ struct Node {
     right: Option<Box<Node>>,
     okay: bool,
     paths: [Path; 1],
-    bytes: [u8; 3],
+    // bytes: [u8; 3],
 }
 
 impl Node {
@@ -105,7 +105,7 @@ fn mktree(path: &Path) -> Option<Box<Node>> {
             right: mktree(&path.child(1)),
             okay: false,
             paths: [path.child(3).child(0)],
-            bytes: [7; 3],
+            // bytes: [7; 3],
         }))
     }
 }
@@ -131,12 +131,14 @@ impl<'r> ReadXDR<'r, Path> for Node {
         let paths = read_xdr(r)?;
         r.next()?;
 
+        /*
         let bytes = read_xdr(r)?;
         r.next()?; // extra next() calls are allowed before end()
+        */
 
         r.end()?;
 
-        Ok(Node { path, left, right, okay, paths, bytes })
+        Ok(Node { path, left, right, okay, paths, /* bytes */ })
     }
 }
 
