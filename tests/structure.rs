@@ -111,9 +111,12 @@ fn mktree(path: &Path) -> Option<Box<Node>> {
 }
 
 // Manually implement reading in the same way that will be derived
-impl<'r> ReadXDR<'r, Path> for Node {
+impl<'r> ReadXDR<'r> for Node {
+
+    type State = Path;
+
     fn read_xdr<R>(r: &mut R) -> ReadResult<Self>
-        where R: Reader<'r, Path>
+        where R: Reader<'r, State = Self::State>
     {
         let path = read_xdr(r)?;
 

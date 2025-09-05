@@ -41,7 +41,7 @@ pub struct CXS;
 
 #[cfg(feature = "cxs")]
 impl Format for CXS {
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
+    fn decode<'r, 'a: 'r, T: ReadXDR<'r, State = ()>>(buf: &'a [u8]) -> ReadResult<T> {
         serialize_cxs::decode(buf)
     }
 
@@ -60,7 +60,7 @@ impl CXS {
     pub fn decode_structured<'r, 'a: 'r, S, T>(buf: &'a [u8], structure: S) -> ReadResult<T>
         where
             S: Structured,
-            T: ReadXDR<'r, S>,
+            T: ReadXDR<'r, State = S>,
     {
         serialize_cxs::decode_structured(buf, structure)
     }
@@ -73,7 +73,7 @@ pub struct TXS;
 
 #[cfg(feature = "txs")]
 impl Format for TXS {
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
+    fn decode<'r, 'a: 'r, T: ReadXDR<'r, State = ()>>(buf: &'a [u8]) -> ReadResult<T> {
         serialize_txs::decode(buf)
     }
 

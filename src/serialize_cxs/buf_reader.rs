@@ -15,7 +15,7 @@ impl<'r, S> AsRef<S> for BufReader<'r, S> {
 }
 
 impl<'a, S> BufReader<'a, S>
-    where Self: Reader<'a, S>
+    where Self: Reader<'a, State = S>
 {
     pub fn new(data: &'a [u8]) -> Self
         where S: Default
@@ -196,9 +196,11 @@ macro_rules! read_unsigned {
     )* };
 }
 
-impl<'r, S> Reader<'r, S> for BufReader<'r, S>
+impl<'r, S> Reader<'r> for BufReader<'r, S>
     where S: Structured
 {
+    type State = S;
+
     read_signed! {
         [read_i64, i64],
         [read_i32, i32],

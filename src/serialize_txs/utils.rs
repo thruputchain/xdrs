@@ -7,7 +7,7 @@ use core::mem::MaybeUninit as MU;
 
 pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
 where
-    T: ReadXDR<'r>,
+    T: ReadXDR<'r, State = ()>,
 {
     let mut reader: BufReader<'r, ()> = BufReader::new(buf);
 

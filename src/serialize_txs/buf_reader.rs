@@ -60,9 +60,11 @@ impl<'a, S> BufReader<'a, S> {
     }
 }
 
-impl<'r, S> Reader<'r, S> for BufReader<'r, S>
+impl<'r, S> Reader<'r> for BufReader<'r, S>
     where S: Structured
 {
+    type State = S;
+
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
         let buf = self.get_input(len)?;
 
