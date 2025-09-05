@@ -57,7 +57,7 @@ impl ReadHalf {
 
     pub async fn read_record(&mut self) -> Result<&[u8], std::io::Error> {
         let n = self.read_u32().await?;
-        let slice = &mut self.buffer[..n as usize];
+        let slice = &mut self.buffer[..n as usize]; //XXX: buffer overflow
         self.read_half.read_exact(slice).await?;
         Ok(slice)
     }

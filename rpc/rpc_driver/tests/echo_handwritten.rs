@@ -83,7 +83,7 @@ impl TestProgram_TestVersion_Client {
         let buf = self.handle.send_call(Self::prog_vers(), 2, &data).await?;
         xdrs::serialize_txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
-} 
+}
 
 #[cfg(test)]
 mod tests {
@@ -121,12 +121,14 @@ mod tests {
 
         // Create service map
         let mut service_map = ServiceMap::new();
+        //XXX: ergonomics
         service_map.add_service(Box::new(TestProgram_TestVersion_Dispatcher {
             inner: Box::new(EchoCallbackSerivce {}),
         }));
 
         // Set up write channel
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
+        //XXX:ergo
         let client_handle = Arc::new(ClientHandle::new(client_write_tx));
         let (server_write_tx, server_write_rx) = mpsc::unbounded_channel();
         let server_handle: Arc<ClientHandle> = Arc::new(ClientHandle::new(server_write_tx));
