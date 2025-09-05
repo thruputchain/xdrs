@@ -60,7 +60,7 @@ impl<'a, S> BufReader<'a, S> {
     }
 }
 
-impl<'r, S> Reader<'r> for BufReader<'r, S>
+impl<'r, S> Reader<'r, S> for BufReader<'r, S>
     where S: Structured
 {
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {

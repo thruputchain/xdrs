@@ -13,12 +13,13 @@ pub trait Structured {
     fn end(&mut self) -> Result<()> { Ok(()) }
 }
 
+// Use the no-op implementations
 impl Structured for () {}
 
 /// Something that can produce XDR values, where
-/// values may be borrowed with lifetime 'r and
-/// an ambient structure value `S` is available
-pub trait Reader<'r>: Structured + Sized {
+/// values may be borrowed with lifetime 'r
+/// and a state value S is available
+pub trait Reader<'r, S = ()>: Structured + AsRef<S> + Sized {
 
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;

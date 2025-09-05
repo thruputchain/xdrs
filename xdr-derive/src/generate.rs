@@ -51,7 +51,7 @@ fn write_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> TokenStream {
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::Result {
-                let as_val: #as_type = self.clone().into();
+                let as_val: #as_type = self.into();
                 as_val.write_xdr(w)
             }
         }

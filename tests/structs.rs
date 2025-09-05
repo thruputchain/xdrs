@@ -128,8 +128,8 @@ fn struct_as_type() {
         }
     }
 
-    impl From<U32> for Thing {
-        fn from(u: U32) -> Self {
+    impl From<&U32> for Thing {
+        fn from(u: &U32) -> Self {
             Thing(u.0 as u64)
         }
     }

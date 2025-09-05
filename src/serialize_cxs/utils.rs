@@ -8,11 +8,11 @@ use core::mem::MaybeUninit as MU;
 pub fn decode_structured<'r, 'a: 'r, S, T>(buf: &'a [u8], structure: S) -> ReadResult<T>
 where
     S: Structured,
-    T: ReadStructuredXDR<'r, S>,
+    T: ReadXDR<'r, S>,
 {
     let mut reader: BufReader<'r, S> = BufReader::new_structured(buf, structure);
 
-    let value = read_structured_xdr(&mut reader)?;
+    let value = read_xdr(&mut reader)?;
 
     debug_assert!(reader.position() <= buf.len());
 

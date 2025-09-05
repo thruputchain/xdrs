@@ -1,14 +1,23 @@
 mod common;
 use common::*;
-// use xdrs::{ReadXDR, ReadStructuredXDR, ReadResult, Reader, WriteXDR, read_xdr};
+
 use xdrs::*;
 use xdrs::serialize::reader::*;
 
 use std::vec::Vec;
 use std::vec;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, WriteXDR)]
+#[xdrs(as_type = "()")]
 struct Path(Vec<usize>);
+
+impl<'r> ReadXDR<'r, Path> for Path {
+    fn read_xdr<R>(r: &mut R) -> ReadResult<Self>
+        where R: Reader<'r, Path>
+    {
+        Ok(r.as_ref().clone())
+    }
+}
 
 impl Path {
     fn new() -> Self {
@@ -52,14 +61,17 @@ impl Structured for Path {
     }
 }
 
-use xdr_common::Box;
+extern crate alloc;
+use alloc::boxed::Box;
 
 #[derive(Debug, PartialEq, WriteXDR)]
 struct Node {
-    #[xdrs(as_type = "()")]
     path: Path,
     left: Option<Box<Node>>,
     right: Option<Box<Node>>,
+    okay: bool,
+    paths: [Path; 1],
+    bytes: [u8; 3],
 }
 
 impl Node {
@@ -91,28 +103,40 @@ fn mktree(path: &Path) -> Option<Box<Node>> {
             path: path.clone(),
             left: mktree(&path.child(0)),
             right: mktree(&path.child(1)),
+            okay: false,
+            paths: [path.child(3).child(0)],
+            bytes: [7; 3],
         }))
     }
 }
 
 // Manually implement reading in the same way that will be derived
-impl<'r> ReadStructuredXDR<'r, Path> for Node {
-    fn read_structured_xdr<R>(r: &mut R) -> ReadResult<Self>
-        where R: Reader<'r> + AsRef<Path>
+impl<'r> ReadXDR<'r, Path> for Node {
+    fn read_xdr<R>(r: &mut R) -> ReadResult<Self>
+        where R: Reader<'r, Path>
     {
-        let path = r.as_ref().clone();
+        let path = read_xdr(r)?;
 
         r.seq(Some(2))?;
 
-        let left = read_structured_xdr(r)?;
+        let left = read_xdr(r)?;
         r.next()?;
 
-        let right = read_structured_xdr(r)?;
-        r.next()?;  // extra next() calls are allowed before end()
+        let right = read_xdr(r)?;
+        r.next()?;
+
+        let okay = read_xdr(r)?;
+        r.next()?;
+
+        let paths = read_xdr(r)?;
+        r.next()?;
+
+        let bytes = read_xdr(r)?;
+        r.next()?; // extra next() calls are allowed before end()
 
         r.end()?;
 
-        Ok(Node { path, left, right })
+        Ok(Node { path, left, right, okay, paths, bytes })
     }
 }
 

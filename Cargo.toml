@@ -79,3 +79,7 @@ required-features = ["txs", "cxs", "alloc", "derive"]
 [[test]]
 name = "tuples"
 required-features = ["txs", "cxs", "alloc"]
+
+[[test]]
+name = "structure"
+required-features = ["cxs", "alloc", "derive"]
