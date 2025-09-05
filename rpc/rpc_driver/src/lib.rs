@@ -1,11 +1,15 @@
 pub mod client_state;
+pub use client_state::*;
+
 pub mod server_state;
+pub use server_state::*;
 pub mod tcp_connection;
 
 #[rustfmt::skip]
 mod rpc_msg;
 
 pub mod rpc_error;
+pub use rpc_error::RpcError;
 
 pub mod tasks;
 

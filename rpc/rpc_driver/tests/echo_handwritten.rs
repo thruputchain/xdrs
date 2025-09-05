@@ -83,7 +83,7 @@ impl TestProgram_TestVersion_Client {
         let buf = self.handle.send_call(Self::prog_vers(), 2, &data).await?;
         xdrs::serialize_txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
-}
+} 
 
 #[cfg(test)]
 mod tests {
