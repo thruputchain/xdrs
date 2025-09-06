@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rpc_driver::{client_state::ClientHandle, rpc_error::RpcError, ProgVers};
+use rpc_driver::{
+    client_state::ClientHandle, prog_error::ProgError, rpc_error::RpcError, ProgVers,
+};
 
 #[allow(non_camel_case_types)]
 #[async_trait]
 pub trait TestProgram_TestVersion: Send + Sync {
-    async fn null(&self) -> ();
-    async fn takes_int(&self, i: i32) -> i32;
-    async fn takes_two_ints(&self, i1: i32, i2: i32) -> i32;
+    async fn null(&self) -> Result<(), ProgError>;
+    async fn takes_int(&self, i: i32) -> Result<i32, ProgError>;
+    async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgError>;
 }
 
 #[allow(non_camel_case_types)]
@@ -29,19 +31,27 @@ impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersion_Dispat
             0 => {
                 let _args: () =
                     xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                let res = self.inner.null().await;
+                let res = self.inner.null().await.map_err(|_| RpcError::SystemError)?;
                 xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             1 => {
                 let args: (i32,) =
                     xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                let res = self.inner.takes_int(args.0).await;
+                let res = self
+                    .inner
+                    .takes_int(args.0)
+                    .await
+                    .map_err(|_| RpcError::SystemError)?;
                 xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             2 => {
                 let args: (i32, i32) =
                     xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                let res = self.inner.takes_two_ints(args.0, args.1).await;
+                let res = self
+                    .inner
+                    .takes_two_ints(args.0, args.1)
+                    .await
+                    .map_err(|_| RpcError::SystemError)?;
                 xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             _ => Err(RpcError::InvalidProcedure),
@@ -89,6 +99,7 @@ impl TestProgram_TestVersion_Client {
 mod tests {
     use super::*;
     use rpc_driver::client_state::ClientHandle;
+    use rpc_driver::prog_error::ProgError;
     use rpc_driver::tasks::{launch_read_task, launch_write_task};
     use rpc_driver::tcp_connection::connect;
     use rpc_driver::{server_state::ServiceMap, tcp_connection::accept};
@@ -100,16 +111,16 @@ mod tests {
 
     #[async_trait]
     impl TestProgram_TestVersion for EchoCallbackSerivce {
-        async fn null(&self) -> () {
-            ()
+        async fn null(&self) -> Result<(), ProgError> {
+            Ok(())
         }
-        async fn takes_int(&self, i: i32) -> i32 {
+        async fn takes_int(&self, i: i32) -> Result<i32, ProgError> {
             println!("EchoCallbackSerivce: takes_int: i={}", i);
-            i
+            Ok(i)
         }
-        async fn takes_two_ints(&self, i1: i32, i2: i32) -> i32 {
+        async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgError> {
             println!("EchoCallbackSerivce: takes_two_ints: i1={}, i2={}", i1, i2);
-            i1 + i2
+            Ok(i1 + i2)
         }
     }
 
