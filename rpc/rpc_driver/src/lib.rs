@@ -3,7 +3,10 @@ pub use client_state::*;
 
 pub mod server_state;
 pub use server_state::*;
-pub mod server;
+
+mod server;
+pub use server::RpcServer;
+
 pub mod tcp_connection;
 
 #[rustfmt::skip]
