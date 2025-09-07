@@ -13,7 +13,8 @@ mod tests {
 
     use async_trait::async_trait;
     use rpc_driver::{
-        rpc_error::RpcError, server_state::ServerDispatch, tcp_connection::accept, ProgVers,
+        rpc_error::RpcError, server::RpcServer, server_state::ServerDispatch,
+        tcp_connection::accept, ProgVers,
     };
 
     use super::*;
@@ -68,7 +69,7 @@ mod tests {
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
             async move {
-                launch_read_task(ServiceMap::new(), client_handle, client_read)
+                launch_read_task(Arc::new(ServiceMap::new()), client_handle, client_read)
                     .await
                     .unwrap();
             }
@@ -81,7 +82,7 @@ mod tests {
         });
 
         let server_read_task = tokio::spawn(async move {
-            launch_read_task(service_map, server_handle.clone(), server_read)
+            launch_read_task(Arc::new(service_map), server_handle.clone(), server_read)
                 .await
                 .unwrap();
         });
@@ -149,5 +150,65 @@ mod tests {
         assert!(client_read_task.await.unwrap_err().is_cancelled());
         assert!(server_write_task.await.unwrap_err().is_cancelled());
         assert!(server_read_task.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn test_rpc_server() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let mut service_map = ServiceMap::new();
+        service_map.add_service(Box::new(EchoCallbackSerivce {}));
+
+        let server = RpcServer::new(service_map, listener);
+
+        tokio::spawn(async move {
+            server.run().await.unwrap();
+        });
+
+        let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
+        let (client_read, client_write) = connect(addr).await.unwrap();
+
+        let client_handle = Arc::new(ClientHandle::new(client_write_tx));
+
+        let client_write_task = tokio::spawn(async move {
+            launch_write_task(client_write_rx, client_write)
+                .await
+                .unwrap();
+        });
+        let client_read_task = tokio::spawn({
+            let client_handle = client_handle.clone();
+            async move {
+                launch_read_task(Arc::new(ServiceMap::new()), client_handle, client_read)
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let response = client_handle
+            .as_ref()
+            .send_call(ProgVers::new(1, 1), 1, b"hello")
+            .await
+            .unwrap();
+        assert_eq!(response, b"hello");
+        assert_eq!(
+            client_handle
+                .as_ref()
+                .client_state
+                .read()
+                .await
+                .pending_requests
+                .len(),
+            0
+        );
+
+        assert!(!client_write_task.is_finished());
+        assert!(!client_read_task.is_finished());
+        // Clean shutdown - abort the tasks since they run indefinitely
+        client_write_task.abort();
+        client_read_task.abort();
+        // Verify the tasks were aborted (which means they were running)
+        assert!(client_write_task.await.unwrap_err().is_cancelled());
+        assert!(client_read_task.await.unwrap_err().is_cancelled());
     }
 }

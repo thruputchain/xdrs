@@ -32,7 +32,7 @@ pub enum WriteTaskError {
 }
 
 pub async fn launch_read_task(
-    service_map: ServiceMap,
+    service_map: Arc<ServiceMap>,
     client_cbs: Arc<ClientHandle>,
     mut read_half: ReadHalf,
 ) -> Result<(), ReadTaskError> {

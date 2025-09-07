@@ -51,6 +51,7 @@ impl Drop for ClientState {
     }
 }
 
+// TODO(geoff): Rename this -- this contains data structures for both server and client
 pub struct ClientHandle {
     pub client_state: RwLock<ClientState>,
     channel: mpsc::UnboundedSender<Vec<u8>>,

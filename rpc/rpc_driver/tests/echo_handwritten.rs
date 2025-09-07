@@ -163,7 +163,7 @@ mod tests {
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
             async move {
-                launch_read_task(ServiceMap::new(), client_handle, client_read)
+                launch_read_task(Arc::new(ServiceMap::new()), client_handle, client_read)
                     .await
                     .unwrap();
             }
@@ -176,7 +176,7 @@ mod tests {
         });
 
         let server_read_task = tokio::spawn(async move {
-            launch_read_task(service_map, server_handle.clone(), server_read)
+            launch_read_task(Arc::new(service_map), server_handle.clone(), server_read)
                 .await
                 .unwrap();
         });
