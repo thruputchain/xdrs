@@ -106,7 +106,7 @@ mod tests {
     use rpc_driver::prog_error::ProgramError;
     use rpc_driver::tasks::{launch_read_task, launch_write_task};
     use rpc_driver::tcp_connection::connect;
-    use rpc_driver::{server_state::ServiceMap, tcp_connection::accept};
+    use rpc_driver::{connect_client, server_state::ServiceMap, tcp_connection::accept, RpcServer};
     use std::sync::Arc;
     use tokio::net::TcpListener;
     use tokio::sync::mpsc;
@@ -129,6 +129,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_echo_client_server() {
+        // Set up TCP listener for self-connection
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Create service map
+        let mut service_map = ServiceMap::new();
+        service_map.add_service(Box::new(TestProgram_TestVersion_Dispatcher {
+            inner: Box::new(EchoCallbackSerivce {}),
+        }));
+
+        // server
+        let server = RpcServer::new(service_map, listener);
+        server.start().await;
+
+        // client
+        let client = TestProgram_TestVersion_Client::new(connect_client(&addr).await.unwrap());
+
+        // Give tasks a moment to start up
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        let res = client.null().await.unwrap();
+        assert_eq!(res, ());
+
+        let res = client.takes_int(1).await.unwrap();
+        assert_eq!(res, 1);
+
+        let res = client.takes_two_ints(1, 2).await.unwrap();
+        assert_eq!(res, 3);
+    }
+
+    #[tokio::test]
     async fn test_echo_service() {
         // Set up TCP listener for self-connection
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -136,14 +168,12 @@ mod tests {
 
         // Create service map
         let mut service_map = ServiceMap::new();
-        //XXX: ergonomics
         service_map.add_service(Box::new(TestProgram_TestVersion_Dispatcher {
             inner: Box::new(EchoCallbackSerivce {}),
         }));
 
         // Set up write channel
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
-        //XXX:ergo
         let client_handle = Arc::new(ClientHandle::new(client_write_tx));
         let (server_write_tx, server_write_rx) = mpsc::unbounded_channel();
         let server_handle: Arc<ClientHandle> = Arc::new(ClientHandle::new(server_write_tx));

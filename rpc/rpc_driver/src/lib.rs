@@ -7,6 +7,9 @@ pub use server_state::*;
 mod server;
 pub use server::RpcServer;
 
+mod client;
+pub use client::connect_client;
+
 pub mod tcp_connection;
 
 #[rustfmt::skip]

@@ -14,15 +14,20 @@ pub struct RpcServer {
 }
 
 impl RpcServer {
-    pub fn new(service_map: ServiceMap, listener: TcpListener) -> Self {
-        Self {
+    pub fn new(service_map: ServiceMap, listener: TcpListener) -> Arc<Self> {
+        Arc::new(Self {
             service_map: Arc::new(service_map),
             listener,
-        }
+        })
     }
 
     pub fn addr(&self) -> Result<SocketAddr, std::io::Error> {
         self.listener.local_addr()
+    }
+
+    pub async fn start(self: Arc<Self>) -> tokio::task::JoinHandle<Result<(), std::io::Error>> {
+        let x = self.clone();
+        tokio::spawn(async move { x.run().await })
     }
 
     pub async fn run(&self) -> Result<(), std::io::Error> {
