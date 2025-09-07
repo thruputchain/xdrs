@@ -170,7 +170,7 @@ impl RpcError {
     pub fn to_error_record(&self, xid: u32) -> Vec<u8> {
         let msg = self.to_rpc_msg(xid);
         let header_bytes = xdrs::serialize_txs::encode(&msg).unwrap();
-        let msg_len: u32 = header_bytes.len() as u32;
+        let msg_len: u32 = (header_bytes.len() as u32) | 0x8000_0000;
         let mut buf = Vec::new();
         buf.extend_from_slice(&msg_len.to_be_bytes());
         buf.extend_from_slice(&header_bytes);

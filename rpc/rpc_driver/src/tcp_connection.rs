@@ -55,11 +55,19 @@ impl ReadHalf {
         Ok(())
     }
 
-    pub async fn read_record(&mut self) -> Result<&[u8], std::io::Error> {
+    pub async fn read_record(&mut self) -> Result<Option<&[u8]>, std::io::Error> {
         let n = self.read_u32().await?;
-        let slice = &mut self.buffer[..n as usize]; //XXX: buffer overflow
+        let size = n & 0x7fffffff;
+        let highbit = n & 0x80000000;
+        // multi part messages unimplemented
+        if highbit == 0 {
+            eprintln!("Multi-part messages unsupported: n={:X}", n);
+            return Ok(None);
+        }
+
+        let slice = &mut self.buffer[..size as usize]; //XXX: buffer overflow
         self.read_half.read_exact(slice).await?;
-        Ok(slice)
+        Ok(Some(slice))
     }
 }
 
