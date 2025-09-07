@@ -9,7 +9,7 @@ pub struct WriteHalf {
 pub struct ReadHalf {
     // We may choose to multiplex this over multiple connections later.
     read_half: tokio::net::tcp::OwnedReadHalf,
-    buffer: [u8; 8192],
+    buffer: Vec<u8>,
 }
 
 pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
@@ -18,7 +18,7 @@ pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<(ReadHalf, WriteHalf),
     Ok((
         ReadHalf {
             read_half,
-            buffer: [0u8; 8192],
+            buffer: Vec::with_capacity(8192),
         },
         WriteHalf { write_half },
     ))
@@ -30,7 +30,7 @@ pub async fn accept(listener: &TcpListener) -> Result<(ReadHalf, WriteHalf), std
     Ok((
         ReadHalf {
             read_half,
-            buffer: [0u8; 8192],
+            buffer: Vec::with_capacity(8192),
         },
         WriteHalf { write_half },
     ))
@@ -65,7 +65,9 @@ impl ReadHalf {
             return Ok(None);
         }
 
-        let slice = &mut self.buffer[..size as usize]; //XXX: buffer overflow
+        self.buffer.clear();
+        self.buffer.resize(size as usize, 0);
+        let slice = &mut self.buffer[..size as usize];
         self.read_half.read_exact(slice).await?;
         Ok(Some(slice))
     }
