@@ -2,15 +2,19 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rpc_driver::{
-    client_state::ClientHandle, prog_error::ProgError, rpc_error::RpcError, ProgVers,
+    client_state::ClientHandle, prog_error::ProgramError, rpc_error::RpcError, ProgVers,
 };
 
 #[allow(non_camel_case_types)]
 #[async_trait]
 pub trait TestProgram_TestVersion: Send + Sync {
-    async fn null(&self) -> Result<(), ProgError>;
-    async fn takes_int(&self, i: i32) -> Result<i32, ProgError>;
-    async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgError>;
+    async fn null(&self) -> Result<(), ProgramError>;
+    async fn takes_int(&self, i: i32) -> Result<i32, ProgramError>;
+    async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgramError>;
+
+    fn prog_vers(&self) -> ProgVers {
+        ProgVers::new(3123123, 1)
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -59,7 +63,7 @@ impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersion_Dispat
     }
 
     fn prog_vers(&self) -> ProgVers {
-        ProgVers::new(3123123, 1)
+        self.inner.prog_vers()
     }
 }
 
@@ -99,7 +103,7 @@ impl TestProgram_TestVersion_Client {
 mod tests {
     use super::*;
     use rpc_driver::client_state::ClientHandle;
-    use rpc_driver::prog_error::ProgError;
+    use rpc_driver::prog_error::ProgramError;
     use rpc_driver::tasks::{launch_read_task, launch_write_task};
     use rpc_driver::tcp_connection::connect;
     use rpc_driver::{server_state::ServiceMap, tcp_connection::accept};
@@ -111,14 +115,14 @@ mod tests {
 
     #[async_trait]
     impl TestProgram_TestVersion for EchoCallbackSerivce {
-        async fn null(&self) -> Result<(), ProgError> {
+        async fn null(&self) -> Result<(), ProgramError> {
             Ok(())
         }
-        async fn takes_int(&self, i: i32) -> Result<i32, ProgError> {
+        async fn takes_int(&self, i: i32) -> Result<i32, ProgramError> {
             println!("EchoCallbackSerivce: takes_int: i={}", i);
             Ok(i)
         }
-        async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgError> {
+        async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgramError> {
             println!("EchoCallbackSerivce: takes_two_ints: i1={}, i2={}", i1, i2);
             Ok(i1 + i2)
         }

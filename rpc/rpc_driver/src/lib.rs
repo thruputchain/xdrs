@@ -12,7 +12,7 @@ pub mod rpc_error;
 pub use rpc_error::RpcError;
 
 pub mod prog_error;
-pub use prog_error::ProgError;
+pub use prog_error::ProgramError;
 
 pub mod tasks;
 
