@@ -8,7 +8,7 @@ use core::mem::MaybeUninit as MU;
 use thiserror::Error;
 
 /// Something that can produce XDR values, some borrowed with lifetime 'r
-pub trait Reader<'r>: Sized {
+pub trait Reader<'r>: State<()> {
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;
     fn read_i16(&mut self) -> Result<i16>;
@@ -115,3 +115,18 @@ pub enum Error {
     #[error("not the minimal-size encoding")]
     NotMinimalEncoding,
 }
+
+pub trait State<S> {
+    fn get_state(&self) -> &S;
+}
+
+/*
+impl<T> State<()> for T
+where
+    T: ?Sized
+{
+    fn get_state(&self) -> &() {
+        unimplemented!()
+    }
+}
+*/

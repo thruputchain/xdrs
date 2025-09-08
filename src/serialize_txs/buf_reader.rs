@@ -84,3 +84,9 @@ impl<'r> Reader<'r> for BufReader<'r> {
         read_i16(2): i16,
     ];
 }
+
+impl<'r> State<()> for BufReader<'r> {
+    fn get_state(&self) -> &() {
+        unimplemented!()
+    }
+}

@@ -24,6 +24,26 @@ where
     Ok(value)
 }
 
+pub fn decode_state<'r, 'a: 'r, T, S>(buf: &'a [u8], state: S) -> ReadResult<T>
+where
+    T: ReadXDR<'r, S>,
+    BufReader<'r, S>: Reader<'r> + State<S>
+{
+    let mut reader = BufReader::new_state(buf, state);
+
+    let value = read_xdr(&mut reader)?;
+
+    debug_assert!(reader.position() <= buf.len());
+
+    let remaining = buf.len().checked_sub(reader.position()).unwrap();
+    if remaining > 0 {
+        let remaining = remaining as u32;
+        return Err(ReadError::SourceRemaining { remaining });
+    }
+
+    Ok(value)
+}
+
 pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
     let mut writer = IntoBufWriter::new(buf);
 

@@ -2,17 +2,46 @@
 use super::limits::*;
 use crate::serialize::reader::*;
 
-pub struct BufReader<'r> {
+pub struct BufReader<'r, S = ()> {
     data: &'r [u8],
     pos: usize,
+    state: S,
 }
 
-impl<'a> BufReader<'a> {
+impl<'r, S> BufReader<'r, S> {
+    pub fn new_state(data: &'r [u8], state: S) -> Self {
+        let pos = 0;
+        Self { data, pos, state }
+    }
+}
+
+impl<'r, S> State<S> for BufReader<'r, S> {
+    fn get_state(&self) -> &S {
+        &self.state
+    }
+}
+
+/*
+impl<'r, S> State<()> for BufReader<'r, S>
+{
+    fn get_state(&self) -> &() {
+        unimplemented!()
+    }
+}
+*/
+
+impl<'a> BufReader<'a, ()>
+{
     pub fn new(data: &'a [u8]) -> Self {
         let pos = 0;
-        Self { data, pos }
+        let state = ();
+        Self { data, pos, state }
     }
+}
 
+impl<'a, S> BufReader<'a, S>
+    where Self: Reader<'a>
+{
     pub fn position(&self) -> usize {
         self.pos
     }
@@ -182,7 +211,8 @@ macro_rules! read_unsigned {
     )* };
 }
 
-impl<'r> Reader<'r> for BufReader<'r> {
+impl<'r, S> Reader<'r> for BufReader<'r, S>
+{
     read_signed! {
         [read_i64, i64],
         [read_i32, i32],

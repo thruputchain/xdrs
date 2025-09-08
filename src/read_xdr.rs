@@ -3,25 +3,28 @@ use crate::serialize::reader::*;
 use crate::valid_u32::*;
 use core::mem::MaybeUninit as MU;
 
-pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
+pub fn read_xdr<'r, T, R, S>(r: &mut R) -> Result<T>
 where
-    R: Reader<'r>,
-    T: ReadXDR<'r>,
+    T: ReadXDR<'r, S>,
+    R: Reader<'r> + State<S>,
 {
-    <T as ReadXDR>::read_xdr(r)
+    <T as ReadXDR<'r, S>>::read_xdr(r)
+    // ReadXDR::read_xdr(r)
 }
 
 /// Types that can be constructed by reading XDR data,
 /// possibly sharing data from the input
-pub trait ReadXDR<'r>: Sized {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self>;
+pub trait ReadXDR<'r, S = ()>: Sized {
+    fn read_xdr<R>(r: &mut R) -> Result<Self>
+    where
+        R: Reader<'r> + State<S>;
 }
 
 /// Types that can be constructed by reading XDR data
 /// of any lifetime
-pub trait ReadXDROwned: for<'r> ReadXDR<'r> {}
+pub trait ReadXDROwned<S>: for<'r> ReadXDR<'r, S> {}
 
-impl<T> ReadXDROwned for T where T: for<'r> ReadXDR<'r> {}
+impl<T, S> ReadXDROwned<S> for T where T: for<'r> ReadXDR<'r, S> {}
 
 macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(

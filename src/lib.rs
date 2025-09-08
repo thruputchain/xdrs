@@ -13,6 +13,7 @@ pub mod write_xdr;
 pub mod serialize;
 
 // CXS serialization
+#[cfg(feature = "cxs")]
 pub mod serialize_cxs;
 
 // TXS serialization
