@@ -13,8 +13,8 @@ mod tests {
 
     use async_trait::async_trait;
     use rpc_driver::{
-        rpc_error::RpcError, RpcServer, server_state::ServerDispatch,
-        tcp_connection::accept, ProgVers,
+        rpc_error::RpcError, server_state::ServerDispatch, tcp_connection::accept, ProgVers,
+        RpcServer,
     };
 
     use super::*;

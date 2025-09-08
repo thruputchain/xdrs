@@ -32,21 +32,31 @@ impl RpcServer {
 
     pub async fn run(&self) -> Result<(), std::io::Error> {
         loop {
-            let (read, write) = accept(&self.listener).await?;
+            let (read, write) = match accept(&self.listener).await {
+                Ok((read, write)) => (read, write),
+                Err(e) => {
+                    eprintln!("Error accepting connection: {}", e);
+                    continue;
+                }
+            };
 
             let (tx, rx) = mpsc::unbounded_channel();
 
             // server write task
             tokio::spawn(async move {
-                launch_write_task(rx, write).await.unwrap();
+                match launch_write_task(rx, write).await {
+                    Ok(_) => (),
+                    Err(e) => eprintln!("Error from write task: {}", e),
+                }
             });
 
             let service_map = self.service_map.clone();
             // server read task
             tokio::spawn(async move {
-                launch_read_task(service_map, Arc::new(ClientHandle::new(tx)), read)
-                    .await
-                    .unwrap();
+                match launch_read_task(service_map, Arc::new(ClientHandle::new(tx)), read).await {
+                    Ok(_) => (),
+                    Err(e) => eprintln!("Error from read task: {}", e),
+                }
             });
         }
     }
