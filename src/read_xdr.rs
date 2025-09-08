@@ -15,11 +15,10 @@ pub trait ReadXDR<'r>: Sized {
             R: Reader<'r>;
 }
 
-pub fn read_xdr<'r, R, S, U, T>(r: &mut R) -> Result<T>
+pub fn read_xdr<'r, R, S, T>(r: &mut R) -> Result<T>
 where
     T: ReadXDR<'r, State = S>,
-    R: Reader<'r, State = U>,
-    for<'a> S: From<&'a U>
+    R: Reader<'r, State = S>,
 {
     T::read_xdr(r)
 }
@@ -28,12 +27,11 @@ macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
         impl<'r> ReadXDR<'r> for $int_ty {
-            type State = ();
+            type State = S;
 
-            fn read_xdr<R, S>(r: &mut R) -> Result<$int_ty>
+            fn read_xdr<R>(r: &mut R) -> Result<$int_ty>
             where
-                R: Reader<'r, State = S>,
-                for<'a> Self::State: From<&'a S>,
+                R: Reader<'r, State = Self::State>,
             {
                 r.$read_method()
             }
@@ -60,23 +58,9 @@ macro_rules! impl_read_xdr {
         impl<'r, $(const $n: $nt)?> ReadXDR<'r> for $ty {
             type State = ();
 
-            fn read_xdr<R, S>($r: &mut R) -> Result<$ty>
+            fn read_xdr<R>($r: &mut R) -> Result<$ty>
             where
-                R: Reader<'r, State = S>,
-                for<'a> Self::State: From<&'a S>,
-            $body
-        }
-
-    };
-    { <$l:lifetime, const $n:ident: $nt:ty>($r:ident) -> $ty:ty $body:block } => {
-
-        impl<$l, const $n: $nt> ReadXDR<$l> for $ty {
-            type State = ();
-
-            fn read_xdr<R, S>($r: &mut R) -> Result<$ty>
-            where
-                R: Reader<$l, State = S>,
-                for<'a> Self::State: From<&'a S>,
+                R: Reader<'r> + AsRef<Self::State>
             $body
         }
 
@@ -142,10 +126,9 @@ where
 {
     type State = <T as ReadXDR<'r>>::State;
 
-    fn read_xdr<R, S>(r: &mut R) -> Result<Self>
+    fn read_xdr<R>(r: &mut R) -> Result<Self>
     where
-        R: Reader<'r, State = S>,
-        for<'a> Self::State: From<&'a S>,
+        R: Reader<'r> + AsRef<Self::State>,
     {
         let () = ValidU32::<N>::OK;
 
@@ -170,10 +153,9 @@ where
 impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     type State = ();
 
-    fn read_xdr<R, S>(r: &mut R) -> Result<Self>
+    fn read_xdr<R>(r: &mut R) -> Result<Self>
     where
-        R: Reader<'r, State = S>,
-        for<'a> Self::State: From<&'a S>,
+        R: Reader<'r> + AsRef<Self::State>,
     {
         let () = ValidU32::<N>::OK;
 
@@ -203,10 +185,9 @@ impl_read_xdr!(<'r, const N: usize>(r) -> &'r [u8; N] {
 impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
     type State = ();
 
-    fn read_xdr<R, S>(r: &mut R) -> Result<Self>
+    fn read_xdr<R>(r: &mut R) -> Result<Self>
     where
-        R: Reader<'r, State = S>,
-        for<'a> Self::State: From<&'a S>,
+        R: Reader<'r> + AsRef<Self::State>,
     {
         let () = ValidU32::<N>::OK;
         let len = N as u32;
@@ -221,10 +202,9 @@ impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
 impl<'r> ReadXDR<'r> for &'r [u8] {
     type State = ();
 
-    fn read_xdr<R, S>(r: &mut R) -> Result<Self>
+    fn read_xdr<R>(r: &mut R) -> Result<Self>
     where
-        R: Reader<'r, State = S>,
-        for<'a> Self::State: From<&'a S>,
+        R: Reader<'r> + AsRef<Self::State>,
     {
         r.read_opaque_variable(u32::MAX)
     }
@@ -234,10 +214,9 @@ impl<'r> ReadXDR<'r> for &'r [u8] {
 impl<'r> ReadXDR<'r> for alloc::string::String {
     type State = ();
 
-    fn read_xdr<R, S>(r: &mut R) -> Result<Self>
+    fn read_xdr<R>(r: &mut R) -> Result<Self>
     where
-        R: Reader<'r, State = S>,
-        for<'a> Self::State: From<&'a S>,
+        R: Reader<'r> + AsRef<Self::State>,
     {
         let bytes = r.read_opaque_variable(u32::MAX)?;
         let v = alloc::vec::Vec::from(bytes);
@@ -259,10 +238,9 @@ macro_rules! read_tuple {
         {
             type State = U;
 
-            fn read_xdr<R, S>(r: &mut R) -> Result<Self>
+            fn read_xdr<R>(r: &mut R) -> Result<Self>
             where
-                R: Reader<'r, State = S>,
-                for<'a> Self::State: From<&'a S>,
+                R: Reader<'r> + AsRef<Self::State>,
             {
                 r.seq(Some($n))?;
                 let v = ( $({ let v: $t = read_xdr(r)?; r.next()?; v }),+ );

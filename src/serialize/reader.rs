@@ -19,9 +19,7 @@ impl Structured for () {}
 /// Something that can produce XDR values, where
 /// values may be borrowed with lifetime 'r
 /// and a state value S is available
-pub trait Reader<'r>: Structured + AsRef<Self::State> + Sized {
-
-    type State;
+pub trait Reader<'r>: Structured + Sized {
 
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;
