@@ -5,9 +5,10 @@ use crate::serialize_txs::buf_reader::*;
 use crate::serialize_txs::into_buf_writer::*;
 use core::mem::MaybeUninit as MU;
 
-pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
+pub fn decode<'r, 'a: 'r, S, T>(buf: &'a [u8]) -> ReadResult<T>
 where
     T: ReadXDR<'r, State = ()>,
+    for<'a> (): From<&'a S>
 {
     let mut reader: BufReader<'r, ()> = BufReader::new(buf);
 

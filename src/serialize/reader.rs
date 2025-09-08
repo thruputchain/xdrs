@@ -23,8 +23,6 @@ pub trait Reader<'r>: Structured + AsRef<Self::State> + Sized {
 
     type State;
 
-    // fn state(&self) -> Self::State;
-
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;
     fn read_i16(&mut self) -> Result<i16>;

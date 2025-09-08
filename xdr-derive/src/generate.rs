@@ -1,5 +1,5 @@
 use crate::util::*;
-use darling::{FromDeriveInput, FromField};
+use darling::{FromDeriveInput, FromField, util::Flag};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
@@ -8,6 +8,7 @@ use syn::Result;
 #[darling(attributes(xdrs))]
 struct Attrs {
     pub as_type: Option<syn::Type>,
+    pub skip: Flag,
 }
 
 // ---- derive WriteXDR ------------------------------------------------------
@@ -82,7 +83,9 @@ fn write_field(index: usize, field: &syn::Field) -> TokenStream {
     let fa = FieldAccess::new(index, field);
     let attrs = Attrs::from_field(field).unwrap();
 
-    if let Some(as_ty) = attrs.as_type {
+    if attrs.skip.is_present() {
+        quote! {}
+    } else if let Some(as_ty) = attrs.as_type {
         quote! {
             let v: &#ty = &(self.#fa);
             let as_val: #as_ty = v.into();

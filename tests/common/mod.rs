@@ -6,7 +6,9 @@ use xdrs::mu;
 use xdrs::*;
 
 pub trait Format {
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T>;
+    fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
+        where T: ReadXDR<'r, State = ()>;
+
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>;
 
     #[cfg(feature = "alloc")]
@@ -41,7 +43,10 @@ pub struct CXS;
 
 #[cfg(feature = "cxs")]
 impl Format for CXS {
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r, State = ()>>(buf: &'a [u8]) -> ReadResult<T> {
+    fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
+        where
+            T: ReadXDR<'r, State = ()>,
+    {
         serialize_cxs::decode(buf)
     }
 
@@ -73,7 +78,9 @@ pub struct TXS;
 
 #[cfg(feature = "txs")]
 impl Format for TXS {
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r, State = ()>>(buf: &'a [u8]) -> ReadResult<T> {
+    fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
+        where T: ReadXDR<'r, State = ()>
+    {
         serialize_txs::decode(buf)
     }
 
@@ -92,7 +99,7 @@ impl Format for TXS {
 pub trait Check: Format {
     fn check_decode<'r, T>(val: &T, expected: &'r [u8])
     where
-        T: Debug + Eq + ReadXDR<'r>,
+        T: Debug + Eq + ReadXDR<'r, State = ()>,
     {
         let val2: T = Self::decode(expected).unwrap_or_else(|e| panic!("decode failed: {e}"));
         assert_eq!(&val2, val);
@@ -100,7 +107,7 @@ pub trait Check: Format {
 
     fn check_codec<'r, T>(val: &T, expected: &'r [u8])
     where
-        T: Debug + Eq + ReadXDR<'r> + WriteXDR,
+        T: Debug + Eq + ReadXDR<'r, State = ()> + WriteXDR,
     {
         Self::check_encode(val, expected);
         Self::check_decode(val, expected);

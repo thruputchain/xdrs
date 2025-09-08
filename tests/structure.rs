@@ -8,14 +8,23 @@ use std::vec::Vec;
 use std::vec;
 
 #[derive(Clone, Debug, PartialEq, WriteXDR)]
-#[xdrs(as_type = "()")]
-struct Path(Vec<usize>);
+struct Path(#[xdrs(skip)] Vec<usize>);
 
-impl<'r> ReadXDR<'r, Path> for Path {
-    fn read_xdr<R>(r: &mut R) -> ReadResult<Self>
-        where R: Reader<'r, Path>
+impl<'r, R, S> ReadXDR<'r> for Path
+    where 
+
+impl<'r> ReadXDR<'r> for Path {
+    type State = Path;
+
+    fn read_xdr<R>(r: &mut R) -> Result<Self>
+        where
+            R: Reader<'r>
+            &S: Into<Self::State>
     {
-        Ok(r.as_ref().clone())
+        let state: &R::State = r.as_ref();
+        let path: Self = state.clone().into();
+
+        Ok(path)
     }
 }
 
@@ -38,6 +47,13 @@ impl Path {
 }
 
 impl Into<()> for &Path {
+    fn into(self) -> () {
+        ()
+    }
+}
+
+// For projecting a BufReader<'r, Path> to a BufReader<'r, ()>
+impl Into<()> for Path {
     fn into(self) -> () {
         ()
     }
@@ -115,8 +131,10 @@ impl<'r> ReadXDR<'r> for Node {
 
     type State = Path;
 
-    fn read_xdr<R>(r: &mut R) -> ReadResult<Self>
-        where R: Reader<'r, State = Self::State>
+    fn read_xdr<R, S>(r: &mut R) -> Result<Self>
+        where
+            R: Reader<'r, State = S>,
+            S: Into<Self::State>
     {
         let path = read_xdr(r)?;
 
@@ -128,7 +146,8 @@ impl<'r> ReadXDR<'r> for Node {
         let right = read_xdr(r)?;
         r.next()?;
 
-        let okay = read_xdr(r)?;
+        // let okay = read_xdr(r)?;
+        let okay = <bool as ReadXDR<'_>>::read_xdr(r)?;
         r.next()?;
 
         let paths = read_xdr(r)?;
