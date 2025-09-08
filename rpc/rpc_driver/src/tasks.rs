@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::cell::RefCell;
 
 use tokio::sync::mpsc;
 
@@ -11,10 +10,6 @@ use crate::{
     tcp_connection::{ReadHalf, WriteHalf},
     ProgVers,
 };
-
-thread_local! {
-    static WRITE_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(8192));
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReadTaskError {
@@ -47,6 +42,8 @@ pub async fn launch_read_task(
             continue;
         }
 
+        let mut write_buffer = Vec::new();
+
         let mut reader = xdrs::serialize_txs::buf_reader::BufReader::new(record.unwrap());
 
         let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
@@ -66,32 +63,24 @@ pub async fn launch_read_task(
                     prog: cbody.prog,
                     vers: cbody.vers,
                 };
-                let buf : Vec<u8> = remaining_bytes.to_vec();
-                let service_map = service_map.clone();
-                let client_cbs = client_cbs.clone();
-                tokio::spawn(async move {
-                    let res = service_map
-                        .dispatch(cbody.rpcvers, vers, cbody.proc, &buf)
-                        .await;
-                    match res {
-                        Ok(response) => {
-                            WRITE_BUFFER.with(|buffer| {
-                                let mut buf = buffer.borrow_mut();
-                                prepare_success_response(msg.xid, &response, &mut buf);
-                                let _ = client_cbs
-                                    .send_msg(&buf)
-                                    .map_err(|e| eprintln!("Error sending message: {}", e));
-                            });
-                        }
-                        Err(e) => {
-                            let out_bytes = e.to_error_record(msg.xid);
-
-                            let _ = client_cbs
-                                .send_msg(&out_bytes)
-                                .map_err(|e| eprintln!("Error sending message: {}", e));
-                        }
+                let res = service_map
+                    .dispatch(cbody.rpcvers, vers, cbody.proc, remaining_bytes)
+                    .await;
+                match res {
+                    Ok(response) => {
+                        prepare_success_response(msg.xid, &response, &mut write_buffer);
+                        client_cbs
+                            .send_msg(&write_buffer)
+                            .map_err(ReadTaskError::WriteError)?;
                     }
-                });
+                    Err(e) => {
+                        let out_bytes = e.to_error_record(msg.xid);
+
+                        client_cbs
+                            .send_msg(&out_bytes)
+                            .map_err(ReadTaskError::WriteError)?;
+                    }
+                }
             }
             rpc_msg::rpc_msg_body::REPLY { rbody } => match rbody {
                 rpc_msg::reply_body::MSG_ACCEPTED { areply } => {
