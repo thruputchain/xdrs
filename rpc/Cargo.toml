@@ -1,4 +1,4 @@
 [workspace]
-members = ["xdr_rpc"]
+members = ["rpc_driver"]
 
 resolver = "2"
