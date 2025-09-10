@@ -6,10 +6,12 @@ use crate::{
     rpc_msg, ProgVers,
 };
 
+#[derive(Debug)]
 pub struct CallbackHandle {
     tx: oneshot::Sender<Result<Vec<u8>, RpcError>>,
 }
 
+#[derive(Debug)]
 pub struct ClientState {
     pub pending_requests: HashMap<u32, CallbackHandle>,
     last_xid: u32,
@@ -52,6 +54,7 @@ impl Drop for ClientState {
 }
 
 // TODO(geoff): Rename this -- this contains data structures for both server and client
+#[derive(Debug)]
 pub struct ClientHandle {
     pub client_state: RwLock<ClientState>,
     channel: mpsc::UnboundedSender<Vec<u8>>,
