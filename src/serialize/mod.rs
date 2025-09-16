@@ -5,4 +5,6 @@
 //! - Serialize arrays simply by concatenating their elements
 
 pub mod reader;
+pub mod reader_state;
+
 pub mod writer;

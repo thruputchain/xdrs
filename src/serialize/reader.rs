@@ -9,6 +9,8 @@ use thiserror::Error;
 
 /// Something that can produce XDR values, some borrowed with lifetime 'r
 pub trait Reader<'r>: Sized {
+    fn has_more_input(&self) -> bool;
+
     fn read_i64(&mut self) -> Result<i64>;
     fn read_i32(&mut self) -> Result<i32>;
     fn read_i16(&mut self) -> Result<i16>;
@@ -114,4 +116,7 @@ pub enum Error {
 
     #[error("not the minimal-size encoding")]
     NotMinimalEncoding,
+
+    #[error("extraneous trailing data")]
+    TrailingData,
 }

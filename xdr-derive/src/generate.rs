@@ -1,5 +1,5 @@
 use crate::util::*;
-use darling::{FromDeriveInput, FromField};
+use darling::{FromDeriveInput, FromField, util::Flag};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
@@ -8,6 +8,7 @@ use syn::Result;
 #[darling(attributes(xdrs))]
 struct Attrs {
     pub as_type: Option<syn::Type>,
+    pub skip: Flag,
 }
 
 // ---- derive WriteXDR ------------------------------------------------------
@@ -30,6 +31,9 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn write_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
+    if attrs.skip.is_present() {
+        return Ok(quote! {});
+    }
     if let Some(as_type) = attrs.as_type.as_ref() {
         return Ok(write_as_type(input, as_type));
     }
@@ -82,7 +86,9 @@ fn write_field(index: usize, field: &syn::Field) -> TokenStream {
     let fa = FieldAccess::new(index, field);
     let attrs = Attrs::from_field(field).unwrap();
 
-    if let Some(as_ty) = attrs.as_type {
+    if attrs.skip.is_present() {
+        quote! {}
+    } else if let Some(as_ty) = attrs.as_type {
         quote! {
             let v: &#as_ty = ::core::ops::Deref::deref(&self.#fa);
             <#as_ty as __xdrs::WriteXDR>::write_xdr(v, w)?;
@@ -250,6 +256,9 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn read_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
+    if attrs.skip.is_present() {
+        return Ok(quote! {});
+    }
     if let Some(as_type) = attrs.as_type.as_ref() {
         return read_as_type(input, as_type);
     }

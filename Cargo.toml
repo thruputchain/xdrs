@@ -28,6 +28,7 @@ xdr-derive = { workspace = true, optional = true }
 xdr_common = { workspace = true, optional = true }
 xdr-repr = { workspace = true, optional = true }
 thiserror = { workspace = true }
+delegate = "0.13.4"
 
 [dev-dependencies]
 criterion = "0.6.0"
@@ -73,4 +74,8 @@ required-features = ["alloc", "derive"]
 
 [[test]]
 name = "pointer"
+required-features = ["alloc", "derive"]
+
+[[test]]
+name = "state"
 required-features = ["alloc", "derive"]

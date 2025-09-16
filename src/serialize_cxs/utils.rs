@@ -5,8 +5,12 @@ use crate::serialize_cxs::buf_reader::*;
 use crate::serialize_cxs::into_buf_writer::*;
 use core::mem::MaybeUninit as MU;
 
-pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
+#[cfg(feature = "alloc")]
+use crate::serialize_cxs::state_reader::*;
+
+pub fn decode<'a, 'r, T>(buf: &'a [u8]) -> ReadResult<T>
 where
+    'a: 'r,
     T: ReadXDR<'r>,
 {
     let mut reader = BufReader::new(buf);
@@ -19,6 +23,37 @@ where
     if remaining > 0 {
         let remaining = remaining as u32;
         return Err(ReadError::SourceRemaining { remaining });
+    }
+
+    Ok(value)
+}
+
+#[allow(unused_variables)]
+pub fn decode_state<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
+where
+    'a: 'r,
+    T: ReadXDRState<'r>,
+{
+    #[cfg(not(feature = "alloc"))]
+    panic!("decode_state() currently requires feature \"alloc\"");
+
+    #[cfg(feature = "alloc")]
+    {
+        let mut reader = StateReader::new(BufReader::new(buf));
+
+        decode_state_reader(&mut reader)
+    }
+}
+
+pub fn decode_state_reader<'r, R, T>(reader: &mut R) -> ReadResult<T>
+where
+    T: ReadXDRState<'r>,
+    R: ReaderState<'r>,
+{
+    let value = read_xdr_state(reader)?;
+
+    if reader.has_more_input() {
+        return Err(ReadError::TrailingData);
     }
 
     Ok(value)

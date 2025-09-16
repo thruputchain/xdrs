@@ -14,6 +14,10 @@ fn tuples() {
     let n: u32 = 7;
     let arr: [u8; 3] = [0, 1, 2];
 
+    let tup = (&arr,);
+    CXS::check_codec(&tup, &hex!("000102"));
+    TXS::check_codec(&tup, &hex!("00010200"));
+
     let tup = (&arr, n);
     CXS::check_codec(&tup, &hex!("00010207"));
     TXS::check_codec(&tup, &hex!("0001020000000007"));

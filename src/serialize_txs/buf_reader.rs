@@ -52,6 +52,10 @@ impl<'a> BufReader<'a> {
 }
 
 impl<'r> Reader<'r> for BufReader<'r> {
+    fn has_more_input(&self) -> bool {
+        self.pos < self.data.len()
+    }
+
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
         let buf = self.get_input(len)?;
 

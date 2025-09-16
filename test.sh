@@ -5,26 +5,35 @@ set -e  # fail on error
 
 export RUSTFLAGS="--deny warnings"
 
-cargo doc --all-features
+noalloc_features="derive,ns,extras,xdr_common"
+additive_features="${noalloc_features},alloc,repr"
 
-additive_features="derive,repr,ns,extras,xdr_common"
+# root library with no extra features
+cargo test
 
-# test the root library
-cargo test -F "alloc,${additive_features}"
+# root library without alloc
+cargo test -F "${noalloc_features}"
 
-# test alternate 128-bit-int encodings
+# root library with most features
+cargo test -F "${additive_features}"
+
+# alternate 128-bit-int encodings
 cargo test -F "alloc,extras,int128_xdr" --test ints -- u128 i128
 
-# check that the benchmarks compile
-cargo test -F "alloc,${additive_features}" --benches
+# path-aware decoding
+cargo test -F derive,alloc --test state
+
+# xdr-repr crate
+cargo test -p xdr-repr --all-features
 
 if [ "${1}" == "all" ]; then
-    # test the xdr-repr crate alone
-    cargo test -p xdr-repr --all-features
-
-    # root library without alloc
-    cargo test -F "${additive_features}"
+    # check that the benchmarks compile
+    cargo test -F "alloc,${additive_features}" --benches
 
     # xdr-repr crate without derive
     cargo test -F "ns,xdr_common" -p xdr-repr
+
+    cargo doc --all-features
+
+    ./ci.sh
 fi

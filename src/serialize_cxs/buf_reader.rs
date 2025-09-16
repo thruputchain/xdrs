@@ -183,6 +183,10 @@ macro_rules! read_unsigned {
 }
 
 impl<'r> Reader<'r> for BufReader<'r> {
+    fn has_more_input(&self) -> bool {
+        self.pos < self.data.len()
+    }
+
     read_signed! {
         [read_i64, i64],
         [read_i32, i32],

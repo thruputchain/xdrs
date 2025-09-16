@@ -6,7 +6,16 @@ use xdrs::mu;
 use xdrs::*;
 
 pub trait Format {
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T>;
+    fn decode<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
+    where
+        'a: 'r,
+        T: ReadXDR<'r>;
+
+    fn decode_state<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
+    where
+        'a: 'r,
+        T: ReadXDRState<'r>;
+
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>;
 
     #[cfg(feature = "alloc")]
@@ -43,6 +52,14 @@ impl Format for CXS {
         serialize_cxs::decode(buf)
     }
 
+    fn decode_state<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
+    where
+        'a: 'r,
+        T: ReadXDRState<'r>,
+    {
+        serialize_cxs::decode_state(buf)
+    }
+
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
         serialize_cxs::encode_into(value, buf)
     }
@@ -60,6 +77,14 @@ pub struct TXS;
 impl Format for TXS {
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
         serialize_txs::decode(buf)
+    }
+
+    fn decode_state<'r, 'a, T>(_buf: &'a [u8]) -> ReadResult<T>
+    where
+        'a: 'r,
+        T: ReadXDRState<'r>,
+    {
+        unimplemented!()
     }
 
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
@@ -81,12 +106,28 @@ pub trait Check: Format {
         assert_eq!(&val2, val);
     }
 
+    fn check_decode_state<'r, T>(val: &T, expected: &'r [u8])
+    where
+        T: Debug + Eq + ReadXDRState<'r>,
+    {
+        let val2: T = Self::decode_state(expected).unwrap_or_else(|e| panic!("decode failed: {e}"));
+        assert_eq!(&val2, val);
+    }
+
     fn check_codec<'r, T>(val: &T, expected: &'r [u8])
     where
         T: Debug + Eq + ReadXDR<'r> + WriteXDR,
     {
         Self::check_encode(val, expected);
         Self::check_decode(val, expected);
+    }
+
+    fn check_codec_state<'r, T>(val: &T, expected: &'r [u8])
+    where
+        T: Debug + Eq + ReadXDRState<'r> + WriteXDR,
+    {
+        Self::check_encode(val, expected);
+        Self::check_decode_state(val, expected);
     }
 
     fn check_encode<T>(val: &T, expected: &[u8])
