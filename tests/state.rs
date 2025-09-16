@@ -1,5 +1,7 @@
 mod common;
+use common::*;
 use xdrs::{ReadResult, ReadXDR, Reader, State, WriteXDR, read_xdr};
+use xdrs::serialize_cxs::{encode, decode_state};
 
 #[test]
 fn stateful() {
@@ -22,11 +24,13 @@ fn stateful() {
         }
     }
 
-    // Given: a value and its expected encoding
     let val: Foo = Foo {
         m: -3,
         n: 7,
     };
+    let encoded = encode(&val).unwrap();
+    check_eq(&encoded, &hex!("3c07"));
 
-    let bytes = &hex!("00000007");
+    let val2: Foo = decode_state(&encoded, 37u32).unwrap();
+    assert_eq!(val2, Foo { m: -3, n: 37 });
 }

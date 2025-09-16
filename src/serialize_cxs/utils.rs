@@ -27,9 +27,9 @@ where
 pub fn decode_state<'r, 'a: 'r, T, S>(buf: &'a [u8], state: S) -> ReadResult<T>
 where
     T: ReadXDR<'r, S>,
-    BufReader<'r, S>: Reader<'r> + State<S>
+    // BufReader<'r, S>: Reader<'r> + State<S>
 {
-    let mut reader = BufReader::new_state(buf, state);
+    let mut reader = BufReader::<'r, S>::new_state(buf, state);
 
     let value = read_xdr(&mut reader)?;
 

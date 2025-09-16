@@ -21,14 +21,12 @@ impl<'r, S> State<S> for BufReader<'r, S> {
     }
 }
 
-/*
 impl<'r, S> State<()> for BufReader<'r, S>
 {
     fn get_state(&self) -> &() {
         unimplemented!()
     }
 }
-*/
 
 impl<'a> BufReader<'a, ()>
 {
@@ -212,6 +210,7 @@ macro_rules! read_unsigned {
 }
 
 impl<'r, S> Reader<'r> for BufReader<'r, S>
+    where Self: State<()>
 {
     read_signed! {
         [read_i64, i64],
