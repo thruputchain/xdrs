@@ -6,7 +6,7 @@ use crate::serialize_cxs::into_buf_writer::*;
 use core::mem::MaybeUninit as MU;
 
 #[cfg(feature = "alloc")]
-use crate::serialize_cxs::state_reader::*;
+use crate::serialize_cxs::path_reader::*;
 
 pub fn decode<'a, 'r, T>(buf: &'a [u8]) -> ReadResult<T>
 where
@@ -29,28 +29,23 @@ where
 }
 
 #[allow(unused_variables)]
-pub fn decode_state<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
+pub fn decode_path<'r, 'a, H, T>(buf: &'a [u8], path_handler: H) -> ReadResult<T>
 where
     'a: 'r,
-    T: ReadXDRState<'r>,
+    H: PathHandler,
+    T: ReadXDRPath<'r, H::Path>,
 {
-    #[cfg(not(feature = "alloc"))]
-    panic!("decode_state() currently requires feature \"alloc\"");
+    let mut reader = PathReader::new(BufReader::new(buf), path_handler);
 
-    #[cfg(feature = "alloc")]
-    {
-        let mut reader = StateReader::new(BufReader::new(buf));
-
-        decode_state_reader(&mut reader)
-    }
+    decode_path_reader(&mut reader)
 }
 
-pub fn decode_state_reader<'r, R, T>(reader: &mut R) -> ReadResult<T>
+pub fn decode_path_reader<'r, R, P, T>(reader: &mut R) -> ReadResult<T>
 where
-    T: ReadXDRState<'r>,
-    R: ReaderState<'r>,
+    T: ReadXDRPath<'r, P>,
+    R: ReaderPath<'r, P>,
 {
-    let value = read_xdr_state(reader)?;
+    let value = read_xdr_path(reader)?;
 
     if reader.has_more_input() {
         return Err(ReadError::TrailingData);

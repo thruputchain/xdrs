@@ -35,7 +35,7 @@ pub use crate::discrim::*;
 pub use crate::serialize::reader::Error as ReadError;
 pub use crate::serialize::reader::Result as ReadResult;
 pub use crate::serialize::reader::*;
-pub use crate::serialize::reader_state::*;
+pub use crate::serialize::reader_path::*;
 
 pub use crate::serialize::writer::Error as WriteError;
 pub use crate::serialize::writer::Result as WriteResult;

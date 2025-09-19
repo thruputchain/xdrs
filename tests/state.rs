@@ -9,7 +9,19 @@ struct Foo {
     #[xdrs(skip)]
     path: Vec<u32>,
 }
-
+/*
+    fn sequence_begin(&mut self) {
+        self.path.push(0);
+    }
+    fn sequence_next(&mut self) {
+        let i = self.path.pop().unwrap();
+        self.path.push(i + 1);
+    }
+    fn sequence_end(&mut self) {
+        let _ = self.path.pop();
+    }
+    fn path(&self) -> Self::Path;
+*/
 impl<'r> ReadXDRState<'r> for Foo {
     fn read_xdr_state<R: ReaderState<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes = read_xdr_state(r)?;
