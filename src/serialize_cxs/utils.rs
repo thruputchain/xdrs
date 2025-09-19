@@ -29,11 +29,11 @@ where
 }
 
 #[allow(unused_variables)]
-pub fn decode_path<'r, 'a, H, T>(buf: &'a [u8], path_handler: H) -> ReadResult<T>
+pub fn decode_path<'r, 'a, H, P, T>(buf: &'a [u8], path_handler: H) -> ReadResult<T>
 where
     'a: 'r,
-    H: PathHandler,
-    T: ReadXDRPath<'r, H::Path>,
+    H: PathHandler<Path = P>,
+    T: ReadXDRPath<'r, P>,
 {
     let mut reader = PathReader::new(BufReader::new(buf), path_handler);
 

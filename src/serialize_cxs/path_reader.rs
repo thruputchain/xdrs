@@ -52,5 +52,5 @@ where
 impl<'r, R, H, P> ReaderPath<'r, P> for PathReader<R, H>
 where
     R: Reader<'r>,
-    H: ReaderPath<'r, P>,
+    H: PathHandler<Path = P>,
 {}

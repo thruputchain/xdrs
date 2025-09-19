@@ -11,10 +11,10 @@ pub trait Format {
         'a: 'r,
         T: ReadXDR<'r>;
 
-    fn decode_state<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
+    fn decode_path<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
     where
         'a: 'r,
-        T: ReadXDRState<'r>;
+        T: ReadXDRPath<'r>;
 
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>;
 
@@ -46,18 +46,39 @@ pub trait Format {
 #[cfg(feature = "cxs")]
 pub struct CXS;
 
+struct PH(Vec<u32>);
+
+impl PathHandler for PH {
+    type Path = Vec<u32>;
+
+    fn sequence_begin(&mut self);
+    fn sequence_next(&mut self);
+    fn sequence_end(&mut self);
+
+    fn path(&self) -> Self::Path {
+        self.0.clone()
+    }
+}
+
+impl PH {
+    fn new() -> Self {
+        Self(vec![])
+    }
+}
+
 #[cfg(feature = "cxs")]
 impl Format for CXS {
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
         serialize_cxs::decode(buf)
     }
 
-    fn decode_state<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
+    fn decode_path<'r, 'a, T>(buf: &'a [u8]) -> ReadResult<T>
     where
         'a: 'r,
-        T: ReadXDRState<'r>,
+        T: ReadXDRPath<'r>,
     {
-        serialize_cxs::decode_state(buf)
+        let ph = PH::new();
+        serialize_cxs::decode_path(buf, ph)
     }
 
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
@@ -79,10 +100,10 @@ impl Format for TXS {
         serialize_txs::decode(buf)
     }
 
-    fn decode_state<'r, 'a, T>(_buf: &'a [u8]) -> ReadResult<T>
+    fn decode_path<'r, 'a, T>(_buf: &'a [u8]) -> ReadResult<T>
     where
         'a: 'r,
-        T: ReadXDRState<'r>,
+        T: ReadXDRPath<'r>,
     {
         unimplemented!()
     }

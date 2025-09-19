@@ -7,7 +7,7 @@ extern crate alloc;
 // Traits for translating Rust values to and from the XDR data model
 pub mod discrim;
 pub mod read_xdr;
-pub mod read_xdr_state;
+pub mod read_xdr_path;
 pub mod write_xdr;
 
 // The abstract interface for serialization formats
@@ -27,7 +27,7 @@ pub(crate) mod valid_u32;
 
 
 pub use crate::read_xdr::*;
-pub use crate::read_xdr_state::*;
+pub use crate::read_xdr_path::*;
 pub use crate::write_xdr::*;
 
 pub use crate::discrim::*;

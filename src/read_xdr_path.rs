@@ -10,11 +10,10 @@ pub trait ReadXDRPath<'r, P>: Sized {
     fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self>;
 }
 
-pub fn read_xdr_path<'r, H, R, T>(r: &mut R) -> Result<T>
+pub fn read_xdr_path<'r, R, P, T>(r: &mut R) -> Result<T>
 where
-    H: PathHandler,
-    R: ReaderPath<'r, H>,
-    T: ReadXDRPath<'r, H::Path>,
+    R: ReaderPath<'r, P>,
+    T: ReadXDRPath<'r, P>,
 {
     T::read_xdr_path(r)
 }
@@ -29,7 +28,7 @@ macro_rules! delegate_impl {
     { $ty:ty } => {
 
         impl<'r ,P> ReadXDRPath<'r, P> for $ty {
-            fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<$ty> {
+            fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
                 read_xdr(r)
             }
         }
@@ -85,7 +84,7 @@ where
     T: ReadXDRPath<'r, P>,
 {
     fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
-        Ok((read_xdr_path(r)?,))
+        Ok((ReadXDRPath::read_xdr_path(r)?,))
     }
 }
 
@@ -196,7 +195,11 @@ impl<'r, P, T> ReadXDRPath<'r, P> for core::marker::PhantomData<T> {
 const _: () = {
     use alloc::vec::Vec;
 
-    delegate_impls! { Vec<u8> }
+    impl<'r ,P> ReadXDRPath<'r, P> for Vec<u8> {
+        fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
+            read_xdr(r)
+        }
+    }
 
     impl<'r, P, T> ReadXDRPath<'r, P> for Vec<T>
     where

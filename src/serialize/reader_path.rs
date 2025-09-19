@@ -10,4 +10,4 @@ pub trait PathHandler {
     fn path(&self) -> Self::Path;
 }
 
-pub trait ReaderPath<'r, P>:  Reader<'r> + PathHandler<Path = P> {}
+pub trait ReaderPath<'r, P>: Reader<'r> + PathHandler<Path = P> {}
