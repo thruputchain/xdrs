@@ -6,29 +6,41 @@ use crate::valid_u32::*;
 use crate::mu;
 use core::mem::MaybeUninit as MU;
 
-pub trait ReadXDRPath<'r, P>: Sized {
-    fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self>;
+pub trait ReadXDRPath<'r>: Sized {
+    type Path;
+
+    fn read_xdr_path<R, P>(r: &mut R) -> Result<Self>
+        where
+            R: ReaderPath<'r, P>,
+            P: IntoPath<Self::Path>;
 }
 
-pub fn read_xdr_path<'r, R, P, T>(r: &mut R) -> Result<T>
+pub fn read_xdr_path<'r, R, P, Q, T>(r: &mut R) -> Result<T>
 where
     R: ReaderPath<'r, P>,
-    T: ReadXDRPath<'r, P>,
+    P: IntoPath<Q>,
+    T: ReadXDRPath<'r, Path = Q>,
 {
-    T::read_xdr_path(r)
+    <T as ReadXDRPath>::read_xdr_path(r)
 }
 
 /// Types that can be constructed by reading XDR data
 /// of any lifetime
-pub trait ReadXDRPathOwned<P>: for<'r> ReadXDRPath<'r, P> {}
+pub trait ReadXDRPathOwned: for<'r> ReadXDRPath<'r> {}
 
-impl<T, P> ReadXDRPathOwned<P> for T where T: for<'r> ReadXDRPath<'r, P> {}
+impl<T> ReadXDRPathOwned for T where T: for<'r> ReadXDRPath<'r> {}
 
 macro_rules! delegate_impl {
     { $ty:ty } => {
 
-        impl<'r ,P> ReadXDRPath<'r, P> for $ty {
-            fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
+        impl<'r> ReadXDRPath<'r> for $ty {
+            type Path = NullPath;
+
+            fn read_xdr_path<R, P>(r: &mut R) -> Result<Self>
+                where
+                    R: ReaderPath<'r, P>,
+                    P: IntoPath<Self::Path>
+            {
                 read_xdr(r)
             }
         }
@@ -46,8 +58,8 @@ macro_rules! delegate_impls {
 macro_rules! delegate_const_param_impl {
     { <const $param:ident: $const_ty:ty> $ty:ty } => {
 
-        impl<'r, P, const $param: $const_ty> ReadXDRPath<'r, P> for $ty {
-            fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<$ty> {
+        impl<'r, const $param: $const_ty> ReadXDRPath<'r> for $ty {
+            fn read_xdr_path<R: ReaderPath<'r, Self::Path>>(r: &mut R) -> Result<$ty> {
                 read_xdr(r)
             }
         }
@@ -79,11 +91,17 @@ delegate_impls! {
     alloc::string::String,
 }
 
-impl<'r, P, T> ReadXDRPath<'r, P> for (T,)
+impl<'r, T> ReadXDRPath<'r> for (T,)
 where
-    T: ReadXDRPath<'r, P>,
+    T: ReadXDRPath<'r>,
 {
-    fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
+    type Path = T::Path;
+
+    fn read_xdr_path<R, P>(r: &mut R) -> Result<Self>
+    where
+        R: ReaderPath<'r, P>,
+        P: IntoPath<Self::Path>,
+    {
         Ok((ReadXDRPath::read_xdr_path(r)?,))
     }
 }
@@ -91,11 +109,17 @@ where
 macro_rules! read_tuple {
     { $( $t:ident ),+ } => {
 
-        impl<'r, P, $($t),+> ReadXDRPath<'r, P> for ($($t),+)
+        impl<'r, Q, $($t),+> ReadXDRPath<'r> for ($($t),+)
         where
-            $( $t: ReadXDRPath<'r, P> ),+
+            $( $t: ReadXDRPath<'r, Path = Q> ),+,
         {
-            fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
+            type Path = Q;
+
+            fn read_xdr_path<R, P>(r: &mut R) -> Result<Self>
+                where
+                    R: ReaderPath<'r, P>,
+                    P: IntoPath<Self::Path>
+            {
                 r.sequence_begin();
                 let val = (
                     $( {
@@ -119,11 +143,17 @@ read_tuple!(T1, T2, T3, T4);
 read_tuple!(T1, T2, T3, T4, T5);
 read_tuple!(T1, T2, T3, T4, T5, T6);
 
-impl<'r, P, T, const N: usize> ReadXDRPath<'r, P> for [T; N]
+impl<'r, T, const N: usize> ReadXDRPath<'r> for [T; N]
 where
-    T: ReadXDRPath<'r, P>
+    T: ReadXDRPath<'r>
 {
-    fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
+    type Path = T::Path;
+
+    fn read_xdr_path<R, P>(r: &mut R) -> Result<Self>
+        where
+            R: ReaderPath<'r, P>,
+            P: IntoPath<Self::Path>
+    {
         let () = ValidU32::<N>::OK;
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
@@ -145,11 +175,17 @@ where
     }
 }
 
-impl<'r, P, T> ReadXDRPath<'r, P> for Option<T>
+impl<'r, T> ReadXDRPath<'r> for Option<T>
 where
-    T: ReadXDRPath<'r, P>
+    T: ReadXDRPath<'r>
 {
-    fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
+    type Path = T::Path;
+
+    fn read_xdr_path<R, P>(r: &mut R) -> Result<Self>
+        where
+            R: ReaderPath<'r, P>,
+            P: IntoPath<Self::Path>
+    {
         let is_present = r.read_bool()?;
         if is_present {
             Ok(Some(read_xdr_path(r)?))
@@ -160,21 +196,34 @@ where
 }
 
 #[cfg(all(feature = "xdr_common", feature = "alloc"))]
-impl<'r, P, T> ReadXDRPath<'r, P> for xdr_common::Box<T>
+impl<'r, T> ReadXDRPath<'r> for xdr_common::Box<T>
 where
-    T: ReadXDRPath<'r, P>
+    T: ReadXDRPath<'r>
 {
-    fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
+    type Path = T::Path;
+
+    fn read_xdr_path<R, P>(r: &mut R) -> Result<Self>
+        where
+            R: ReaderPath<'r, P>,
+            P: IntoPath<Self::Path>
+    {
         Ok(Self::new(read_xdr_path(r)?))
     }
 }
 
-impl<'r, P, T, E> ReadXDRPath<'r, P> for core::result::Result<T, E>
+impl<'r, T, E> ReadXDRPath<'r> for core::result::Result<T, E>
 where
-    T: ReadXDRPath<'r, P>,
-    E: ReadXDRPath<'r, P>,
+    T: ReadXDRPath<'r>,
+    E: ReadXDRPath<'r>,
+    <E as ReadXDRPath<'r>>::Path: FromPath<<T as ReadXDRPath<'r>>::Path>,
 {
-    fn read_xdr_path<R: ReaderPath<'r, P>>(r: &mut R) -> Result<Self> {
+    type Path = <T as ReadXDRPath<'r>>::Path;
+
+    fn read_xdr_path<R, P>(r: &mut R) -> Result<Self>
+        where
+            R: ReaderPath<'r, P>,
+            P: IntoPath<Self::Path>
+    {
         let d = r.read_i32()?;
 
         match d {
