@@ -2,6 +2,23 @@ use super::xdr::*;
 use syn::parse::*;
 use syn::Token;
 use crate::alloc::string::ToString;
+use alloc::{vec, vec::Vec};
+
+impl Parse for Specification {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let mut definitions: Vec<Definition> = vec![];
+        while !input.peek(End) {
+            definitions.push(input.parse()?);
+        }
+        Ok(Specification { definitions })
+    }
+}
+
+impl Parse for Definition {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        Ok(Definition::Const(input.parse()?))
+    }
+}
 
 impl Parse for ConstDef {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
