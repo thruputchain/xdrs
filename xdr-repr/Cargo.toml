@@ -10,15 +10,19 @@ doctest = false
 [dependencies]
 xdr_common = { workspace = true, optional = true }
 xdr-derive = { workspace = true, optional = true }
+syn = { workspace = true, optional = true }
+quote = { workspace = true, optional = true }
 
 [lints.rust]
 unsafe_code = "forbid"
 
 [features]
+default = ["parse"]
 derive = ["dep:xdr-derive"] # derive XDR trait
 xdr_common = ["dep:xdr_common"] # types for variable-length arrays
 i128 = []
 ns = [] # C++-like namespaces for XDR specs
+parse = ["dep:syn", "dep:quote"]
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
@@ -26,3 +30,7 @@ pretty_assertions = { workspace = true }
 [[test]]
 name = "ns"
 required-features = ["ns"]
+
+[[test]]
+name = "parse"
+required-features = ["parse"]

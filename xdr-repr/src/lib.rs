@@ -22,6 +22,9 @@ pub mod ty;
 pub mod result;
 pub mod xdr;
 
+#[cfg(feature = "parse")]
+pub mod parse;
+
 // export the types that represent XDR specs
 pub use xdr::*;
 

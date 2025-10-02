@@ -12,8 +12,10 @@ edition = "2024"
 xdr-derive = { path = "xdr-derive" }
 xdr-repr = { path = "xdr-repr" }
 xdr_common = { git = "ssh://git@github.com/groundhogchain/xdr_common.git" }
-thiserror = { version = "2.0.12", default-features = false }
-pretty_assertions = "1.4.1"
+thiserror = { version = "2.0", default-features = false }
+pretty_assertions = "1.4"
+syn = "2.0"
+quote = "1.0"
 
 [workspace.lints.rust]
 unsafe_code = "allow"
@@ -30,8 +32,8 @@ xdr-repr = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.6.0"
-hex = "0.4.3"
+criterion = "0.6"
+hex = "0.4"
 pretty_assertions = { workspace = true }
 
 [features]
