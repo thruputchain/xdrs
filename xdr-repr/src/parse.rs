@@ -16,7 +16,8 @@ impl Parse for Specification {
 
 impl Parse for Definition {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        Ok(Definition::Const(input.parse()?))
+        input.parse().map(Definition::Const)
+            .or_else(|_| input.parse().map(Definition::Type))
     }
 }
 
@@ -32,9 +33,61 @@ impl Parse for ConstDef {
     }
 }
 
+impl Parse for TypeDef {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        /*
+        input.parse().map(TypeDef::Def)
+          .or_else(|_| 
+                parse_aggregate_def(input))
+        */
+        let d = parse_aggregate_def(input)?;
+        let _ = input.parse::<Token![;]>()?;
+        Ok(d)
+    }
+}
+
+fn parse_aggregate_def(input: ParseStream<'_>) -> Result<TypeDef> {
+    input.parse::<Token![enum]>()
+        .and_then(|_| Ok(TypeDef::Enum(input.parse()?, input.parse()?)))
+        /*
+        .or_else(|_| input.parse::<Token![struct]>()
+            .and_then(|_| Ok(TypeDef::Struct(input.parse()?, input.parse()?)))
+            .or_else(|_| input.parse::<Token![union]>()
+                .and_then(|_| Ok(TypeDef::Union(input.parse()?, input.parse()?)))))
+        */
+}
+
+impl Parse for EnumBody {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let content;
+        let _ = syn::braced!(content in input);
+        let variants: syn::punctuated::Punctuated<_, _> =
+            content.parse_terminated(EnumVariant::parse, Token![,])?;
+        Ok(EnumBody(variants.into_iter().map(|v| v.0).collect()))
+    }
+}
+
+struct EnumVariant((Ident, Value));
+
+impl Parse for EnumVariant {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let ident = input.parse()?;
+        let _ = input.parse::<Token![=]>()?;
+        let value = input.parse()?;
+        Ok(EnumVariant((ident, value)))
+    }
+}
+
+impl Parse for Value {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        input.parse().map(Value::Const)
+            .or_else(|_| input.parse().map(Value::Ident))
+    }
+}
+
 impl Parse for Ident {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        // XXX: allow only legal XDR identifiers
+        // TODO: allow only legal XDR identifiers
         let ident: syn::Ident = input.parse()?;
 
         Ok(Ident(ident.to_string()))
