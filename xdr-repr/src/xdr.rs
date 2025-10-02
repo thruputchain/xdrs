@@ -77,14 +77,6 @@ pub enum Declaration {
         name: Ident,
         ty: TypeSpec,
     },
-    FixedOpaque {
-        name: Ident,
-        size: Value,
-    },
-    VariableOpaque {
-        name: Ident,
-        max: Value,
-    },
     FixedArray {
         name: Ident,
         elt_ty: TypeSpec,
@@ -93,6 +85,14 @@ pub enum Declaration {
     VariableArray {
         name: Ident,
         elt_ty: TypeSpec,
+        max: Value,
+    },
+    FixedOpaque {
+        name: Ident,
+        size: Value,
+    },
+    VariableOpaque {
+        name: Ident,
         max: Value,
     },
     Optional {
