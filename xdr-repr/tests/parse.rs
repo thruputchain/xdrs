@@ -13,6 +13,11 @@ fn parse_spec() {
             ERROR = 1
         };
 
+        struct Pair {
+            void;
+            void;
+        };
+
     };
 
     let expected = Specification {
@@ -31,8 +36,20 @@ fn parse_spec() {
                         (Ident("OK".to_string()), Value::Const(Constant::Unsigned(0))),
                         (Ident("ERROR".to_string()), Value::Const(Constant::Unsigned(1))),
                     ]))),
+            Definition::Type(TypeDef::Struct(
+                    Ident("Pair".to_string()),
+                    StructBody(vec![
+                        Declaration::Void,
+                        Declaration::Void,
+                    ]))),
         ]
     };
 
-    assert_eq!(spec, expected);
+    // assert_eq!(spec, expected);
+    if spec != expected {
+        panic!("\nExpected:{START}{expected}{END}\nFound:{START}{spec}{END}\n");
+    }
 }
+
+const START: &str = "\n/------------------------\\\n";
+const END: &str = "\\------------------------/\n";
