@@ -45,7 +45,64 @@ fn parse_spec() {
             int quux<4>;
             opaque buf[3];
         };
+
+        typedef int Number;
+
+        union Blargh switch (int okay) {
+            case 1:
+                /*
+                struct {
+                    unsigned int red;
+                    unsigned int green;
+                    unsigned int blue;
+                } color;
+                */
+                bool who;
+            case 0:
+            case -1:
+                opaque malady<16>;
+            default:
+                opaque unknown<>;
+        };
     };
+
+    let expected_union = Definition::Type(TypeDef::Union(
+            Ident("Blargh".to_string()),
+            UnionBody {
+                discriminant_decl: Declaration::Named {
+                    name: Ident("okay".to_string()),
+                    ty: TypeSpec::Bool,
+                },
+                case_specs: vec![
+                    CaseSpec {
+                        cases: vec![
+                            Value::Const(Constant::Unsigned(1)),
+                        ],
+                        decl: Declaration::Named {
+                            name: Ident("color".to_string()),
+                            ty: TypeSpec::Struct(StructBody(vec![
+                                    Declaration::Named { ty: TypeSpec::Int, name: Ident("red".to_string()) },
+                                    Declaration::Named { ty: TypeSpec::Int, name: Ident("green".to_string()) },
+                                    Declaration::Named { ty: TypeSpec::Int, name: Ident("blue".to_string()) },
+                            ])),
+                        },
+                    },
+                    CaseSpec {
+                        cases: vec![
+                            Value::Const(Constant::Unsigned(0)),
+                            Value::Const(Constant::Signed(-1)),
+                        ],
+                        decl: Declaration::VariableOpaque {
+                            name: Ident("malady".to_string()),
+                            max: Value::Const(Constant::Unsigned(16))
+                        },
+                    },
+                ],
+                default_decl: Some(Declaration::VariableOpaque {
+                    name: Ident("unknown".to_string()),
+                    max: Value::Const(Constant::Unsigned(u32::MAX)),
+                }),
+            }));
 
     let expected = Specification {
         definitions: vec![
@@ -91,6 +148,11 @@ fn parse_spec() {
                             size: Value::Const(Constant::Unsigned(3)),
                         },
                     ]))),
+            Definition::Type(TypeDef::Def(Declaration::Named {
+                name: Ident("Number".to_string()),
+                ty: TypeSpec::Int,
+            })),
+            expected_union,
         ]
     };
 
