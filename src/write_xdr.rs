@@ -73,6 +73,7 @@ const _: () = {
     }
 };
 
+// An alternative way to serialize 128-bit ints
 #[cfg(all(feature = "extras", feature = "int128_xdr"))]
 const _: () = {
     impl WriteXDR for i128 {

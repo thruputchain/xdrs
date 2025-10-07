@@ -5,7 +5,7 @@ members = [
     ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [workspace.dependencies]
@@ -24,10 +24,12 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-xdr-derive = { workspace = true, optional = true }
-xdr_common = { workspace = true, optional = true }
-xdr-repr = { workspace = true, optional = true }
 thiserror = { workspace = true }
+
+# Optional dependencies
+xdr-derive = { workspace = true, optional = true }
+xdr-repr = { workspace = true, optional = true }
+xdr_common = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = "0.6.0"
@@ -37,15 +39,19 @@ pretty_assertions = { workspace = true }
 [features]
 default = ["strict", "cxs", "txs"]
 strict = [] # require minimal encodings when reading
-derive = ["dep:xdr-derive"] # provide ReadXDR+WriteXDR derive-macros
-ns = ["xdr-repr/ns"]
 cxs = [] # include CXS codec
 txs = [] # include TXS codec
-extras = ["xdr-repr/i128"] # include convenient extensions to the spec
+extras = [] # include convenient extensions to the spec
+alloc = ["xdr_common?/alloc"] # enable allocating interfaces
+int128_xdr = ["xdr-repr?/int128_xdr"] # use alternate encoding for 128-bit ints
+
+# Enable optional dependencies
+derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
+repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
 xdr_common = ["dep:xdr_common", "xdr-repr/xdr_common"]
-alloc = ["xdr_common/alloc"] # enable allocating interfaces
-repr = ["dep:xdr-repr", "alloc"]
-int128_xdr = []
+
+# Enable optional features of related dependencies
+ns = ["xdr-repr?/ns"]
 
 [lints]
 workspace = true

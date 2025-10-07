@@ -8,17 +8,17 @@ edition.workspace = true
 doctest = false
 
 [dependencies]
-xdr_common = { workspace = true, optional = true }
 xdr-derive = { workspace = true, optional = true }
+xdr_common = { workspace = true, optional = true }
 
 [lints.rust]
 unsafe_code = "forbid"
 
 [features]
-derive = ["dep:xdr-derive"] # derive XDR trait
-xdr_common = ["dep:xdr_common"] # types for variable-length arrays
-i128 = []
+derive = ["dep:xdr-derive"] # derive the XDR trait
+xdr_common = ["dep:xdr_common"] # types for bounded-length arrays
 ns = [] # C++-like namespaces for XDR specs
+int128_xdr = []
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

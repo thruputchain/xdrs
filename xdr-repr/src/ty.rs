@@ -72,7 +72,7 @@ impl_has_type_spec! {
     bool => TypeSpec::Bool,
 }
 
-#[cfg(feature = "i128")]
+#[cfg(feature = "int128_xdr")]
 // These refer to double-u64 structures defined outside this package
 impl_has_type_spec! {
     i128 => TypeSpec::Ident(Ident("int128_xdr".to_string())),
@@ -105,7 +105,7 @@ impl_declare_named! {
     bool => TypeSpec::Bool,
 }
 
-#[cfg(feature = "i128")]
+#[cfg(feature = "int128_xdr")]
 // These refer to double-u64 structures defined outside this package
 impl_declare_named! {
     i128 => TypeSpec::Ident(Ident("int128_xdr".to_string())),
