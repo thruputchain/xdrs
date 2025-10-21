@@ -130,3 +130,30 @@ pub mod arrays_variable {
             "};"
     }
 }
+
+#[cfg(feature = "xdr_common")]
+pub mod variable_array_of_variable_array {
+    use super::*;
+
+    // We can't use `type Inner = VecM<u32, 100>` here, as that just gives us an alias
+    // to an XDR variable-array.  Arrays can't be expressed with a type-specifier, which
+    // is needed to represent the element type of the outer array.  So this inner array
+    // type must be given a name by defining a struct containing it; the name can be
+    // used to form the necessary type-specifier.
+    #[derive(XDR)]
+    struct Inner(VecM<u32, 100>);
+
+    type Outer = VecM<Inner, 2>;
+
+    fn define_outer() -> Definition {
+        let name = Ident("Outer".to_owned());
+        let typedef: TypeDef = Outer::declare(name).into();
+        Definition::Type(typedef)
+    }
+
+    check_format! { format_typedef_outer
+        define_outer()
+        =>
+            "typedef Inner Outer<2>;"
+    }
+}

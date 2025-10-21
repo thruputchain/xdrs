@@ -3,7 +3,7 @@
 This package provides:
 
 - Traits `ReadXDR` and `WriteXDR`, for converting between Rust values
-  and the XDR data model
+  and the [XDR][RFC-4506] data model
 
 - Derive-macros for generating `ReadXDR` and `WriteXDR` (see crate
   `xdr_derive`)
@@ -25,3 +25,7 @@ enabled with feature `alloc`.
 - Address some memory-leaks that can happen around read failures
 
 - Provide an out-parameter (i.e., in-place) decoding interface
+
+- Limit stack depth when reading potentially-recursive datastructures
+
+[RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
