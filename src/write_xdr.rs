@@ -155,6 +155,12 @@ impl WriteXDR for str {
     }
 }
 
+impl WriteXDR for &str {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        w.write_opaque_variable((*self).as_bytes())
+    }
+}
+
 #[cfg(feature = "alloc")]
 impl WriteXDR for alloc::string::String {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {

@@ -126,6 +126,15 @@ fn str_slice() {
     TXS::check_encode(s, &hex!("00000007537472696e672100"));
 }
 
+#[test]
+fn str_slice_ref() {
+    let s = "String!";
+    let r: &&str = &s;
+
+    CXS::check_encode(r, &hex!("07537472696e6721"));
+    TXS::check_encode(r, &hex!("00000007537472696e672100"));
+}
+
 #[cfg(feature = "alloc")]
 #[allow(dead_code)]
 fn array_too_big() {
