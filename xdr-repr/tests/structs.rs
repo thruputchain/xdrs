@@ -84,6 +84,35 @@ check_format! { specification_format
         ""
 }
 
+pub struct IntTypes {
+    pub signed_short: i32,
+    pub unsigned_short: u32,
+    pub signed_long: i64,
+    pub unsigned_long: u64,
+}
+
+impl HasTypeDef for IntTypes {
+    fn type_def() -> TypeDef {
+        struct_def("IntTypes", vec![
+            <i32>::declare(ident("signed_short")),
+            <u32>::declare(ident("unsigned_short")),
+            <i64>::declare(ident("signed_long")),
+            <u64>::declare(ident("unsigned_long")),
+        ])
+    }
+}
+
+check_format! { int_types_format
+    IntTypes::def()
+    =>
+        "struct IntTypes {"
+        "	int signed_short;"
+        "	unsigned int unsigned_short;"
+        "	hyper signed_long;"
+        "	unsigned hyper unsigned_long;"
+        "};"
+}
+
 #[cfg(feature = "xdr_common")]
 pub mod test_common {
     use super::*;

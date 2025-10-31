@@ -25,3 +25,5 @@ jobs:
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace --all-features
       - name: Test Benches
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F extras,alloc,derive --benches
+      - name: Test xdr-repr crate
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -p xdr-repr --all-features
