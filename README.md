@@ -12,8 +12,8 @@ This package provides:
   between the XDR data model and some serialization format
 
 - Implementations of `serialize::{Reader, Writer}`:
-    - [CXS](CXS.md) (see module `serialize_cxs`)
-    - TXS ("Traditional XDR Serialization") (see module `serialize_txs`)
+    - [CXS](CXS.md) (see module `cxs`)
+    - TXS ("Traditional XDR Serialization") (see module `txs`)
 
 The library is `no_std`, but a few extra things can be
 enabled with feature `alloc`.

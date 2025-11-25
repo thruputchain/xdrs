@@ -47,56 +47,25 @@ construct_int_impls! {
     read_bool for bool,
 }
 
-#[cfg(all(feature = "extras", not(feature = "int128_xdr")))]
-const _: () = {
-    impl<'r> ReadXDR<'r> for i128 {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let mut uninit = [MU::<u8>::zeroed(); 16];
+impl<'r> ReadXDR<'r> for i128 {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let highbits: i64 = read_xdr(r)?;
+        let lowbits: u64 = read_xdr(r)?;
+        let i: i128 = ((highbits as i128) << 64) | (lowbits as i128);
 
-            let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
-
-            // SAFETY: the pre-zeroed bytes are valid u8's
-            let bytes = unsafe { mu::array_assume_init(uninit) };
-            Ok(Self::from_le_bytes(bytes))
-        }
+        Ok(i)
     }
+}
 
-    impl<'r> ReadXDR<'r> for u128 {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let mut uninit = [MU::<u8>::zeroed(); 16];
+impl<'r> ReadXDR<'r> for u128 {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let highbits: u64 = read_xdr(r)?;
+        let lowbits: u64 = read_xdr(r)?;
+        let u: u128 = ((highbits as u128) << 64) | (lowbits as u128);
 
-            let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
-
-            // SAFETY: the pre-zeroed bytes are valid u8's
-            let bytes = unsafe { mu::array_assume_init(uninit) };
-            Ok(Self::from_le_bytes(bytes))
-        }
+        Ok(u)
     }
-};
-
-// An alternative way to serialize 128-bit ints
-#[cfg(all(feature = "extras", feature = "int128_xdr"))]
-const _: () = {
-    impl<'r> ReadXDR<'r> for i128 {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let highbits: i64 = read_xdr(r)?;
-            let lowbits: u64 = read_xdr(r)?;
-            let i: i128 = ((highbits as i128) << 64) | (lowbits as i128);
-
-            Ok(i)
-        }
-    }
-
-    impl<'r> ReadXDR<'r> for u128 {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let highbits: u64 = read_xdr(r)?;
-            let lowbits: u64 = read_xdr(r)?;
-            let u: u128 = ((highbits as u128) << 64) | (lowbits as u128);
-
-            Ok(u)
-        }
-    }
-};
+}
 
 impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
 where

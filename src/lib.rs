@@ -9,21 +9,19 @@ pub mod discrim;
 pub mod read_xdr;
 pub mod write_xdr;
 
+pub mod i128_alt;
+
 // The abstract interface for serialization formats
 pub mod serialize;
 
 // CXS serialization
-pub mod serialize_cxs;
+pub mod cxs;
 
 // TXS serialization
-#[cfg(feature = "txs")]
-pub mod serialize_txs;
+pub mod txs;
 
 pub mod mu; // used by integration tests
 pub(crate) mod valid_u32;
-
-
-
 
 pub use crate::read_xdr::*;
 pub use crate::write_xdr::*;
@@ -49,7 +47,3 @@ pub use xdr_common;
 
 #[cfg(feature = "xdr_common")]
 pub use xdr_common::*;
-
-#[cfg(all(not(feature = "extras"), feature = "int128_xdr"))]
-compile_error!("Feature \"int128_xdr\" requires also requesting support for \
-    non-standard types by enabling feature \"extras\".");

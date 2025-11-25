@@ -40,62 +40,25 @@ write_xdr_int_impls! {
     write_bool for bool,
 }
 
-#[cfg(all(feature = "extras", not(feature = "int128_xdr")))]
-const _: () = {
-    impl WriteXDR for i128 {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            let bytes = self.to_le_bytes();
+impl WriteXDR for i128 {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        let highbits = (*self >> 64) as i64;
+        let lowbits = (*self & 0xffffffffffffffff) as u64;
 
-            let leading_sign_bytes = if *self >= 0 {
-                self.leading_zeros()
-            } else {
-                self.leading_ones()
-            } / 8;
-
-            let n_send_bytes = 16 - leading_sign_bytes as usize;
-            let buf = &bytes[..n_send_bytes];
-
-            w.write_opaque_variable(buf)
-        }
+        write_xdr(&highbits, w)?;
+        write_xdr(&lowbits, w)
     }
+}
 
-    impl WriteXDR for u128 {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            let bytes = self.to_le_bytes();
+impl WriteXDR for u128 {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+        let highbits = (*self >> 64) as u64;
+        let lowbits = (*self & 0xffffffffffffffff) as u64;
 
-            let leading_zero_bytes = self.leading_zeros() / 8;
-
-            let n_send_bytes = 16 - leading_zero_bytes as usize;
-            let buf = &bytes[..n_send_bytes];
-
-            w.write_opaque_variable(buf)
-        }
+        write_xdr(&highbits, w)?;
+        write_xdr(&lowbits, w)
     }
-};
-
-// An alternative way to serialize 128-bit ints
-#[cfg(all(feature = "extras", feature = "int128_xdr"))]
-const _: () = {
-    impl WriteXDR for i128 {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            let highbits = (*self >> 64) as i64;
-            let lowbits = (*self & 0xffffffffffffffff) as u64;
-
-            write_xdr(&highbits, w)?;
-            write_xdr(&lowbits, w)
-        }
-    }
-
-    impl WriteXDR for u128 {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            let highbits = (*self >> 64) as u64;
-            let lowbits = (*self & 0xffffffffffffffff) as u64;
-
-            write_xdr(&highbits, w)?;
-            write_xdr(&lowbits, w)
-        }
-    }
-};
+}
 
 impl WriteXDR for [u8] {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {

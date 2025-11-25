@@ -139,5 +139,5 @@ fn str_slice_ref() {
 #[allow(dead_code)]
 fn array_too_big() {
     // should produce compiler error
-    let _v: [bool; 8_000_000_000] = ::xdrs::serialize_cxs::decode(b"foo").unwrap();
+    let _v: [bool; 8_000_000_000] = ::xdrs::cxs::decode(b"foo").unwrap();
 }

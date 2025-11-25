@@ -183,7 +183,7 @@ fn ref_newtype() {
 
     // make sure we aren't being foxed out by auto(de)ref magic
     let expected = hex!("000102");
-    let buf2: &Buf = xdrs::serialize_cxs::decode(&expected).unwrap();
+    let buf2: &Buf = xdrs::cxs::decode(&expected).unwrap();
     assert_eq!(&buf2.0, &arr);
 }
 

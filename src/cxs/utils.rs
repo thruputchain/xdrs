@@ -1,8 +1,8 @@
 //! Convenient interfaces to CXS serialization
 
 use crate::*;
-use crate::serialize_txs::buf_reader::*;
-use crate::serialize_txs::into_buf_writer::*;
+use crate::cxs::buf_reader::*;
+use crate::cxs::into_buf_writer::*;
 use core::mem::MaybeUninit as MU;
 
 pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
@@ -24,10 +24,7 @@ where
     Ok(value)
 }
 
-pub fn encode_into<T>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>
-where
-    T: WriteXDR + ?Sized,
-{
+pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
     let mut writer = IntoBufWriter::new(buf);
 
     value.write_xdr(&mut writer)?;
@@ -38,13 +35,11 @@ where
 #[cfg(feature = "alloc")]
 mod utils_alloc {
     use crate::*;
-    use crate::serialize_txs::buf_writer::*;
+    use crate::cxs::buf_writer::*;
     use alloc::vec::Vec;
 
-    pub fn encode<T>(value: &T) -> WriteResult<Vec<u8>>
-    where
-        T: WriteXDR + ?Sized,
-    {
+    #[cfg(feature = "alloc")]
+    pub fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
         let mut writer = BufWriter::new();
 
         value.write_xdr(&mut writer)?;

@@ -6,6 +6,8 @@ use xdrs::mu;
 use xdrs::*;
 
 pub trait Format {
+    fn name() -> &'static str;
+
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T>;
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>;
 
@@ -34,41 +36,41 @@ pub trait Format {
     }
 }
 
-#[cfg(feature = "cxs")]
 pub struct CXS;
 
-#[cfg(feature = "cxs")]
 impl Format for CXS {
+    fn name() -> &'static str { "CXS" }
+
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
-        serialize_cxs::decode(buf)
+        cxs::decode(buf)
     }
 
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
-        serialize_cxs::encode_into(value, buf)
+        cxs::encode_into(value, buf)
     }
 
     #[cfg(feature = "alloc")]
     fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
-        serialize_cxs::encode(value)
+        cxs::encode(value)
     }
 }
 
-#[cfg(feature = "txs")]
 pub struct TXS;
 
-#[cfg(feature = "txs")]
 impl Format for TXS {
+    fn name() -> &'static str { "TXS" }
+
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
-        serialize_txs::decode(buf)
+        txs::decode(buf)
     }
 
     fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
-        serialize_txs::encode_into(value, buf)
+        txs::encode_into(value, buf)
     }
 
     #[cfg(feature = "alloc")]
     fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
-        serialize_txs::encode(value)
+        txs::encode(value)
     }
 }
 
@@ -107,7 +109,7 @@ pub trait Check: Format {
         T: WriteXDR + ?Sized,
     {
         let encoded = Self::encode(value).unwrap();
-        check_eq(&encoded, expected);
+        Self::check_eq(&encoded, expected);
     }
 
     fn check_encode_into_static<T>(value: &T, expected: &[u8])
@@ -124,7 +126,7 @@ pub trait Check: Format {
 
         let encoded = unsafe { mu::assume_init_ref(&buf[..written]) };
 
-        check_eq(encoded, expected);
+        Self::check_eq(encoded, expected);
     }
 
     #[cfg(feature = "alloc")]
@@ -133,22 +135,22 @@ pub trait Check: Format {
         T: WriteXDR + ?Sized,
     {
         let encoded = Self::encode_into_alloc(value, expected.len());
-        check_eq(&encoded, expected);
+        Self::check_eq(&encoded, expected);
+    }
+
+    // panic with readable output
+    fn check_eq(encoded: &[u8], expected: &[u8]) {
+        // assert!(a.len() == b.len());
+
+        let a_hex = hex::encode(encoded);
+        let b_hex = hex::encode(expected);
+
+        assert_eq!(a_hex, b_hex, "format = {}", Self::name());
     }
 }
 
 impl Check for CXS {}
 impl Check for TXS {}
-
-// panic with readable output
-pub fn check_eq(encoded: &[u8], expected: &[u8]) {
-    // assert!(a.len() == b.len());
-
-    let a_hex = hex::encode(encoded);
-    let b_hex = hex::encode(expected);
-
-    assert_eq!(a_hex, b_hex);
-}
 
 #[macro_export]
 macro_rules! hex {
