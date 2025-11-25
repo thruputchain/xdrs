@@ -9,8 +9,6 @@ pub mod discrim;
 pub mod read_xdr;
 pub mod write_xdr;
 
-pub mod i128_alt;
-
 // The abstract interface for serialization formats
 pub mod serialize;
 
@@ -41,6 +39,15 @@ pub use xdr_repr;
 
 #[cfg(feature = "derive")]
 pub use xdr_derive::*;
+
+#[cfg(feature = "int128")]
+pub mod int128;
+
+#[cfg(all(feature = "int128_xdr", not(feature = "int128")))]
+pub mod int128_xdr;
+
+#[cfg(all(feature = "int128_xdr", feature = "int128"))]
+compile_error!("Features \"int128\" and \"int128_xdr\" are mutually exclusive, but both have been enabled");
 
 #[cfg(feature = "xdr_common")]
 pub use xdr_common;

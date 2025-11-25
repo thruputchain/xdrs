@@ -39,6 +39,8 @@ pretty_assertions = { workspace = true }
 [features]
 permissive = [] # don't require minimal encodings when reading
 alloc = ["xdr_common?/alloc"] # enable allocating interfaces
+int128 = [] # enable non-standard read/write of i128/u128
+int128_xdr = ["xdr-repr?/int128_xdr"] # enable alternative encoding of i128/u128
 
 # Enable optional dependencies
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
@@ -53,7 +55,6 @@ strict = [] # deprecated: default is strict, use "permissive" to disable
 cxs = [] # deprecated: CXS is now always included
 txs = [] # deprecated: TXS is now always included
 extras = [] # deprecated
-int128_xdr = [] # deprecated: available in module `i128_alt`
 
 [lints]
 workspace = true
@@ -65,7 +66,7 @@ bench = false # disable libtest benchmarks, in favor of Criterion
 [[bench]]
 name = "bench1"
 harness = false
-required-features = ["alloc", "extras"]
+required-features = ["alloc"]
 
 [[test]]
 name = "repr"

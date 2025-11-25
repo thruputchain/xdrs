@@ -47,26 +47,6 @@ construct_int_impls! {
     read_bool for bool,
 }
 
-impl<'r> ReadXDR<'r> for i128 {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let highbits: i64 = read_xdr(r)?;
-        let lowbits: u64 = read_xdr(r)?;
-        let i: i128 = ((highbits as i128) << 64) | (lowbits as i128);
-
-        Ok(i)
-    }
-}
-
-impl<'r> ReadXDR<'r> for u128 {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-        let highbits: u64 = read_xdr(r)?;
-        let lowbits: u64 = read_xdr(r)?;
-        let u: u128 = ((highbits as u128) << 64) | (lowbits as u128);
-
-        Ok(u)
-    }
-}
-
 impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
 where
     T: ReadXDR<'r>,

@@ -47,8 +47,7 @@ mod txs {
         [i64_max, i64, i64::MAX, "7fffffffffffffff"],
     }
 
-    /*
-    #[cfg(all(feature = "extras", not(feature = "int128_xdr")))]
+    #[cfg(feature = "int128")]
     enc_test_int! { TXS
         [u128_min, u128, u128::MIN, "00000000"],
         [u128_d, u128, 0x07dead, "00000003adde0700"],
@@ -59,8 +58,8 @@ mod txs {
         [i128_pos, i128, 0xadde07, "0000000307dead00"],
         [i128_max, i128, i128::MAX, "00000010ffffffffffffffffffffffffffffff7f"],
     }
-    */
 
+    #[cfg(feature = "int128_xdr")]
     enc_test_int! { TXS
         [u128_min, u128, u128::MIN, "00000000000000000000000000000000"],
         [u128_mid, u128, 0x03dead1234beef5678, "0000000000000003dead1234beef5678"],
@@ -112,8 +111,7 @@ mod cxs {
         [i64_max, i64, i64::MAX, "ffffffffffffffff7f"],
     }
 
-    /*
-    #[cfg(all(feature = "extras", not(feature = "int128_xdr")))]
+    #[cfg(feature = "int128")]
     enc_test_int! { CXS
         [u128_min, u128, u128::MIN, "00"],
         [u128_d, u128, 0x07dead, "03adde07"],
@@ -123,8 +121,8 @@ mod cxs {
         [i128_pos, i128, 0xadde07, "0307dead"],
         [i128_max, i128, i128::MAX, "10ffffffffffffffffffffffffffffff7f"],
     }
-    */
 
+    #[cfg(feature = "int128_xdr")]
     enc_test_int! { CXS
         [u128_min, u128, u128::MIN, "0000"],
         [u128_mid, u128, 0x03dead1234beef5678, "03ff7856efbe3412adde"],
