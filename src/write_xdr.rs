@@ -80,26 +80,6 @@ write_xdr_int_impls! {
     write_bool for bool,
 }
 
-impl WriteXDR for i128 {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        let highbits = (*self >> 64) as i64;
-        let lowbits = (*self & 0xffffffffffffffff) as u64;
-
-        write_xdr(&highbits, w)?;
-        write_xdr(&lowbits, w)
-    }
-}
-
-impl WriteXDR for u128 {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-        let highbits = (*self >> 64) as u64;
-        let lowbits = (*self & 0xffffffffffffffff) as u64;
-
-        write_xdr(&highbits, w)?;
-        write_xdr(&lowbits, w)
-    }
-}
-
 impl WriteXDR for [u8] {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
         w.write_opaque_variable(self)
