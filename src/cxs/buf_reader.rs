@@ -3,8 +3,9 @@
 //! This module provides [`BufReader`], which implements [`Reader`] for reading
 //! CXS-encoded XDR data from a byte slice.
 
-#[cfg(feature = "strict")]
+#[cfg(not(feature = "permissive"))]
 use super::limits::*;
+
 use crate::serialize::reader::*;
 
 /// Read CXS-encoded XDR data from a byte slice.
@@ -83,7 +84,7 @@ impl<'a> BufReader<'a> {
 
             n = i64::from_le_bytes(int_bytes);
 
-            #[cfg(feature = "strict")]
+            #[cfg(not(feature = "permissive"))]
             {
                 // validate that the smallest possible encoding was used
 
@@ -141,7 +142,7 @@ impl<'a> BufReader<'a> {
             int_dest.copy_from_slice(input);
             let uint = u64::from_le_bytes(int_bytes);
 
-            #[cfg(feature = "strict")]
+            #[cfg(not(feature = "permissive"))]
             {
                 // validate that the smallest possible encoding was used
 

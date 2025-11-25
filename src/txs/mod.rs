@@ -26,7 +26,7 @@
 //! This format is compatible with the standard XDR specification and can interoperate
 //! with other XDR implementations.
 //!
-//! For a more compact alternative, see the [`serialize_cxs`](crate::serialize_cxs) module.
+//! For a more compact alternative, see the [`cxs`](crate::cxs) module.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 

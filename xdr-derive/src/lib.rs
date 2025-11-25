@@ -22,7 +22,7 @@
 //! ### Serialization and Deserialization
 //!
 //! ```rust
-//! use xdrs::{ReadXDR, WriteXDR, serialize_cxs};
+//! use xdrs::{ReadXDR, WriteXDR, cxs};
 //!
 //! #[derive(ReadXDR, WriteXDR)]
 //! struct Person {
@@ -36,10 +36,10 @@
 //! };
 //!
 //! // Serialize
-//! let encoded = serialize_cxs::encode(&person).unwrap();
+//! let encoded = cxs::encode(&person).unwrap();
 //!
 //! // Deserialize
-//! let decoded: Person = serialize_cxs::decode(&encoded).unwrap();
+//! let decoded: Person = cxs::decode(&encoded).unwrap();
 //!
 //! assert_eq!(person.name, decoded.name);
 //! assert_eq!(person.age, decoded.age);
@@ -71,7 +71,7 @@
 //! ### Enums
 //!
 //! ```rust
-//! use xdrs::{ReadXDR, WriteXDR, serialize_cxs};
+//! use xdrs::{ReadXDR, WriteXDR, cxs};
 //!
 //! #[derive(ReadXDR, WriteXDR, PartialEq, Debug)]
 //! #[repr(i32)]
@@ -82,8 +82,8 @@
 //!
 //! let status = Status::Success;
 //!
-//! let encoded = serialize_cxs::encode(&status).unwrap();
-//! let decoded: Status = serialize_cxs::decode(&encoded).unwrap();
+//! let encoded = cxs::encode(&status).unwrap();
+//! let decoded: Status = cxs::decode(&encoded).unwrap();
 //!
 //! assert_eq!(status, decoded);
 //! ```

@@ -9,8 +9,8 @@
 //!   [XDR][RFC-4506] data model and some serialization format.
 //!
 //! - Implementations of [`Reader`] and [`Writer`]:
-//!   - [CXS](serialize_cxs) ("Compact XDR Serialization")
-//!   - [TXS](serialize_txs) ("Traditional XDR Serialization")
+//!   - [CXS](cxs) ("Compact XDR Serialization")
+//!   - [TXS](txs) ("Traditional XDR Serialization")
 //!
 //! The library is `no_std`, but a few extra things can be
 //! enabled with feature `alloc`.
@@ -22,11 +22,11 @@
 //! ### Serialization formats
 //!
 //! - **`cxs`** (enabled by default): Enables the CXS (Compact XDR
-//!   Serialization) codec. Provides the [`serialize_cxs`] module with compact,
+//!   Serialization) codec. Provides the [`cxs`] module with compact,
 //!   variable-length encoding.
 //!
 //! - **`txs`** (enabled by default): Enables the TXS (Traditional XDR
-//!   Serialization) codec. Provides the [`serialize_txs`] module with standard
+//!   Serialization) codec. Provides the [`txs`] module with standard
 //!   [RFC 4506] encoding.
 //!
 //! - **`strict`** (enabled by default): When reading CXS data, requires that
@@ -38,7 +38,7 @@
 //! - **`alloc`**: Enables allocation-based interfaces:
 //!   - `Vec<u8>` and `Vec<T>` implementations of [`ReadXDR`] and [`WriteXDR`]
 //!   - `String` implementations of [`ReadXDR`] and [`WriteXDR`]
-//!   - `BufWriter` types in [`serialize_cxs`] and [`serialize_txs`] modules
+//!   - `BufWriter` types in [`cxs`] and [`txs`] modules
 //!     for growable buffers
 //!   - `encode()` functions that return owned `Vec<u8>`
 //!
@@ -86,15 +86,16 @@ pub mod discrim;
 pub mod read_xdr;
 pub mod write_xdr;
 
+pub mod i128_alt;
+
+// The abstract interface for serialization formats
 pub mod serialize;
 
-#[cfg(feature = "cxs")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cxs")))]
-pub mod serialize_cxs;
+// CXS serialization
+pub mod cxs;
 
-#[cfg(feature = "txs")]
-#[cfg_attr(docsrs, doc(cfg(feature = "txs")))]
-pub mod serialize_txs;
+// TXS serialization
+pub mod txs;
 
 pub mod mu; // used by integration tests
 
@@ -127,9 +128,3 @@ pub use xdr_common;
 #[cfg(feature = "xdr_common")]
 #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
 pub use xdr_common::*;
-
-#[cfg(all(not(feature = "extras"), feature = "int128_xdr"))]
-compile_error!(
-    "Feature \"int128_xdr\" requires also requesting support for \
-    non-standard types by enabling feature \"extras\"."
-);
