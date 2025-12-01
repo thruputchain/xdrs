@@ -1,4 +1,5 @@
 use xdr_repr::xdr::*;
+use quote::quote;
 
 #[test]
 fn parse_type_spec() {
@@ -22,8 +23,21 @@ fn parse_declaration() {
 }
 
 #[test]
+fn parse_declaration_variable_opaque() {
+    let parsed: Declaration = syn::parse_quote! {
+        opaque stuff<16>
+    };
+    let expected = Declaration::VariableOpaque {
+        name: Ident("stuff".to_string()),
+        max: Value::Const(Constant::Unsigned(16))
+    };
+
+    assert_eq!(parsed, expected);
+}
+
+#[test]
 fn parse_spec() {
-    let parsed: Specification = syn::parse_quote! {
+    let tokens = quote! {
 
         // Fun stuff!
         const FOO = -1;
@@ -50,28 +64,28 @@ fn parse_spec() {
 
         union Blargh switch (int okay) {
             case 1:
-                /*
                 struct {
                     unsigned int red;
                     unsigned int green;
                     unsigned int blue;
                 } color;
-                */
-                bool who;
             case 0:
             case -1:
-                opaque malady<16>;
+                opaque malady<>;
             default:
-                opaque unknown<>;
+                void;
         };
     };
+
+    let parsed: Specification = syn::parse2(tokens).unwrap_or_else(|e|
+        panic!("Failed parsing Specification: {}", e));
 
     let expected_union = Definition::Type(TypeDef::Union(
             Ident("Blargh".to_string()),
             UnionBody {
                 discriminant_decl: Declaration::Named {
                     name: Ident("okay".to_string()),
-                    ty: TypeSpec::Bool,
+                    ty: TypeSpec::Int,
                 },
                 case_specs: vec![
                     CaseSpec {
@@ -81,9 +95,9 @@ fn parse_spec() {
                         decl: Declaration::Named {
                             name: Ident("color".to_string()),
                             ty: TypeSpec::Struct(StructBody(vec![
-                                    Declaration::Named { ty: TypeSpec::Int, name: Ident("red".to_string()) },
-                                    Declaration::Named { ty: TypeSpec::Int, name: Ident("green".to_string()) },
-                                    Declaration::Named { ty: TypeSpec::Int, name: Ident("blue".to_string()) },
+                                    Declaration::Named { ty: TypeSpec::Unsigned, name: Ident("red".to_string()) },
+                                    Declaration::Named { ty: TypeSpec::Unsigned, name: Ident("green".to_string()) },
+                                    Declaration::Named { ty: TypeSpec::Unsigned, name: Ident("blue".to_string()) },
                             ])),
                         },
                     },
@@ -94,14 +108,11 @@ fn parse_spec() {
                         ],
                         decl: Declaration::VariableOpaque {
                             name: Ident("malady".to_string()),
-                            max: Value::Const(Constant::Unsigned(16))
+                            max: Value::Const(Constant::Unsigned(u32::MAX)),
                         },
                     },
                 ],
-                default_decl: Some(Declaration::VariableOpaque {
-                    name: Ident("unknown".to_string()),
-                    max: Value::Const(Constant::Unsigned(u32::MAX)),
-                }),
+                default_decl: Some(Declaration::Void),
             }));
 
     let expected = Specification {

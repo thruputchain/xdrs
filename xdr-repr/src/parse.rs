@@ -17,22 +17,21 @@ fn is_keyword<S: AsRef<str>>(s: S) -> bool {
 }
 
 mod kw {
-    syn::custom_keyword!(void);
-    syn::custom_keyword!(opaque);
-    syn::custom_keyword!(string);
-    syn::custom_keyword!(union);
-    syn::custom_keyword!(switch);
-    syn::custom_keyword!(default);
+    syn::custom_keyword!(bool);
     syn::custom_keyword!(case);
-    syn::custom_keyword!(typedef);
-
-    syn::custom_keyword!(unsigned);
-    syn::custom_keyword!(int);
-    syn::custom_keyword!(hyper);
-    syn::custom_keyword!(float);
+    syn::custom_keyword!(default);
     syn::custom_keyword!(double);
     syn::custom_keyword!(quadruple);
-    syn::custom_keyword!(bool);
+    syn::custom_keyword!(float);
+    syn::custom_keyword!(hyper);
+    syn::custom_keyword!(int);
+    syn::custom_keyword!(opaque);
+    syn::custom_keyword!(string);
+    syn::custom_keyword!(switch);
+    syn::custom_keyword!(typedef);
+    syn::custom_keyword!(union);
+    syn::custom_keyword!(unsigned);
+    syn::custom_keyword!(void);
 }
 
 syn::custom_punctuation!(LeftArrow, <);
@@ -66,7 +65,7 @@ impl Parse for Declaration {
                         let size = parse_bracketed(input)?;
                         Ok(Declaration::FixedOpaque { name, size })
                     } else {
-                        let max = parse_arrowed(input)?;
+                        let max = parse_arrowed_option(input)?.unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
                         Ok(Declaration::VariableOpaque { name, max })
                     }
                 }))
@@ -79,7 +78,7 @@ impl Parse for Declaration {
                 } else if input.peek3(LeftArrow) {
                     let elt_ty = input.parse()?;
                     let name = input.parse()?;
-                    let max = parse_arrowed(input)?;
+                    let max = parse_arrowed_option(input)?.unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
                     Ok(Declaration::VariableArray { name, elt_ty, max })
                 } else {
                     let ty = input.parse()?;
@@ -96,11 +95,23 @@ fn parse_bracketed<T: Parse>(input: ParseStream) -> Result<T> {
     contents.parse()
 }
 
+#[allow(unused)]
 fn parse_arrowed<T: Parse>(input: ParseStream) -> Result<T> {
     let _ = input.parse::<LeftArrow>()?;
     let value = input.parse()?;
     let _ = input.parse::<RightArrow>()?;
     Ok(value)
+}
+
+fn parse_arrowed_option<T: Parse>(input: ParseStream) -> Result<Option<T>> {
+    let _ = input.parse::<LeftArrow>()?;
+    if input.parse::<RightArrow>().is_ok() {
+        Ok(None)
+    } else {
+        let value = input.parse()?;
+        let _ = input.parse::<RightArrow>()?;
+        Ok(Some(value))
+    }
 }
 
 impl Parse for TypeSpec {
@@ -120,20 +131,6 @@ impl Parse for TypeSpec {
             .or_else(|_| input.parse().map(TypeSpec::Ident))
     }
 }
-/*
-pub struct UnionBody {
-    pub discriminant_decl: Declaration,
-    pub case_specs: Vec<CaseSpec>, // must be non-empty
-    pub default_decl: Option<Declaration>,
-}
-
-union-body:
-         "switch" "(" declaration ")" "{"
-            case-spec
-            case-spec *
-            [ "default" ":" declaration ";" ]
-         "}"
-*/
 
 impl Parse for UnionBody {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -143,17 +140,17 @@ impl Parse for UnionBody {
         let discriminant_decl = decl.parse()?;
 
         let mut case_specs = vec![];
-        let cases;
-        let _ = braced!(cases in input);
-        while cases.peek(kw::case) {
-            let case_spec = cases.parse()?;
+        let clauses;
+        let _ = braced!(clauses in input);
+        while clauses.peek(kw::case) {
+            let case_spec = clauses.parse()?;
             case_specs.push(case_spec)
         }
 
-        let default_decl = if input.parse::<kw::default>().is_ok() {
-            input.parse::<Token![:]>()?;
-            let decl: Declaration = input.parse()?;
-            input.parse::<Token![;]>()?;
+        let default_decl = if clauses.parse::<kw::default>().is_ok() {
+            clauses.parse::<Token![:]>()?;
+            let decl: Declaration = clauses.parse()?;
+            clauses.parse::<Token![;]>()?;
             Ok::<_, Error>(Some(decl))
         } else {
             Ok(None)
@@ -167,16 +164,6 @@ impl Parse for UnionBody {
     }
 }
 
-/*
-pub struct CaseSpec {
-    pub cases: Vec<Value>, // must be non-empty
-    pub decl: Declaration,
-}
- case-spec:
-        ( "case" value ":")
-        ( "case" value ":") *
-        declaration ";"
-*/
 impl Parse for CaseSpec {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let mut cases = vec![];
@@ -234,18 +221,6 @@ fn parse_aggregate_def(input: ParseStream<'_>) -> Result<TypeDef> {
     }
 }
 
-/*
-fn parse_aggregate_def(input: ParseStream<'_>) -> Result<TypeDef> {
-    input.parse::<Token![enum]>().and_then(|_|
-        Ok(TypeDef::Enum(input.parse()?, input.parse()?))).or_else(|_|
-        input.parse::<Token![struct]>().and_then(|_|
-            Ok(TypeDef::Struct(input.parse()?, input.parse()?)))).or_else(|_|
-        input.parse::<Token![union]>().and_then(|_|
-            Ok(TypeDef::Union(input.parse()?, input.parse()?)))).or_else(|_|
-        Err(input.error("Couldn't parse an aggregate type definition")))
-}
-*/
-
 impl Parse for EnumBody {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let content;
@@ -256,7 +231,8 @@ impl Parse for EnumBody {
     }
 }
 
-pub fn parse_one_with<'a, T, P>(
+#[allow(unused)]
+fn parse_one_with<'a, T, P>(
         input: ParseStream<'a>,
         parser: fn(ParseStream<'a>) -> Result<T>,
 ) -> Result<syn::punctuated::Punctuated<T, P>>
