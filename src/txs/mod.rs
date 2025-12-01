@@ -1,4 +1,4 @@
-//! CXS implementation of XDR serialization
+//! TXS (_Traditional XDR serialization_) implementation of XDR serialization
 
 mod utils;
 pub use utils::*;

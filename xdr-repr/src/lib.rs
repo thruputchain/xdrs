@@ -35,3 +35,9 @@ pub use result::*;
 // Re-export XDR derive-macro
 #[cfg(feature = "derive")]
 pub use xdr_derive::XDR;
+
+#[cfg(feature = "parse")]
+pub mod parse;
+
+#[cfg(feature = "parse")]
+extern crate std;
