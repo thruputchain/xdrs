@@ -259,8 +259,23 @@ impl Format for TypeSpec {
             TypeSpec::Int => {
                 f.write_str("int");
             }
+            TypeSpec::Hyper => {
+                f.write_str("hyper");
+            }
             TypeSpec::Unsigned => {
                 f.write_str("unsigned int");
+            }
+            TypeSpec::UnsignedHyper => {
+                f.write_str("unsigned hyper");
+            }
+            TypeSpec::Float => {
+                f.write_str("float");
+            }
+            TypeSpec::Double => {
+                f.write_str("double");
+            }
+            TypeSpec::Quadruple => {
+                f.write_str("quadruple");
             }
             TypeSpec::Bool => {
                 f.write_str("bool");
