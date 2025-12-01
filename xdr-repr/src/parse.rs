@@ -65,7 +65,8 @@ impl Parse for Declaration {
                         let size = parse_bracketed(input)?;
                         Ok(Declaration::FixedOpaque { name, size })
                     } else {
-                        let max = parse_arrowed_option(input)?.unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
+                        let max = parse_arrowed_option(input)?
+                            .unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
                         Ok(Declaration::VariableOpaque { name, max })
                     }
                 }))
@@ -78,7 +79,8 @@ impl Parse for Declaration {
                 } else if input.peek3(LeftArrow) {
                     let elt_ty = input.parse()?;
                     let name = input.parse()?;
-                    let max = parse_arrowed_option(input)?.unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
+                    let max = parse_arrowed_option(input)?
+                        .unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
                     Ok(Declaration::VariableArray { name, elt_ty, max })
                 } else {
                     let ty = input.parse()?;
@@ -86,31 +88,6 @@ impl Parse for Declaration {
                     Ok(Declaration::Named { ty, name })
                 }
             })
-    }
-}
-
-fn parse_bracketed<T: Parse>(input: ParseStream) -> Result<T> {
-    let contents;
-    let _ = syn::bracketed! { contents in input };
-    contents.parse()
-}
-
-#[allow(unused)]
-fn parse_arrowed<T: Parse>(input: ParseStream) -> Result<T> {
-    let _ = input.parse::<LeftArrow>()?;
-    let value = input.parse()?;
-    let _ = input.parse::<RightArrow>()?;
-    Ok(value)
-}
-
-fn parse_arrowed_option<T: Parse>(input: ParseStream) -> Result<Option<T>> {
-    let _ = input.parse::<LeftArrow>()?;
-    if input.parse::<RightArrow>().is_ok() {
-        Ok(None)
-    } else {
-        let value = input.parse()?;
-        let _ = input.parse::<RightArrow>()?;
-        Ok(Some(value))
     }
 }
 
@@ -130,6 +107,70 @@ impl Parse for TypeSpec {
             .or_else(|_| input.parse::<Token![union]>().and_then(|_| input.parse().map(TypeSpec::Union)))
             .or_else(|_| input.parse().map(TypeSpec::Ident))
     }
+}
+
+impl Parse for ConstDef {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let _ = input.parse::<Token![const]>()?;
+        let ident = input.parse()?;
+        let _ = input.parse::<Token![=]>()?;
+        let constant = input.parse()?;
+        let _ = input.parse::<Token![;]>()?;
+
+        Ok(ConstDef { ident, constant })
+    }
+}
+
+impl Parse for TypeDef {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let d = if input.parse::<kw::typedef>().is_ok() {
+            input.parse().map(TypeDef::Def)?
+        } else {
+            parse_aggregate_def(input)?
+        };
+
+        input.parse::<Token![;]>()?;
+        Ok(d)
+    }
+}
+
+fn parse_aggregate_def(input: ParseStream<'_>) -> Result<TypeDef> {
+    if input.parse::<Token![enum]>().is_ok() {
+        Ok(TypeDef::Enum(input.parse()?, input.parse()?))
+    } else if input.parse::<Token![struct]>().is_ok() {
+        Ok(TypeDef::Struct(input.parse()?, input.parse()?))
+    } else if input.parse::<Token![union]>().is_ok() {
+        Ok(TypeDef::Union(input.parse()?, input.parse()?))
+    } else {
+        Err(input.error("Couldn't parse an aggregate type definition"))
+    }
+}
+
+impl Parse for StructBody {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let content;
+        let _ = syn::braced!(content in input);
+        let fields: syn::punctuated::Punctuated<_, _> =
+            content.parse_terminated(Declaration::parse, Token![;])?;
+        Ok(StructBody(fields.into_iter().collect()))
+    }
+}
+
+impl Parse for EnumBody {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let content;
+        let _ = syn::braced!(content in input);
+        let variants: syn::punctuated::Punctuated<_, _> =
+            content.parse_terminated(parse_enum_variant, Token![,])?;
+        Ok(EnumBody(variants.into_iter().collect()))
+    }
+}
+
+fn parse_enum_variant(input: ParseStream<'_>) -> Result<(Ident, Value)> {
+    let ident = input.parse()?;
+    let _ = input.parse::<Token![=]>()?;
+    let value = input.parse()?;
+    Ok((ident, value))
 }
 
 impl Parse for UnionBody {
@@ -174,7 +215,8 @@ impl Parse for CaseSpec {
             cases.push(value);
         }
         if cases.is_empty() {
-            return Err(input.error("found illegal union case-spec with zero cases"));
+            return Err(input.error(
+                    "found illegal union case-spec with zero cases"));
         }
 
         let decl = input.parse()?;
@@ -184,50 +226,58 @@ impl Parse for CaseSpec {
     }
 }
 
-impl Parse for ConstDef {
+impl Parse for Value {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let _ = input.parse::<Token![const]>()?;
-        let ident = input.parse()?;
-        let _ = input.parse::<Token![=]>()?;
-        let constant = input.parse()?;
-        let _ = input.parse::<Token![;]>()?;
-
-        Ok(ConstDef { ident, constant })
+        input.parse().map(Value::Const)
+            .or_else(|_| input.parse().map(Value::Ident))
     }
 }
 
-impl Parse for TypeDef {
+impl Parse for Ident {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let d = if input.parse::<kw::typedef>().is_ok() {
-            input.parse().map(TypeDef::Def)?
-        } else {
-            parse_aggregate_def(input)?
-        };
+        let ident: syn::Ident = input.parse()?;
+        let ident = ident.to_string();
 
-        input.parse::<Token![;]>()?;
-        Ok(d)
+        if is_keyword(&ident) {
+            return Err(input.error(format!("Found keyword '{ident}' when \
+                        expecting identifier")));
+        }
+
+        Ok(Ident(ident))
     }
 }
 
-fn parse_aggregate_def(input: ParseStream<'_>) -> Result<TypeDef> {
-    if input.parse::<Token![enum]>().is_ok() {
-        Ok(TypeDef::Enum(input.parse()?, input.parse()?))
-    } else if input.parse::<Token![struct]>().is_ok() {
-        Ok(TypeDef::Struct(input.parse()?, input.parse()?))
-    } else if input.parse::<Token![union]>().is_ok() {
-        Ok(TypeDef::Union(input.parse()?, input.parse()?))
+impl Parse for Constant {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        let lit: syn::LitInt = input.parse()?;
+        lit.base10_parse::<u32>().map(Constant::Unsigned)
+            .or_else(|_| lit.base10_parse::<i32>().map(Constant::Signed))
+    }
+}
+
+fn parse_bracketed<T: Parse>(input: ParseStream) -> Result<T> {
+    let contents;
+    let _ = syn::bracketed! { contents in input };
+    contents.parse()
+}
+
+#[allow(unused)]
+fn parse_arrowed<T: Parse>(input: ParseStream) -> Result<T> {
+    let _ = input.parse::<LeftArrow>()?;
+    let value = input.parse()?;
+    let _ = input.parse::<RightArrow>()?;
+
+    Ok(value)
+}
+
+fn parse_arrowed_option<T: Parse>(input: ParseStream) -> Result<Option<T>> {
+    let _ = input.parse::<LeftArrow>()?;
+    if input.parse::<RightArrow>().is_ok() {
+        Ok(None)
     } else {
-        Err(input.error("Couldn't parse an aggregate type definition"))
-    }
-}
-
-impl Parse for EnumBody {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let content;
-        let _ = syn::braced!(content in input);
-        let variants: syn::punctuated::Punctuated<_, _> =
-            content.parse_terminated(parse_enum_variant, Token![,])?;
-        Ok(EnumBody(variants.into_iter().collect()))
+        let value = input.parse()?;
+        let _ = input.parse::<RightArrow>()?;
+        Ok(Some(value))
     }
 }
 
@@ -245,49 +295,4 @@ where
     punctuated.push_value(value);
 
     Ok(punctuated)
-}
-
-fn parse_enum_variant(input: ParseStream<'_>) -> Result<(Ident, Value)> {
-    let ident = input.parse()?;
-    let _ = input.parse::<Token![=]>()?;
-    let value = input.parse()?;
-    Ok((ident, value))
-}
-
-impl Parse for StructBody {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let content;
-        let _ = syn::braced!(content in input);
-        let fields: syn::punctuated::Punctuated<_, _> =
-            content.parse_terminated(Declaration::parse, Token![;])?;
-        Ok(StructBody(fields.into_iter().collect()))
-    }
-}
-
-impl Parse for Value {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        input.parse().map(Value::Const)
-            .or_else(|_| input.parse().map(Value::Ident))
-    }
-}
-
-impl Parse for Ident {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let ident: syn::Ident = input.parse()?;
-        let ident = ident.to_string();
-
-        if is_keyword(&ident) {
-            return Err(input.error(format!("Found keyword '{ident}' when expecting identifier")));
-        }
-
-        Ok(Ident(ident))
-    }
-}
-
-impl Parse for Constant {
-    fn parse(input: ParseStream<'_>) -> Result<Self> {
-        let lit: syn::LitInt = input.parse()?;
-        lit.base10_parse::<u32>().map(Constant::Unsigned)
-            .or_else(|_| lit.base10_parse::<i32>().map(Constant::Signed))
-    }
 }
