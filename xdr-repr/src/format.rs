@@ -205,6 +205,14 @@ impl Format for Declaration {
                 size.fmt(f);
                 f.write_str("]");
             }
+            Declaration::FixedArray { name, elt_ty, len } => {
+                elt_ty.fmt(f);
+                f.write_str(" ");
+                name.fmt(f);
+                f.write_str("[");
+                len.fmt(f);
+                f.write_str("]");
+            }
             Declaration::VariableOpaque { name, max } => {
                 f.write_str("opaque ");
                 name.fmt(f);
@@ -214,13 +222,14 @@ impl Format for Declaration {
                 }
                 f.write_str(">");
             }
-            Declaration::FixedArray { name, elt_ty, len } => {
-                elt_ty.fmt(f);
-                f.write_str(" ");
+            Declaration::VariableString { name, max } => {
+                f.write_str("string ");
                 name.fmt(f);
-                f.write_str("[");
-                len.fmt(f);
-                f.write_str("]");
+                f.write_str("<");
+                if max != &Value::Const(Constant::Unsigned(u32::MAX)) {
+                    max.fmt(f);
+                }
+                f.write_str(">");
             }
             Declaration::VariableArray { name, elt_ty, max } => {
                 elt_ty.fmt(f);

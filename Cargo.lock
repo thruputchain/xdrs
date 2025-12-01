@@ -638,6 +638,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+ "xdr-repr",
 ]
 
 [[package]]
@@ -645,9 +646,9 @@ name = "xdr-repr"
 version = "0.1.0"
 dependencies = [
  "pretty_assertions",
+ "proc-macro2",
  "quote",
  "syn",
- "xdr-derive",
  "xdr_common",
 ]
 

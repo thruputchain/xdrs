@@ -70,6 +70,13 @@ impl Parse for Declaration {
                         Ok(Declaration::VariableOpaque { name, max })
                     }
                 }))
+            .or_else(|_| input.parse::<kw::string>()
+                .and_then(|_| {
+                    let name = input.parse()?;
+                    let max = parse_arrowed_option(input)?
+                        .unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
+                    Ok(Declaration::VariableString { name, max })
+                }))
             .or_else(|_| {
                 if input.peek3(token::Bracket) {
                     let elt_ty = input.parse()?;

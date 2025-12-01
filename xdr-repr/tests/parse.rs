@@ -2,6 +2,17 @@ use xdr_repr::xdr::*;
 use quote::quote;
 
 #[test]
+fn parse_typedef() {
+    let parsed: TypeDef = syn::parse_quote! { typedef string ServerAddress<>; };
+    let expected = TypeDef::Def(Declaration::VariableString {
+        name: Ident("ServerAddress".to_string()),
+        max: Value::Const(Constant::Unsigned(u32::MAX)),
+    });
+
+    assert_eq!(parsed, expected);
+}
+
+#[test]
 fn parse_type_spec() {
     let parsed: TypeSpec = syn::parse_quote! { int };
     let expected = TypeSpec::Int;

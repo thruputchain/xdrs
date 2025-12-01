@@ -9,9 +9,10 @@ doctest = false
 
 [dependencies]
 darling = "0.20"
-proc-macro2 = "1.0"
+proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true
+xdr-repr.workspace = true
 
 [lints.rust]
 unsafe_code = "forbid"

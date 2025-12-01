@@ -45,8 +45,9 @@ fn decl_ident(decl: Declaration) -> Ident {
     match decl {
         Declaration::Named { name: ident, .. } => ident,
         Declaration::FixedOpaque { name: ident, .. } => ident,
-        Declaration::VariableOpaque { name: ident, .. } => ident,
         Declaration::FixedArray { name: ident, .. } => ident,
+        Declaration::VariableOpaque { name: ident, .. } => ident,
+        Declaration::VariableString { name: ident, .. } => ident,
         Declaration::VariableArray { name: ident, .. } => ident,
         Declaration::Optional { name: ident, .. } => ident,
         Declaration::Void => Ident("void".to_string()),

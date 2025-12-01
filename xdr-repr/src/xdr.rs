@@ -82,16 +82,20 @@ pub enum Declaration {
         elt_ty: TypeSpec,
         len: Value,
     },
+    FixedOpaque {
+        name: Ident,
+        size: Value,
+    },
     VariableArray {
         name: Ident,
         elt_ty: TypeSpec,
         max: Value,
     },
-    FixedOpaque {
-        name: Ident,
-        size: Value,
-    },
     VariableOpaque {
+        name: Ident,
+        max: Value,
+    },
+    VariableString {
         name: Ident,
         max: Value,
     },
@@ -112,11 +116,14 @@ impl Declaration {
             Declaration::FixedOpaque { name: _, size } => {
                 format!("{{ \"type\": \"fixed opaque\", \"len\": {} }}", size)
             },
-            Declaration::VariableOpaque { name: _, max } => {
-                format!("{{ \"type\": \"variable opaque\", \"max\": {} }}", max)
-            },
             Declaration::FixedArray { name: _, elt_ty, len } => {
                 format!("{{ \"type\": \"fixed array\", \"elt_ty\": {}, \"len\": {} }}", elt_ty.get_type_json(), len)
+            },
+            Declaration::VariableString { name: _, max } => {
+                format!("{{ \"type\": \"variable string\", \"max\": {} }}", max)
+            },
+            Declaration::VariableOpaque { name: _, max } => {
+                format!("{{ \"type\": \"variable opaque\", \"max\": {} }}", max)
             },
             Declaration::VariableArray { name: _, elt_ty, max } => {
                 format!("{{ \"type\": \"variable array\", \"elt_ty\": {}, \"max\": {} }}", elt_ty.get_type_json(), max)
