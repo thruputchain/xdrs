@@ -36,23 +36,20 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn xdr(input: TokenStream) -> TokenStream {
     use xdr_repr::*;
-    use quote::{quote, ToTokens};
+    use quote::ToTokens;
+    // use xdr_repr::to_tokens::*;
 
     let spec: Specification = match syn::parse(input) {
         Ok(spec) => spec,
         Err(e) => return syn::Error::into_compile_error(e).into()
     };
-    let spec_string = format!("{:?}", spec);
+    spec.into_token_stream().into()
 
+        /*
+    let spec_string = format!("{:?}", spec);
     let output: syn::Expr = syn::parse_str(&spec_string).unwrap();
     // let output = quote! { #spec_string };
 
-    /*
-    syn::parse::<Specification>(input)
-        .map(|_| output)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
-    */
-
     output.into_token_stream().into()
+        */
 }

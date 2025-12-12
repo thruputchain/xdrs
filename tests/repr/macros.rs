@@ -146,5 +146,5 @@ fn use_macro() {
         // } // namespace hogd
         );
 
-    println!("SPEC:\n{:?}", spec);
+    println!("SPEC:\n{}", spec);
 }

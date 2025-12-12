@@ -3,7 +3,13 @@ use alloc::vec::Vec;
 use alloc::vec;
 use alloc::string::*;
 
+use super::keywords::is_keyword;
+
 pub fn ident(s: &str) -> Ident {
+    if is_keyword(s) {
+        panic!("Can't construct identifier from keyword string \"{}\"", s);
+    }
+
     Ident(s.to_string())
 }
 
@@ -47,25 +53,62 @@ impl From<Ident> for Value {
     }
 }
 
-pub fn name_ref(s: &str) -> Value {
-    Value::Ident(ident(s))
+pub fn name_ref(name: &str) -> Value {
+    Value::Ident(ident(name))
 }
 
 pub fn declare_void() -> Declaration {
     Declaration::Void
 }
 
-pub fn declare_type(s: &str, type_spec: TypeSpec) -> Declaration {
+pub fn declare_type(name: &str, type_spec: TypeSpec) -> Declaration {
     Declaration::Named {
-        name: ident(s),
+        name: ident(name),
         ty: type_spec,
     }
 }
 
-pub fn declare_fixed_opaque(s: &str, size: u32) -> Declaration {
+pub fn declare_variable_array(name: &str, elt_ty: TypeSpec, max: Value) -> Declaration {
+    Declaration::VariableArray {
+        name: ident(name),
+        elt_ty,
+        max,
+    }
+}
+
+pub fn declare_variable_opaque(name: &str, max: Value) -> Declaration {
+    Declaration::VariableOpaque {
+        name: ident(name),
+        max,
+    }
+}
+
+pub fn declare_variable_string(name: &str, max: Value) -> Declaration {
+    Declaration::VariableString {
+        name: ident(name),
+        max,
+    }
+}
+
+pub fn declare_fixed_array(name: &str, elt_ty: TypeSpec, len: Value) -> Declaration {
+    Declaration::FixedArray {
+        name: ident(name),
+        elt_ty,
+        len,
+    }
+}
+
+pub fn declare_fixed_opaque(name: &str, size: u32) -> Declaration {
     Declaration::FixedOpaque {
-        name: ident(s),
+        name: ident(name),
         size: Value::Const(size.into()),
+    }
+}
+
+pub fn declare_optional(name: &str, opt_ty: TypeSpec) -> Declaration {
+    Declaration::Optional {
+        name: ident(name),
+        opt_ty,
     }
 }
 
@@ -77,16 +120,20 @@ pub fn declare_int(s: &str) -> Declaration {
     declare_type(s, TypeSpec::Int)
 }
 
+pub const XDR_I32: TypeSpec = TypeSpec::Int;
+pub const XDR_U32: TypeSpec = TypeSpec::Unsigned;
+pub const XDR_I64: TypeSpec = TypeSpec::Hyper;
+pub const XDR_U64: TypeSpec = TypeSpec::UnsignedHyper;
+pub const XDR_FLOAT: TypeSpec = TypeSpec::Float;
+pub const XDR_DOUBLE: TypeSpec = TypeSpec::Double;
+pub const XDR_QUAD: TypeSpec = TypeSpec::Quadruple;
+pub const XDR_BOOL: TypeSpec = TypeSpec::Bool;
+
 pub fn named_type(name: &str) -> TypeSpec {
     TypeSpec::Ident(ident(name))
 }
 
 pub fn struct_type(fields: Vec<Declaration>) -> TypeSpec {
-    assert!(
-        !fields.is_empty(),
-        "XDR struct must contain at least one field"
-    );
-
     TypeSpec::Struct(StructBody(fields))
 }
 
@@ -94,12 +141,11 @@ pub fn enum_type(variants: Vec<(Ident, Value)>) -> TypeSpec {
     TypeSpec::Enum(EnumBody(variants))
 }
 
-pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
-    assert!(
-        !fields.is_empty(),
-        "XDR struct must contain at least one field"
-    );
+pub fn def(decl: Declaration) -> TypeDef {
+    TypeDef::Def(decl)
+}
 
+pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
     TypeDef::Struct(ident(name), StructBody(fields))
 }
 
@@ -136,11 +182,19 @@ pub fn single_case_spec(case: &str, decl: Declaration) -> CaseSpec {
     }
 }
 
+pub fn case_spec(case: Value, decl: Declaration) -> CaseSpec {
+    CaseSpec { cases: vec![case], decl }
+}
+
 pub fn def_const(name: &str, constant: Constant) -> Definition {
     Definition::Const(ConstDef {
         ident: ident(name),
         constant,
     })
+}
+
+pub fn def_type(type_def: TypeDef) -> Definition {
+    Definition::Type(type_def)
 }
 
 pub fn specification(definitions: Vec<Definition>) -> Specification {

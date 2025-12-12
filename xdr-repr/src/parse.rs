@@ -1,20 +1,11 @@
 use super::xdr::*;
+use super::keywords::is_keyword;
 use syn::parse::*;
 use syn::{Token, token, braced, parenthesized};
 use syn::punctuated::Punctuated;
 use crate::alloc::string::ToString;
 use alloc::{vec, vec::Vec};
 use alloc::format;
-
-const KEYWORDS: [&str; 18] = [
-   "bool", "case", "const", "default", "double", "quadruple", "enum",
-   "float", "hyper", "int", "opaque", "string", "struct", "switch",
-   "typedef", "union", "unsigned", "void"
-];
-
-fn is_keyword<S: AsRef<str>>(s: S) -> bool {
-    KEYWORDS.into_iter().any(|k| s.as_ref() == k)
-}
 
 mod kw {
     syn::custom_keyword!(bool);

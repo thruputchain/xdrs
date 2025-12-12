@@ -12,6 +12,7 @@
 extern crate alloc;
 
 mod display_rpc;
+mod keywords;
 
 pub mod test;
 
@@ -21,6 +22,9 @@ pub mod rpc;
 pub mod ty;
 pub mod result;
 pub mod xdr;
+
+#[cfg(feature = "parse")]
+pub mod to_tokens;
 
 #[cfg(feature = "parse")]
 pub mod parse;
