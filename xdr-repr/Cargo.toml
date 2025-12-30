@@ -36,3 +36,7 @@ required-features = ["ns"]
 [[test]]
 name = "parse"
 required-features = ["parse"]
+
+[[bin]]
+name = "parse"
+path = "bin/parse.rs"
