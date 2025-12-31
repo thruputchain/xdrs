@@ -18,7 +18,7 @@ proc-macro2 = { workspace = true, optional = true }
 unsafe_code = "forbid"
 
 [features]
-default = ["parse"]
+default = ["parse", "ns"]
 # derive = ["dep:xdr-derive"] # derive XDR trait
 xdr_common = ["dep:xdr_common"] # types for variable-length arrays
 i128 = []
@@ -40,3 +40,4 @@ required-features = ["parse"]
 [[bin]]
 name = "parse"
 path = "bin/parse.rs"
+required-features = ["parse", "ns"]

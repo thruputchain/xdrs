@@ -23,10 +23,28 @@ mod kw {
     syn::custom_keyword!(union);
     syn::custom_keyword!(unsigned);
     syn::custom_keyword!(void);
+    syn::custom_keyword!(namespace);
 }
 
 syn::custom_punctuation!(LeftArrow, <);
 syn::custom_punctuation!(RightArrow, >);
+
+#[cfg(feature = "ns")]
+impl Parse for Namespace {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        if input.peek(kw::namespace) {
+            let _ = input.parse::<kw::namespace>()?;
+            let name: Ident = input.parse()?;
+            let name = Some(name.0);
+            let spec = parse_braced(input)?;
+            Ok(Namespace { name, spec })
+        } else {
+            let spec = input.parse()?;
+            let name = None;
+            Ok(Namespace { name, spec })
+        }
+    }
+}
 
 impl Parse for Specification {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -256,6 +274,12 @@ impl Parse for Constant {
 fn parse_bracketed<T: Parse>(input: ParseStream) -> Result<T> {
     let contents;
     let _ = syn::bracketed! { contents in input };
+    contents.parse()
+}
+
+fn parse_braced<T: Parse>(input: ParseStream) -> Result<T> {
+    let contents;
+    let _ = syn::braced! { contents in input };
     contents.parse()
 }
 

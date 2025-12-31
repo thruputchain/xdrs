@@ -21,7 +21,7 @@ fn main() {
 
     let tokens = tokens_from_file(path.as_str()).unwrap();
 
-    let parsed: Specification = syn::parse2(tokens).unwrap();
+    let parsed: Namespace = syn::parse2(tokens).unwrap();
 
     println!("{}", parsed);
 }

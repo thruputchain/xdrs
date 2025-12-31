@@ -100,11 +100,15 @@ pub(crate) fn format<T: Format>(x: &T) -> String {
 #[cfg(feature = "ns")]
 impl Format for Namespace {
     fn fmt(&self, f: &mut Formatter) {
-        f.write_str("namespace ");
-        f.write_str(self.name.as_str());
-        f.write_str("\n{\n\n");
-        self.spec.fmt(f);
-        f.write_str("}\n");
+        if let Some(name) = &self.name {
+            f.write_str("namespace ");
+            f.write_str(name.as_str());
+            f.write_str(" {\n\n");
+            self.spec.fmt(f);
+            f.write_str("}\n");
+        } else {
+            self.spec.fmt(f);
+        }
     }
 }
 

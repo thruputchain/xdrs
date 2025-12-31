@@ -204,7 +204,7 @@ pub fn specification(definitions: Vec<Definition>) -> Specification {
 #[cfg(feature = "ns")]
 pub fn namespace(name: &str, spec: Specification) -> Namespace {
     Namespace {
-        name: name.to_string(),
+        name: Some(name.to_string()),
         spec,
     }
 }

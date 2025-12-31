@@ -1,4 +1,4 @@
-// namespace hogd {
+namespace hogd {
 
 struct uint128_xdr {
   unsigned hyper highbits;
@@ -136,4 +136,4 @@ typedef opaque UPID[8];
 // Protocol describes a specific protocol and version.
 typedef string Protocol<>;
 
-// } // namespace hogd
+} // namespace hogd

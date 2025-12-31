@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 #[cfg(feature = "ns")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Namespace {
-    pub name: String,
+    pub name: Option<String>,
     pub spec: Specification,
 }
 
