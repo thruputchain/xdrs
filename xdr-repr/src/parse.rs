@@ -75,7 +75,7 @@ impl Parse for Declaration {
                         Ok(Declaration::FixedOpaque { name, size })
                     } else {
                         let max = parse_arrowed_option(input)?
-                            .unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
+                            .unwrap_or(Value::Const(Constant(u32::MAX as _)));
                         Ok(Declaration::VariableOpaque { name, max })
                     }
                 }))
@@ -83,7 +83,7 @@ impl Parse for Declaration {
                 .and_then(|_| {
                     let name = input.parse()?;
                     let max = parse_arrowed_option(input)?
-                        .unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
+                        .unwrap_or(Value::Const(Constant(u32::MAX as _)));
                     Ok(Declaration::VariableString { name, max })
                 }))
             .or_else(|_| {
@@ -96,7 +96,7 @@ impl Parse for Declaration {
                     let elt_ty = input.parse()?;
                     let name = input.parse()?;
                     let max = parse_arrowed_option(input)?
-                        .unwrap_or(Value::Const(Constant::Unsigned(u32::MAX)));
+                        .unwrap_or(Value::Const(Constant(u32::MAX as _)));
                     Ok(Declaration::VariableArray { name, elt_ty, max })
                 } else {
                     let ty = input.parse()?;
@@ -266,8 +266,7 @@ impl Parse for Ident {
 impl Parse for Constant {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let lit: syn::LitInt = input.parse()?;
-        lit.base10_parse::<u32>().map(Constant::Unsigned)
-            .or_else(|_| lit.base10_parse::<i32>().map(Constant::Signed))
+        lit.base10_parse().map(Constant)
     }
 }
 

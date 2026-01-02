@@ -1,8 +1,7 @@
 // Display impls for XDR-spec types
 
 use super::xdr::*;
-use alloc::string::String;
-use alloc::format;
+use alloc::string::{String, ToString};
 
 const _: () = {
     use core::fmt;
@@ -178,10 +177,7 @@ impl Format for Ident {
 
 impl Format for Constant {
     fn fmt(&self, f: &mut Formatter) {
-        match self {
-            Self::Signed(n) => f.write_str(format!("{n}")),
-            Self::Unsigned(n) => f.write_str(format!("{n}")),
-        }
+        f.write_str(self.0.to_string());
     }
 }
 
@@ -221,7 +217,7 @@ impl Format for Declaration {
                 f.write_str("opaque ");
                 name.fmt(f);
                 f.write_str("<");
-                if max != &Value::Const(Constant::Unsigned(u32::MAX)) {
+                if max != &Value::Const(Constant(u32::MAX as _)) {
                     max.fmt(f);
                 }
                 f.write_str(">");
@@ -230,7 +226,7 @@ impl Format for Declaration {
                 f.write_str("string ");
                 name.fmt(f);
                 f.write_str("<");
-                if max != &Value::Const(Constant::Unsigned(u32::MAX)) {
+                if max != &Value::Const(Constant(u32::MAX as _)) {
                     max.fmt(f);
                 }
                 f.write_str(">");
@@ -240,7 +236,7 @@ impl Format for Declaration {
                 f.write_str(" ");
                 name.fmt(f);
                 f.write_str("<");
-                if max != &Value::Const(Constant::Unsigned(u32::MAX)) {
+                if max != &Value::Const(Constant(u32::MAX as _)) {
                     max.fmt(f);
                 }
                 f.write_str(">");

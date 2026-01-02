@@ -17,6 +17,7 @@ typedef unsigned hyper TimePoint;
 typedef unsigned int RuntimeMemoryOffset; // uint32_t
 typedef unsigned int RuntimeMemoryLength; // uint32_t
 
+// TODO(geoff): consider using a smaller type for GasAmount
 typedef unsigned hyper GasAmount; // uint64_t
 typedef unsigned hyper MethodID;  // uint64_t
 
@@ -84,13 +85,14 @@ case kStorageKeyTypeAddressMetadata:
   void;
 case kStorageKeyTypeReplayCache:
   void;
+  // TODO(geoff): add other key types
 };
 
 const kMaxLogMessageLen = 1024;   // #[rust(const=u32)]
 const kMaxReturnBufferLen = 1024; // #[rust(const=u32)]
 
-const kTotalHogSupply = 62500; // XXX 62'500'000'000; // #[rust(const=u64)]
-const kHogDivisibility = 10000000; // XXX 10'000'000;    // #[rust(const=u32)]
+const kTotalHogSupply = 62'500'000'000; // #[rust(const=u64)]
+const kHogDivisibility = 10'000'000;    // #[rust(const=u32)]
 // Each hog token is divisible into 10^7 units
 
 typedef unsigned hyper ReplayNonce;
@@ -114,6 +116,7 @@ typedef hyper BlockHeight;
 typedef unsigned int Weight; // uint32_t
 typedef unsigned hyper BitMap;
 
+// XXX(petar): BlockHash should be renamed to MerkleHash
 typedef SHA256Hash BlockHash;
 
 // An internal unique ID describing a block.

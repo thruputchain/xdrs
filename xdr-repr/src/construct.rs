@@ -15,30 +15,26 @@ pub fn ident(s: &str) -> Ident {
 
 impl From<u32> for Constant {
     fn from(n: u32) -> Self {
-        Self::Unsigned(n)
+        Self(n as _)
     }
 }
 
 impl From<i32> for Constant {
     fn from(n: i32) -> Self {
-        Self::Signed(n)
+        Self(n as _)
     }
 }
 
-pub fn unsigned_constant(n: u32) -> Constant {
-    Constant::Unsigned(n)
-}
-
-pub fn signed_constant(n: i32) -> Constant {
-    Constant::Signed(n)
+pub fn constant(n: i128) -> Constant {
+    Constant(n)
 }
 
 pub fn unsigned(n: u32) -> Value {
-    unsigned_constant(n).into()
+    constant(n as _).into()
 }
 
 pub fn signed(n: i32) -> Value {
-    signed_constant(n).into()
+    constant(n as _).into()
 }
 
 impl From<Constant> for Value {

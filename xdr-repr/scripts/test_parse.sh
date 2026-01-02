@@ -24,6 +24,10 @@ strip_comments() {
     sed 's|//.*||'
 }
 
+strip_int_separators() {
+    perl -pe $'s/(\\d)\'/\\1/g'
+}
+
 exec diff $quiet -w \
-    <(cat "$test_xdr" | strip_comments | strip_blanks) \
+    <(cat "$test_xdr" | strip_int_separators | strip_comments | strip_blanks) \
     <(parse_file "$test_xdr" | strip_blanks)

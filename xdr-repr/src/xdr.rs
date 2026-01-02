@@ -60,10 +60,7 @@ pub struct CaseSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Constant {
-    Unsigned(u32),
-    Signed(i32),
-}
+pub struct Constant(pub i128);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {

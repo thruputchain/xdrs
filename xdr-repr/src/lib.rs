@@ -22,6 +22,7 @@ pub mod rpc;
 pub mod ty;
 pub mod result;
 pub mod xdr;
+pub(crate) mod valid_u32;
 
 #[cfg(feature = "parse")]
 pub mod to_tokens;

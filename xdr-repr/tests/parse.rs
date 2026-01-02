@@ -6,7 +6,7 @@ fn parse_typedef() {
     let parsed: TypeDef = syn::parse_quote! { typedef string ServerAddress<>; };
     let expected = TypeDef::Def(Declaration::VariableString {
         name: Ident("ServerAddress".to_string()),
-        max: Value::Const(Constant::Unsigned(u32::MAX)),
+        max: Value::Const(Constant(u32::MAX as _)),
     });
 
     assert_eq!(parsed, expected);
@@ -40,7 +40,7 @@ fn parse_declaration_variable_opaque() {
     };
     let expected = Declaration::VariableOpaque {
         name: Ident("stuff".to_string()),
-        max: Value::Const(Constant::Unsigned(16))
+        max: Value::Const(Constant(16))
     };
 
     assert_eq!(parsed, expected);
@@ -101,7 +101,7 @@ fn parse_spec() {
                 case_specs: vec![
                     CaseSpec {
                         cases: vec![
-                            Value::Const(Constant::Unsigned(1)),
+                            Value::Const(Constant(1)),
                         ],
                         decl: Declaration::Named {
                             name: Ident("color".to_string()),
@@ -114,12 +114,12 @@ fn parse_spec() {
                     },
                     CaseSpec {
                         cases: vec![
-                            Value::Const(Constant::Unsigned(0)),
-                            Value::Const(Constant::Signed(-1)),
+                            Value::Const(Constant(0)),
+                            Value::Const(Constant(-1)),
                         ],
                         decl: Declaration::VariableOpaque {
                             name: Ident("malady".to_string()),
-                            max: Value::Const(Constant::Unsigned(u32::MAX)),
+                            max: Value::Const(Constant(u32::MAX as _)),
                         },
                     },
                 ],
@@ -130,17 +130,17 @@ fn parse_spec() {
         definitions: vec![
             Definition::Const(ConstDef {
                 ident: Ident("FOO".to_string()),
-                constant: Constant::Signed(-1),
+                constant: Constant(-1),
             }),
             Definition::Const(ConstDef {
                 ident: Ident("BAR".to_string()),
-                constant: Constant::Unsigned(234229),
+                constant: Constant(234229),
             }),
             Definition::Type(TypeDef::Enum(
                     Ident("Result".to_string()),
                     EnumBody(vec![
-                        (Ident("OK".to_string()), Value::Const(Constant::Unsigned(0))),
-                        (Ident("ERROR".to_string()), Value::Const(Constant::Unsigned(1))),
+                        (Ident("OK".to_string()), Value::Const(Constant(0))),
+                        (Ident("ERROR".to_string()), Value::Const(Constant(1))),
                     ]))),
             Definition::Type(TypeDef::Struct(
                     Ident("NotMuch".to_string()),
@@ -158,16 +158,16 @@ fn parse_spec() {
                         Declaration::FixedArray {
                             name: Ident("baz".to_string()),
                             elt_ty: TypeSpec::Int,
-                            len: Value::Const(Constant::Unsigned(3)),
+                            len: Value::Const(Constant(3)),
                         },
                         Declaration::VariableArray {
                             name: Ident("quux".to_string()),
                             elt_ty: TypeSpec::Int,
-                            max: Value::Const(Constant::Unsigned(4)),
+                            max: Value::Const(Constant(4)),
                         },
                         Declaration::FixedOpaque {
                             name: Ident("buf".to_string()),
-                            size: Value::Const(Constant::Unsigned(3)),
+                            size: Value::Const(Constant(3)),
                         },
                     ]))),
             Definition::Type(TypeDef::Def(Declaration::Named {

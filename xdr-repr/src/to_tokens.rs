@@ -137,19 +137,12 @@ impl ToTokens for CaseSpec {
     }
 }
 
-// pub enum Constant {
-//     Unsigned(u32),
-//     Signed(i32),
-// }
 impl ToTokens for Constant {
     fn to_tokens(&self, output: &mut TokenStream) {
-        output.extend(match self {
-            Constant::Unsigned(u) => quote! {
-                unsigned_constant(#u)
-            },
-            Constant::Signed(u) => quote! {
-                signed_constant(#u)
-            },
+        let n = self.0;
+
+        output.extend(quote! {
+            constant(#n)
         });
     }
 }
@@ -171,11 +164,8 @@ impl ToTokens for Ident {
 impl ToTokens for Value {
     fn to_tokens(&self, output: &mut TokenStream) {
         output.extend(match self {
-            Value::Const(Constant::Unsigned(u)) => quote! {
-                unsigned(#u)
-            },
-            Value::Const(Constant::Signed(i)) => quote! {
-                signed(#i)
+            Value::Const(Constant(n)) => quote! {
+                constant(#n)
             },
             Value::Ident(Ident(name)) => quote! {
                 name_ref(#name)
@@ -230,8 +220,8 @@ impl ToTokens for Declaration {
             },
             Declaration::FixedOpaque { name: Ident(name), size } =>
                 match size {
-                    Value::Const(Constant::Unsigned(u)) => quote! {
-                        declare_fixed_opaque(#name, #u)
+                    Value::Const(Constant(n)) => quote! {
+                        declare_fixed_opaque(#name, #n)
                     },
                     _ => quote! {
                         Declaration::FixedOpaque { name: ident(#name), size: #size }

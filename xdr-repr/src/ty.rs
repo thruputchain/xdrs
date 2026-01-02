@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::xdr::*;
+use crate::valid_u32::*;
 use alloc::string::*;
 
 pub trait HasSpecification {
@@ -134,9 +135,10 @@ const _: () = {
 
 impl<const N: usize> Declare for [u8; N] {
     fn declare(name: Ident) -> Declaration {
+        let _ = ValidU32::<N>::OK;
+
         Declaration::FixedOpaque {
             name,
-            // TODO: use compile-time asserts to check N fits in u32
             size: Value::Const((N as u32).into()),
         }
     }
@@ -144,10 +146,11 @@ impl<const N: usize> Declare for [u8; N] {
 
 impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
     fn declare(name: Ident) -> Declaration {
+        let _ = ValidU32::<N>::OK;
+
         Declaration::FixedArray {
             name,
             elt_ty: T::type_spec(),
-            // TODO: use compile-time asserts to check N fits in u32
             len: Value::Const((N as u32).into()),
         }
     }
@@ -157,7 +160,7 @@ impl Declare for &[u8] {
     fn declare(name: Ident) -> Declaration {
         Declaration::VariableOpaque {
             name,
-            max: Value::Const(Constant::Unsigned(u32::MAX)),
+            max: Value::Const(Constant(u32::MAX as _)),
         }
     }
 }
@@ -167,7 +170,7 @@ impl<T: HasTypeSpec> Declare for &[T] {
         Declaration::VariableArray {
             name,
             elt_ty: T::type_spec(),
-            max: Value::Const(Constant::Unsigned(u32::MAX)),
+            max: Value::Const(Constant(u32::MAX as _)),
         }
     }
 }
@@ -184,8 +187,7 @@ const _: () = {
             Declaration::VariableArray {
                 name,
                 elt_ty: T::type_spec(),
-                // TODO: use compile-time asserts to check MAX fits in u32
-                max: Value::Const(Constant::Unsigned(MAX)),
+                max: Value::Const(Constant(MAX as _)),
             }
         }
     }
@@ -194,7 +196,7 @@ const _: () = {
         fn declare(name: Ident) -> Declaration {
             Declaration::VariableOpaque {
                 name,
-                max: Value::Const(Constant::Unsigned(MAX)),
+                max: Value::Const(Constant(MAX as _)),
             }
         }
     }
@@ -207,7 +209,7 @@ const _: () = {
         fn type_def() -> TypeDef {
             TypeDef::Def(Declaration::VariableOpaque {
                 name: Ident("vec".to_string()),
-                max: Value::Const(Constant::Unsigned(u32::MAX)),
+                max: Value::Const(Constant(u32::MAX as _)),
             })
         }
     }

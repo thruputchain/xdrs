@@ -62,7 +62,7 @@ fn type_ref() {
     assert_eq!(Foo::type_def(), <&Foo>::type_def());
 }
 
-const FOURTEEN: Constant = Constant::Signed(-14);
+const FOURTEEN: Constant = Constant(-14);
 
 check_format! { specification_format
     specification(vec![Foo::def(), Garbage::def(), def_const("SPECIAL", FOURTEEN)])
