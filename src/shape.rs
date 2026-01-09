@@ -102,6 +102,7 @@ mod test {
         use super::*;
         use heapless::String;
         use thiserror::Error;
+        use core::fmt::Write;
 
         #[derive(Debug, Error)]
         pub enum PrintError {
@@ -129,7 +130,10 @@ mod test {
             type Return = Story;
 
             fn visit_struct(&mut self, name: &str, n_fields: u32) -> PrintFlow<PrintStruct> {
-                no_ink()
+                match writeln!(&mut self.story, "{name} {{ ... }}") {
+                    Ok(_) => continue_with(PrintStruct { n_fields }),
+                    Err(_) => no_ink(),
+                }
             }
 
             fn into_return(self) -> Story {
@@ -143,7 +147,7 @@ mod test {
 
         impl StructVisitor<PrintError> for PrintStruct {
             fn visit_field<T>(&mut self, name: &str, value: T) -> PrintFlow {
-                no_ink()
+                please_continue()
             }
         }
 
