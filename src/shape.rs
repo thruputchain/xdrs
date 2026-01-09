@@ -11,32 +11,55 @@ pub trait Visitor {
     type Error;
 
     /// A type that will visit the parts of a struct
-    type VisitStruct<'s>: StructVisitor<Self::Error>
+    type VisitStruct<'v>: VisitorStruct<Self::Error>
     where
-        Self: 's;
+        Self: 'v;
+
+    type VisitArray<'v, T>: VisitorArray<T, Self::Error>
+    where
+        Self: 'v;
 
     /// The final result of a visit
     type Return;
 
-    /// Visit an XDR structure
-    fn visit_struct<'a>(
-        &'a mut self,
-        name: &str,
-        n_fields: u32,
-    ) -> Result<Self::VisitStruct<'a>, Self::Error>;
-
+    /// Visit an XDR string
     fn visit_string(&mut self, s: &str) -> Result<(), Self::Error>;
 
+    /// Visit an XDR unsigned
     fn visit_u32(&mut self, n: u32) -> Result<(), Self::Error>;
+
+    /// Visit an XDR structure
+    fn visit_struct<'v>(
+        &'v mut self,
+        name: &str,
+        n_fields: u32,
+    ) -> Result<Self::VisitStruct<'v>, Self::Error>;
+
+    fn visit_array<'v, T: Host>(
+        &'v mut self,
+        n_elts: usize,
+    ) -> Result<Self::VisitArray<'v, T>, Self::Error>;
 
     /// Yield the final result, consuming the `Visitor`
     fn into_return(self) -> Self::Return;
 }
 
 /// A type that wants to visit an XDR structure's fields
-pub trait StructVisitor<E> {
+pub trait VisitorStruct<E> {
     /// Visit a field of an XDR structure
-    fn visit_field<T: Host>(&mut self, name: &str, value: T) -> Result<(), E>;
+    fn visit_field<T: Host>(&mut self, name: &str, value: &T) -> Result<(), E>;
+
+    /// Finish visiting the struct
+    fn finish(self) -> Result<(), E>;
+}
+
+pub trait VisitorArray<T, E> {
+    /// Visit an element of an XDR array
+    fn visit_elt(&mut self, value: &T) -> Result<(), E>
+        where T: Host;
+
+    /// Finish visiting the array
+    fn finish(self) -> Result<(), E>;
 }
 
 /// A type that accepts visitors
@@ -75,4 +98,20 @@ impl Host for u32 {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl<T: Host> Host for alloc::vec::Vec<T> {
+    fn guide<V>(&self, v: &mut V) -> Result<(), V::Error>
+    where
+        V: Visitor,
+    {
+        let mut a = v.visit_array(self.len())?;
 
+        for elt in self {
+            a.visit_elt(elt)?;
+        }
+
+        a.finish()?;
+
+        Ok(())
+    }
+}

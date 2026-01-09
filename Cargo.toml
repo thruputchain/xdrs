@@ -86,3 +86,7 @@ required-features = ["alloc", "derive"]
 [[test]]
 name = "pointer"
 required-features = ["alloc", "derive"]
+
+[[test]]
+name = "shape"
+required-features = ["alloc"]
