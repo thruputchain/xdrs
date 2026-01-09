@@ -13,14 +13,14 @@ pub trait Visitor {
     type Break;
 
     /// A type that will visit the parts of a struct
-    type VisitStruct: StructVisitor<Self::Break>;
+    type VisitStruct<'s>: StructVisitor<Self::Break> where Self: 's;
 
     /// The final result of a visit
     type Return;
 
     /// Visit an XDR structure
-    fn visit_struct(&mut self, name: &str, n_fields: u32) ->
-        ControlFlow<Self::Break, Self::VisitStruct>;
+    fn visit_struct<'a>(&'a mut self, name: &str, n_fields: u32) ->
+        ControlFlow<Self::Break, Self::VisitStruct<'a>>;
 
     /// Yield the final result, consuming the `Visitor`
     fn into_return(self) -> Self::Return;
@@ -53,7 +53,6 @@ mod test {
     use util::*;
 
     #[test]
-    #[should_panic(expected = "No ink")]
     pub fn perform_tour() {
         let host = host::Person::new("Dave", 42);
 
@@ -62,7 +61,7 @@ mod test {
         let result = host.accept(visitor).unwrap_or_else(|b|
             panic!("Visit failed: {}", b));
 
-        std::println!("Dave's review: {}", result);
+        assert_eq!(result, "Person { title: V0, age: V1 }");
     }
 
     mod host {
@@ -125,17 +124,21 @@ mod test {
             pub fn new() -> Self {
                 Self { story: String::new() }
             }
+
+            pub fn writer(&mut self) -> &mut impl Write {
+                &mut self.story
+            }
         }
 
         impl Visitor for Printer
         {
             type Break = PrintError;
-            type VisitStruct = PrintStruct;
+            type VisitStruct<'a> = PrintStruct<'a>;
             type Return = Story;
 
-            fn visit_struct<'a>(&'a mut self, name: &str, n_fields: u32) -> PrintFlow<PrintStruct> {
-                match writeln!(&mut self.story, "{name} {{ ") {
-                    Ok(_) => continue_with(PrintStruct::new(n_fields, /* printer: self */)),
+            fn visit_struct<'a>(&'a mut self, name: &str, n_fields: u32) -> PrintFlow<PrintStruct<'a>> {
+                match write!(self.writer(), "{name} {{ ") {
+                    Ok(_) => continue_with(PrintStruct::new(n_fields, self)),
                     Err(_) => break_with(PrintError::NoInk),
                 }
             }
@@ -145,32 +148,46 @@ mod test {
             }
         }
 
-        pub struct PrintStruct {
+        pub struct PrintStruct<'a> {
             n_fields: u32,
             n_fields_visited: u32,
-            // printer: &'a mut Printer,
+            printer: &'a mut Printer,
         }
 
-        impl PrintStruct {
-            pub fn new(n_fields: u32) -> Self {
-                Self { n_fields, n_fields_visited: 0 }
+        impl<'a> PrintStruct<'a> {
+            pub fn new(n_fields: u32, printer: &'a mut Printer) -> Self {
+                Self { n_fields, n_fields_visited: 0, printer }
+            }
+
+            pub fn writer(&mut self) -> &mut impl Write {
+                self.printer.writer()
             }
         }
 
-        impl StructVisitor<PrintError> for PrintStruct {
+        impl StructVisitor<PrintError> for PrintStruct<'_> {
             fn visit_field<T>(&mut self, name: &str, value: T) -> PrintFlow {
-                assert!(self.n_fields_visited + 1 <= self.n_fields, "Too many fields");
+                let index = self.n_fields_visited;
+                let n_fields = self.n_fields;
 
-                std::eprintln!("Field {}: {}", self.n_fields_visited, name);
+                assert!(index < n_fields, "Too many fields");
+
+                write!(
+                    self.writer(),
+                    "{}: V{}{} ",
+                    name,
+                    index,
+                    if index < n_fields - 1 { "," } else { "" }
+                );
+
                 self.n_fields_visited += 1;
 
                 please_continue()
             }
         }
 
-        impl core::ops::Drop for PrintStruct {
+        impl core::ops::Drop for PrintStruct<'_> {
             fn drop(&mut self) {
-                std::eprintln!("End struct");
+                write!(self.writer(), "}}");
             }
         }
     }
