@@ -8,6 +8,7 @@ extern crate alloc;
 pub mod discrim;
 pub mod read_xdr;
 pub mod write_xdr;
+pub mod shape;
 
 // The abstract interface for serialization formats
 pub mod serialize;
