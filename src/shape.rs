@@ -3,20 +3,15 @@
 //! through the structure of an XDR value.
 //!
 
-// TODO: Instead of using `ControlFlow` like `Result`, always return either `Continue<()>` or
-// `Break<Result<Return, Error>>`?  Or maybe not.
-
 #![allow(unused)]
-
-use core::ops::ControlFlow;
 
 /// A type that wants to visit a host
 pub trait Visitor {
-    /// A type the `Visitor` returns when it wants to stop
-    type Break;
+    /// A type the `Visitor` returns when it wants to end the visit
+    type Error;
 
     /// A type that will visit the parts of a struct
-    type VisitStruct<'s>: StructVisitor<Self::Break>
+    type VisitStruct<'s>: StructVisitor<Self::Error>
     where
         Self: 's;
 
@@ -28,16 +23,16 @@ pub trait Visitor {
         &'a mut self,
         name: &str,
         n_fields: u32,
-    ) -> ControlFlow<Self::Break, Self::VisitStruct<'a>>;
+    ) -> Result<Self::VisitStruct<'a>, Self::Error>;
 
     /// Yield the final result, consuming the `Visitor`
     fn into_return(self) -> Self::Return;
 }
 
 /// A type that wants to visit an XDR structure's fields
-pub trait StructVisitor<B> {
+pub trait StructVisitor<E> {
     /// Visit a field of an XDR structure
-    fn visit_field<T>(&mut self, name: &str, value: T) -> ControlFlow<B>;
+    fn visit_field<T>(&mut self, name: &str, value: T) -> Result<(), E>;
 }
 
 /// A type that accepts visitors
@@ -48,7 +43,7 @@ pub trait Host {
     ///
     /// Return `Err(b)` if the visitor pleads for a `ControlFlow::Break(b)`.
     ///
-    fn accept<V>(&self, v: V) -> Result<V::Return, V::Break>
+    fn accept<V>(&self, v: V) -> Result<V::Return, V::Error>
     where
         V: Visitor;
 }
@@ -58,7 +53,6 @@ mod test {
     extern crate std;
 
     use super::*;
-    use util::*;
 
     // Create a `Person` host-object and ask it to accept a `Printer` visitor, capturing the
     // result.
@@ -90,7 +84,7 @@ mod test {
             }
 
             // Guide the visitor to each XDR component of a `Person` value
-            fn guide<V>(&self, v: &mut V) -> ControlFlow<V::Break, ()>
+            fn guide<V>(&self, v: &mut V) -> Result<(), V::Error>
             where
                 V: Visitor
             {
@@ -99,18 +93,18 @@ mod test {
                 s.visit_field("title", &self.title)?;
                 s.visit_field("age", &self.age)?;
 
-                please_continue()
+                Ok(())
             }
         }
 
         impl Host for Person {
             // Accept a visitor and guide it to each XDR component of a `Person` value,
             // returning the recorded result.
-            fn accept<V>(&self, mut v: V) -> Result<V::Return, V::Break>
+            fn accept<V>(&self, mut v: V) -> Result<V::Return, V::Error>
             where
                 V: Visitor,
             {
-                continue_ok(self.guide(&mut v))?;
+                self.guide(&mut v)?;
 
                 Ok(v.into_return())
             }
@@ -119,17 +113,18 @@ mod test {
 
     mod visitor {
         use super::*;
-        use core::fmt::Write;
+        use core::fmt::{self, Write};
+        use core::fmt::Error as WriteError;
         use heapless::String;
         use thiserror::Error;
 
         #[derive(Debug, Error)]
         pub enum PrintError {
-            #[error("No ink remaining.")]
-            NoInk,
+            #[error("Write error: {0}")]
+            Write(#[from] fmt::Error)
         }
 
-        type PrintFlow<T = ()> = ControlFlow<PrintError, T>;
+        type PrintResult<T = ()> = Result<T, PrintError>;
 
         type Story = String<1000>;
 
@@ -150,7 +145,7 @@ mod test {
         }
 
         impl Visitor for Printer {
-            type Break = PrintError;
+            type Error = PrintError;
             type VisitStruct<'a> = PrintStruct<'a>;
             type Return = Story;
 
@@ -158,11 +153,10 @@ mod test {
                 &'a mut self,
                 name: &str,
                 n_fields: u32,
-            ) -> PrintFlow<PrintStruct<'a>> {
-                match write!(self.writer(), "{name} {{ ") {
-                    Ok(_) => continue_with(PrintStruct::new(n_fields, self)),
-                    Err(_) => break_with(PrintError::NoInk),
-                }
+            ) -> PrintResult<PrintStruct<'a>> {
+                write!(self.writer(), "{name} {{ ")?;
+
+                Ok(PrintStruct::new(n_fields, self))
             }
 
             fn into_return(self) -> Story {
@@ -191,7 +185,7 @@ mod test {
         }
 
         impl StructVisitor<PrintError> for PrintStruct<'_> {
-            fn visit_field<T>(&mut self, name: &str, value: T) -> PrintFlow {
+            fn visit_field<T>(&mut self, name: &str, value: T) -> PrintResult {
                 let index = self.n_fields_visited;
                 let n_fields = self.n_fields;
 
@@ -207,36 +201,13 @@ mod test {
 
                 self.n_fields_visited += 1;
 
-                please_continue()
+                Ok(())
             }
         }
 
         impl core::ops::Drop for PrintStruct<'_> {
             fn drop(&mut self) {
                 write!(self.writer(), "}}");
-            }
-        }
-    }
-
-    mod util {
-        use super::*;
-
-        pub fn please_continue<B>() -> ControlFlow<B, ()> {
-            ControlFlow::Continue(())
-        }
-
-        pub fn continue_with<B, C>(c: C) -> ControlFlow<B, C> {
-            ControlFlow::Continue(c)
-        }
-
-        pub fn break_with<B, C>(b: B) -> ControlFlow<B, C> {
-            ControlFlow::Break(b)
-        }
-
-        pub fn continue_ok<B, C>(cf: ControlFlow<B, C>) -> Result<C, B> {
-            match cf {
-                ControlFlow::Continue(c) => Ok(c),
-                ControlFlow::Break(b) => Err(b),
             }
         }
     }
