@@ -3,6 +3,9 @@
 //! through the structure of an XDR value.
 //!
 
+// TODO: Instead of using `ControlFlow` like `Result`, always return either `Continue<()>` or
+// `Break<Result<Return, Error>>`?  Or maybe not.
+
 #![allow(unused)]
 
 use core::ops::ControlFlow;
@@ -57,6 +60,8 @@ mod test {
     use super::*;
     use util::*;
 
+    // Create a `Person` host-object and ask it to accept a `Printer` visitor, capturing the
+    // result.
     #[test]
     pub fn perform_tour() {
         let host = host::Person::new("Dave", 42);
@@ -83,23 +88,29 @@ mod test {
             pub fn new(title: &'static str, age: u32) -> Self {
                 Self { title, age }
             }
+
+            // Guide the visitor to each XDR component of a `Person` value
+            fn guide<V>(&self, v: &mut V) -> ControlFlow<V::Break, ()>
+            where
+                V: Visitor
+            {
+                let mut s = v.visit_struct("Person", 2)?;
+
+                s.visit_field("title", &self.title)?;
+                s.visit_field("age", &self.age)?;
+
+                please_continue()
+            }
         }
 
-        // Accept a visitor and guide it to each XDR component of a `Person` value
         impl Host for Person {
+            // Accept a visitor and guide it to each XDR component of a `Person` value,
+            // returning the recorded result.
             fn accept<V>(&self, mut v: V) -> Result<V::Return, V::Break>
             where
                 V: Visitor,
             {
-                continue_ok((|| -> ControlFlow<V::Break, ()> {
-                    let mut s = v.visit_struct("Person", 2)?;
-
-                    s.visit_field("title", &self.title)?;
-                    s.visit_field("age", &self.age)?;
-
-                    // ControlFlow::Continue(v.into_return())
-                    please_continue()
-                })())?;
+                continue_ok(self.guide(&mut v))?;
 
                 Ok(v.into_return())
             }
