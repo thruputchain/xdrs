@@ -149,7 +149,6 @@ mod visitor {
         n_elts: u32,
         n_elts_visited: u32,
         printer: &'a mut Printer,
-        finished: bool,
         _marker: PhantomData<T>,
     }
 
@@ -159,7 +158,6 @@ mod visitor {
                 n_elts,
                 n_elts_visited: 0,
                 printer,
-                finished: false,
                 _marker: PhantomData,
             }
         }
@@ -193,17 +191,7 @@ mod visitor {
 
             write!(self.writer(), "]")?;
 
-            self.finished = true;
-
             Ok(())
-        }
-    }
-
-    impl<T> core::ops::Drop for PrintArray<'_, T> {
-        fn drop(&mut self) {
-            if !self.finished {
-                panic!("Forgot to close an array")
-            }
         }
     }
 
@@ -211,7 +199,6 @@ mod visitor {
         n_fields: u32,
         n_fields_visited: u32,
         printer: &'a mut Printer,
-        finished: bool,
     }
 
     impl<'a> PrintStruct<'a> {
@@ -220,7 +207,6 @@ mod visitor {
                 n_fields,
                 n_fields_visited: 0,
                 printer,
-                finished: false,
             }
         }
 
@@ -253,17 +239,7 @@ mod visitor {
 
             write!(self.writer(), "}}")?;
 
-            self.finished = true;
-
             Ok(())
-        }
-    }
-
-    impl core::ops::Drop for PrintStruct<'_> {
-        fn drop(&mut self) {
-            if !self.finished {
-                panic!("Forgot to close a struct")
-            }
         }
     }
 }
