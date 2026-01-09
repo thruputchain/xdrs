@@ -25,7 +25,7 @@ pub use noalloc::{boxed::Box, vec::Vec};
 // alloc crate and use its Box and Vec types.
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
+#[cfg(feature = "alloc")]
 pub use alloc::{boxed::Box, string::String, vec::Vec};
 
 #[cfg(feature = "std")]
