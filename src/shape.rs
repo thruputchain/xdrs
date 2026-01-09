@@ -13,14 +13,19 @@ pub trait Visitor {
     type Break;
 
     /// A type that will visit the parts of a struct
-    type VisitStruct<'s>: StructVisitor<Self::Break> where Self: 's;
+    type VisitStruct<'s>: StructVisitor<Self::Break>
+    where
+        Self: 's;
 
     /// The final result of a visit
     type Return;
 
     /// Visit an XDR structure
-    fn visit_struct<'a>(&'a mut self, name: &str, n_fields: u32) ->
-        ControlFlow<Self::Break, Self::VisitStruct<'a>>;
+    fn visit_struct<'a>(
+        &'a mut self,
+        name: &str,
+        n_fields: u32,
+    ) -> ControlFlow<Self::Break, Self::VisitStruct<'a>>;
 
     /// Yield the final result, consuming the `Visitor`
     fn into_return(self) -> Self::Return;
@@ -41,8 +46,8 @@ pub trait Host {
     /// Return `Err(b)` if the visitor pleads for a `ControlFlow::Break(b)`.
     ///
     fn accept<V>(&self, v: V) -> Result<V::Return, V::Break>
-        where
-            V: Visitor;
+    where
+        V: Visitor;
 }
 
 #[cfg(test)]
@@ -58,8 +63,9 @@ mod test {
 
         let visitor = visitor::Printer::new();
 
-        let result = host.accept(visitor).unwrap_or_else(|b|
-            panic!("Visit failed: {}", b));
+        let result = host
+            .accept(visitor)
+            .unwrap_or_else(|b| panic!("Visit failed: {}", b));
 
         assert_eq!(result, "Person { title: V0, age: V1 }");
     }
@@ -82,8 +88,8 @@ mod test {
         // Accept a visitor and guide it to each XDR component of a `Person` value
         impl Host for Person {
             fn accept<V>(&self, mut v: V) -> Result<V::Return, V::Break>
-                where
-                    V: Visitor
+            where
+                V: Visitor,
             {
                 continue_ok((|| -> ControlFlow<V::Break, ()> {
                     let mut s = v.visit_struct("Person", 2)?;
@@ -102,9 +108,9 @@ mod test {
 
     mod visitor {
         use super::*;
+        use core::fmt::Write;
         use heapless::String;
         use thiserror::Error;
-        use core::fmt::Write;
 
         #[derive(Debug, Error)]
         pub enum PrintError {
@@ -122,7 +128,9 @@ mod test {
 
         impl Printer {
             pub fn new() -> Self {
-                Self { story: String::new() }
+                Self {
+                    story: String::new(),
+                }
             }
 
             pub fn writer(&mut self) -> &mut impl Write {
@@ -130,13 +138,16 @@ mod test {
             }
         }
 
-        impl Visitor for Printer
-        {
+        impl Visitor for Printer {
             type Break = PrintError;
             type VisitStruct<'a> = PrintStruct<'a>;
             type Return = Story;
 
-            fn visit_struct<'a>(&'a mut self, name: &str, n_fields: u32) -> PrintFlow<PrintStruct<'a>> {
+            fn visit_struct<'a>(
+                &'a mut self,
+                name: &str,
+                n_fields: u32,
+            ) -> PrintFlow<PrintStruct<'a>> {
                 match write!(self.writer(), "{name} {{ ") {
                     Ok(_) => continue_with(PrintStruct::new(n_fields, self)),
                     Err(_) => break_with(PrintError::NoInk),
@@ -156,7 +167,11 @@ mod test {
 
         impl<'a> PrintStruct<'a> {
             pub fn new(n_fields: u32, printer: &'a mut Printer) -> Self {
-                Self { n_fields, n_fields_visited: 0, printer }
+                Self {
+                    n_fields,
+                    n_fields_visited: 0,
+                    printer,
+                }
             }
 
             pub fn writer(&mut self) -> &mut impl Write {
@@ -213,6 +228,5 @@ mod test {
                 ControlFlow::Break(b) => Err(b),
             }
         }
-
     }
 }
