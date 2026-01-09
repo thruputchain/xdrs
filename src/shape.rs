@@ -25,6 +25,10 @@ pub trait Visitor {
         n_fields: u32,
     ) -> Result<Self::VisitStruct<'a>, Self::Error>;
 
+    fn visit_string(&mut self, s: &str) -> Result<(), Self::Error>;
+
+    fn visit_u32(&mut self, n: u32) -> Result<(), Self::Error>;
+
     /// Yield the final result, consuming the `Visitor`
     fn into_return(self) -> Self::Return;
 }
@@ -32,20 +36,43 @@ pub trait Visitor {
 /// A type that wants to visit an XDR structure's fields
 pub trait StructVisitor<E> {
     /// Visit a field of an XDR structure
-    fn visit_field<T>(&mut self, name: &str, value: T) -> Result<(), E>;
+    fn visit_field<T: Host>(&mut self, name: &str, value: T) -> Result<(), E>;
 }
 
 /// A type that accepts visitors
 pub trait Host {
-    /// Accept a [`Visitor`], and guide it around the [`Host`]'s establishment.
-    ///
-    /// Return the visitor's final result if the tour went well.
-    ///
-    /// Return `Err(b)` if the visitor pleads for a `ControlFlow::Break(b)`.
-    ///
-    fn accept<V>(&self, v: V) -> Result<V::Return, V::Error>
+    /// Accept a visitor and guide it to each XDR component of the `Host` value.
+    fn accept<V>(&self, mut v: V) -> Result<V::Return, V::Error>
+    where
+        V: Visitor,
+    {
+        self.guide(&mut v)?;
+
+        Ok(v.into_return())
+    }
+
+    /// Guide a [`Visitor`] around the [`Host`]'s establishment.
+    fn guide<V>(&self, v: &mut V) -> Result<(), V::Error>
     where
         V: Visitor;
+}
+
+impl Host for &'static str {
+    fn guide<V>(&self, v: &mut V) -> Result<(), V::Error>
+    where
+        V: Visitor,
+    {
+        v.visit_string(self)
+    }
+}
+
+impl Host for u32 {
+    fn guide<V>(&self, v: &mut V) -> Result<(), V::Error>
+    where
+        V: Visitor,
+    {
+        v.visit_u32(*self)
+    }
 }
 
 #[cfg(test)]
@@ -66,7 +93,7 @@ mod test {
             .accept(visitor)
             .unwrap_or_else(|b| panic!("Visit failed: {}", b));
 
-        assert_eq!(result, "Person { title: V0, age: V1 }");
+        assert_eq!(result, "Person { title: \"Dave\", age: 42 }");
     }
 
     mod host {
@@ -82,7 +109,9 @@ mod test {
             pub fn new(title: &'static str, age: u32) -> Self {
                 Self { title, age }
             }
+        }
 
+        impl Host for Person {
             // Guide the visitor to each XDR component of a `Person` value
             fn guide<V>(&self, v: &mut V) -> Result<(), V::Error>
             where
@@ -90,23 +119,10 @@ mod test {
             {
                 let mut s = v.visit_struct("Person", 2)?;
 
-                s.visit_field("title", &self.title)?;
-                s.visit_field("age", &self.age)?;
+                s.visit_field("title", self.title)?;
+                s.visit_field("age", self.age)?;
 
                 Ok(())
-            }
-        }
-
-        impl Host for Person {
-            // Accept a visitor and guide it to each XDR component of a `Person` value,
-            // returning the recorded result.
-            fn accept<V>(&self, mut v: V) -> Result<V::Return, V::Error>
-            where
-                V: Visitor,
-            {
-                self.guide(&mut v)?;
-
-                Ok(v.into_return())
             }
         }
     }
@@ -130,12 +146,14 @@ mod test {
 
         pub struct Printer {
             story: Story,
+            depth: u32,
         }
 
         impl Printer {
             pub fn new() -> Self {
                 Self {
                     story: String::new(),
+                    depth: 0,
                 }
             }
 
@@ -157,6 +175,18 @@ mod test {
                 write!(self.writer(), "{name} {{ ")?;
 
                 Ok(PrintStruct::new(n_fields, self))
+            }
+
+            fn visit_string(&mut self, s: &str) -> PrintResult {
+                write!(self.writer(), "{:?}", s)?;
+
+                Ok(())
+            }
+
+            fn visit_u32(&mut self, n: u32) -> PrintResult {
+                write!(self.writer(), "{}", n)?;
+
+                Ok(())
             }
 
             fn into_return(self) -> Story {
@@ -185,19 +215,18 @@ mod test {
         }
 
         impl StructVisitor<PrintError> for PrintStruct<'_> {
-            fn visit_field<T>(&mut self, name: &str, value: T) -> PrintResult {
+            fn visit_field<T: Host>(&mut self, name: &str, value: T) -> PrintResult {
                 let index = self.n_fields_visited;
                 let n_fields = self.n_fields;
 
                 assert!(index < n_fields, "Too many fields");
 
-                write!(
-                    self.writer(),
-                    "{}: V{}{} ",
-                    name,
-                    index,
-                    if index < n_fields - 1 { "," } else { "" }
-                );
+                write!(self.writer(), "{}: ", name);
+
+                value.guide(self.printer)?;
+
+                let sep = if index < n_fields - 1 { ", " } else { " " };
+                self.writer().write_str(sep)?;
 
                 self.n_fields_visited += 1;
 
