@@ -3,8 +3,9 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-use serde::de::Error as DeError;
-use serde::de::{Deserialize, Deserializer, SeqAccess, Visitor};
+#[cfg(all(feature = "serde", feature = "alloc"))]
+use serde::de::{Deserialize, Deserializer, Error as DeError, SeqAccess, Visitor};
+#[cfg(all(feature = "serde", feature = "alloc"))]
 use serde::ser::{Serialize, Serializer};
 
 // When feature alloc is turned off use static lifetime Box and Vec types.
@@ -126,7 +127,7 @@ pub struct VecM<T, const MAX: u32 = { u32::MAX }>(pub Vec<T>)
 where
     T: 'static;
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "serde", feature = "alloc"))]
 impl<T, const MAX: u32> Serialize for VecM<T, MAX>
 where
     T: Serialize,
@@ -139,7 +140,7 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "serde", feature = "alloc"))]
 impl<'de, T, const MAX: u32> Deserialize<'de> for VecM<T, MAX>
 where
     T: Deserialize<'de>,
@@ -446,7 +447,7 @@ pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "serde", feature = "alloc"))]
 impl<const MAX: u32> Serialize for BytesM<MAX> {
     fn serialize<S>(&self, ser: S) -> Result<<S>::Ok, <S>::Error>
     where
@@ -456,7 +457,7 @@ impl<const MAX: u32> Serialize for BytesM<MAX> {
     }
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "serde", feature = "alloc"))]
 impl<'de, const MAX: u32> Deserialize<'de> for BytesM<MAX> {
     fn deserialize<D>(de: D) -> Result<Self, <D as Deserializer<'de>>::Error>
     where
