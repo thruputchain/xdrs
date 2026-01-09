@@ -86,14 +86,17 @@ mod test {
                 where
                     V: Visitor
             {
-                continue_ok((|| -> ControlFlow<V::Break, V::Return> {
+                continue_ok((|| -> ControlFlow<V::Break, ()> {
                     let mut s = v.visit_struct("Person", 2)?;
 
                     s.visit_field("title", &self.title)?;
                     s.visit_field("age", &self.age)?;
 
-                    ControlFlow::Continue(v.into_return())
-                })())
+                    // ControlFlow::Continue(v.into_return())
+                    please_continue()
+                })())?;
+
+                Ok(v.into_return())
             }
         }
     }
@@ -124,15 +127,16 @@ mod test {
             }
         }
 
-        impl Visitor for Printer {
+        impl Visitor for Printer
+        {
             type Break = PrintError;
             type VisitStruct = PrintStruct;
             type Return = Story;
 
-            fn visit_struct(&mut self, name: &str, n_fields: u32) -> PrintFlow<PrintStruct> {
-                match writeln!(&mut self.story, "{name} {{ ... }}") {
-                    Ok(_) => continue_with(PrintStruct { n_fields }),
-                    Err(_) => no_ink(),
+            fn visit_struct<'a>(&'a mut self, name: &str, n_fields: u32) -> PrintFlow<PrintStruct> {
+                match writeln!(&mut self.story, "{name} {{ ") {
+                    Ok(_) => continue_with(PrintStruct::new(n_fields, /* printer: self */)),
+                    Err(_) => break_with(PrintError::NoInk),
                 }
             }
 
@@ -143,29 +147,48 @@ mod test {
 
         pub struct PrintStruct {
             n_fields: u32,
+            n_fields_visited: u32,
+            // printer: &'a mut Printer,
+        }
+
+        impl PrintStruct {
+            pub fn new(n_fields: u32) -> Self {
+                Self { n_fields, n_fields_visited: 0 }
+            }
         }
 
         impl StructVisitor<PrintError> for PrintStruct {
             fn visit_field<T>(&mut self, name: &str, value: T) -> PrintFlow {
+                assert!(self.n_fields_visited + 1 <= self.n_fields, "Too many fields");
+
+                std::eprintln!("Field {}: {}", self.n_fields_visited, name);
+                self.n_fields_visited += 1;
+
                 please_continue()
             }
         }
 
-        fn no_ink<T>() -> PrintFlow<T> {
-            ControlFlow::Break(PrintError::NoInk)
-        }
-
-        fn continue_with<T>(x: T) -> PrintFlow<T> {
-            ControlFlow::Continue(x)
-        }
-
-        fn please_continue() -> PrintFlow<()> {
-            PrintFlow::Continue(())
+        impl core::ops::Drop for PrintStruct {
+            fn drop(&mut self) {
+                std::eprintln!("End struct");
+            }
         }
     }
 
     mod util {
         use super::*;
+
+        pub fn please_continue<B>() -> ControlFlow<B, ()> {
+            ControlFlow::Continue(())
+        }
+
+        pub fn continue_with<B, C>(c: C) -> ControlFlow<B, C> {
+            ControlFlow::Continue(c)
+        }
+
+        pub fn break_with<B, C>(b: B) -> ControlFlow<B, C> {
+            ControlFlow::Break(b)
+        }
 
         pub fn continue_ok<B, C>(cf: ControlFlow<B, C>) -> Result<C, B> {
             match cf {
@@ -173,5 +196,6 @@ mod test {
                 ControlFlow::Break(b) => Err(b),
             }
         }
+
     }
 }
