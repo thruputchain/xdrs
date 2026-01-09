@@ -42,6 +42,16 @@ jobs:
         with:
           toolchain: stable
       
+      - name: Set cache key
+        id: cache-key
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            FEATURES_KEY="none"
+          else
+            FEATURES_KEY=$(echo "${{ matrix.features }}" | tr ',' '-')
+          fi
+          echo "key=$FEATURES_KEY" >> $GITHUB_OUTPUT
+      
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -51,9 +61,9 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ steps.cache-key.outputs.key }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.features }}-
+            ${{ runner.os }}-cargo-${{ steps.cache-key.outputs.key }}-
             ${{ runner.os }}-cargo-
       
       - name: Build

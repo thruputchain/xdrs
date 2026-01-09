@@ -1,9 +1,9 @@
 #![no_std]
 
-#[cfg(feature="alloc")]
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(feature="std")]
+#[cfg(feature = "std")]
 extern crate std;
 
 mod common_types;
