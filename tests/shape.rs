@@ -40,8 +40,10 @@ mod host {
     }
 
     pub fn make_dave() -> Person {
-        let kids = vec![Person::new("Alicia", 9, vec!()), Person::new("Devon", 13, vec!())];
-        Person::new("Dave", 42, kids)
+        let alicia = Person::new("Alicia", 9, vec!());
+        let devon = Person::new("Devon", 13, vec!());
+
+        Person::new("Dave", 42, vec![alicia, devon])
     }
 
     impl Host for Person {
@@ -85,14 +87,12 @@ mod visitor {
 
     pub struct Printer {
         story: Story,
-        // depth: u32,
     }
 
     impl Printer {
         pub fn new() -> Self {
             Self {
                 story: String::new(),
-                // depth: 0,
             }
         }
 
@@ -107,7 +107,7 @@ mod visitor {
         type VisitArray<'a, T> = PrintArray<'a, T>;
         type Return = Story;
 
-        fn into_return(self) -> Story {
+        fn finish(self) -> Story {
             self.story
         }
 

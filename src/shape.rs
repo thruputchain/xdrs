@@ -5,22 +5,23 @@
 
 #![allow(unused)]
 
-/// A type that wants to visit a host
+/// A type that wants to visit the components of an XDR value
 pub trait Visitor {
+    /// The final result of a visit
+    type Return;
+
     /// A type the `Visitor` returns when it wants to end the visit
     type Error;
 
-    /// A type that will visit the parts of a struct
+    /// A type that wants to visit the fields of a struct
     type VisitStruct<'v>: VisitorStruct<Self::Error>
     where
         Self: 'v;
 
+    /// A type that wants to visit the elements of an array
     type VisitArray<'v, T>: VisitorArray<T, Self::Error>
     where
         Self: 'v;
-
-    /// The final result of a visit
-    type Return;
 
     /// Visit an XDR string
     fn visit_string(&mut self, s: &str) -> Result<(), Self::Error>;
@@ -35,13 +36,14 @@ pub trait Visitor {
         n_fields: u32,
     ) -> Result<Self::VisitStruct<'v>, Self::Error>;
 
+    /// Visit an XDR array
     fn visit_array<'v, T: Host>(
         &'v mut self,
         n_elts: usize,
     ) -> Result<Self::VisitArray<'v, T>, Self::Error>;
 
     /// Yield the final result, consuming the `Visitor`
-    fn into_return(self) -> Self::Return;
+    fn finish(self) -> Self::Return;
 }
 
 /// A type that wants to visit an XDR structure's fields
@@ -53,6 +55,7 @@ pub trait VisitorStruct<E> {
     fn finish(self) -> Result<(), E>;
 }
 
+/// A type that wants to visit an XDR arrays's elements
 pub trait VisitorArray<T, E> {
     /// Visit an element of an XDR array
     fn visit_elt(&mut self, value: &T) -> Result<(), E>
@@ -62,19 +65,22 @@ pub trait VisitorArray<T, E> {
     fn finish(self) -> Result<(), E>;
 }
 
-/// A type that accepts visitors
+/// A type that accepts visitors and guides them to the components of an XDR value
 pub trait Host {
-    /// Accept a visitor and guide it to each XDR component of the `Host` value.
+    /// Accept a [`Visitor`] and guide it to each component of the [`Host`] XDR value, consuming
+    /// the visitor and returning its result.
+    ///
     fn accept<V>(&self, mut v: V) -> Result<V::Return, V::Error>
     where
         V: Visitor,
     {
         self.guide(&mut v)?;
 
-        Ok(v.into_return())
+        Ok(v.finish())
     }
 
     /// Guide a [`Visitor`] around the [`Host`]'s establishment.
+    ///
     fn guide<V>(&self, v: &mut V) -> Result<(), V::Error>
     where
         V: Visitor;
