@@ -448,12 +448,16 @@ pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
+use hex::{FromHex, ToHex};
+
+#[cfg(all(feature = "serde", feature = "alloc"))]
 impl<const MAX: u32> Serialize for BytesM<MAX> {
     fn serialize<S>(&self, ser: S) -> Result<<S>::Ok, <S>::Error>
     where
         S: Serializer,
     {
-        ser.serialize_bytes(self.0.as_slice())
+        let x = self.0.encode_hex::<String>();
+        ser.serialize_str(x.as_str())
     }
 }
 
@@ -470,6 +474,13 @@ impl<'de, const MAX: u32> Deserialize<'de> for BytesM<MAX> {
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 write!(f, "a byte array with length at most {}", MAX)
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                BytesM::<MAX>::try_from(s).map_err(E::custom)
             }
 
             fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>

@@ -13,4 +13,5 @@ std = []
 serde = ["alloc", "dep:serde"]
 
 [dependencies]
+hex = "0.4.3"
 serde = { version = "1.0", features = ["derive"], optional = true }
