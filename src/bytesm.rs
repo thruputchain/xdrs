@@ -49,54 +49,12 @@ impl<'de, const MAX: u32> Deserialize<'de> for BytesM<MAX> {
             where
                 E: serde::de::Error,
             {
-                BytesM::<MAX>::try_from(s).map_err(E::custom)
-            }
-
-            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                BytesM::<MAX>::try_from(v).map_err(E::custom)
-            }
-
-            fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                self.visit_bytes(v)
-            }
-
-            fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                BytesM::<MAX>::try_from(v).map_err(E::custom)
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                let mut buf = Vec::new();
-                if let Some(len) = seq.size_hint() {
-                    if len > BytesM::<MAX>::MAX_LEN {
-                        return Err(<A::Error as DeError>::invalid_length(len, &self));
-                    }
-                    buf.reserve(len);
-                }
-
-                while let Some(b) = seq.next_element::<u8>()? {
-                    if buf.len() >= BytesM::<MAX>::MAX_LEN {
-                        return Err(<A::Error as DeError>::invalid_length(buf.len() + 1, &self));
-                    }
-                    buf.push(b);
-                }
-
-                BytesM::<MAX>::try_from(buf).map_err(|e| <A::Error as DeError>::custom(e))
+                let unhex = Vec::from_hex(s).map_err(E::custom)?;
+                BytesM::<MAX>::try_from(unhex).map_err(E::custom)
             }
         }
 
-        de.deserialize_bytes(BytesMVisitor::<MAX>)
+        de.deserialize_string(BytesMVisitor::<MAX>)
     }
 }
 

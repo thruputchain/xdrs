@@ -16,3 +16,6 @@ pub use vecm::*;
 
 mod bytesm;
 pub use bytesm::*;
+
+mod stringm;
+pub use stringm::*;
