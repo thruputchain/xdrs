@@ -23,7 +23,8 @@ pub use noalloc::{boxed::Box, vec::Vec};
 
 // When feature std is turned off, but feature alloc is turned on import the
 // alloc crate and use its Box and Vec types.
-#[cfg(all(not(feature = "std"), feature = "alloc"))]
+// #[cfg(all(not(feature = "std"), feature = "alloc"))]
+#[cfg(feature = "alloc")]
 pub extern crate alloc;
 #[cfg(feature = "alloc")]
 pub use alloc::{

@@ -9,7 +9,7 @@ doctest = false
 
 [features]
 alloc = ["escape-bytes/alloc"]
-std = []
+std = ["alloc"]
 serde = ["alloc", "dep:serde", "dep:serde_with"]
 
 [dependencies]
