@@ -10,6 +10,10 @@ use core::ops::Deref;
 
 #[cfg(feature = "alloc")]
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr)
+)]
 pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
 #[cfg(not(feature = "alloc"))]
@@ -18,45 +22,6 @@ pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
 use hex::{FromHex, ToHex};
-
-#[cfg(all(feature = "serde", feature = "alloc"))]
-impl<const MAX: u32> Serialize for BytesM<MAX> {
-    fn serialize<S>(&self, ser: S) -> Result<<S>::Ok, <S>::Error>
-    where
-        S: Serializer,
-    {
-        let x = self.0.encode_hex::<String>();
-        ser.serialize_str(x.as_str())
-    }
-}
-
-#[cfg(all(feature = "serde", feature = "alloc"))]
-impl<'de, const MAX: u32> Deserialize<'de> for BytesM<MAX> {
-    fn deserialize<D>(de: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct BytesMVisitor<const MAX: u32>;
-
-        impl<'de, const MAX: u32> Visitor<'de> for BytesMVisitor<MAX> {
-            type Value = BytesM<MAX>;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "a byte array with length at most {}", MAX)
-            }
-
-            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                let unhex = Vec::from_hex(s).map_err(E::custom)?;
-                BytesM::<MAX>::try_from(unhex).map_err(E::custom)
-            }
-        }
-
-        de.deserialize_string(BytesMVisitor::<MAX>)
-    }
-}
 
 impl<const MAX: u32> core::fmt::Display for BytesM<MAX> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -68,6 +33,14 @@ impl<const MAX: u32> core::fmt::Display for BytesM<MAX> {
             write!(f, "{b:02x}")?;
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<const MAX: u32> core::str::FromStr for BytesM<MAX> {
+    type Err = Error;
+    fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        hex::decode(s).map_err(|_| Error::InvalidHex)?.try_into()
     }
 }
 

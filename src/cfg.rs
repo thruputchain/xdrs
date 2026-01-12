@@ -32,6 +32,3 @@ pub use alloc::{
     string::{FromUtf8Error, String},
     vec::Vec,
 };
-
-#[cfg(feature = "std")]
-pub use std::{error, io};

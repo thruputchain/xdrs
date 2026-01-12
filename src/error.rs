@@ -3,6 +3,9 @@
 
 pub use crate::cfg::*;
 
+#[cfg(feature = "std")]
+use std::{error, io};
+
 /// Error contains all errors returned by functions in this crate. It can be
 /// compared via `PartialEq`, however any contained IO errors will only be
 /// compared on their `ErrorKind`.
