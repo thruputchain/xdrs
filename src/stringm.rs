@@ -8,54 +8,28 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
+/// A string type that contains arbitrary bytes.
+///
+/// Convertible, fallibly, to/from a Rust UTF-8 String using
+/// [`TryFrom`]/[`TryInto`]/[`StringM::to_utf8_string`].
+///
+/// Convertible, lossyly, to a Rust UTF-8 String using
+/// [`StringM::to_utf8_string_lossy`].
+///
+/// Convertible to/from escaped printable-ASCII using
+/// [`Display`]/[`ToString`]/[`FromStr`].
+
 #[cfg(feature = "alloc")]
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StringM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
+#[cfg_attr(
+    feature = "serde",
+    derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr)
+)]
+pub struct StringM<const MAX: u32 = { u32::MAX }>(Vec<u8>);
 
 #[cfg(not(feature = "alloc"))]
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StringM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
-
-#[cfg(all(feature = "serde", feature = "alloc"))]
-use hex::{FromHex, ToHex};
-
-#[cfg(all(feature = "serde", feature = "alloc"))]
-impl<const MAX: u32> Serialize for StringM<MAX> {
-    fn serialize<S>(&self, ser: S) -> Result<<S>::Ok, <S>::Error>
-    where
-        S: Serializer,
-    {
-        let s = core::str::from_utf8(&self.0).map_err(|e| serde::ser::Error::custom(e))?;
-        ser.serialize_str(s)
-    }
-}
-
-#[cfg(all(feature = "serde", feature = "alloc"))]
-impl<'de, const MAX: u32> Deserialize<'de> for StringM<MAX> {
-    fn deserialize<D>(de: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct StringMVisitor<const MAX: u32>;
-
-        impl<'de, const MAX: u32> Visitor<'de> for StringMVisitor<MAX> {
-            type Value = StringM<MAX>;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "a string with length at most {}", MAX)
-            }
-
-            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                StringM::<MAX>::try_from(s).map_err(E::custom)
-            }
-        }
-
-        de.deserialize_string(StringMVisitor::<MAX>)
-    }
-}
+pub struct StringM<const MAX: u32 = { u32::MAX }>(Vec<u8>);
 
 impl<const MAX: u32> core::fmt::Display for StringM<MAX> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -63,8 +37,8 @@ impl<const MAX: u32> core::fmt::Display for StringM<MAX> {
         let v = &self.0;
         #[cfg(not(feature = "alloc"))]
         let v = self.0;
-        for b in v {
-            write!(f, "{b:02x}")?;
+        for b in escape_bytes::Escape::new(v) {
+            write!(f, "{}", b as char)?;
         }
         Ok(())
     }
@@ -77,11 +51,20 @@ impl<const MAX: u32> core::fmt::Debug for StringM<MAX> {
         #[cfg(not(feature = "alloc"))]
         let v = self.0;
         write!(f, "StringM(")?;
-        for b in v {
-            write!(f, "{b:02x}")?;
+        for b in escape_bytes::Escape::new(v) {
+            write!(f, "{}", b as char)?;
         }
         write!(f, ")")?;
         Ok(())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<const MAX: u32> core::str::FromStr for StringM<MAX> {
+    type Err = Error;
+    fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        let b = escape_bytes::unescape(s.as_bytes()).map_err(|_| Error::Invalid)?;
+        Ok(Self(b))
     }
 }
 
@@ -124,6 +107,30 @@ impl<const MAX: u32> StringM<MAX> {
     #[must_use]
     pub fn into_vec(self) -> Vec<u8> {
         self.into()
+    }
+}
+
+impl<const MAX: u32> StringM<MAX> {
+    #[cfg(feature = "alloc")]
+    pub fn to_utf8_string(&self) -> Result<String, Error> {
+        self.try_into()
+    }
+
+    #[cfg(feature = "alloc")]
+    pub fn into_utf8_string(self) -> Result<String, Error> {
+        self.try_into()
+    }
+
+    #[cfg(feature = "alloc")]
+    #[must_use]
+    pub fn to_utf8_string_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.0).into_owned()
+    }
+
+    #[cfg(feature = "alloc")]
+    #[must_use]
+    pub fn into_utf8_string_lossy(self) -> String {
+        String::from_utf8_lossy(&self.0).into_owned()
     }
 }
 
@@ -274,6 +281,24 @@ impl<const MAX: u32> TryFrom<String> for StringM<MAX> {
 }
 
 #[cfg(feature = "alloc")]
+impl<const MAX: u32> TryFrom<StringM<MAX>> for String {
+    type Error = Error;
+
+    fn try_from(v: StringM<MAX>) -> Result<Self, Error> {
+        Ok(String::from_utf8(v.0)?)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<const MAX: u32> TryFrom<&StringM<MAX>> for String {
+    type Error = Error;
+
+    fn try_from(v: &StringM<MAX>) -> Result<Self, Error> {
+        Ok(core::str::from_utf8(v.as_ref())?.to_owned())
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl<const MAX: u32> TryFrom<&str> for StringM<MAX> {
     type Error = Error;
 
@@ -298,5 +323,13 @@ impl<const MAX: u32> TryFrom<&'static str> for StringM<MAX> {
         } else {
             Err(Error::LengthExceedsMax)
         }
+    }
+}
+
+impl<'a, const MAX: u32> TryFrom<&'a StringM<MAX>> for &'a str {
+    type Error = Error;
+
+    fn try_from(v: &'a StringM<MAX>) -> Result<Self, Error> {
+        Ok(core::str::from_utf8(v.as_ref())?)
     }
 }

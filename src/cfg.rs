@@ -26,7 +26,12 @@ pub use noalloc::{boxed::Box, vec::Vec};
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 pub extern crate alloc;
 #[cfg(feature = "alloc")]
-pub use alloc::{boxed::Box, string::String, vec::Vec};
+pub use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
+    string::{FromUtf8Error, String},
+    vec::Vec,
+};
 
 #[cfg(feature = "std")]
 pub use std::{error, io};
