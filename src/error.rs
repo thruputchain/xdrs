@@ -15,6 +15,7 @@ pub enum Error {
     NonZeroPadding,
     #[cfg(feature = "alloc")]
     InvalidHex,
+    InvalidUTF8,
     #[cfg(feature = "std")]
     Io(io::Error),
     DepthLimitExceeded,
@@ -66,6 +67,7 @@ impl fmt::Display for Error {
             }
             #[cfg(feature = "alloc")]
             Error::InvalidHex => write!(f, "hex invalid"),
+            Error::InvalidUTF8 => write!(f, "utf8 invalid"),
             #[cfg(feature = "std")]
             Error::Io(e) => write!(f, "{e}"),
             Error::DepthLimitExceeded => write!(f, "depth limit exceeded"),
@@ -77,6 +79,19 @@ impl fmt::Display for Error {
 impl From<TryFromSliceError> for Error {
     fn from(_: TryFromSliceError) -> Error {
         Error::LengthMismatch
+    }
+}
+
+impl From<core::str::Utf8Error> for Error {
+    fn from(_: core::str::Utf8Error) -> Self {
+        Error::InvalidUTF8
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl From<FromUtf8Error> for Error {
+    fn from(_: FromUtf8Error) -> Self {
+        Error::InvalidUTF8
     }
 }
 

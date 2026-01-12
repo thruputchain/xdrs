@@ -8,10 +8,12 @@ crate-type = ["rlib"]
 doctest = false
 
 [features]
-alloc = []
+alloc = ["escape-bytes/alloc"]
 std = []
-serde = ["alloc", "dep:serde"]
+serde = ["alloc", "dep:serde", "dep:serde_with"]
 
 [dependencies]
 hex = "0.4.3"
+escape-bytes = { version = "0.1.1", default-features = false }
 serde = { version = "1.0", features = ["derive"], optional = true }
+serde_with = { version = "3.16.1", features = [], optional = true }
