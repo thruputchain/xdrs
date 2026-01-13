@@ -239,6 +239,12 @@ const _: () = {
         }
     }
 
+    impl<const MAX: u32> WriteXDR for StringM<MAX> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            self.0.write_xdr(w)
+        }
+    }
+
     impl<const MAX: u32, T> WriteXDR for VecM<T, MAX>
     where
         T: WriteXDR,
