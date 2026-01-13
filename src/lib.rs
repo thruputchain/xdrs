@@ -1,5 +1,6 @@
 #![no_std]
 #![allow(ambiguous_glob_reexports)]
+#![allow(hidden_glob_reexports)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
