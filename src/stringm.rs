@@ -25,11 +25,11 @@ use core::ops::Deref;
     feature = "serde",
     derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr)
 )]
-pub struct StringM<const MAX: u32 = { u32::MAX }>(Vec<u8>);
+pub struct StringM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
 #[cfg(not(feature = "alloc"))]
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StringM<const MAX: u32 = { u32::MAX }>(Vec<u8>);
+pub struct StringM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
 impl<const MAX: u32> core::fmt::Display for StringM<MAX> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
