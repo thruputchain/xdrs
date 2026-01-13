@@ -13,12 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Rust toolchain
+      - name: Install Rust stable toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
           components: rustfmt
-      
+  
       - name: Check formatting
         run: cargo fmt --check --all
 
@@ -42,6 +42,12 @@ jobs:
         with:
           toolchain: stable
       
+      - name: Install Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly
+          components: rust-src
+
       - name: Set cache key
         id: cache-key
         run: |
@@ -69,16 +75,23 @@ jobs:
       - name: Build
         run: |
           if [ -z "${{ matrix.features }}" ]; then
-            cargo build --verbose
+            cargo +stable build --verbose
           else
-            cargo build --verbose --features "${{ matrix.features }}"
+            cargo +stable build --verbose --features "${{ matrix.features }}"
+          fi
+      - name: Build with build std
+        run: |
+          if [ -z "${{ matrix.features }}" ]; then
+            cargo +nightly build --verbose -Zbuild-std=core,alloc
+          else
+            cargo +nightly build --verbose -Zbuild-std=core,alloc --features "${FEATURES_KEY}"
           fi
       
       - name: Check
         run: |
           if [ -z "${{ matrix.features }}" ]; then
-            cargo check --verbose
+            cargo +stable check --verbose
           else
-            cargo check --verbose --features "${{ matrix.features }}"
+            cargo +stable check --verbose --features "${{ matrix.features }}"
           fi
 
