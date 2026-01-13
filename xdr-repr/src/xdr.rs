@@ -85,6 +85,10 @@ pub enum Declaration {
         name: Ident,
         max: Value,
     },
+    String {
+        name: Ident,
+        max: Value,
+    },
     FixedArray {
         name: Ident,
         elt_ty: TypeSpec,
@@ -114,6 +118,9 @@ impl Declaration {
             },
             Declaration::VariableOpaque { name: _, max } => {
                 format!("{{ \"type\": \"variable opaque\", \"max\": {} }}", max)
+            },
+            Declaration::String { name: _, max } => {
+                format!("{{ \"type\": \"string\", \"max\": {} }}", max)
             },
             Declaration::FixedArray { name: _, elt_ty, len } => {
                 format!("{{ \"type\": \"fixed array\", \"elt_ty\": {}, \"len\": {} }}", elt_ty.get_type_json(), len)

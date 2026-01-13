@@ -214,6 +214,15 @@ impl Format for Declaration {
                 }
                 f.write_str(">");
             }
+            Declaration::String { name, max } => {
+                f.write_str("string ");
+                name.fmt(f);
+                f.write_str("<");
+                if max != &Value::Const(Constant::Unsigned(u32::MAX)) {
+                    max.fmt(f);
+                }
+                f.write_str(">");
+            }
             Declaration::FixedArray { name, elt_ty, len } => {
                 elt_ty.fmt(f);
                 f.write_str(" ");
