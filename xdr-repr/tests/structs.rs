@@ -142,12 +142,12 @@ pub mod test_common {
     }
 
     pub struct VecTest {
-        pub vec: Vec<u8>,
+        pub foo_vec: Vec<u8>,
     }
 
     impl HasTypeDef for VecTest {
         fn type_def() -> TypeDef {
-            struct_def("VecTest", vec![<Vec<u8>>::declare(ident("vec"))])
+            struct_def("VecTest", vec![<Vec<u8>>::declare(ident("foo_vec"))])
         }
     }
 
@@ -155,7 +155,7 @@ pub mod test_common {
         VecTest::def()
         =>
         "struct VecTest {"
-        "	opaque vec<>;"
+        "	opaque foo_vec<>;"
         "};"
     }
 

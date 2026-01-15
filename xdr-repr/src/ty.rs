@@ -245,12 +245,12 @@ const _: () = {
 const _: () = {
     use alloc::vec::Vec;
 
-    impl HasTypeDef for Vec<u8> {
-        fn type_def() -> TypeDef {
-            TypeDef::Def(Declaration::VariableOpaque {
-                name: Ident("vec".to_string()),
+    impl Declare for Vec<u8> {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::VariableOpaque {
+                name,
                 max: Value::Const(Constant::Unsigned(u32::MAX)),
-            })
+            }
         }
     }
 };

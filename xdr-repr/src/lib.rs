@@ -33,12 +33,13 @@
 //!
 //! // Generate the XDR specification
 //! let xdr_spec = Person::def();
-//! // The generated XDR specification would be:
-//! // struct Person {
-//! //     opaque name[20];
-//! //     unsigned int age;
-//! // };
-//! # let _ = xdr_spec;
+//! let formatted = xdr_spec.to_string();
+//! let expected = r#"struct Person {
+//! 	opaque name[20];
+//! 	unsigned int age;
+//! };
+//! "#;
+//! assert_eq!(expected, formatted);
 //! # }
 //! ```
 //!
@@ -58,13 +59,14 @@
 //!
 //! // Generate the XDR specification
 //! let xdr_spec = Message::def();
-//! // The generated XDR specification would be:
-//! // struct Message {
-//! //     unsigned int id;
-//! //     opaque data[16];
-//! //     unsigned int tags[10];
-//! // };
-//! # let _ = xdr_spec;
+//! let formatted = xdr_spec.to_string();
+//! let expected = r#"struct Message {
+//! 	unsigned int id;
+//! 	opaque data[16];
+//! 	unsigned int tags[10];
+//! };
+//! "#;
+//! assert_eq!(expected, formatted);
 //! # }
 //! ```
 //!
@@ -81,9 +83,19 @@
 //! #[derive(XDR)]
 //! #[xdr(name = "PersonRecord")]
 //! pub struct Person {
-//!     pub name: Vec<u8>,
+//!     pub name: xdr_common::BytesM,
 //!     pub age: u32,
 //! }
+//!
+//! // Verify the generated XDR specification
+//! let person_spec = Person::def().to_string();
+//! // Note: Vec<u8> generates "opaque vec<>" (the type name, not the field name)
+//! let expected_person = r#"struct PersonRecord {
+//! 	opaque name<>;
+//! 	unsigned int age;
+//! };
+//! "#;
+//! assert_eq!(expected_person, person_spec);
 //!
 //! // For enums (discriminated unions), customize the discriminant type and field name
 //! #[derive(XDR)]
@@ -93,6 +105,14 @@
 //!     Err = -1,
 //! }
 //!
+//! let status_spec = Status::def().to_string();
+//! let expected_status = r#"enum Status {
+//! 	Ok = 0,
+//! 	Err = -1,
+//! };
+//! "#;
+//! assert_eq!(expected_status, status_spec);
+//!
 //! #[derive(XDR)]
 //! #[xdr(discrim_type = "Status", discrim_var = "stat")]
 //! #[repr(i32)]
@@ -100,9 +120,20 @@
 //!     Ok { contents: [u8; 100] } = 0,
 //!     Err { err_msg: Vec<u8> } = -1,
 //! }
-//! # let _person = Person::def();
-//! # let _status = Status::def();
-//! # let _message = Message::def();
+//!
+//! use xdr_repr::HasSpecification;
+//! let message_spec = Message::spec().to_string();
+//! // The spec contains both the enum and union definitions
+//! let expected_message = r#"union Message switch (Status stat)
+//! {
+//! case Ok:
+//! 	opaque contents[100];
+//! case Err:
+//! 	opaque err_msg<>;
+//! };
+//!
+//! "#;
+//! assert_eq!(expected_message, message_spec);
 //! # }
 //! ```
 //!
@@ -129,22 +160,24 @@
 //!
 //! // Generate the XDR specification
 //! let xdr_spec = Response::spec();
-//! // The generated XDR specification would be:
-//! // enum ResponseType {
-//! //     Success = 0,
-//! //     NotFound = 1,
-//! // };
-//! // 
-//! // union Response switch (ResponseType which)
-//! // {
-//! // case Success:
-//! //     opaque data[100];
-//! // case NotFound:
-//! //     void;
-//! // default:
-//! //     int code;
-//! // };
-//! # let _ = xdr_spec;
+//! let formatted = xdr_spec.to_string();
+//! let expected = r#"enum ResponseType {
+//! 	Success = 0,
+//! 	NotFound = 1,
+//! };
+//!
+//! union Response switch (ResponseType which)
+//! {
+//! case Success:
+//! 	opaque data[100];
+//! case NotFound:
+//! 	void;
+//! default:
+//! 	void;
+//! };
+//!
+//! "#;
+//! assert_eq!(expected, formatted);
 //! # }
 //! ```
 //!

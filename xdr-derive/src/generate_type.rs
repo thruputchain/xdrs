@@ -68,8 +68,13 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     //     return Err(error(input, "XDR: can't represent a struct with no fields"));
     // }
 
+    let attrs = Attrs::from_derive_input(input)?;
     let ty_ident = &input.ident;
-    let ty_name = ty_ident.to_string();
+    // The XDR struct has the same name as the rust type, unless the attrs override that
+    let ty_name = attrs
+        .name
+        .clone()
+        .unwrap_or_else(|| ty_ident.to_string());
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let declare_fields = if item.fields.is_empty() {
         vec![quote! { __xdrs::declare_void() }]
@@ -231,9 +236,15 @@ fn union_typedef(
     item: &syn::DataEnum,
     attrs: &Attrs,
 ) -> Result<TokenStream> {
-    let ty_name = input.ident.to_string();
+    // The XDR union has the same name as the rust type, unless the attrs override that
+    let ty_name = attrs
+        .name
+        .clone()
+        .unwrap_or_else(|| input.ident.to_string());
 
-    let discrim_type_name = attrs.discrim_type_name(&ty_name);
+    // The discriminant type name is based on the Rust type name, not the custom XDR name
+    let rust_enum_name = input.ident.to_string();
+    let discrim_type_name = attrs.discrim_type_name(&rust_enum_name);
     let discrim_typespec = quote! { __xdrs::named_type(#discrim_type_name) };
     let discrim_var = attrs.discrim_var_name();
 
