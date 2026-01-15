@@ -1,3 +1,8 @@
+//! Utilities for working with `MaybeUninit` types.
+//!
+//! This module provides helper functions for safely working with uninitialized memory,
+//! used internally by the serialization code.
+
 use core::mem::MaybeUninit as MU;
 
 /// Gets a shared reference to the contained value.

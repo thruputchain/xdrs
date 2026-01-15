@@ -1,7 +1,8 @@
 //! TXS writer that writes into a pre-allocated buffer.
 //!
-//! This module provides [`IntoBufWriter`], which implements [`Writer`]
-//! for writing TXS-encoded XDR data into a pre-allocated buffer of `MaybeUninit<u8>`.
+//! This module provides [`IntoBufWriter`], which implements [`Writer`] for
+//! writing TXS-encoded XDR data into a pre-allocated buffer of
+//! `MaybeUninit<u8>`.
 
 use super::put::*;
 use crate::mu;
@@ -12,13 +13,14 @@ type Mu8 = MaybeUninit<u8>;
 
 /// A writer for TXS-encoded XDR data into a pre-allocated buffer.
 ///
-/// This writer implements the [`Writer`] trait
-/// for the TXS (Traditional XDR Serialization) format. It writes data into a provided
-/// buffer of `MaybeUninit<u8>`, which is useful for `no_std` environments where
+/// This writer implements the [`Writer`] trait for the TXS (Traditional XDR
+/// Serialization) format. It writes data into a provided buffer of
+/// `MaybeUninit<u8>`, which is useful for `no_std` environments where
 /// allocation is not available.
 ///
 /// The buffer must be large enough to hold all the data being written, or
 /// [`Error::SpaceExhausted`] will be returned.
+///
 pub struct IntoBufWriter<'a> {
     buf: &'a mut [Mu8],
     written: usize,
@@ -26,8 +28,6 @@ pub struct IntoBufWriter<'a> {
 
 impl<'a> IntoBufWriter<'a> {
     /// Creates a new `IntoBufWriter` that writes into the given buffer.
-    ///
-    /// The buffer should be large enough to hold all the data that will be written.
     pub fn new(buf: &'a mut [Mu8]) -> Self {
         Self { buf, written: 0 }
     }

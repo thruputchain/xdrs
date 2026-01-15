@@ -97,11 +97,11 @@ pub fn named_type(name: &str) -> TypeSpec {
 ///
 /// # Panics
 ///
-/// Panics if `fields` is empty, as XDR structs must contain at least one field.
+/// Panics if `fields` is empty, as XDR structs must contain at least one declaration.
 pub fn struct_type(fields: Vec<Declaration>) -> TypeSpec {
     assert!(
         !fields.is_empty(),
-        "XDR struct must contain at least one field"
+        "XDR struct must contain at least one declaration (e.g., `void`)"
     );
 
     TypeSpec::Struct(StructBody(fields))
@@ -116,11 +116,11 @@ pub fn enum_type(variants: Vec<(Ident, Value)>) -> TypeSpec {
 ///
 /// # Panics
 ///
-/// Panics if `fields` is empty, as XDR structs must contain at least one field.
+/// Panics if `fields` is empty, as XDR structs must contain at least one declaration.
 pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
     assert!(
         !fields.is_empty(),
-        "XDR struct must contain at least one field"
+        "XDR struct must contain at least one declaration (e.g., `void`)"
     );
 
     TypeDef::Struct(ident(name), StructBody(fields))
@@ -158,7 +158,7 @@ pub fn union_def(
     )
 }
 
-/// Creates a case specification with a single case value.
+/// Creates a case specification with a single case.
 pub fn single_case_spec(case: &str, decl: Declaration) -> CaseSpec {
     CaseSpec {
         cases: vec![Value::Ident(ident(case))],
@@ -181,7 +181,7 @@ pub fn specification(definitions: Vec<Definition>) -> Specification {
 
 /// Creates a namespace containing an XDR specification.
 ///
-/// Requires the `ns` feature.
+/// *Requires feature `ns`.*
 #[cfg(feature = "ns")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ns")))]
 pub fn namespace(name: &str, spec: Specification) -> Namespace {

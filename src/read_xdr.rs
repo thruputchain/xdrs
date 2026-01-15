@@ -32,20 +32,19 @@ where
     <T as ReadXDR>::read_xdr(r)
 }
 
-/// Types that can be constructed by reading XDR data,
-/// possibly sharing data from the input.
+/// Types that can be constructed by reading XDR-encoded data, possibly
+/// sharing data from the input.
 ///
 /// The lifetime parameter `'r` represents the lifetime of data borrowed
-/// from the reader. Types that implement this trait can be deserialized
-/// from XDR-encoded data.
+/// from the reader.
 ///
 /// # Example
 ///
 /// ```rust
 /// use xdrs::{ReadXDR, serialize_cxs};
-/// // Valid CXS-encoded u32 value of 0 (just one byte)
-/// let data = [0u8];
-/// let _value = serialize_cxs::decode::<u32>(&data)?;
+///
+/// let data = [0u8]; // valid CXS encoding for the unsigned integer 0
+/// let _value: u32 = serialize_cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
 pub trait ReadXDR<'r>: Sized {

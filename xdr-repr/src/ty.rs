@@ -1,7 +1,7 @@
 //! Traits for describing XDR type representations.
 //!
-//! This module provides traits that allow Rust types to describe their
-//! XDR representation, enabling automatic generation of XDR specifications.
+//! This module provides traits that allow Rust types to describe their XDR
+//! representation, enabling automatic generation of XDR specifications.
 
 #![allow(dead_code)]
 
@@ -30,8 +30,8 @@ impl<T: HasTypeDef> XDR for T {
 
 /// Types that can describe their XDR type definition.
 ///
-/// This trait allows types to specify their complete XDR type definition,
-/// including structs, enums, unions, and typedefs.
+/// This trait allows types to specify their XDR type definition, including
+/// structs, enums, unions, and typedefs.
 pub trait HasTypeDef {
     /// Returns the XDR type definition for this type.
     fn type_def() -> TypeDef;
@@ -39,8 +39,8 @@ pub trait HasTypeDef {
 
 /// Types that can describe their XDR type specification.
 ///
-/// This trait allows types to specify their XDR type specification,
-/// which is used in declarations and type references.
+/// This trait allows types to specify their XDR type specification, which is
+/// used in declarations and type references.
 pub trait HasTypeSpec {
     /// Returns the XDR type specification for this type.
     fn type_spec() -> TypeSpec;
@@ -286,5 +286,3 @@ impl<T: HasTypeDef> HasTypeDef for &T {
         T::type_def()
     }
 }
-
-

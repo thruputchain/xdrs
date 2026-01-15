@@ -1,17 +1,19 @@
 //! Datatypes for representing XDR definitions.
 //! (Including `Display` implementations for rendering them.)
 //!
-//! This crate allows you to turn Rust structs, enums, and other types into corresponding
-//! [XDR][RFC-4506] specifications. By implementing the [`HasTypeDef`] trait (or using the
-//! `#[derive(XDR)]` macro with the `derive` feature), your Rust types can describe their
-//! XDR representation, enabling automatic generation of XDR specification documents.
+//! This crate allows you to turn Rust structs, enums, and other types into
+//! corresponding [XDR][RFC-4506] specifications. By implementing the
+//! [`HasTypeDef`] trait (or using the `#[derive(XDR)]` macro with the `derive`
+//! feature), your Rust types can describe their XDR representation, enabling
+//! automatic generation of XDR specification documents.
 //!
 //! ## Overview
 //!
-//! This crate provides types and traits for representing [XDR][RFC-4506] specifications
-//! as defined in [RFC 4506, section 6.3](https://datatracker.ietf.org/doc/html/rfc4506#section-6.3).
-//! It also includes support for the [RPC language][RFC-5531] as defined in
-//! [RFC 5531, section 12](https://datatracker.ietf.org/doc/html/rfc5531#section-12).
+//! This crate provides types and traits for representing [XDR][RFC-4506]
+//! specifications as defined in [RFC 4506, section
+//! 6.3](https://datatracker.ietf.org/doc/html/rfc4506#section-6.3). It also
+//! includes support for the [RPC language][RFC-5531] as defined in [RFC 5531,
+//! section 12](https://datatracker.ietf.org/doc/html/rfc5531#section-12).
 //!
 //! ## Examples
 //!
@@ -150,7 +152,7 @@
 //! pub enum Response {
 //!     Success { data: [u8; 100] } = 0,
 //!     NotFound = 1,
-//!     
+//!
 //!     // This variant handles all other discriminant values
 //!     // It must have exactly one i32 field
 //!     #[xdr(enum_default)]
@@ -208,37 +210,37 @@
 //! ## Main Types
 //!
 //! The main types in this crate represent the structure of XDR specifications:
-//! - [`Specification`] - A complete XDR specification containing multiple definitions
-//! - [`Definition`] - A single definition (type or constant)
-//! - [`TypeDef`] - A type definition (struct, enum, union, or typedef)
-//! - [`Declaration`] - A field or variable declaration
-//! - [`TypeSpec`] - A type specification
+//! - [`Specification`]: A complete XDR specification containing multiple definitions
+//! - [`Definition`]: A single definition (type or constant)
+//! - [`TypeDef`]: A type definition (struct, enum, union, or typedef)
+//! - [`Declaration`]: A field or variable declaration
+//! - [`TypeSpec`]: A type specification
 //!
 //! ## Attributes
 //!
 //! When using `#[derive(XDR)]`, you can customize the generated XDR specification
 //! with the following attributes:
 //!
-//! - **`#[xdr(name = "XdrName")]`** - Use a different name in the XDR specification
+//! - **`#[xdr(name = "XdrName")]`**: Use a different name in the XDR specification
 //!   than the Rust type name. Applied to structs or enums.
 //!
-//! - **`#[xdr(discrim_type = "TypeName")]`** - For enums (discriminated unions), specify
+//! - **`#[xdr(discrim_type = "TypeName")]`**: For enums (discriminated unions), specify
 //!   the name of an existing XDR type to use as the discriminant type instead of
 //!   auto-generating one. The default is `{EnumName}Type`.
 //!
-//! - **`#[xdr(discrim_var = "field_name")]`** - For enums (discriminated unions), specify
+//! - **`#[xdr(discrim_var = "field_name")]`**: For enums (discriminated unions), specify
 //!   the name of the discriminant field. The default is `"which"`.
 //!
-//! - **`#[xdr(enum_default)]`** - Mark an enum variant as the default case in a
+//! - **`#[xdr(enum_default)]`**: Mark an enum variant as the default case in a
 //!   discriminated union. Applied to individual enum variants.
 //!
 //! ## Traits
 //!
 //! Traits allow Rust types to describe their XDR representation:
-//! - [`HasTypeDef`] - Types that can describe their XDR type definition
-//! - [`HasTypeSpec`] - Types that can describe their XDR type specification
-//! - [`Declare`] - Types that can create a declaration with a given name
-//! - [`XDR`] - Types that can produce a complete XDR definition
+//! - [`HasTypeDef`]: Types that can describe their XDR type definition
+//! - [`HasTypeSpec`]: Types that can describe their XDR type specification
+//! - [`Declare`]: Types that can create a declaration with a given name
+//! - [`XDR`]: Types that can produce a complete XDR definition
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 //! [RFC-5531]: https://datatracker.ietf.org/doc/html/rfc5531

@@ -8,11 +8,11 @@ use crate::serialize::writer::*;
 
 use alloc::{vec, vec::Vec};
 
-/// A writer for CXS-encoded XDR data to a growable buffer.
+/// Write CXS-encoded XDR data into a growable buffer.
 ///
-/// This writer implements the [`Writer`] trait
-/// for the CXS (Compact XDR Serialization) format. It writes data to an internal
-/// `Vec<u8>` buffer that grows as needed.
+/// This writer implements the [`Writer`] trait for the CXS (Compact XDR
+/// Serialization) format. It writes data to an internal `Vec<u8>` buffer that
+/// grows as needed.
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub struct BufWriter(Vec<u8>);
 

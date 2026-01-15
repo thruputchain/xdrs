@@ -1,67 +1,75 @@
-//! XDRS (XDR Serialization) - A Rust library for serializing and deserializing XDR data.
+//! # _XDRS_ (XDR Serialization)
 //!
 //! This crate provides:
 //!
 //! - Traits [`ReadXDR`] and [`WriteXDR`], for converting between Rust values
-//!   and the [XDR][RFC-4506] (as defined in RFC 4506) data model
+//! and the [XDR][RFC-4506] data model.
 //!
-//! - Traits [`serialize::reader::Reader`] and [`serialize::writer::Writer`], for converting
-//!   between the [XDR][RFC-4506] data model and some serialization format
+//! - Traits [`Reader`] and [`Writer`], for converting between the
+//! [XDR][RFC-4506] data model and some serialization format.
 //!
-//! - Implementations of [`serialize::reader::Reader`] and [`serialize::writer::Writer`]:
-//!   - [CXS](serialize_cxs) (Compact XDR Serialization) - see module [`serialize_cxs`] for details
-//!   - TXS (Traditional XDR Serialization) (see module [`serialize_txs`])
+//! - Implementations of [`Reader`] and [`Writer`]:
+//!   - [CXS](serialize_cxs) ("Compact XDR Serialization")
+//!   - [TXS](serialize_txs) ("Traditional XDR Serialization")
 //!
 //! The library is `no_std`, but a few extra things can be
 //! enabled with feature `alloc`.
 //!
-//! # Features
+//! ## Features
 //!
 //! This crate supports several optional features:
 //!
-//! ## Serialization Formats
+//! ### Serialization formats
 //!
-//! - **`cxs`** (enabled by default) - Enables the CXS (Compact XDR Serialization) codec.
-//!   Provides the [`serialize_cxs`] module with compact, variable-length encoding.
+//! - **`cxs`** (enabled by default): Enables the CXS (Compact XDR
+//! Serialization) codec. Provides the [`serialize_cxs`] module with compact,
+//! variable-length encoding.
 //!
-//! - **`txs`** (enabled by default) - Enables the TXS (Traditional XDR Serialization) codec.
-//!   Provides the [`serialize_txs`] module with standard RFC 4506 encoding.
+//! - **`txs`** (enabled by default): Enables the TXS (Traditional XDR
+//! Serialization) codec. Provides the [`serialize_txs`] module with standard
+//! [RFC 4506] encoding.
 //!
-//! - **`strict`** (enabled by default) - When reading CXS data, requires that integers
-//!   use the minimal-size encoding. Rejects non-minimal encodings as errors.
+//! - **`strict`** (enabled by default): When reading CXS data, requires that
+//! integers use the minimal-size encoding. Rejects non-minimal encodings as
+//! errors.
 //!
-//! ## Alloc Support
+//! ### Allocation
 //!
-//! - **`alloc`** - Enables allocation-based interfaces. When enabled, provides:
+//! - **`alloc`**: Enables allocation-based interfaces:
 //!   - `Vec<u8>` and `Vec<T>` implementations of [`ReadXDR`] and [`WriteXDR`]
 //!   - `String` implementations of [`ReadXDR`] and [`WriteXDR`]
-//!   - `BufWriter` types in [`serialize_cxs`] and [`serialize_txs`] modules for growable buffers
+//!   - `BufWriter` types in [`serialize_cxs`] and [`serialize_txs`] modules
+//!   for growable buffers
 //!   - `encode()` functions that return owned `Vec<u8>`
-//!   - `read_opaque_fixed_owned()` and `read_opaque_variable_owned()` methods
 //!
-//! ## Extended Types
+//! ### Extended types
 //!
-//! - **`extras`** - Enables convenient extensions to the XDR specification:
-//!   - `i128` and `u128` support (using variable-length opaque encoding by default)
+//! - **`extras`**: Enables convenient extensions to the XDR specification:
+//!   - `i128` and `u128` support (using variable-length opaque encoding by
+//!   default)
 //!
-//! - **`int128_xdr`** (requires `extras`) - Uses an alternate encoding for 128-bit integers,
-//!   encoding them as two 64-bit integers (high bits and low bits) instead of variable-length opaque.
+//! - **`int128_xdr`** (requires `extras`): Uses an alternate encoding for
+//! 128-bit integers, encoding them as two 64-bit integers (high bits and low
+//! bits) instead of variable-length opaque.
 //!
-//! ## Optional Dependencies
+//! ### Optional dependencies
 //!
-//! - **`derive`** - Enables derive macros from the `xdr-derive` crate:
-//!   - `#[derive(ReadXDR)]` - Automatically implement [`ReadXDR`]
-//!   - `#[derive(WriteXDR)]` - Automatically implement [`WriteXDR`]
-//!   - `#[derive(XDR)]` - Automatically implement XDR type representation traits
+//! - **`derive`**: Enables derive macros from the `xdr-derive` crate:
+//!   - `#[derive(ReadXDR)]`: Automatically implement [`ReadXDR`]
+//!   - `#[derive(WriteXDR)]`: Automatically implement [`WriteXDR`]
+//!   - `#[derive(XDR)]`: Automatically implement XDR type representation
+//!   traits
 //!
-//! - **`repr`** (requires `alloc`) - Enables the `xdr-repr` crate for XDR specification
-//!   representation. Provides types and traits for describing XDR type definitions.
+//! - **`repr`** (requires `alloc`): Enables the `xdr-repr` crate for XDR
+//! specification representation. Provides types and traits for describing XDR
+//! type definitions.
 //!
-//! - **`xdr_common`** - Enables support for types from the `xdr_common` crate:
+//! - **`xdr_common`**: Enables support for types from the `xdr_common` crate:
 //!   - `xdr_common::Box<T>` implementations
 //!   - `xdr_common::BytesM<MAX>` and `xdr_common::VecM<T, MAX>` implementations
 //!
-//! - **`ns`** - Enables namespace support in `xdr-repr` for C++-like scoping of XDR definitions.
+//! - **`ns`**: Enables namespace support in `xdr-repr` for C++-like scoping of
+//! XDR definitions.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
@@ -78,43 +86,31 @@ pub mod discrim;
 pub mod read_xdr;
 pub mod write_xdr;
 
-// The abstract interface for serialization formats
 pub mod serialize;
 
-// CXS serialization
 #[cfg(feature = "cxs")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cxs")))]
 pub mod serialize_cxs;
 
-// TXS serialization
 #[cfg(feature = "txs")]
 #[cfg_attr(docsrs, doc(cfg(feature = "txs")))]
 pub mod serialize_txs;
 
-/// Utilities for working with `MaybeUninit` types.
-///
-/// This module provides helper functions for safely working with uninitialized memory,
-/// used internally by the serialization code.
 pub mod mu; // used by integration tests
 
-/// Compile-time validation that a const generic usize fits in a u32.
 pub(crate) mod valid_u32;
 
+pub use discrim::*;
+pub use read_xdr::*;
+pub use write_xdr::*;
 
+pub use serialize::reader::Error as ReadError;
+pub use serialize::reader::Result as ReadResult;
+pub use serialize::reader::*;
 
-
-pub use crate::read_xdr::*;
-pub use crate::write_xdr::*;
-
-pub use crate::discrim::*;
-
-pub use crate::serialize::reader::Error as ReadError;
-pub use crate::serialize::reader::Result as ReadResult;
-pub use crate::serialize::reader::*;
-
-pub use crate::serialize::writer::Error as WriteError;
-pub use crate::serialize::writer::Result as WriteResult;
-pub use crate::serialize::writer::*;
+pub use serialize::writer::Error as WriteError;
+pub use serialize::writer::Result as WriteResult;
+pub use serialize::writer::*;
 
 #[cfg(feature = "repr")]
 #[cfg_attr(docsrs, doc(cfg(feature = "repr")))]

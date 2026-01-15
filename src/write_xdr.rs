@@ -1,7 +1,7 @@
 //! Writing Rust values as XDR data.
 //!
 //! This module provides the [`WriteXDR`] trait and implementations for
-//! converting Rust values into [XDR][RFC-4506]-encoded data (as defined in RFC 4506).
+//! converting Rust values into [XDR][RFC-4506]-encoded data.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
@@ -19,9 +19,10 @@ use crate::valid_u32::*;
 /// ```rust
 /// use xdrs::serialize_cxs;
 /// use core::mem::MaybeUninit;
+///
 /// let value: u32 = 42;
 /// let mut buf = [MaybeUninit::uninit(); 16];
-/// let _written = serialize_cxs::encode_into(&value, &mut buf)?;
+/// let written = serialize_cxs::encode_into(&value, &mut buf)?;
 /// # Ok::<(), xdrs::WriteError>(())
 /// ```
 pub trait WriteXDR {
@@ -41,9 +42,10 @@ pub trait WriteXDR {
 /// ```rust
 /// use xdrs::serialize_cxs;
 /// use core::mem::MaybeUninit;
+///
 /// let value: u32 = 42;
 /// let mut buf = [MaybeUninit::uninit(); 16];
-/// let _written = serialize_cxs::encode_into(&value, &mut buf)?;
+/// let written = serialize_cxs::encode_into(&value, &mut buf)?;
 /// # Ok::<(), xdrs::WriteError>(())
 /// ```
 pub fn write_xdr<T, F, W>(this: &T, w: &mut W) -> Result<()>

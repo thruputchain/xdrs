@@ -10,9 +10,9 @@ use alloc::{vec, vec::Vec};
 
 /// A writer for TXS-encoded XDR data to a growable buffer.
 ///
-/// This writer implements the [`Writer`] trait
-/// for the TXS (Traditional XDR Serialization) format. It writes data to an internal
-/// `Vec<u8>` buffer that grows as needed.
+/// This writer implements the [`Writer`] trait for the TXS (Traditional XDR
+/// Serialization) format. It writes data to an internal `Vec<u8>` buffer that
+/// grows as needed.
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub struct BufWriter(Vec<u8>);
 

@@ -7,9 +7,9 @@ use crate::serialize::reader::*;
 
 /// A reader for TXS-encoded XDR data from a byte slice.
 ///
-/// This reader implements the [`Reader`] trait
-/// for the TXS (Traditional XDR Serialization) format. It reads data from a byte slice
-/// and tracks the current position.
+/// This reader implements the [`Reader`] trait for the TXS (Traditional XDR
+/// Serialization) format. It reads data from a byte slice and tracks the
+/// current position.
 pub struct BufReader<'r> {
     data: &'r [u8],
     pos: usize,
