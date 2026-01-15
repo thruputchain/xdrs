@@ -255,10 +255,10 @@ impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 const _: () = {
     use alloc::vec::Vec;
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<'r> ReadXDR<'r> for Vec<u8> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let bytes: &[u8] = r.read_opaque_variable(u32::MAX)?;
@@ -267,7 +267,6 @@ const _: () = {
         }
     }
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<'r, T> ReadXDR<'r> for Vec<T>
     where
         T: ReadXDR<'r>,
@@ -292,6 +291,7 @@ const _: () = {
 };
 
 #[cfg(all(feature = "xdr_common", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
 const _: () = {
     use xdr_common::*;
 
@@ -300,7 +300,6 @@ const _: () = {
 
     use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
 
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let vec: Vec<u8> = read_xdr(r)?;
@@ -311,7 +310,6 @@ const _: () = {
         }
     }
 
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
     impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let vec: Vec<u8> = read_xdr(r)?;
@@ -322,7 +320,6 @@ const _: () = {
         }
     }
 
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
     impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
         T: ReadXDR<'r>,
