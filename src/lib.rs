@@ -9,8 +9,8 @@
 //!   [XDR][RFC-4506] data model and some serialization format.
 //!
 //! - Implementations of [`Reader`] and [`Writer`]:
-//!   - [CXS](serialize_cxs) ("Compact XDR Serialization")
-//!   - [TXS](serialize_txs) ("Traditional XDR Serialization")
+//!   - [CXS](cxs) ("Compact XDR Serialization")
+//!   - [TXS](txs) ("Traditional XDR Serialization")
 //!
 //! The library is `no_std`, but a few extra things can be
 //! enabled with feature `alloc`.
@@ -19,38 +19,31 @@
 //!
 //! This crate supports several optional features:
 //!
-//! ### Serialization formats
+//! ### CXS options
 //!
-//! - **`cxs`** (enabled by default): Enables the CXS (Compact XDR
-//!   Serialization) codec. Provides the [`serialize_cxs`] module with compact,
-//!   variable-length encoding.
-//!
-//! - **`txs`** (enabled by default): Enables the TXS (Traditional XDR
-//!   Serialization) codec. Provides the [`serialize_txs`] module with standard
-//!   [RFC 4506] encoding.
-//!
-//! - **`strict`** (enabled by default): When reading CXS data, requires that
-//!   integers use the minimal-size encoding. Rejects non-minimal encodings as
-//!   errors.
+//! - **`permissive`**: When reading CXS data, don't reject (as is the default)
+//!   integers using non-minimal-size encoding.
 //!
 //! ### Allocation
 //!
 //! - **`alloc`**: Enables allocation-based interfaces:
 //!   - `Vec<u8>` and `Vec<T>` implementations of [`ReadXDR`] and [`WriteXDR`]
 //!   - `String` implementations of [`ReadXDR`] and [`WriteXDR`]
-//!   - `BufWriter` types in [`serialize_cxs`] and [`serialize_txs`] modules
+//!   - `BufWriter` types in [`cxs`] and [`txs`] modules
 //!     for growable buffers
 //!   - `encode()` functions that return owned `Vec<u8>`
 //!
 //! ### Extended types
 //!
-//! - **`extras`**: Enables convenient extensions to the XDR specification:
-//!   - `i128` and `u128` support (using variable-length opaque encoding by
-//!     default)
+//! - **`int128`**: Enables convenient extensions to the XDR specification:
+//!   support for `i128` and `u128` (using a variable-length opaque encoding).
 //!
-//! - **`int128_xdr`** (requires `extras`): Uses an alternate encoding for
-//!   128-bit integers, encoding them as two 64-bit integers (high bits and low
-//!   bits) instead of variable-length opaque.
+//! - **`int128_xdr`**: Uses an alternate encoding for 128-bit integers,
+//!   encoding them as two 64-bit integers (high bits and low bits) instead of
+//!   variable-length opaque.
+//!
+//! *Note:* If the two above features are both requested, the `int128_xdr`
+//! encoding takes precedence.
 //!
 //! ### Optional dependencies
 //!
@@ -71,6 +64,14 @@
 //! - **`ns`**: Enables namespace support in `xdr-repr` for C++-like scoping of
 //!   XDR definitions.
 //!
+//! ### Deprecated features
+//!
+//! - **`strict`**: Now ignored. The default is strict processing; use
+//!   feature `permissive` to disable that.
+//! - **`cxs`**: Now ignored.  CXS is now always available.
+//! - **`txs`**: Now ignored.  TXS is now always available.
+//! - **`extras`**: Now ignored.  See above for `i128/u128` features.
+//!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 #![no_std]
@@ -86,15 +87,14 @@ pub mod discrim;
 pub mod read_xdr;
 pub mod write_xdr;
 
+// The abstract interface for serialization formats
 pub mod serialize;
 
-#[cfg(feature = "cxs")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cxs")))]
-pub mod serialize_cxs;
+// CXS serialization
+pub mod cxs;
 
-#[cfg(feature = "txs")]
-#[cfg_attr(docsrs, doc(cfg(feature = "txs")))]
-pub mod serialize_txs;
+// TXS serialization
+pub mod txs;
 
 pub mod mu; // used by integration tests
 
@@ -120,6 +120,12 @@ pub use xdr_repr;
 #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
 pub use xdr_derive::*;
 
+#[cfg(all(feature = "int128", not(feature = "int128_xdr")))]
+pub mod int128;
+
+#[cfg(feature = "int128_xdr")]
+pub mod int128_xdr;
+
 #[cfg(feature = "xdr_common")]
 #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
 pub use xdr_common;
@@ -127,9 +133,3 @@ pub use xdr_common;
 #[cfg(feature = "xdr_common")]
 #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
 pub use xdr_common::*;
-
-#[cfg(all(not(feature = "extras"), feature = "int128_xdr"))]
-compile_error!(
-    "Feature \"int128_xdr\" requires also requesting support for \
-    non-standard types by enabling feature \"extras\"."
-);

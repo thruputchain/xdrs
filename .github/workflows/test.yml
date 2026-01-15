@@ -19,21 +19,23 @@ jobs:
         with:
           toolchain: nightly
           override: true
-      - name: Test (No Features)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace
-      - name: Test (All Features)
+      - name: Test (root lib without alloc)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F xdr_common,int128,int128_xdr
+      - name: Test (feature permissive)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F permissive,int128 --test ints
+      - name: Test (feature int128)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F int128 --test ints
+      - name: Test (workspace)
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace --all-features
-      - name: Test (alloc,derive)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F alloc,derive --workspace
-      - name: Test Benches
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F extras,alloc,derive --benches
-      - name: Test xdr-repr crate
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -p xdr-repr --all-features
-      - name: Build Documentation
-        run: cargo +nightly doc --all-features -p xdrs -p xdr-repr -p xdr-derive --no-deps
+      - name: Test (benchmarks)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --benches --all-features
+      - name: Docs
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo doc --workspace --all-features
+      - name: Docs (docsrs)
+        run: cargo +nightly doc --workspace --all-features --no-deps
         env:
           RUSTDOCFLAGS: "--cfg docsrs"
       - name: Test Documentation Examples
         run: |
-          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --all-features
-          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc --all-features
+          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --features "derive,xdr_common,ns,int128_xdr"
+          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc --features "alloc,derive,repr,xdr_common,ns,int128"

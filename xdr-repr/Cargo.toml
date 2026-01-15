@@ -15,6 +15,7 @@ xdr_common = { workspace = true, optional = true }
 unsafe_code = "forbid"
 
 [features]
+default = []
 derive = ["dep:xdr-derive"] # derive the XDR trait
 xdr_common = ["dep:xdr_common"] # types for bounded-length arrays
 ns = [] # C++-like namespaces for XDR specs
