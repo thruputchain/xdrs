@@ -286,6 +286,11 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
             quote! { __xdrs::Declaration::Void }
         }
         syn::Fields::Named(fields_named) => {
+            // Handle empty struct variants (e.g., Variant {})
+            if fields_named.named.is_empty() {
+                return quote! { __xdrs::Declaration::Void };
+            }
+
             let mut decls = fields_named.named.iter().map(|field| {
                 let field_ty = &field.ty;
                 let field_name = field
@@ -306,8 +311,14 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
                 }
             }
         }
-        syn::Fields::Unnamed(_) => {
-            unimplemented!();
+        syn::Fields::Unnamed(fields_unnamed) => {
+            // Handle empty tuple variants (e.g., Variant())
+            if fields_unnamed.unnamed.is_empty() {
+                return quote! { __xdrs::Declaration::Void };
+            }
+
+            // TODO: Implement support for tuple variants with fields
+            unimplemented!("Tuple variants with fields are not yet supported");
         }
     }
 }
