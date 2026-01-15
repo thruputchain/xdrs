@@ -8,6 +8,41 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
+/// A byte vector with a maximum length constraint.
+///
+/// `BytesM<MAX>` is a wrapper around `Vec<u8>` that enforces a maximum length
+/// of `MAX` bytes. This type provides hex encoding/decoding via `Display` and
+/// `FromStr` implementations.
+///
+/// This type corresponds to XDR variable-length opaque data as defined in
+/// [RFC 4506 Section 4.10](https://www.rfc-editor.org/rfc/rfc4506#section-4.10):
+/// ```text
+/// opaque identifier<m>;
+/// opaque identifier<>;
+/// ```
+///
+/// # Display Format
+///
+/// When displayed or serialized (with `serde` feature), bytes are encoded as
+/// lowercase hexadecimal strings. Parsing accepts hex strings.
+///
+/// # Type Parameters
+///
+/// - `MAX` - Maximum number of bytes (defaults to `u32::MAX`)
+///
+/// # Examples
+///
+/// ```ignore
+/// use xdr_common::BytesM;
+///
+/// // Create bytes with max length 100 (e.g., "opaque hash<100>")
+/// let b: BytesM<100> = vec![0xde, 0xad, 0xbe, 0xef].try_into()?;
+/// assert_eq!(b.to_string(), "deadbeef");
+///
+/// // Parse from hex string
+/// let parsed: BytesM<100> = "cafebabe".parse()?;
+/// assert_eq!(parsed.as_slice(), &[0xca, 0xfe, 0xba, 0xbe]);
+/// ```
 #[cfg(feature = "alloc")]
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -16,6 +51,9 @@ use core::ops::Deref;
 )]
 pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
+/// A byte vector with a maximum length constraint (no_std version).
+///
+/// See [`BytesM`] documentation for details.
 #[cfg(not(feature = "alloc"))]
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
@@ -74,14 +112,17 @@ impl<const MAX: u32> Default for BytesM<MAX> {
 }
 
 impl<const MAX: u32> BytesM<MAX> {
+    /// The maximum length as a compile-time constant.
     pub const MAX_LEN: usize = { MAX as usize };
 
+    /// Returns the maximum allowed length for this byte vector.
     #[must_use]
     #[allow(clippy::unused_self)]
     pub fn max_len(&self) -> usize {
         Self::MAX_LEN
     }
 
+    /// Returns a reference to the underlying byte vector.
     #[must_use]
     pub fn as_vec(&self) -> &Vec<u8> {
         self.as_ref()
@@ -89,12 +130,16 @@ impl<const MAX: u32> BytesM<MAX> {
 }
 
 impl<const MAX: u32> BytesM<MAX> {
+    /// Clones the bytes and returns them as a standard `Vec<u8>`.
+    ///
+    /// Requires the `alloc` feature.
     #[must_use]
     #[cfg(feature = "alloc")]
     pub fn to_vec(&self) -> Vec<u8> {
         self.into()
     }
 
+    /// Consumes `self` and returns the underlying byte vector.
     #[must_use]
     pub fn into_vec(self) -> Vec<u8> {
         self.into()

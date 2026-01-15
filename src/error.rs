@@ -6,22 +6,40 @@ pub use crate::cfg::*;
 #[cfg(feature = "std")]
 use std::{error, io};
 
-/// Error contains all errors returned by functions in this crate. It can be
-/// compared via `PartialEq`, however any contained IO errors will only be
-/// compared on their `ErrorKind`.
+/// Errors that can occur when working with XDR types.
+///
+/// This error type can be compared via `PartialEq`. Note that any contained
+/// IO errors will only be compared on their `ErrorKind`.
 #[derive(Debug)]
 pub enum Error {
+    /// The XDR value is invalid or malformed.
     Invalid,
+    /// The XDR value or operation is not supported.
     Unsupported,
+    /// The length of the value exceeds the maximum allowed length.
+    ///
+    /// This occurs when trying to create a constrained type (e.g., `VecM<T, MAX>`)
+    /// from data that exceeds the `MAX` length parameter.
     LengthExceedsMax,
+    /// The length of the value does not match the expected length.
     LengthMismatch,
+    /// XDR padding contains non-zero bytes (XDR requires zero padding).
     NonZeroPadding,
+    /// The hex string is invalid.
+    ///
+    /// This error occurs when parsing hex-encoded byte strings.
     #[cfg(feature = "alloc")]
     InvalidHex,
+    /// The byte sequence is not valid UTF-8.
+    ///
+    /// This occurs when attempting to convert a `StringM` to a UTF-8 `String`.
     InvalidUTF8,
+    /// An I/O error occurred.
     #[cfg(feature = "std")]
     Io(io::Error),
+    /// The depth limit was exceeded during processing.
     DepthLimitExceeded,
+    /// The length limit was exceeded during processing.
     LengthLimitExceeded,
 }
 

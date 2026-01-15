@@ -8,10 +8,46 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::ops::Deref;
 
+/// A vector with a maximum length constraint.
+///
+/// `VecM<T, MAX>` is a wrapper around `Vec<T>` that enforces a maximum length
+/// of `MAX` elements. Attempting to create a `VecM` from a `Vec` that exceeds
+/// this length will result in an [`Error::LengthExceedsMax`].
+///
+/// This type corresponds to XDR variable-length arrays as defined in
+/// [RFC 4506 Section 4.13](https://www.rfc-editor.org/rfc/rfc4506#section-4.13):
+/// ```text
+/// type-name identifier<m>;
+/// type-name identifier<>;
+/// ```
+///
+/// # Type Parameters
+///
+/// - `T` - The element type
+/// - `MAX` - Maximum number of elements (defaults to `u32::MAX`)
+///
+/// # Examples
+///
+/// ```ignore
+/// use xdr_common::VecM;
+///
+/// // Create a vector with max 5 elements (e.g., "int values<5>")
+/// let v: VecM<u32, 5> = vec![1, 2, 3].try_into()?;
+/// assert_eq!(v.len(), 3);
+/// assert_eq!(v.max_len(), 5);
+///
+/// // This would fail because it exceeds MAX
+/// let too_long: Result<VecM<u32, 5>, _> = vec![1, 2, 3, 4, 5, 6].try_into();
+/// assert!(too_long.is_err());
+/// ```
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VecM<T, const MAX: u32 = { u32::MAX }>(pub Vec<T>);
 
+/// A vector with a maximum length constraint (no_std version).
+///
+/// See [`VecM`] documentation for details. This version requires `T: 'static`
+/// for compatibility with no_std environments.
 #[cfg(not(feature = "alloc"))]
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VecM<T, const MAX: u32 = { u32::MAX }>(pub Vec<T>)
@@ -94,14 +130,17 @@ impl<T, const MAX: u32> Default for VecM<T, MAX> {
 }
 
 impl<T, const MAX: u32> VecM<T, MAX> {
+    /// The maximum length as a compile-time constant.
     pub const MAX_LEN: usize = { MAX as usize };
 
+    /// Returns the maximum allowed length for this vector.
     #[must_use]
     #[allow(clippy::unused_self)]
     pub fn max_len(&self) -> usize {
         Self::MAX_LEN
     }
 
+    /// Returns a reference to the underlying vector.
     #[must_use]
     pub fn as_vec(&self) -> &Vec<T> {
         self.as_ref()
@@ -109,12 +148,16 @@ impl<T, const MAX: u32> VecM<T, MAX> {
 }
 
 impl<T: Clone, const MAX: u32> VecM<T, MAX> {
+    /// Clones the vector and returns it as a standard `Vec<T>`.
+    ///
+    /// Requires the `alloc` feature.
     #[must_use]
     #[cfg(feature = "alloc")]
     pub fn to_vec(&self) -> Vec<T> {
         self.into()
     }
 
+    /// Consumes `self` and returns the underlying vector.
     #[must_use]
     pub fn into_vec(self) -> Vec<T> {
         self.into()
@@ -122,6 +165,10 @@ impl<T: Clone, const MAX: u32> VecM<T, MAX> {
 }
 
 impl<T: Clone> VecM<T, 1> {
+    /// Converts a `VecM<T, 1>` to `Option<T>`.
+    ///
+    /// Returns `Some(T)` if the vector contains one element, `None` otherwise.
+    /// This is useful for optional XDR fields.
     #[must_use]
     pub fn to_option(&self) -> Option<T> {
         if self.len() > 0 {
@@ -141,6 +188,12 @@ impl<T: Clone> From<VecM<T, 1>> for Option<T> {
 
 #[cfg(feature = "alloc")]
 impl<T> VecM<T, 1> {
+    /// Consumes `self` and converts it to `Option<T>`.
+    ///
+    /// Returns `Some(T)` if the vector contains one element, `None` otherwise.
+    /// This is useful for optional XDR fields.
+    ///
+    /// Requires the `alloc` feature.
     #[must_use]
     pub fn into_option(mut self) -> Option<T> {
         self.0.drain(..).next()
