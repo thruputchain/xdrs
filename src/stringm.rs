@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-pub use crate::cfg::*;
+use crate::cfg::*;
 pub use crate::error::*;
 
 use core::fmt;
@@ -35,10 +35,15 @@ use core::ops::Deref;
 /// - Fallible conversion to/from UTF-8 `String`: [`TryFrom`]/[`TryInto`]/[`StringM::to_utf8_string`]
 /// - Lossy conversion to UTF-8 `String`: [`StringM::to_utf8_string_lossy`]
 ///
+/// # Feature Variants
+///
+/// - **With `alloc` feature**: `Vec<u8>` is heap-allocated, supporting dynamic data
+/// - **Without `alloc` feature**: `Vec<u8>` is `&'static [u8]`, for static data only
+///
 /// # Display Format
 ///
 /// When displayed or serialized (with `serde` feature), strings are shown
-/// as escaped printable ASCII using [`Display`]/[`ToString`]/[`FromStr`].
+/// as escaped printable ASCII using [`core::fmt::Display`]/`ToString`/[`core::str::FromStr`].
 ///
 /// # Type Parameters
 ///
@@ -57,20 +62,11 @@ use core::ops::Deref;
 /// let bytes: StringM<100> = vec![0xFF, 0xFE].try_into()?;
 /// let lossy = bytes.to_utf8_string_lossy(); // Replaces invalid chars
 /// ```
-
-#[cfg(feature = "alloc")]
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
-    feature = "serde",
+    all(feature = "serde", feature = "alloc"),
     derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr)
 )]
-pub struct StringM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
-
-/// A string type that stores arbitrary bytes with a maximum length constraint (no_std version).
-///
-/// See [`StringM`] documentation for details.
-#[cfg(not(feature = "alloc"))]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StringM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
 impl<const MAX: u32> core::fmt::Display for StringM<MAX> {
@@ -102,6 +98,7 @@ impl<const MAX: u32> core::fmt::Debug for StringM<MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> core::str::FromStr for StringM<MAX> {
     type Err = Error;
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
@@ -148,6 +145,7 @@ impl<const MAX: u32> StringM<MAX> {
     /// Requires the `alloc` feature.
     #[must_use]
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     pub fn to_vec(&self) -> Vec<u8> {
         self.into()
     }
@@ -166,6 +164,7 @@ impl<const MAX: u32> StringM<MAX> {
     ///
     /// Requires the `alloc` feature.
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     pub fn to_utf8_string(&self) -> Result<String, Error> {
         self.try_into()
     }
@@ -176,6 +175,7 @@ impl<const MAX: u32> StringM<MAX> {
     ///
     /// Requires the `alloc` feature.
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     pub fn into_utf8_string(self) -> Result<String, Error> {
         self.try_into()
     }
@@ -186,6 +186,7 @@ impl<const MAX: u32> StringM<MAX> {
     ///
     /// Requires the `alloc` feature.
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     #[must_use]
     pub fn to_utf8_string_lossy(&self) -> String {
         String::from_utf8_lossy(&self.0).into_owned()
@@ -197,6 +198,7 @@ impl<const MAX: u32> StringM<MAX> {
     ///
     /// Requires the `alloc` feature.
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     #[must_use]
     pub fn into_utf8_string_lossy(self) -> String {
         String::from_utf8_lossy(&self.0).into_owned()
@@ -223,6 +225,7 @@ impl<const MAX: u32> From<StringM<MAX>> for Vec<u8> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> From<&StringM<MAX>> for Vec<u8> {
     fn from(v: &StringM<MAX>) -> Self {
         v.0.clone()
@@ -236,6 +239,7 @@ impl<const MAX: u32> AsRef<Vec<u8>> for StringM<MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<&Vec<u8>> for StringM<MAX> {
     type Error = Error;
 
@@ -245,6 +249,7 @@ impl<const MAX: u32> TryFrom<&Vec<u8>> for StringM<MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<&[u8]> for StringM<MAX> {
     type Error = Error;
 
@@ -270,6 +275,7 @@ impl<const MAX: u32> AsRef<[u8]> for StringM<MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const N: usize, const MAX: u32> TryFrom<[u8; N]> for StringM<MAX> {
     type Error = Error;
 
@@ -284,6 +290,7 @@ impl<const N: usize, const MAX: u32> TryFrom<[u8; N]> for StringM<MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const N: usize, const MAX: u32> TryFrom<StringM<MAX>> for [u8; N] {
     type Error = StringM<MAX>;
 
@@ -294,6 +301,7 @@ impl<const N: usize, const MAX: u32> TryFrom<StringM<MAX>> for [u8; N] {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const N: usize, const MAX: u32> TryFrom<&[u8; N]> for StringM<MAX> {
     type Error = Error;
 
@@ -308,6 +316,7 @@ impl<const N: usize, const MAX: u32> TryFrom<&[u8; N]> for StringM<MAX> {
 }
 
 #[cfg(not(feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(not(feature = "alloc"))))]
 impl<const N: usize, const MAX: u32> TryFrom<&'static [u8; N]> for StringM<MAX> {
     type Error = Error;
 
@@ -322,6 +331,7 @@ impl<const N: usize, const MAX: u32> TryFrom<&'static [u8; N]> for StringM<MAX> 
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<&String> for StringM<MAX> {
     type Error = Error;
 
@@ -336,6 +346,7 @@ impl<const MAX: u32> TryFrom<&String> for StringM<MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<String> for StringM<MAX> {
     type Error = Error;
 
@@ -350,6 +361,7 @@ impl<const MAX: u32> TryFrom<String> for StringM<MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<StringM<MAX>> for String {
     type Error = Error;
 
@@ -359,6 +371,7 @@ impl<const MAX: u32> TryFrom<StringM<MAX>> for String {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<&StringM<MAX>> for String {
     type Error = Error;
 
@@ -368,6 +381,7 @@ impl<const MAX: u32> TryFrom<&StringM<MAX>> for String {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<&str> for StringM<MAX> {
     type Error = Error;
 
@@ -382,6 +396,7 @@ impl<const MAX: u32> TryFrom<&str> for StringM<MAX> {
 }
 
 #[cfg(not(feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(not(feature = "alloc"))))]
 impl<const MAX: u32> TryFrom<&'static str> for StringM<MAX> {
     type Error = Error;
 

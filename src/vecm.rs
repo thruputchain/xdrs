@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-pub use crate::cfg::*;
+use crate::cfg::*;
 pub use crate::error::*;
 
 use core::fmt;
@@ -20,6 +20,11 @@ use core::ops::Deref;
 /// type-name identifier<m>;
 /// type-name identifier<>;
 /// ```
+///
+/// # Feature Variants
+///
+/// - **With `alloc` feature**: `Vec<T>` is heap-allocated, supporting dynamic data
+/// - **Without `alloc` feature**: `Vec<T>` is `&'static [T]`, for static data only (requires `T: 'static`)
 ///
 /// # Type Parameters
 ///
@@ -40,21 +45,27 @@ use core::ops::Deref;
 /// let too_long: Result<VecM<u32, 5>, _> = vec![1, 2, 3, 4, 5, 6].try_into();
 /// assert!(too_long.is_err());
 /// ```
-#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct VecM<T, const MAX: u32 = { u32::MAX }>(pub Vec<T>);
-
-/// A vector with a maximum length constraint (no_std version).
-///
-/// See [`VecM`] documentation for details. This version requires `T: 'static`
-/// for compatibility with no_std environments.
-#[cfg(not(feature = "alloc"))]
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[allow(private_bounds)]
 pub struct VecM<T, const MAX: u32 = { u32::MAX }>(pub Vec<T>)
 where
-    T: 'static;
+    T: StaticIfNoAlloc;
+
+// Helper trait to conditionally require 'static for no_alloc
+#[cfg(feature = "alloc")]
+#[allow(private_bounds)]
+trait StaticIfNoAlloc {}
+#[cfg(feature = "alloc")]
+impl<T> StaticIfNoAlloc for T {}
+
+#[cfg(not(feature = "alloc"))]
+#[allow(private_bounds)]
+trait StaticIfNoAlloc: 'static {}
+#[cfg(not(feature = "alloc"))]
+impl<T: 'static> StaticIfNoAlloc for T {}
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
 impl<T, const MAX: u32> Serialize for VecM<T, MAX>
 where
     T: Serialize,
@@ -68,6 +79,7 @@ where
 }
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
 impl<'de, T, const MAX: u32> Deserialize<'de> for VecM<T, MAX>
 where
     T: Deserialize<'de>,
@@ -115,7 +127,7 @@ where
     }
 }
 
-impl<T, const MAX: u32> Deref for VecM<T, MAX> {
+impl<T: StaticIfNoAlloc, const MAX: u32> Deref for VecM<T, MAX> {
     type Target = Vec<T>;
 
     fn deref(&self) -> &Self::Target {
@@ -123,13 +135,14 @@ impl<T, const MAX: u32> Deref for VecM<T, MAX> {
     }
 }
 
-impl<T, const MAX: u32> Default for VecM<T, MAX> {
+impl<T: StaticIfNoAlloc, const MAX: u32> Default for VecM<T, MAX> {
     fn default() -> Self {
         Self(Vec::default())
     }
 }
 
-impl<T, const MAX: u32> VecM<T, MAX> {
+#[allow(private_bounds)]
+impl<T: StaticIfNoAlloc, const MAX: u32> VecM<T, MAX> {
     /// The maximum length as a compile-time constant.
     pub const MAX_LEN: usize = { MAX as usize };
 
@@ -147,12 +160,14 @@ impl<T, const MAX: u32> VecM<T, MAX> {
     }
 }
 
-impl<T: Clone, const MAX: u32> VecM<T, MAX> {
+#[allow(private_bounds)]
+impl<T: Clone + StaticIfNoAlloc, const MAX: u32> VecM<T, MAX> {
     /// Clones the vector and returns it as a standard `Vec<T>`.
     ///
     /// Requires the `alloc` feature.
     #[must_use]
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     pub fn to_vec(&self) -> Vec<T> {
         self.into()
     }
@@ -164,7 +179,8 @@ impl<T: Clone, const MAX: u32> VecM<T, MAX> {
     }
 }
 
-impl<T: Clone> VecM<T, 1> {
+#[allow(private_bounds)]
+impl<T: Clone + StaticIfNoAlloc> VecM<T, 1> {
     /// Converts a `VecM<T, 1>` to `Option<T>`.
     ///
     /// Returns `Some(T)` if the vector contains one element, `None` otherwise.
@@ -180,7 +196,8 @@ impl<T: Clone> VecM<T, 1> {
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<T: Clone> From<VecM<T, 1>> for Option<T> {
+#[cfg_attr(docsrs, doc(cfg(not(feature = "alloc"))))]
+impl<T: Clone + 'static> From<VecM<T, 1>> for Option<T> {
     fn from(v: VecM<T, 1>) -> Self {
         v.to_option()
     }
@@ -195,19 +212,21 @@ impl<T> VecM<T, 1> {
     ///
     /// Requires the `alloc` feature.
     #[must_use]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     pub fn into_option(mut self) -> Option<T> {
         self.0.drain(..).next()
     }
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<T> From<VecM<T, 1>> for Option<T> {
     fn from(v: VecM<T, 1>) -> Self {
         v.into_option()
     }
 }
 
-impl<T, const MAX: u32> TryFrom<Vec<T>> for VecM<T, MAX> {
+impl<T: StaticIfNoAlloc, const MAX: u32> TryFrom<Vec<T>> for VecM<T, MAX> {
     type Error = Error;
 
     fn try_from(v: Vec<T>) -> Result<Self, Error> {
@@ -220,26 +239,28 @@ impl<T, const MAX: u32> TryFrom<Vec<T>> for VecM<T, MAX> {
     }
 }
 
-impl<T, const MAX: u32> From<VecM<T, MAX>> for Vec<T> {
+impl<T: StaticIfNoAlloc, const MAX: u32> From<VecM<T, MAX>> for Vec<T> {
     fn from(v: VecM<T, MAX>) -> Self {
         v.0
     }
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<T: Clone, const MAX: u32> From<&VecM<T, MAX>> for Vec<T> {
     fn from(v: &VecM<T, MAX>) -> Self {
         v.0.clone()
     }
 }
 
-impl<T, const MAX: u32> AsRef<Vec<T>> for VecM<T, MAX> {
+impl<T: StaticIfNoAlloc, const MAX: u32> AsRef<Vec<T>> for VecM<T, MAX> {
     fn as_ref(&self) -> &Vec<T> {
         &self.0
     }
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<T: Clone, const MAX: u32> TryFrom<&Vec<T>> for VecM<T, MAX> {
     type Error = Error;
 
@@ -249,6 +270,7 @@ impl<T: Clone, const MAX: u32> TryFrom<&Vec<T>> for VecM<T, MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<T: Clone, const MAX: u32> TryFrom<&[T]> for VecM<T, MAX> {
     type Error = Error;
 
@@ -262,7 +284,7 @@ impl<T: Clone, const MAX: u32> TryFrom<&[T]> for VecM<T, MAX> {
     }
 }
 
-impl<T, const MAX: u32> AsRef<[T]> for VecM<T, MAX> {
+impl<T: StaticIfNoAlloc, const MAX: u32> AsRef<[T]> for VecM<T, MAX> {
     #[cfg(feature = "alloc")]
     fn as_ref(&self) -> &[T] {
         self.0.as_ref()
@@ -274,6 +296,7 @@ impl<T, const MAX: u32> AsRef<[T]> for VecM<T, MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<T: Clone, const N: usize, const MAX: u32> TryFrom<[T; N]> for VecM<T, MAX> {
     type Error = Error;
 
@@ -288,6 +311,7 @@ impl<T: Clone, const N: usize, const MAX: u32> TryFrom<[T; N]> for VecM<T, MAX> 
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<T: Clone, const N: usize, const MAX: u32> TryFrom<VecM<T, MAX>> for [T; N] {
     type Error = VecM<T, MAX>;
 
@@ -298,6 +322,7 @@ impl<T: Clone, const N: usize, const MAX: u32> TryFrom<VecM<T, MAX>> for [T; N] 
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<T: Clone, const N: usize, const MAX: u32> TryFrom<&[T; N]> for VecM<T, MAX> {
     type Error = Error;
 
@@ -312,6 +337,7 @@ impl<T: Clone, const N: usize, const MAX: u32> TryFrom<&[T; N]> for VecM<T, MAX>
 }
 
 #[cfg(not(feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(not(feature = "alloc"))))]
 impl<T: Clone, const N: usize, const MAX: u32> TryFrom<&'static [T; N]> for VecM<T, MAX> {
     type Error = Error;
 
@@ -326,6 +352,7 @@ impl<T: Clone, const N: usize, const MAX: u32> TryFrom<&'static [T; N]> for VecM
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<&String> for VecM<u8, MAX> {
     type Error = Error;
 
@@ -340,6 +367,7 @@ impl<const MAX: u32> TryFrom<&String> for VecM<u8, MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<String> for VecM<u8, MAX> {
     type Error = Error;
 
@@ -354,6 +382,7 @@ impl<const MAX: u32> TryFrom<String> for VecM<u8, MAX> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<const MAX: u32> TryFrom<&str> for VecM<u8, MAX> {
     type Error = Error;
 
@@ -368,6 +397,7 @@ impl<const MAX: u32> TryFrom<&str> for VecM<u8, MAX> {
 }
 
 #[cfg(not(feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(not(feature = "alloc"))))]
 impl<const MAX: u32> TryFrom<&'static str> for VecM<u8, MAX> {
     type Error = Error;
 
@@ -378,5 +408,45 @@ impl<const MAX: u32> TryFrom<&'static str> for VecM<u8, MAX> {
         } else {
             Err(Error::LengthExceedsMax)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "alloc")]
+    extern crate alloc;
+    #[cfg(feature = "alloc")]
+    use alloc::vec;
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_vecm_alloc_basic() {
+        // Test basic creation with alloc feature
+        let v: VecM<u32, 10> = vec![1, 2, 3].try_into().unwrap();
+        assert_eq!(v.len(), 3);
+        assert_eq!(v.max_len(), 10);
+        assert_eq!(v[0], 1);
+
+        // Test length exceeds max
+        let too_long: Result<VecM<u32, 5>, _> = vec![1, 2, 3, 4, 5, 6].try_into();
+        assert!(too_long.is_err());
+    }
+
+    #[test]
+    #[cfg(not(feature = "alloc"))]
+    fn test_vecm_noalloc_basic() {
+        // Test basic creation without alloc feature (static data only)
+        static DATA: [u32; 3] = [1, 2, 3];
+        let v: VecM<u32, 10> = (&DATA).try_into().unwrap();
+        assert_eq!(v.len(), 3);
+        assert_eq!(v.max_len(), 10);
+        assert_eq!(v[0], 1);
+
+        // Test length exceeds max
+        static LONG_DATA: [u32; 6] = [1, 2, 3, 4, 5, 6];
+        let too_long: Result<VecM<u32, 5>, _> = (&LONG_DATA).try_into();
+        assert!(too_long.is_err());
     }
 }

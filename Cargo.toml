@@ -12,6 +12,10 @@ alloc = ["escape-bytes/alloc", "hex?/alloc", "dep:hex"]
 std = ["alloc", "hex?/std"]
 serde = ["alloc", "dep:serde", "dep:serde_with", "dep:hex"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 hex = {version = "0.4.3", optional = true, default-features = false}
 escape-bytes = { version = "0.1.1", default-features = false }

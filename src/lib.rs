@@ -31,12 +31,14 @@
 //! let s: StringM<50> = "world".try_into()?;
 //! ```
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![no_std]
 
 #[cfg(feature = "std")]
 extern crate std;
 
 mod cfg;
+pub use cfg::{Box, Vec};
 
 mod error;
 pub use error::*;
