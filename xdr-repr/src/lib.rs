@@ -1,3 +1,4 @@
+#![allow(clippy::tabs_in_doc_comments)]
 //! Datatypes for representing XDR definitions.
 //! (Including `Display` implementations for rendering them.)
 //!

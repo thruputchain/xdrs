@@ -3,10 +3,10 @@
 //! This crate provides:
 //!
 //! - Traits [`ReadXDR`] and [`WriteXDR`], for converting between Rust values
-//! and the [XDR][RFC-4506] data model.
+//!   and the [XDR][RFC-4506] data model.
 //!
 //! - Traits [`Reader`] and [`Writer`], for converting between the
-//! [XDR][RFC-4506] data model and some serialization format.
+//!   [XDR][RFC-4506] data model and some serialization format.
 //!
 //! - Implementations of [`Reader`] and [`Writer`]:
 //!   - [CXS](serialize_cxs) ("Compact XDR Serialization")
@@ -22,16 +22,16 @@
 //! ### Serialization formats
 //!
 //! - **`cxs`** (enabled by default): Enables the CXS (Compact XDR
-//! Serialization) codec. Provides the [`serialize_cxs`] module with compact,
-//! variable-length encoding.
+//!   Serialization) codec. Provides the [`serialize_cxs`] module with compact,
+//!   variable-length encoding.
 //!
 //! - **`txs`** (enabled by default): Enables the TXS (Traditional XDR
-//! Serialization) codec. Provides the [`serialize_txs`] module with standard
-//! [RFC 4506] encoding.
+//!   Serialization) codec. Provides the [`serialize_txs`] module with standard
+//!   [RFC 4506] encoding.
 //!
 //! - **`strict`** (enabled by default): When reading CXS data, requires that
-//! integers use the minimal-size encoding. Rejects non-minimal encodings as
-//! errors.
+//!   integers use the minimal-size encoding. Rejects non-minimal encodings as
+//!   errors.
 //!
 //! ### Allocation
 //!
@@ -39,18 +39,18 @@
 //!   - `Vec<u8>` and `Vec<T>` implementations of [`ReadXDR`] and [`WriteXDR`]
 //!   - `String` implementations of [`ReadXDR`] and [`WriteXDR`]
 //!   - `BufWriter` types in [`serialize_cxs`] and [`serialize_txs`] modules
-//!   for growable buffers
+//!     for growable buffers
 //!   - `encode()` functions that return owned `Vec<u8>`
 //!
 //! ### Extended types
 //!
 //! - **`extras`**: Enables convenient extensions to the XDR specification:
 //!   - `i128` and `u128` support (using variable-length opaque encoding by
-//!   default)
+//!     default)
 //!
 //! - **`int128_xdr`** (requires `extras`): Uses an alternate encoding for
-//! 128-bit integers, encoding them as two 64-bit integers (high bits and low
-//! bits) instead of variable-length opaque.
+//!   128-bit integers, encoding them as two 64-bit integers (high bits and low
+//!   bits) instead of variable-length opaque.
 //!
 //! ### Optional dependencies
 //!
@@ -58,18 +58,18 @@
 //!   - `#[derive(ReadXDR)]`: Automatically implement [`ReadXDR`]
 //!   - `#[derive(WriteXDR)]`: Automatically implement [`WriteXDR`]
 //!   - `#[derive(XDR)]`: Automatically implement XDR type representation
-//!   traits
+//!     traits
 //!
 //! - **`repr`** (requires `alloc`): Enables the `xdr-repr` crate for XDR
-//! specification representation. Provides types and traits for describing XDR
-//! type definitions.
+//!   specification representation. Provides types and traits for describing XDR
+//!   type definitions.
 //!
 //! - **`xdr_common`**: Enables support for types from the `xdr_common` crate:
 //!   - `xdr_common::Box<T>` implementations
 //!   - `xdr_common::BytesM<MAX>` and `xdr_common::VecM<T, MAX>` implementations
 //!
 //! - **`ns`**: Enables namespace support in `xdr-repr` for C++-like scoping of
-//! XDR definitions.
+//!   XDR definitions.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 

@@ -31,14 +31,14 @@ The changes from TXS in detail:
 - XDR _Fixed-Length Opaque Data_ : same as TXS, but with no padding
 
 - XDR _Variable-Length Opaque Data_ / _String_ :
-   same as TXS, but with no padding and the length is indicated using the new
-   encoding for XDR _Unsigned Integer_.
+  same as TXS, but with no padding and the length is indicated using the new
+  encoding for XDR _Unsigned Integer_.
 
 - XDR _Variable-Length Array_ : same as TXS, but the length is indicated using
   the new encoding for XDR _Unsigned Integer_.
 
-- XDR _Discriminated Union_:
-   same as TXS, but the discriminant uses the new integer encoding
+- XDR _Discriminated Union_ : same as TXS, but the discriminant uses the new
+  integer encoding
 
 Serialization of these XDR types is also changed, according to their equivalent
 representations:

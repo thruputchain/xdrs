@@ -8,14 +8,14 @@
 //! ## Macros
 //!
 //! - **`#[derive(ReadXDR)]`**: Automatically implements the `ReadXDR` trait
-//! for structs and enums, enabling deserialization from XDR-encoded data.
+//!   for structs and enums, enabling deserialization from XDR-encoded data.
 //!
 //! - **`#[derive(WriteXDR)]`**: Automatically implements the `WriteXDR` trait
-//! for structs and enums, enabling serialization to XDR-encoded data.
+//!   for structs and enums, enabling serialization to XDR-encoded data.
 //!
 //! - **`#[derive(XDR)]`**: Automatically implements the `XDR` and `HasTypeDef`
-//! traits, allowing types to describe their XDR type representation for
-//! generation of specifications.
+//!   traits, allowing types to describe their XDR type representation for
+//!   generation of specifications.
 //!
 //! ## Examples
 //!
@@ -93,13 +93,13 @@
 //! The derive macros support various attributes for customization:
 //!
 //! - **`#[xdrs(as_type = "Type")]`**: Serialize/deserialize as a different
-//! type
+//!   type
 //! - **`#[xdr(name = "XdrName")]`**: Use a different name in the XDR
-//! specification
+//!   specification
 //! - **`#[xdr(discrim_type = "TypeName")]`**: Specify a custom discriminant
-//! type for enums
+//!   type for enums
 //! - **`#[xdr(discrim_var = "field_name")]`**: Specify a custom discriminant
-//! field name
+//!   field name
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
@@ -152,11 +152,11 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
 /// # Attributes
 ///
 /// - `#[xdr(name = "XdrName")]` - Use a different name in the XDR
-/// specification
+///   specification
 /// - `#[xdr(discrim_type = "TypeName")]` - Specify a custom discriminant type
-/// for enums
+///   for enums
 /// - `#[xdr(discrim_var = "field_name")]` - Specify a custom discriminant
-/// field name
+///   field name
 ///
 #[proc_macro_derive(XDR, attributes(xdr))]
 pub fn derive_xdr(input: TokenStream) -> TokenStream {

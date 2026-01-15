@@ -244,7 +244,7 @@ impl Declaration {
                 )
             }
             Declaration::Void => {
-                format!("{{ \"type\": \"void\" }}")
+                "{{ \"type\": \"void\" }}".to_string()
             }
         }
     }
