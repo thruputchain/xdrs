@@ -156,7 +156,7 @@ impl<T: HasTypeSpec> Declare for Option<T> {
 const _: () = {
     use alloc::boxed::Box;
 
-    impl<T :HasTypeDef> HasTypeDef for Box<T> {
+    impl<T: HasTypeDef> HasTypeDef for Box<T> {
         fn type_def() -> TypeDef {
             T::type_def()
         }
@@ -205,7 +205,7 @@ impl<T: HasTypeSpec> Declare for &[T] {
 
 #[cfg(feature = "xdr_common")]
 const _: () = {
-    use xdr_common::{BytesM, VecM, StringM};
+    use xdr_common::{BytesM, StringM, VecM};
 
     #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
     impl<T, const MAX: u32> Declare for VecM<T, MAX>

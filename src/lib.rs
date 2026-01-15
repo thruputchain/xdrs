@@ -129,5 +129,7 @@ pub use xdr_common;
 pub use xdr_common::*;
 
 #[cfg(all(not(feature = "extras"), feature = "int128_xdr"))]
-compile_error!("Feature \"int128_xdr\" requires also requesting support for \
-    non-standard types by enabling feature \"extras\".");
+compile_error!(
+    "Feature \"int128_xdr\" requires also requesting support for \
+    non-standard types by enabling feature \"extras\"."
+);

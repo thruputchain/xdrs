@@ -71,16 +71,12 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let attrs = Attrs::from_derive_input(input)?;
     let ty_ident = &input.ident;
     // The XDR struct has the same name as the rust type, unless the attrs override that
-    let ty_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| ty_ident.to_string());
+    let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let declare_fields = if item.fields.is_empty() {
         vec![quote! { __xdrs::declare_void() }]
     } else {
-        item
-            .fields
+        item.fields
             .iter()
             .enumerate()
             .map(|(i, field)| declare_struct_field(i, field))

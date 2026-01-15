@@ -3,8 +3,8 @@
 //! This module provides traits and implementations for handling Rust `Result<T, E>`
 //! types in XDR specifications.
 
-use crate::xdr::*;
 use crate::ty::*;
+use crate::xdr::*;
 
 // Geoff note: I don't know what the optimial design for doing this is.
 // What I've done here is to move the generic handling from the xdrs crate to the spec generation
@@ -22,7 +22,8 @@ impl <T, E> HasTypeSpec for Result<T, E>
 }*/
 
 impl<T, E> Declare for Result<T, E>
-    where T: Declare
+where
+    T: Declare,
 {
     fn declare(name: Ident) -> Declaration {
         T::declare(name)
@@ -43,14 +44,14 @@ pub trait GetErrorType {
     }
 }
 
-impl<T, E> GetErrorType for Result<T, E> 
-    where E: HasTypeSpec
+impl<T, E> GetErrorType for Result<T, E>
+where
+    E: HasTypeSpec,
 {
     fn get_error_type() -> Option<TypeSpec> {
         Some(E::type_spec())
     }
 }
-
 
 // As XDR has no generics, we make do here by mashing
 // names together to get, e.g., ExpectedInt.  But you'll
@@ -62,7 +63,7 @@ impl<T, E> HasTypeSpec for Result<T, E>
     fn type_spec() -> TypeSpec {
         TypeSpec::Ident(Ident("Expected".to_string() + &T::name()))
     }
-} 
+}
 
 trait HasTypeName {
     fn name() -> String;

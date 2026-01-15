@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use xdrs::*;
 use xdrs::xdr_repr::*;
+use xdrs::*;
 
 #[derive(XDR)]
 struct Thing {

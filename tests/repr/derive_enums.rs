@@ -1,5 +1,5 @@
-use xdrs::*;
 use xdr_repr::*;
+use xdrs::*;
 
 pub mod unit_only_enum {
     use super::*;

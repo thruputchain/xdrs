@@ -1,7 +1,7 @@
 use crate::xdr::*;
-use alloc::vec::Vec;
-use alloc::vec;
 use alloc::string::*;
+use alloc::vec;
+use alloc::vec::Vec;
 
 /// Creates an identifier from a string.
 pub fn ident(s: &str) -> Ident {

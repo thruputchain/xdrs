@@ -1,5 +1,5 @@
-use xdrs::*;
 use xdr_repr::*;
+use xdrs::*;
 
 #[derive(XDR)]
 pub struct Bare;

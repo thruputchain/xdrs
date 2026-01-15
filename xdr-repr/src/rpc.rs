@@ -4,8 +4,8 @@
 //! as specified in [RFC 5531, section 12](https://datatracker.ietf.org/doc/html/rfc5531#section-12).
 
 pub use super::xdr::TypeSpec;
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 /// An identifier in an RPC program definition.
 pub struct Id(pub String);

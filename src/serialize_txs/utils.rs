@@ -3,9 +3,9 @@
 //! This module provides high-level functions for encoding and decoding XDR data
 //! using the TXS (Traditional XDR Serialization) format.
 
-use crate::*;
 use crate::serialize_txs::buf_reader::*;
 use crate::serialize_txs::into_buf_writer::*;
+use crate::*;
 use core::mem::MaybeUninit as MU;
 
 /// Decodes TXS-encoded XDR data from a byte slice.
@@ -73,8 +73,8 @@ where
 
 #[cfg(feature = "alloc")]
 mod utils_alloc {
-    use crate::*;
     use crate::serialize_txs::buf_writer::*;
+    use crate::*;
     use alloc::vec::Vec;
 
     /// Encodes a value as TXS-encoded XDR data, returning an owned vector.

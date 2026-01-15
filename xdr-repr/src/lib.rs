@@ -256,9 +256,9 @@ pub mod test;
 
 pub mod construct;
 pub mod format;
+pub mod result;
 pub mod rpc;
 pub mod ty;
-pub mod result;
 pub mod xdr;
 
 // export the types that represent XDR specs
@@ -268,8 +268,8 @@ pub use xdr::*;
 pub use construct::*;
 
 // export the traits that produce XDR representations
-pub use ty::*;
 pub use result::*;
+pub use ty::*;
 
 // Re-export XDR derive-macro
 #[cfg(feature = "derive")]

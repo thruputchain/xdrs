@@ -1,8 +1,8 @@
 // Display impls for XDR-spec types
 
 use super::xdr::*;
-use alloc::string::String;
 use alloc::format;
+use alloc::string::String;
 
 const _: () = {
     use core::fmt;

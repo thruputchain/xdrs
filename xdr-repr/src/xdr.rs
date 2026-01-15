@@ -5,10 +5,10 @@
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
-use alloc::vec::Vec;
+use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::string::ToString;
-use alloc::boxed::Box;
+use alloc::vec::Vec;
 
 /// A namespace containing an XDR specification.
 ///
@@ -169,11 +169,8 @@ pub enum Declaration {
         max: Value,
     },
     /// A variable-length string declaration.
-    String {
-        name: Ident,
-        max: Value,
-    },
-     /// A fixed-length array declaration.
+    String { name: Ident, max: Value },
+    /// A fixed-length array declaration.
     FixedArray {
         /// The name of the array.
         name: Ident,
@@ -208,25 +205,44 @@ impl Declaration {
         match self {
             Declaration::Named { name: _, ty } => {
                 format!("{{ \"type\": \"{}\" }}", ty.get_type_json())
-            },
+            }
             Declaration::FixedOpaque { name: _, size } => {
                 format!("{{ \"type\": \"fixed opaque\", \"len\": {} }}", size)
-            },
+            }
             Declaration::VariableOpaque { name: _, max } => {
                 format!("{{ \"type\": \"variable opaque\", \"max\": {} }}", max)
-            },
+            }
             Declaration::String { name: _, max } => {
                 format!("{{ \"type\": \"string\", \"max\": {} }}", max)
-            },
-            Declaration::FixedArray { name: _, elt_ty, len } => {
-                format!("{{ \"type\": \"fixed array\", \"elt_ty\": {}, \"len\": {} }}", elt_ty.get_type_json(), len)
-            },
-            Declaration::VariableArray { name: _, elt_ty, max } => {
-                format!("{{ \"type\": \"variable array\", \"elt_ty\": {}, \"max\": {} }}", elt_ty.get_type_json(), max)
-            },
+            }
+            Declaration::FixedArray {
+                name: _,
+                elt_ty,
+                len,
+            } => {
+                format!(
+                    "{{ \"type\": \"fixed array\", \"elt_ty\": {}, \"len\": {} }}",
+                    elt_ty.get_type_json(),
+                    len
+                )
+            }
+            Declaration::VariableArray {
+                name: _,
+                elt_ty,
+                max,
+            } => {
+                format!(
+                    "{{ \"type\": \"variable array\", \"elt_ty\": {}, \"max\": {} }}",
+                    elt_ty.get_type_json(),
+                    max
+                )
+            }
             Declaration::Optional { name: _, opt_ty } => {
-                format!("{{ \"type\": \"optional\", \"opt_ty\": {} }}", opt_ty.get_type_json())
-            },
+                format!(
+                    "{{ \"type\": \"optional\", \"opt_ty\": {} }}",
+                    opt_ty.get_type_json()
+                )
+            }
             Declaration::Void => {
                 format!("{{ \"type\": \"void\" }}")
             }
