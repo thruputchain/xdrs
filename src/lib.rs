@@ -19,19 +19,10 @@
 //!
 //! This crate supports several optional features:
 //!
-//! ### Serialization formats
+//! ### CXS options
 //!
-//! - **`cxs`** (enabled by default): Enables the CXS (Compact XDR
-//!   Serialization) codec. Provides the [`cxs`] module with compact,
-//!   variable-length encoding.
-//!
-//! - **`txs`** (enabled by default): Enables the TXS (Traditional XDR
-//!   Serialization) codec. Provides the [`txs`] module with standard
-//!   [RFC 4506] encoding.
-//!
-//! - **`strict`** (enabled by default): When reading CXS data, requires that
-//!   integers use the minimal-size encoding. Rejects non-minimal encodings as
-//!   errors.
+//! - **`permissive`**: When reading CXS data, don't reject (as is the default)
+//!   integers using non-minimal-size encoding.
 //!
 //! ### Allocation
 //!
@@ -44,13 +35,14 @@
 //!
 //! ### Extended types
 //!
-//! - **`extras`**: Enables convenient extensions to the XDR specification:
-//!   - `i128` and `u128` support (using variable-length opaque encoding by
-//!     default)
+//! - **`int128`**: Enables convenient extensions to the XDR specification:
+//!   - `i128` and `u128` support (using a variable-length opaque encoding).
 //!
-//! - **`int128_xdr`** (requires `extras`): Uses an alternate encoding for
+//! - **`int128_xdr`**: Uses an alternate encoding for
 //!   128-bit integers, encoding them as two 64-bit integers (high bits and low
 //!   bits) instead of variable-length opaque.
+//!
+//! The two features above are mutually-exclusive.
 //!
 //! ### Optional dependencies
 //!
@@ -70,6 +62,14 @@
 //!
 //! - **`ns`**: Enables namespace support in `xdr-repr` for C++-like scoping of
 //!   XDR definitions.
+//!
+//! ### Deprecated features
+//!
+//! - **`strict`**: Now ignored. The default is strict processing; use
+//!   feature `permissive` to disable that.
+//! - **`cxs`**: Now ignored.  CXS is now always available.
+//! - **`txs`**: Now ignored.  TXS is now always available.
+//! - **`extras`**: Now ignored.  See above for `i128/u128` features.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
