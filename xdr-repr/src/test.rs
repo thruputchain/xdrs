@@ -1,4 +1,5 @@
 #[macro_export]
+#[doc(hidden)]
 macro_rules! lines {
     [ $( $ln:expr $(,)? )* ] => {
         {
@@ -13,6 +14,7 @@ macro_rules! lines {
 }
 
 #[macro_export]
+#[doc(hidden)]
 macro_rules! assert_formatted {
     ($value:expr, $expected:expr) => {{
         let value = $value;
@@ -38,6 +40,7 @@ macro_rules! assert_formatted {
 }
 
 #[macro_export]
+#[doc(hidden)]
 macro_rules! check_format {
     { $(#[$attr:meta])? $test_name:ident $val:expr => $($ln:expr $(,)?)* } => {
         #[test]

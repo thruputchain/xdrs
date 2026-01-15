@@ -15,6 +15,54 @@
 //! The library is `no_std`, but a few extra things can be
 //! enabled with feature `alloc`.
 //!
+//! # Features
+//!
+//! This crate supports several optional features:
+//!
+//! ## Serialization Formats
+//!
+//! - **`cxs`** (enabled by default) - Enables the CXS (Compact XDR Serialization) codec.
+//!   Provides the [`serialize_cxs`] module with compact, variable-length encoding.
+//!
+//! - **`txs`** (enabled by default) - Enables the TXS (Traditional XDR Serialization) codec.
+//!   Provides the [`serialize_txs`] module with standard RFC 4506 encoding.
+//!
+//! - **`strict`** (enabled by default) - When reading CXS data, requires that integers
+//!   use the minimal-size encoding. Rejects non-minimal encodings as errors.
+//!
+//! ## Alloc Support
+//!
+//! - **`alloc`** - Enables allocation-based interfaces. When enabled, provides:
+//!   - `Vec<u8>` and `Vec<T>` implementations of [`ReadXDR`] and [`WriteXDR`]
+//!   - `String` implementations of [`ReadXDR`] and [`WriteXDR`]
+//!   - `BufWriter` types in [`serialize_cxs`] and [`serialize_txs`] modules for growable buffers
+//!   - `encode()` functions that return owned `Vec<u8>`
+//!   - `read_opaque_fixed_owned()` and `read_opaque_variable_owned()` methods
+//!
+//! ## Extended Types
+//!
+//! - **`extras`** - Enables convenient extensions to the XDR specification:
+//!   - `i128` and `u128` support (using variable-length opaque encoding by default)
+//!
+//! - **`int128_xdr`** (requires `extras`) - Uses an alternate encoding for 128-bit integers,
+//!   encoding them as two 64-bit integers (high bits and low bits) instead of variable-length opaque.
+//!
+//! ## Optional Dependencies
+//!
+//! - **`derive`** - Enables derive macros from the `xdr-derive` crate:
+//!   - `#[derive(ReadXDR)]` - Automatically implement [`ReadXDR`]
+//!   - `#[derive(WriteXDR)]` - Automatically implement [`WriteXDR`]
+//!   - `#[derive(XDR)]` - Automatically implement XDR type representation traits
+//!
+//! - **`repr`** (requires `alloc`) - Enables the `xdr-repr` crate for XDR specification
+//!   representation. Provides types and traits for describing XDR type definitions.
+//!
+//! - **`xdr_common`** - Enables support for types from the `xdr_common` crate:
+//!   - `xdr_common::Box<T>` implementations
+//!   - `xdr_common::BytesM<MAX>` and `xdr_common::VecM<T, MAX>` implementations
+//!
+//! - **`ns`** - Enables namespace support in `xdr-repr` for C++-like scoping of XDR definitions.
+//!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 #![no_std]

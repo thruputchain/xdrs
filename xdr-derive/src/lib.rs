@@ -1,4 +1,92 @@
-//! Generate traits ReadXDR, WriteXDR, XDR
+//! Derive macros for XDR serialization and type representation.
+//!
+//! This crate provides procedural macros that automatically generate implementations
+//! of `ReadXDR`, `WriteXDR`, and `XDR` traits for your Rust types, allowing them
+//! to be serialized/deserialized to/from [XDR][RFC-4506] format and to describe
+//! their XDR type representation.
+//!
+//! ## Macros
+//!
+//! - **`#[derive(ReadXDR)]`** - Automatically implements the `ReadXDR` trait
+//!   for structs and enums, enabling deserialization from XDR-encoded data.
+//!
+//! - **`#[derive(WriteXDR)]`** - Automatically implements the `WriteXDR` trait
+//!   for structs and enums, enabling serialization to XDR-encoded data.
+//!
+//! - **`#[derive(XDR)]`** - Automatically implements the `XDR` and `HasTypeDef` traits,
+//!   allowing types to describe their XDR type representation for specification generation.
+//!
+//! ## Examples
+//!
+//! ### Serialization and Deserialization
+//!
+//! ```rust,ignore
+//! use xdrs::{ReadXDR, WriteXDR};
+//!
+//! #[derive(ReadXDR, WriteXDR)]
+//! struct Person {
+//!     name: String,
+//!     age: u32,
+//! }
+//!
+//! // Now Person can be serialized and deserialized
+//! let person = Person {
+//!     name: "Alice".to_string(),
+//!     age: 30,
+//! };
+//!
+//! // Serialize
+//! let encoded = serialize_cxs::encode(&person)?;
+//!
+//! // Deserialize
+//! let decoded: Person = serialize_cxs::decode(&encoded)?;
+//! ```
+//!
+//! ### XDR Type Representation
+//!
+//! ```rust,ignore
+//! use xdr_repr::XDR;
+//!
+//! #[derive(XDR)]
+//! struct Message {
+//!     id: u32,
+//!     data: [u8; 16],
+//! }
+//!
+//! // Generate XDR specification
+//! let xdr_def = Message::def();
+//! println!("{}", xdr_def);
+//! // Output:
+//! // struct Message {
+//! //     unsigned int id;
+//! //     opaque data[16];
+//! // };
+//! ```
+//!
+//! ### Enums
+//!
+//! ```rust,ignore
+//! use xdrs::{ReadXDR, WriteXDR};
+//!
+//! #[derive(ReadXDR, WriteXDR)]
+//! enum Status {
+//!     Success,
+//!     Error(String),
+//! }
+//!
+//! // Enums are serialized as discriminated unions in XDR
+//! ```
+//!
+//! ## Attributes
+//!
+//! The derive macros support various attributes for customization:
+//!
+//! - **`#[xdrs(as_type = "Type")]`** - Serialize/deserialize as a different type
+//! - **`#[xdr(name = "XdrName")]`** - Use a different name in the XDR specification
+//! - **`#[xdr(discrim_type = "TypeName")]`** - Specify a custom discriminant type for enums
+//! - **`#[xdr(discrim_var = "field_name")]`** - Specify a custom discriminant field name
+//!
+//! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 mod generate;
 mod generate_type;
@@ -6,6 +94,14 @@ mod util;
 
 use proc_macro::TokenStream;
 
+/// Derives the `WriteXDR` trait for a struct or enum.
+///
+/// This macro generates an implementation that serializes the type to XDR format.
+/// All field types must implement `WriteXDR`.
+///
+/// # Attributes
+///
+/// - `#[xdrs(as_type = "Type")]` - Serialize as a different type
 #[proc_macro_derive(WriteXDR, attributes(xdrs))]
 pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -15,6 +111,14 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
         .into()
 }
 
+/// Derives the `ReadXDR` trait for a struct or enum.
+///
+/// This macro generates an implementation that deserializes the type from XDR format.
+/// All field types must implement `ReadXDR`.
+///
+/// # Attributes
+///
+/// - `#[xdrs(as_type = "Type")]` - Deserialize as a different type
 #[proc_macro_derive(ReadXDR, attributes(xdrs))]
 pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -24,6 +128,16 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
         .into()
 }
 
+/// Derives the `XDR` and `HasTypeDef` traits.
+///
+/// This macro generates an implementation that describes the type's XDR representation,
+/// enabling automatic generation of XDR specifications.
+///
+/// # Attributes
+///
+/// - `#[xdr(name = "XdrName")]` - Use a different name in the XDR specification
+/// - `#[xdr(discrim_type = "TypeName")]` - Specify a custom discriminant type for enums
+/// - `#[xdr(discrim_var = "field_name")]` - Specify a custom discriminant field name
 #[proc_macro_derive(XDR, attributes(xdr))]
 pub fn derive_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);

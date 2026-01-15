@@ -1,3 +1,8 @@
+//! Support for representing `Result` types in XDR.
+//!
+//! This module provides traits and implementations for handling Rust `Result<T, E>`
+//! types in XDR specifications.
+
 use crate::xdr::*;
 use crate::ty::*;
 
@@ -24,9 +29,15 @@ impl<T, E> Declare for Result<T, E>
     }
 }
 
-// Add an assertion that the Result<T, E> error type
-// matches the expected error type
+/// Trait for extracting the error type from a `Result` type.
+///
+/// This trait allows querying the error type of a `Result<T, E>` for
+/// validation purposes in XDR specification generation.
 pub trait GetErrorType {
+    /// Returns the XDR type specification of the error type, if any.
+    ///
+    /// For `Result<T, E>` types where `E: HasTypeSpec`, this returns `Some(E::type_spec())`.
+    /// For other types, this returns `None`.
     fn get_error_type() -> Option<TypeSpec> {
         None
     }

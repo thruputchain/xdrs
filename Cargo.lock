@@ -634,6 +634,7 @@ dependencies = [
  "pretty_assertions",
  "xdr-derive",
  "xdr_common",
+ "xdrs",
 ]
 
 [[package]]
