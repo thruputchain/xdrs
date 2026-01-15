@@ -333,6 +333,44 @@ pub mod mixed {
     }
 }
 
+// Enum with empty struct/tuple variants
+pub mod empty_variants {
+    use super::*;
+
+    #[derive(XDR)]
+    #[repr(i32)]
+    pub enum EmptyVariants {
+        Alpha { a: u32 } = 1,
+        Beta {} = 2,
+        Gamma() = 3,
+        Delta = 4,
+    }
+
+    check_format! { derive_empty_variants
+        EmptyVariants::spec()
+        =>
+            "enum EmptyVariantsType {"
+            "	Alpha = 1,"
+            "	Beta = 2,"
+            "	Gamma = 3,"
+            "	Delta = 4,"
+            "};"
+            ""
+            "union EmptyVariants switch (EmptyVariantsType which)"
+            "{"
+            "case Alpha:"
+            "	unsigned int a;"
+            "case Beta:"
+            "	void;"
+            "case Gamma:"
+            "	void;"
+            "case Delta:"
+            "	void;"
+            "};"
+            ""
+    }
+}
+
 pub mod custom_name {
     use super::*;
 
