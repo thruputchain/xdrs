@@ -66,7 +66,7 @@ bench = false # disable libtest benchmarks, in favor of Criterion
 [[bench]]
 name = "bench1"
 harness = false
-required-features = ["alloc"]
+required-features = ["alloc", "int128"]
 
 [[test]]
 name = "repr"
