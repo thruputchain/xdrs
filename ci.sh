@@ -1,16 +1,31 @@
 #!/bin/bash
 
-set -x
+export RUSTFLAGS="--deny warnings"
 set -e
+set -x
 
-cargo test --workspace
-cargo test --workspace --all-features
-cargo test -F extras,alloc,derive --benches
+# check the root library without alloc
+cargo test -F xdr_common
 
-cargo test -F int128_xdr >& /dev/null && {
-    echo "Feature \"int128_xdr\" incorrectly allowed without feature \"extra\""
-    exit 1
-}
+# check feature "permissive"
+cargo test -F permissive --test ints
+
+# check feature "int128"
+cargo test -F int128 --test ints
+
+# check feature "int128_xdr"
+cargo test -F int128_xdr --test ints
+
+additive_features="alloc,derive,repr,xdr_common,ns,int128"
+
+# check everything else
+cargo test --workspace -F "$additive_tests"
+
+# check that the benchmarks compile
+cargo test -F "$additive_features" --benches
+
+# check that the docs build cleanly
+cargo doc -F "$additive_features"
 
 set +x
 echo "CI-CLEAN!"

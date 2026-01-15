@@ -37,21 +37,24 @@ hex = "0.4.3"
 pretty_assertions = { workspace = true }
 
 [features]
-default = ["strict", "cxs", "txs"]
-strict = [] # require minimal encodings when reading
-cxs = [] # include CXS codec
-txs = [] # include TXS codec
-extras = [] # include convenient extensions to the spec
+permissive = [] # don't require minimal encodings when reading
 alloc = ["xdr_common?/alloc"] # enable allocating interfaces
-int128_xdr = ["xdr-repr?/int128_xdr"] # use alternate encoding for 128-bit ints
+int128 = [] # enable non-standard read/write of i128/u128
+int128_xdr = ["xdr-repr?/int128_xdr"] # enable alternative encoding of i128/u128
 
 # Enable optional dependencies
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
 repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
-xdr_common = ["dep:xdr_common", "xdr-repr/xdr_common"]
+xdr_common = ["dep:xdr_common", "xdr-repr?/xdr_common"]
 
 # Enable optional features of related dependencies
 ns = ["xdr-repr?/ns"]
+
+# Deprecated features
+strict = [] # deprecated: default is strict, use "permissive" to disable
+cxs = [] # deprecated: CXS is now always included
+txs = [] # deprecated: TXS is now always included
+extras = [] # deprecated
 
 [lints]
 workspace = true
@@ -63,7 +66,7 @@ bench = false # disable libtest benchmarks, in favor of Criterion
 [[bench]]
 name = "bench1"
 harness = false
-required-features = ["alloc", "extras"]
+required-features = ["alloc"]
 
 [[test]]
 name = "repr"

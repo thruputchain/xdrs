@@ -18,10 +18,10 @@ use core::mem::MaybeUninit as MU;
 /// # Example
 ///
 /// ```rust
-/// use xdrs::serialize_cxs;
+/// use xdrs::cxs;
 /// // Valid CXS-encoded u32 value of 0 (just one byte)
 /// let data = [0u8];
-/// let _value: u32 = serialize_cxs::decode(&data)?;
+/// let _value: u32 = cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
@@ -41,10 +41,10 @@ where
 /// # Example
 ///
 /// ```rust
-/// use xdrs::{ReadXDR, serialize_cxs};
+/// use xdrs::{ReadXDR, cxs};
 ///
 /// let data = [0u8]; // valid CXS encoding for the unsigned integer 0
-/// let _value: u32 = serialize_cxs::decode(&data)?;
+/// let _value: u32 = cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
 pub trait ReadXDR<'r>: Sized {
@@ -88,61 +88,6 @@ construct_int_impls! {
 
     read_bool for bool,
 }
-
-#[cfg(all(feature = "extras", not(feature = "int128_xdr")))]
-const _: () = {
-    #[cfg_attr(docsrs, doc(cfg(feature = "extras")))]
-    impl<'r> ReadXDR<'r> for i128 {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let mut uninit = [MU::<u8>::zeroed(); 16];
-
-            let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
-
-            // SAFETY: the pre-zeroed bytes are valid u8's
-            let bytes = unsafe { mu::array_assume_init(uninit) };
-            Ok(Self::from_le_bytes(bytes))
-        }
-    }
-
-    #[cfg_attr(docsrs, doc(cfg(feature = "extras")))]
-    impl<'r> ReadXDR<'r> for u128 {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let mut uninit = [MU::<u8>::zeroed(); 16];
-
-            let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
-
-            // SAFETY: the pre-zeroed bytes are valid u8's
-            let bytes = unsafe { mu::array_assume_init(uninit) };
-            Ok(Self::from_le_bytes(bytes))
-        }
-    }
-};
-
-// An alternative way to serialize 128-bit ints
-#[cfg(all(feature = "extras", feature = "int128_xdr"))]
-const _: () = {
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "extras", feature = "int128_xdr"))))]
-    impl<'r> ReadXDR<'r> for i128 {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let highbits: i64 = read_xdr(r)?;
-            let lowbits: u64 = read_xdr(r)?;
-            let i: i128 = ((highbits as i128) << 64) | (lowbits as i128);
-
-            Ok(i)
-        }
-    }
-
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "extras", feature = "int128_xdr"))))]
-    impl<'r> ReadXDR<'r> for u128 {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let highbits: u64 = read_xdr(r)?;
-            let lowbits: u64 = read_xdr(r)?;
-            let u: u128 = ((highbits as u128) << 64) | (lowbits as u128);
-
-            Ok(u)
-        }
-    }
-};
 
 impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
 where

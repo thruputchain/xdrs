@@ -12,8 +12,8 @@ This package provides:
   between the XDR data model and some serialization format
 
 - Implementations of `serialize::{Reader, Writer}`:
-    - [CXS](CXS.md) (see module `serialize_cxs`)
-    - TXS ("Traditional XDR Serialization") (see module `serialize_txs`)
+    - [CXS](CXS.md) (see module `cxs`)
+    - TXS ("Traditional XDR Serialization") (see module `txs`)
 
 The library is `no_std`, but a few extra things can be
 enabled with feature `alloc`.
@@ -27,5 +27,7 @@ enabled with feature `alloc`.
 - Provide an out-parameter (i.e., in-place) decoding interface
 
 - Limit stack depth when reading potentially-recursive datastructures
+
+- Check handling of not-minimal encodings, with and without feature "permissive"
 
 [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
