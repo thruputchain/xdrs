@@ -158,4 +158,22 @@ pub mod test_common {
         "	opaque vec<>;"
         "};"
     }
+
+    pub struct StringTest {
+        pub name: StringM<10>,
+    }
+
+    impl HasTypeDef for StringTest {
+        fn type_def() -> TypeDef {
+            struct_def("StringTest", vec![<StringM<10>>::declare(ident("name"))])
+        }
+    }
+
+    check_format! { format_string
+        StringTest::def()
+        =>
+        "struct StringTest {"
+        "	string name<10>;"
+        "};"
+    }
 }

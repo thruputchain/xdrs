@@ -67,6 +67,7 @@ fn decl_ident(decl: Declaration) -> Ident {
         Declaration::Named { name: ident, .. } => ident,
         Declaration::FixedOpaque { name: ident, .. } => ident,
         Declaration::VariableOpaque { name: ident, .. } => ident,
+        Declaration::String { name: ident, .. } => ident,
         Declaration::FixedArray { name: ident, .. } => ident,
         Declaration::VariableArray { name: ident, .. } => ident,
         Declaration::Optional { name: ident, .. } => ident,
@@ -204,7 +205,7 @@ impl<T: HasTypeSpec> Declare for &[T] {
 
 #[cfg(feature = "xdr_common")]
 const _: () = {
-    use xdr_common::{BytesM, VecM};
+    use xdr_common::{BytesM, VecM, StringM};
 
     #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
     impl<T, const MAX: u32> Declare for VecM<T, MAX>
@@ -225,6 +226,15 @@ const _: () = {
     impl<const MAX: u32> Declare for BytesM<MAX> {
         fn declare(name: Ident) -> Declaration {
             Declaration::VariableOpaque {
+                name,
+                max: Value::Const(Constant::Unsigned(MAX)),
+            }
+        }
+    }
+
+    impl<const MAX: u32> Declare for StringM<MAX> {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::String {
                 name,
                 max: Value::Const(Constant::Unsigned(MAX)),
             }

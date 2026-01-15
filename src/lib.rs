@@ -68,6 +68,7 @@
 #![no_std]
 #![allow(ambiguous_glob_reexports)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(hidden_glob_reexports)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

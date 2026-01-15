@@ -168,7 +168,12 @@ pub enum Declaration {
         /// The maximum length of the opaque data.
         max: Value,
     },
-    /// A fixed-length array declaration.
+    /// A variable-length string declaration.
+    String {
+        name: Ident,
+        max: Value,
+    },
+     /// A fixed-length array declaration.
     FixedArray {
         /// The name of the array.
         name: Ident,
@@ -209,6 +214,9 @@ impl Declaration {
             },
             Declaration::VariableOpaque { name: _, max } => {
                 format!("{{ \"type\": \"variable opaque\", \"max\": {} }}", max)
+            },
+            Declaration::String { name: _, max } => {
+                format!("{{ \"type\": \"string\", \"max\": {} }}", max)
             },
             Declaration::FixedArray { name: _, elt_ty, len } => {
                 format!("{{ \"type\": \"fixed array\", \"elt_ty\": {}, \"len\": {} }}", elt_ty.get_type_json(), len)

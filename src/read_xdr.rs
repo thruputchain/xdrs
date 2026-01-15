@@ -364,6 +364,17 @@ const _: () = {
     }
 
     #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
+    impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+            let vec: Vec<u8> = read_xdr(r)?;
+            if vec.len() > MAX as usize {
+                return Err(Error::MaxLengthExceeded);
+            }
+            Ok(Self(vec))
+        }
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
     impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
         T: ReadXDR<'r>,
@@ -385,6 +396,12 @@ const _: () = {
     use xdr_common::*;
 
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
+        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
+            unimplemented!()
+        }
+    }
+
+    impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
             unimplemented!()
         }
