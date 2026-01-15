@@ -15,10 +15,11 @@ use core::mem::MaybeUninit as MU;
 ///
 /// # Example
 ///
-/// ```no_run
-/// # use xdrs::serialize_txs;
-/// # let data = [0u8; 4];
-/// let value: u32 = serialize_txs::decode(&data)?;
+/// ```rust
+/// use xdrs::serialize_txs;
+/// // Valid TXS-encoded u32 value of 0 (4 bytes, big-endian)
+/// let data = [0u8; 4];
+/// let _value: u32 = serialize_txs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
 pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
@@ -48,9 +49,9 @@ where
 ///
 /// # Example
 ///
-/// ```no_run
-/// # use xdrs::serialize_txs;
-/// # use core::mem::MaybeUninit;
+/// ```rust
+/// use xdrs::serialize_txs;
+/// use core::mem::MaybeUninit;
 /// let value: u32 = 42;
 /// let mut buf = [MaybeUninit::uninit(); 16];
 /// let written = serialize_txs::encode_into(&value, &mut buf)?;
@@ -80,10 +81,10 @@ mod utils_alloc {
     ///
     /// # Example
     ///
-    /// ```no_run
-    /// # use xdrs::serialize_txs;
+    /// ```rust
+    /// use xdrs::serialize_txs;
     /// let value: u32 = 42;
-    /// let encoded = serialize_txs::encode(&value)?;
+    /// let _encoded = serialize_txs::encode(&value)?;
     /// # Ok::<(), xdrs::WriteError>(())
     /// ```
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]

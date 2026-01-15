@@ -20,31 +20,33 @@
 //!
 //! ### Serialization and Deserialization
 //!
-//! ```rust,ignore
+//! ```rust
 //! use xdrs::{ReadXDR, WriteXDR};
 //!
 //! #[derive(ReadXDR, WriteXDR)]
 //! struct Person {
-//!     name: String,
+//!     name: Vec<u8>,  // Variable-length opaque data
 //!     age: u32,
 //! }
 //!
 //! // Now Person can be serialized and deserialized
 //! let person = Person {
-//!     name: "Alice".to_string(),
+//!     name: b"Alice".to_vec(),
 //!     age: 30,
 //! };
 //!
 //! // Serialize
-//! let encoded = serialize_cxs::encode(&person)?;
+//! let encoded = xdrs::serialize_cxs::encode(&person).unwrap();
 //!
 //! // Deserialize
-//! let decoded: Person = serialize_cxs::decode(&encoded)?;
+//! let decoded: Person = xdrs::serialize_cxs::decode(&encoded).unwrap();
+//! assert_eq!(person.name, decoded.name);
+//! assert_eq!(person.age, decoded.age);
 //! ```
 //!
 //! ### XDR Type Representation
 //!
-//! ```rust,ignore
+//! ```rust
 //! use xdr_repr::XDR;
 //!
 //! #[derive(XDR)]
@@ -55,26 +57,31 @@
 //!
 //! // Generate XDR specification
 //! let xdr_def = Message::def();
-//! println!("{}", xdr_def);
-//! // Output:
+//! // The generated XDR specification would be:
 //! // struct Message {
 //! //     unsigned int id;
 //! //     opaque data[16];
 //! // };
+//! # let _ = xdr_def;
 //! ```
 //!
 //! ### Enums
 //!
-//! ```rust,ignore
+//! ```rust
 //! use xdrs::{ReadXDR, WriteXDR};
 //!
-//! #[derive(ReadXDR, WriteXDR)]
+//! #[derive(ReadXDR, WriteXDR, PartialEq, Debug)]
+//! #[repr(i32)]
 //! enum Status {
-//!     Success,
-//!     Error(String),
+//!     Success = 0,
+//!     Error { msg: Vec<u8> } = 1,
 //! }
 //!
 //! // Enums are serialized as discriminated unions in XDR
+//! let status = Status::Success;
+//! let encoded = xdrs::serialize_cxs::encode(&status).unwrap();
+//! let decoded: Status = xdrs::serialize_cxs::decode(&encoded).unwrap();
+//! assert_eq!(status, decoded);
 //! ```
 //!
 //! ## Attributes

@@ -15,10 +15,11 @@ use core::mem::MaybeUninit as MU;
 ///
 /// # Example
 ///
-/// ```no_run
-/// # use xdrs::serialize_cxs;
-/// # let data = [0u8; 4];
-/// let value: u32 = serialize_cxs::decode(&data)?;
+/// ```rust
+/// use xdrs::serialize_cxs;
+/// // Valid CXS-encoded u32 value of 0 (just one byte)
+/// let data = [0u8];
+/// let _value: u32 = serialize_cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
 pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
@@ -48,9 +49,9 @@ where
 ///
 /// # Example
 ///
-/// ```no_run
-/// # use xdrs::serialize_cxs;
-/// # use core::mem::MaybeUninit;
+/// ```rust
+/// use xdrs::serialize_cxs;
+/// use core::mem::MaybeUninit;
 /// let value: u32 = 42;
 /// let mut buf = [MaybeUninit::uninit(); 16];
 /// let written = serialize_cxs::encode_into(&value, &mut buf)?;
@@ -77,10 +78,10 @@ mod utils_alloc {
     ///
     /// # Example
     ///
-    /// ```no_run
-    /// # use xdrs::serialize_cxs;
+    /// ```rust
+    /// use xdrs::serialize_cxs;
     /// let value: u32 = 42;
-    /// let encoded = serialize_cxs::encode(&value)?;
+    /// let _encoded = serialize_cxs::encode(&value)?;
     /// # Ok::<(), xdrs::WriteError>(())
     /// ```
     #[cfg(feature = "alloc")]

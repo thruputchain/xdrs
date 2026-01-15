@@ -17,11 +17,11 @@ use core::mem::MaybeUninit as MU;
 ///
 /// # Example
 ///
-/// ```no_run
-/// # use xdrs::{read_xdr, serialize_cxs::BufReader};
-/// # let data = [0u8; 4];
-/// let mut reader = BufReader::new(&data);
-/// let value: u32 = read_xdr(&mut reader)?;
+/// ```rust
+/// use xdrs::serialize_cxs;
+/// // Valid CXS-encoded u32 value of 0 (just one byte)
+/// let data = [0u8];
+/// let _value: u32 = serialize_cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
@@ -41,11 +41,11 @@ where
 ///
 /// # Example
 ///
-/// ```no_run
-/// # use xdrs::{ReadXDR, serialize_cxs::BufReader};
-/// # let data = [0u8; 4];
-/// let mut reader = BufReader::new(&data);
-/// let value = u32::read_xdr(&mut reader)?;
+/// ```rust
+/// use xdrs::{ReadXDR, serialize_cxs};
+/// // Valid CXS-encoded u32 value of 0 (just one byte)
+/// let data = [0u8];
+/// let _value = serialize_cxs::decode::<u32>(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
 pub trait ReadXDR<'r>: Sized {

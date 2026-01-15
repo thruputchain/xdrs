@@ -619,6 +619,8 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+ "xdr-repr",
+ "xdrs",
 ]
 
 [[package]]

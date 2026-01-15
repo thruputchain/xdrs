@@ -36,3 +36,4 @@ jobs:
       - name: Test Documentation Examples
         run: |
           CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --all-features
+          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc --all-features

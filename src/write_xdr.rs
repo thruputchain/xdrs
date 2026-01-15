@@ -16,11 +16,12 @@ use crate::valid_u32::*;
 ///
 /// # Example
 ///
-/// ```no_run
-/// # use xdrs::{write_xdr, serialize_cxs::BufWriter};
-/// let mut writer = BufWriter::new();
+/// ```rust
+/// use xdrs::serialize_cxs;
+/// use core::mem::MaybeUninit;
 /// let value: u32 = 42;
-/// write_xdr(&value, &mut writer)?;
+/// let mut buf = [MaybeUninit::uninit(); 16];
+/// let _written = serialize_cxs::encode_into(&value, &mut buf)?;
 /// # Ok::<(), xdrs::WriteError>(())
 /// ```
 pub trait WriteXDR {
@@ -37,11 +38,12 @@ pub trait WriteXDR {
 ///
 /// # Example
 ///
-/// ```no_run
-/// # use xdrs::{write_xdr, serialize_cxs::BufWriter};
-/// let mut writer = BufWriter::new();
+/// ```rust
+/// use xdrs::serialize_cxs;
+/// use core::mem::MaybeUninit;
 /// let value: u32 = 42;
-/// write_xdr(&value, &mut writer)?;
+/// let mut buf = [MaybeUninit::uninit(); 16];
+/// let _written = serialize_cxs::encode_into(&value, &mut buf)?;
 /// # Ok::<(), xdrs::WriteError>(())
 /// ```
 pub fn write_xdr<T, F, W>(this: &T, w: &mut W) -> Result<()>
