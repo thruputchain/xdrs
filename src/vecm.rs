@@ -187,11 +187,7 @@ impl<T: Clone + StaticIfNoAlloc> VecM<T, 1> {
     /// This is useful for optional XDR fields.
     #[must_use]
     pub fn to_option(&self) -> Option<T> {
-        if self.len() > 0 {
-            Some(self.0[0].clone())
-        } else {
-            None
-        }
+        self.0.first().cloned()
     }
 }
 
