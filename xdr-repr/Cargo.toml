@@ -5,7 +5,7 @@ version.workspace = true
 edition.workspace = true
 
 [lib]
-doctest = false
+doctest = true
 
 [dependencies]
 xdr-derive = { workspace = true, optional = true }
@@ -22,6 +22,7 @@ int128_xdr = []
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
+xdrs = { path = "..", features = ["repr", "derive", "xdr_common"] }
 
 [[test]]
 name = "ns"

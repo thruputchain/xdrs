@@ -1,4 +1,4 @@
-//! CXS implementation of XDR serialization
+#![doc = include_str!("../../CXS.md")]
 
 mod utils;
 pub use utils::*;

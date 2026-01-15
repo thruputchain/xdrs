@@ -1,5 +1,5 @@
-use xdrs::*;
 use xdr_repr::*;
+use xdrs::*;
 
 #[derive(XDR)]
 pub struct Bare;
@@ -70,6 +70,54 @@ pub mod test_common {
         =>
         "struct Varry {"
         "	opaque stuff<100>;"
+        "};"
+    }
+}
+
+pub mod custom_name {
+    use super::*;
+
+    #[derive(XDR)]
+    #[xdr(name = "PersonRecord")]
+    pub struct Person {
+        pub name: Vec<u8>,
+        pub age: u32,
+    }
+
+    check_format! { derive_custom_name_struct
+        Person::def()
+        =>
+        "struct PersonRecord {"
+        "	opaque name<>;"
+        "	unsigned int age;"
+        "};"
+    }
+
+    #[derive(XDR)]
+    #[xdr(name = "CustomStructName")]
+    pub struct CustomNamed {
+        pub field1: i32,
+        pub field2: bool,
+    }
+
+    check_format! { derive_custom_named
+        CustomNamed::def()
+        =>
+        "struct CustomStructName {"
+        "	int field1;"
+        "	bool field2;"
+        "};"
+    }
+
+    #[derive(XDR)]
+    #[xdr(name = "EmptyStruct")]
+    pub struct Empty;
+
+    check_format! { derive_custom_name_empty
+        Empty::def()
+        =>
+        "struct EmptyStruct {"
+        "	void;"
         "};"
     }
 }

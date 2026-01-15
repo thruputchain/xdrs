@@ -5,13 +5,17 @@ edition.workspace = true
 
 [lib]
 proc-macro = true
-doctest = false
+doctest = true
 
 [dependencies]
 darling = "0.20.11"
 proc-macro2 = "1.0.95"
 quote = "1.0.40"
 syn = "2.0.104"
+
+[dev-dependencies]
+xdrs = { path = "..", features = ["alloc", "derive", "cxs", "repr"] }
+xdr-repr = { path = "../xdr-repr", features = ["derive"] }
 
 [lints.rust]
 unsafe_code = "forbid"

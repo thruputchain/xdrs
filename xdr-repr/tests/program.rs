@@ -8,9 +8,15 @@ fn show_prog() {
         value: Constant(1),
         return_type: None,
         arg_types: vec![
-            Arg { ty: TypeSpec::Int, name: "num".to_owned() },
-            Arg { ty: TypeSpec::Bool, name: "okay".to_owned() }
-        ]
+            Arg {
+                ty: TypeSpec::Int,
+                name: "num".to_owned(),
+            },
+            Arg {
+                ty: TypeSpec::Bool,
+                name: "okay".to_owned(),
+            },
+        ],
     };
 
     let proc2 = Procedure {

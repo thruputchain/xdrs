@@ -1,5 +1,5 @@
-use xdrs::*;
 use xdr_repr::*;
+use xdrs::*;
 
 pub mod unit_only_enum {
     use super::*;
@@ -330,5 +330,52 @@ pub mod mixed {
             "	Beta = 0,"
             "	Omega = 3,"
             "};"
+    }
+}
+
+pub mod custom_name {
+    use super::*;
+
+    #[derive(XDR)]
+    #[xdr(name = "StatusEnum")]
+    #[repr(i32)]
+    pub enum Status {
+        Ok = 0,
+        Error = 1,
+    }
+
+    check_format! { derive_custom_name_enum
+        Status::def()
+        =>
+        "enum StatusEnum {"
+        "	Ok = 0,"
+        "	Error = 1,"
+        "};"
+    }
+
+    #[derive(XDR)]
+    #[xdr(name = "ResponseUnion")]
+    #[repr(i32)]
+    pub enum Response {
+        Success { data: [u8; 100] } = 0,
+        NotFound = 1,
+    }
+
+    check_format! { derive_custom_name_union
+        Response::spec()
+        =>
+        "enum ResponseType {"
+        "	Success = 0,"
+        "	NotFound = 1,"
+        "};"
+        ""
+        "union ResponseUnion switch (ResponseType which)"
+        "{"
+        "case Success:"
+        "	opaque data[100];"
+        "case NotFound:"
+        "	void;"
+        "};"
+        ""
     }
 }

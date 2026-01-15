@@ -57,7 +57,7 @@ ns = ["xdr-repr?/ns"]
 workspace = true
 
 [lib]
-doctest = false
+doctest = true
 bench = false # disable libtest benchmarks, in favor of Criterion
 
 [[bench]]

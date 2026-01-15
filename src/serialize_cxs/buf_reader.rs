@@ -1,18 +1,32 @@
+//! CXS buffer reader implementation.
+//!
+//! This module provides [`BufReader`], which implements [`Reader`] for reading
+//! CXS-encoded XDR data from a byte slice.
+
 #[cfg(feature = "strict")]
 use super::limits::*;
 use crate::serialize::reader::*;
 
+/// Read CXS-encoded XDR data from a byte slice.
+///
+/// This reader implements the [`Reader`] trait for the CXS (Compact XDR
+/// Serialization) format. It reads data from a byte slice and tracks the
+/// current position.
 pub struct BufReader<'r> {
     data: &'r [u8],
     pos: usize,
 }
 
 impl<'a> BufReader<'a> {
+    /// Creates a new `BufReader` that reads from the given byte slice.
+    ///
+    /// The reader starts at position 0.
     pub fn new(data: &'a [u8]) -> Self {
         let pos = 0;
         Self { data, pos }
     }
 
+    /// Returns the current read position in the buffer.
     pub fn position(&self) -> usize {
         self.pos
     }
@@ -90,16 +104,15 @@ impl<'a> BufReader<'a> {
                 }
             }
         } else {
-            // The number is the 6-bit, one's-complement signed
-            // integer in `v`
+            // The number is the 6-bit, one's-complement signed integer in `v`
 
             if s != 0 {
                 return Err(Error::InvalidHeaderByte { h });
             }
 
             if v & 0b10_0000 != 0 {
-                // The sign-bit is set, so obtain the number by inverting
-                // and negating:
+                // The sign-bit is set, so obtain the number by inverting and
+                // negating:
                 n = -(((!v) & 0b11_1111) as i64);
             } else {
                 n = v as i64;

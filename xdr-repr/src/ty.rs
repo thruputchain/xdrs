@@ -1,13 +1,24 @@
+//! Traits for describing XDR type representations.
+//!
+//! This module provides traits that allow Rust types to describe their XDR
+//! representation, enabling automatic generation of XDR specifications.
+
 #![allow(dead_code)]
 
 use crate::xdr::*;
 use alloc::string::*;
 
+/// Types that can produce a complete XDR specification.
 pub trait HasSpecification {
+    /// Returns the complete XDR specification for this type.
     fn spec() -> Specification;
 }
 
+/// Types that can produce an XDR definition.
+///
+/// This trait is automatically implemented for types that implement [`HasTypeDef`].
 pub trait XDR {
+    /// Returns the XDR definition for this type.
     fn def() -> Definition;
 }
 
@@ -17,11 +28,21 @@ impl<T: HasTypeDef> XDR for T {
     }
 }
 
+/// Types that can describe their XDR type definition.
+///
+/// This trait allows types to specify their XDR type definition, including
+/// structs, enums, unions, and typedefs.
 pub trait HasTypeDef {
+    /// Returns the XDR type definition for this type.
     fn type_def() -> TypeDef;
 }
 
+/// Types that can describe their XDR type specification.
+///
+/// This trait allows types to specify their XDR type specification, which is
+/// used in declarations and type references.
 pub trait HasTypeSpec {
+    /// Returns the XDR type specification for this type.
     fn type_spec() -> TypeSpec;
 }
 
@@ -73,14 +94,23 @@ impl_has_type_spec! {
     bool => TypeSpec::Bool,
 }
 
+// 128-bit integer types using the alternate XDR encoding.
+// When the `int128_xdr` feature is enabled, `i128` and `u128` are represented
+// as named types referring to double-u64 structures defined outside this package.
 #[cfg(feature = "int128_xdr")]
+#[cfg_attr(docsrs, doc(cfg(feature = "int128_xdr")))]
 // These refer to double-u64 structures defined outside this package
 impl_has_type_spec! {
     i128 => TypeSpec::Ident(Ident("int128_xdr".to_string())),
     u128 => TypeSpec::Ident(Ident("uint128_xdr".to_string())),
 }
 
+/// Types that can create an XDR declaration with a given name.
+///
+/// This trait allows types to create a declaration that can be used
+/// in struct fields, procedure parameters, etc.
 pub trait Declare {
+    /// Creates an XDR declaration with the given name.
     fn declare(name: Ident) -> Declaration;
 }
 
@@ -107,6 +137,7 @@ impl_declare_named! {
 }
 
 #[cfg(feature = "int128_xdr")]
+#[cfg_attr(docsrs, doc(cfg(feature = "int128_xdr")))]
 // These refer to double-u64 structures defined outside this package
 impl_declare_named! {
     i128 => TypeSpec::Ident(Ident("int128_xdr".to_string())),
@@ -125,7 +156,7 @@ impl<T: HasTypeSpec> Declare for Option<T> {
 const _: () = {
     use alloc::boxed::Box;
 
-    impl<T :HasTypeDef> HasTypeDef for Box<T> {
+    impl<T: HasTypeDef> HasTypeDef for Box<T> {
         fn type_def() -> TypeDef {
             T::type_def()
         }
@@ -174,8 +205,9 @@ impl<T: HasTypeSpec> Declare for &[T] {
 
 #[cfg(feature = "xdr_common")]
 const _: () = {
-    use xdr_common::{BytesM, VecM, StringM};
+    use xdr_common::{BytesM, StringM, VecM};
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
     impl<T, const MAX: u32> Declare for VecM<T, MAX>
     where
         T: HasTypeSpec,
@@ -190,6 +222,7 @@ const _: () = {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
     impl<const MAX: u32> Declare for BytesM<MAX> {
         fn declare(name: Ident) -> Declaration {
             Declaration::VariableOpaque {
@@ -212,12 +245,12 @@ const _: () = {
 const _: () = {
     use alloc::vec::Vec;
 
-    impl HasTypeDef for Vec<u8> {
-        fn type_def() -> TypeDef {
-            TypeDef::Def(Declaration::VariableOpaque {
-                name: Ident("vec".to_string()),
+    impl Declare for Vec<u8> {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::VariableOpaque {
+                name,
                 max: Value::Const(Constant::Unsigned(u32::MAX)),
-            })
+            }
         }
     }
 };
@@ -253,5 +286,3 @@ impl<T: HasTypeDef> HasTypeDef for &T {
         T::type_def()
     }
 }
-
-

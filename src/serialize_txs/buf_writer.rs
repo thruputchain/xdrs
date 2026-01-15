@@ -1,11 +1,23 @@
+//! TXS buffer writer implementation.
+//!
+//! This module provides [`BufWriter`], which implements [`Writer`]
+//! for writing TXS-encoded XDR data to a growable buffer.
+
 use super::put::*;
 use crate::serialize::writer::*;
 
 use alloc::{vec, vec::Vec};
 
+/// A writer for TXS-encoded XDR data to a growable buffer.
+///
+/// This writer implements the [`Writer`] trait for the TXS (Traditional XDR
+/// Serialization) format. It writes data to an internal `Vec<u8>` buffer that
+/// grows as needed.
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub struct BufWriter(Vec<u8>);
 
 impl BufWriter {
+    /// Creates a new `BufWriter` with an empty buffer.
     pub fn new() -> Self {
         Self(vec![])
     }

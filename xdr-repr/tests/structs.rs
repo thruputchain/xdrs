@@ -93,12 +93,15 @@ pub struct IntTypes {
 
 impl HasTypeDef for IntTypes {
     fn type_def() -> TypeDef {
-        struct_def("IntTypes", vec![
-            <i32>::declare(ident("signed_short")),
-            <u32>::declare(ident("unsigned_short")),
-            <i64>::declare(ident("signed_long")),
-            <u64>::declare(ident("unsigned_long")),
-        ])
+        struct_def(
+            "IntTypes",
+            vec![
+                <i32>::declare(ident("signed_short")),
+                <u32>::declare(ident("unsigned_short")),
+                <i64>::declare(ident("signed_long")),
+                <u64>::declare(ident("unsigned_long")),
+            ],
+        )
     }
 }
 
@@ -120,15 +123,18 @@ pub mod test_common {
 
     pub struct Varry<'a> {
         pub stuff: BytesM<100>,
-        pub slice: &'a[u8],
+        pub slice: &'a [u8],
     }
 
     impl<'a> HasTypeDef for Varry<'a> {
         fn type_def() -> TypeDef {
-            struct_def("Varry", vec![
-                <BytesM<100>>::declare(ident("stuff")),
-                <&[u8]>::declare(ident("slice"))
-            ])
+            struct_def(
+                "Varry",
+                vec![
+                    <BytesM<100>>::declare(ident("stuff")),
+                    <&[u8]>::declare(ident("slice")),
+                ],
+            )
         }
     }
 
@@ -142,12 +148,12 @@ pub mod test_common {
     }
 
     pub struct VecTest {
-        pub vec: Vec<u8>,
+        pub foo_vec: Vec<u8>,
     }
 
     impl HasTypeDef for VecTest {
         fn type_def() -> TypeDef {
-            struct_def("VecTest", vec![<Vec<u8>>::declare(ident("vec"))])
+            struct_def("VecTest", vec![<Vec<u8>>::declare(ident("foo_vec"))])
         }
     }
 
@@ -155,7 +161,7 @@ pub mod test_common {
         VecTest::def()
         =>
         "struct VecTest {"
-        "	opaque vec<>;"
+        "	opaque foo_vec<>;"
         "};"
     }
 
