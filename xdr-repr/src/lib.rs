@@ -89,7 +89,6 @@
 //!
 //! // Verify the generated XDR specification
 //! let person_spec = Person::def().to_string();
-//! // Note: Vec<u8> generates "opaque vec<>" (the type name, not the field name)
 //! let expected_person = r#"struct PersonRecord {
 //! 	opaque name<>;
 //! 	unsigned int age;
