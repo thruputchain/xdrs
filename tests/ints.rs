@@ -47,7 +47,7 @@ mod txs {
         [i64_max, i64, i64::MAX, "7fffffffffffffff"],
     }
 
-    #[cfg(feature = "int128")]
+    #[cfg(all(feature = "int128", not(feature = "int128_xdr")))]
     enc_test_int! { TXS
         [u128_min, u128, u128::MIN, "00000000"],
         [u128_d, u128, 0x07dead, "00000003adde0700"],
@@ -111,7 +111,7 @@ mod cxs {
         [i64_max, i64, i64::MAX, "ffffffffffffffff7f"],
     }
 
-    #[cfg(feature = "int128")]
+    #[cfg(all(feature = "int128", not(feature = "int128_xdr")))]
     enc_test_int! { CXS
         [u128_min, u128, u128::MIN, "00"],
         [u128_d, u128, 0x07dead, "03adde07"],

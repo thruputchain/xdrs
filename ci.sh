@@ -5,27 +5,25 @@ set -e
 set -x
 
 # check the root library without alloc
-cargo test -F xdr_common
+cargo test -F xdr_common,int128,int128_xdr
 
 # check feature "permissive"
-cargo test -F permissive --test ints
+cargo test -F permissive,int128 --test ints
 
 # check feature "int128"
 cargo test -F int128 --test ints
 
-# check feature "int128_xdr"
-cargo test -F int128_xdr --test ints
-
-additive_features="alloc,derive,repr,xdr_common,ns,int128"
-
 # check everything else
-cargo test --workspace -F "$additive_tests"
+cargo test --workspace --all-features
 
 # check that the benchmarks compile
-cargo test -F "$additive_features" --benches
+cargo test --benches --all-features
 
 # check that the docs build cleanly
-cargo doc -F "$additive_features"
+cargo doc --workspace --all-features
+
+# docsrs docs
+RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --workspace --all-features --no-deps
 
 set +x
 echo "CI-CLEAN!"

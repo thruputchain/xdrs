@@ -20,21 +20,19 @@ jobs:
           toolchain: nightly
           override: true
       - name: Test (root lib without alloc)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F xdr_common
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F xdr_common,int128,int128_xdr
       - name: Test (feature permissive)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F permissive --test ints
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F permissive,int128 --test ints
       - name: Test (feature int128)
         run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F int128 --test ints
-      - name: Test (feature int128_xdr)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F int128_xdr --test ints
-      - name: Test (workspace with additive features)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace -F "alloc,derive,repr,xdr_common,ns,int128"
+      - name: Test (workspace)
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace --all-features
       - name: Test (benchmarks)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F "alloc,derive,repr,xdr_common,ns,int128" --benches
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --benches --all-features
       - name: Docs
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo doc -F "alloc,derive,repr,xdr_common,ns,int128"
+        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo doc --workspace --all-features
       - name: Docs (docsrs)
-        run: cargo +nightly doc -p xdrs -p xdr-repr -p xdr-derive -F "alloc,derive,repr,xdr_common,ns,int128" --no-deps
+        run: cargo +nightly doc --workspace --all-features --no-deps
         env:
           RUSTDOCFLAGS: "--cfg docsrs"
       - name: Test Documentation Examples

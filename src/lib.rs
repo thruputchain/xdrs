@@ -36,13 +36,14 @@
 //! ### Extended types
 //!
 //! - **`int128`**: Enables convenient extensions to the XDR specification:
-//!   - `i128` and `u128` support (using a variable-length opaque encoding).
+//!   support for `i128` and `u128` (using a variable-length opaque encoding).
 //!
-//! - **`int128_xdr`**: Uses an alternate encoding for
-//!   128-bit integers, encoding them as two 64-bit integers (high bits and low
-//!   bits) instead of variable-length opaque.
+//! - **`int128_xdr`**: Uses an alternate encoding for 128-bit integers,
+//!   encoding them as two 64-bit integers (high bits and low bits) instead of
+//!   variable-length opaque.
 //!
-//! The two features above are mutually-exclusive.
+//! *Note:* If the two above features are both requested, the `int128_xdr`
+//! encoding takes precedence.
 //!
 //! ### Optional dependencies
 //!
@@ -119,14 +120,11 @@ pub use xdr_repr;
 #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
 pub use xdr_derive::*;
 
-#[cfg(feature = "int128")]
+#[cfg(all(feature = "int128", not(feature = "int128_xdr")))]
 pub mod int128;
 
-#[cfg(all(feature = "int128_xdr", not(feature = "int128")))]
+#[cfg(feature = "int128_xdr")]
 pub mod int128_xdr;
-
-#[cfg(all(feature = "int128_xdr", feature = "int128"))]
-compile_error!("Features \"int128\" and \"int128_xdr\" are mutually exclusive, but both have been enabled");
 
 #[cfg(feature = "xdr_common")]
 #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
