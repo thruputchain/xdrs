@@ -1,10 +1,26 @@
-//! Convenient interfaces to CXS serialization
+//! Convenient interfaces to CXS serialization.
+//!
+//! This module provides high-level functions for encoding and decoding XDR data
+//! using the CXS (Compact XDR Serialization) format.
 
 use crate::*;
 use crate::serialize_cxs::buf_reader::*;
 use crate::serialize_cxs::into_buf_writer::*;
 use core::mem::MaybeUninit as MU;
 
+/// Decodes CXS-encoded XDR data from a byte slice.
+///
+/// This function reads the entire buffer and deserializes a value of type `T`.
+/// It returns an error if there are any remaining bytes after decoding.
+///
+/// # Example
+///
+/// ```no_run
+/// # use xdrs::serialize_cxs;
+/// # let data = [0u8; 4];
+/// let value: u32 = serialize_cxs::decode(&data)?;
+/// # Ok::<(), xdrs::ReadError>(())
+/// ```
 pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
 where
     T: ReadXDR<'r>,
@@ -24,6 +40,22 @@ where
     Ok(value)
 }
 
+/// Encodes a value as CXS-encoded XDR data into a pre-allocated buffer.
+///
+/// This function serializes the value into the provided buffer and returns
+/// the number of bytes written. The buffer must be large enough to hold
+/// the serialized data.
+///
+/// # Example
+///
+/// ```no_run
+/// # use xdrs::serialize_cxs;
+/// # use core::mem::MaybeUninit;
+/// let value: u32 = 42;
+/// let mut buf = [MaybeUninit::uninit(); 16];
+/// let written = serialize_cxs::encode_into(&value, &mut buf)?;
+/// # Ok::<(), xdrs::WriteError>(())
+/// ```
 pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
     let mut writer = IntoBufWriter::new(buf);
 
@@ -38,7 +70,21 @@ mod utils_alloc {
     use crate::serialize_cxs::buf_writer::*;
     use alloc::vec::Vec;
 
+    /// Encodes a value as CXS-encoded XDR data, returning an owned vector.
+    ///
+    /// This function serializes the value and returns a `Vec<u8>` containing
+    /// the serialized data. Requires the `alloc` feature.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use xdrs::serialize_cxs;
+    /// let value: u32 = 42;
+    /// let encoded = serialize_cxs::encode(&value)?;
+    /// # Ok::<(), xdrs::WriteError>(())
+    /// ```
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     pub fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
         let mut writer = BufWriter::new();
 

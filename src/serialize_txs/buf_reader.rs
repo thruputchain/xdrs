@@ -1,5 +1,15 @@
+//! TXS buffer reader implementation.
+//!
+//! This module provides [`BufReader`], which implements [`Reader`]
+//! for reading TXS-encoded XDR data from a byte slice.
+
 use crate::serialize::reader::*;
 
+/// A reader for TXS-encoded XDR data from a byte slice.
+///
+/// This reader implements the [`Reader`] trait
+/// for the TXS (Traditional XDR Serialization) format. It reads data from a byte slice
+/// and tracks the current position.
 pub struct BufReader<'r> {
     data: &'r [u8],
     pos: usize,
@@ -16,11 +26,15 @@ macro_rules! read_int {
 }
 
 impl<'a> BufReader<'a> {
+    /// Creates a new `BufReader` that reads from the given byte slice.
+    ///
+    /// The reader starts at position 0.
     pub fn new(data: &'a [u8]) -> Self {
         let pos = 0;
         Self { data, pos }
     }
 
+    /// Returns the current read position in the buffer.
     pub fn position(&self) -> usize {
         self.pos
     }
@@ -43,6 +57,10 @@ impl<'a> BufReader<'a> {
         Ok(buf)
     }
 
+    /// Skips the specified number of bytes in the input.
+    ///
+    /// This is used internally for padding. The number of bytes to skip
+    /// must be at most 3 (for 4-byte alignment padding).
     pub fn skip_input(&mut self, skip_bytes: u32) -> Result<()> {
         debug_assert!(skip_bytes <= 3);
 

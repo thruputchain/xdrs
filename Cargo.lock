@@ -211,6 +211,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "escape-bytes"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bfcf67fea2815c2fc3b90873fae90957be12ff417335dfadc7f52927feb03b2"
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -633,7 +639,11 @@ dependencies = [
 [[package]]
 name = "xdr_common"
 version = "0.1.0"
-source = "git+ssh://git@github.com/groundhogchain/xdr_common.git#6cd51c83ac2fe6defd80f81cb8b02340df5e0620"
+source = "git+ssh://git@github.com/groundhogchain/xdr_common.git#486e94915ec4575ee8b4f2607d941fee175a4f97"
+dependencies = [
+ "escape-bytes",
+ "hex",
+]
 
 [[package]]
 name = "xdrs"

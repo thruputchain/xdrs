@@ -1,18 +1,32 @@
+//! CXS buffer reader implementation.
+//!
+//! This module provides [`BufReader`], which implements [`Reader`]
+//! for reading CXS-encoded XDR data from a byte slice.
+
 #[cfg(feature = "strict")]
 use super::limits::*;
 use crate::serialize::reader::*;
 
+/// A reader for CXS-encoded XDR data from a byte slice.
+///
+/// This reader implements the [`Reader`] trait
+/// for the CXS (Compact XDR Serialization) format. It reads data from a byte slice
+/// and tracks the current position.
 pub struct BufReader<'r> {
     data: &'r [u8],
     pos: usize,
 }
 
 impl<'a> BufReader<'a> {
+    /// Creates a new `BufReader` that reads from the given byte slice.
+    ///
+    /// The reader starts at position 0.
     pub fn new(data: &'a [u8]) -> Self {
         let pos = 0;
         Self { data, pos }
     }
 
+    /// Returns the current read position in the buffer.
     pub fn position(&self) -> usize {
         self.pos
     }

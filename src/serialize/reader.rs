@@ -1,4 +1,12 @@
-//! Read XDR values from some format
+//! Reading XDR values from a serialization format.
+//!
+//! This module defines the [`Reader`] trait, which provides methods for
+//! reading [XDR][RFC-4506] primitive types (as defined in RFC 4506)
+//! from some underlying serialization format.
+//! Implementations of this trait can be used with [`ReadXDR`](crate::ReadXDR)
+//! to deserialize complex types.
+//!
+//! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
@@ -7,22 +15,48 @@ use crate::mu;
 use core::mem::MaybeUninit as MU;
 use thiserror::Error;
 
-/// Something that can produce XDR values, some borrowed with lifetime 'r
+/// A reader that can produce XDR values, some borrowed with lifetime `'r`.
+///
+/// This trait provides methods for reading XDR primitive types from an
+/// underlying serialization format. The lifetime parameter `'r` represents
+/// the lifetime of data borrowed from the reader.
+///
+/// Implementations of this trait are used by [`ReadXDR`](crate::ReadXDR)
+/// to deserialize complex types.
 pub trait Reader<'r>: Sized {
+    /// Reads a signed 64-bit integer.
     fn read_i64(&mut self) -> Result<i64>;
+    
+    /// Reads a signed 32-bit integer.
     fn read_i32(&mut self) -> Result<i32>;
+    
+    /// Reads a signed 16-bit integer.
     fn read_i16(&mut self) -> Result<i16>;
 
+    /// Reads an unsigned 64-bit integer.
     fn read_u64(&mut self) -> Result<u64>;
+    
+    /// Reads an unsigned 32-bit integer.
     fn read_u32(&mut self) -> Result<u32>;
+    
+    /// Reads an unsigned 16-bit integer.
     fn read_u16(&mut self) -> Result<u16>;
 
-    /// Read a byte-array of known length, borrowing the contents from the reader
+    /// Reads a byte array of known length, borrowing the contents from the reader.
+    ///
+    /// The returned slice borrows from the reader and has lifetime `'r`.
+    /// The length must be exactly `len` bytes.
     fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]>;
 
-    /// Read a byte-sequence of specified max length, borrowing the contents from the reader
+    /// Reads a byte sequence of variable length, borrowing the contents from the reader.
+    ///
+    /// First reads a `u32` length, then reads that many bytes. The returned slice
+    /// borrows from the reader and has lifetime `'r`. The length must not exceed `max`.
     fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8]>;
 
+    /// Reads a boolean value.
+    ///
+    /// Reads an `i32` and interprets it as a boolean: `0` is `false`, `1` is `true`.
     fn read_bool(&mut self) -> Result<bool> {
         match self.read_i32()? {
             0 => Ok(false),
@@ -31,8 +65,10 @@ pub trait Reader<'r>: Sized {
         }
     }
 
-    /// Read a byte-array of known length, copying into a provided buffer.
-    /// Panics if `dst.len()` is not equal to `len as usize`.
+    /// Reads a byte array of known length, copying into a provided buffer.
+    ///
+    /// This method copies the data into the provided buffer rather than borrowing
+    /// from the reader. Panics if `dst.len()` is not equal to `len as usize`.
     fn read_opaque_fixed_into<'a>(
         &mut self,
         dst: &'a mut [MU<u8>],
@@ -47,7 +83,10 @@ pub trait Reader<'r>: Sized {
         Ok(initialized)
     }
 
-    /// Read a byte-sequence of specified max length, copying into a provided buffer.
+    /// Reads a byte sequence of variable length, copying into a provided buffer.
+    ///
+    /// First reads a `u32` length, then reads that many bytes into the buffer.
+    /// This method copies the data rather than borrowing from the reader.
     /// Panics if `dst.len()` is less than the actual length of the input data.
     fn read_opaque_variable_into<'a>(
         &mut self,
@@ -65,14 +104,25 @@ pub trait Reader<'r>: Sized {
         self.read_opaque_fixed_into(&mut dst[..len as usize], len)
     }
 
+    /// Reads a byte array of known length, returning an owned `Vec<u8>`.
+    ///
+    /// This method allocates a new vector and copies the data from the reader.
+    /// Requires the `alloc` feature.
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     fn read_opaque_fixed_owned(&mut self, len: u32) -> Result<Vec<u8>> {
         let bytes = self.read_opaque_fixed(len)?;
         let buf = Vec::from(bytes); // copy from input
         Ok(buf)
     }
 
+    /// Reads a byte sequence of variable length, returning an owned `Vec<u8>`.
+    ///
+    /// First reads a `u32` length, then reads that many bytes into a new vector.
+    /// This method allocates a new vector and copies the data from the reader.
+    /// Requires the `alloc` feature.
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     fn read_opaque_variable_owned(&mut self, max: u32) -> Result<Vec<u8>> {
         let bytes = self.read_opaque_variable(max)?;
         let buf = Vec::from(bytes); // copy from input
@@ -80,8 +130,10 @@ pub trait Reader<'r>: Sized {
     }
 }
 
+/// Result type for reading operations.
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
+/// Errors that can occur when reading XDR data.
 #[derive(Copy, Clone, Debug, Error)]
 pub enum Error {
     #[error(

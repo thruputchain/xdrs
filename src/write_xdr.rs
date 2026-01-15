@@ -1,13 +1,49 @@
-//! Translate Rust values into XDR values
+//! Writing Rust values as XDR data.
+//!
+//! This module provides the [`WriteXDR`] trait and implementations for
+//! converting Rust values into [XDR][RFC-4506]-encoded data (as defined in RFC 4506).
+//!
+//! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 use crate::valid_u32::*;
 
+/// Types that can be written as XDR data.
+///
+/// Types implementing this trait can be serialized into XDR format
+/// using any writer that implements [`Writer`].
+///
+/// # Example
+///
+/// ```no_run
+/// # use xdrs::{write_xdr, serialize_cxs::BufWriter};
+/// let mut writer = BufWriter::new();
+/// let value: u32 = 42;
+/// write_xdr(&value, &mut writer)?;
+/// # Ok::<(), xdrs::WriteError>(())
+/// ```
 pub trait WriteXDR {
+    /// Writes this value as XDR data to the writer.
+    ///
+    /// This method should write the appropriate XDR-encoded representation
+    /// of `self` to the writer.
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result;
 }
 
+/// Writes an XDR value to the writer.
+///
+/// This is a convenience function that calls [`WriteXDR::write_xdr`] on the value.
+///
+/// # Example
+///
+/// ```no_run
+/// # use xdrs::{write_xdr, serialize_cxs::BufWriter};
+/// let mut writer = BufWriter::new();
+/// let value: u32 = 42;
+/// write_xdr(&value, &mut writer)?;
+/// # Ok::<(), xdrs::WriteError>(())
+/// ```
 pub fn write_xdr<T, F, W>(this: &T, w: &mut W) -> Result<()>
 where
     T: WriteXDR,
@@ -59,6 +95,7 @@ const _: () = {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "extras")))]
     impl WriteXDR for u128 {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             let bytes = self.to_le_bytes();
@@ -76,6 +113,7 @@ const _: () = {
 // An alternative way to serialize 128-bit ints
 #[cfg(all(feature = "extras", feature = "int128_xdr"))]
 const _: () = {
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "extras", feature = "int128_xdr"))))]
     impl WriteXDR for i128 {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             let highbits = (*self >> 64) as i64;
@@ -86,6 +124,7 @@ const _: () = {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "extras", feature = "int128_xdr"))))]
     impl WriteXDR for u128 {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             let highbits = (*self >> 64) as u64;
@@ -162,6 +201,7 @@ impl WriteXDR for &str {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl WriteXDR for alloc::string::String {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
         self.as_str().write_xdr(w)
@@ -233,12 +273,14 @@ const _: () = {
     use crate::serialize::writer::{Result, Writer};
     use xdr_common::*;
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
     impl<const MAX: u32> WriteXDR for BytesM<MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             self.0.write_xdr(w)
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
     impl<const MAX: u32, T> WriteXDR for VecM<T, MAX>
     where
         T: WriteXDR,
@@ -250,6 +292,7 @@ const _: () = {
     }
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
     impl<T: WriteXDR> WriteXDR for xdr_common::Box<T> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             self.as_ref().write_xdr(w)
@@ -292,6 +335,7 @@ const _: () = {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<T> WriteXDR for Vec<T>
     where
         T: WriteXDR,

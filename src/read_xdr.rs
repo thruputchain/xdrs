@@ -1,8 +1,29 @@
+//! Reading XDR data into Rust types.
+//!
+//! This module provides the [`ReadXDR`] trait and implementations for
+//! converting [XDR][RFC-4506]-encoded data (as defined in RFC 4506)
+//! into Rust values.
+//!
+//! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
+
 use crate::mu;
 use crate::serialize::reader::*;
 use crate::valid_u32::*;
 use core::mem::MaybeUninit as MU;
 
+/// Reads an XDR value of type `T` from the reader `r`.
+///
+/// This is a convenience function that calls [`ReadXDR::read_xdr`] on the type.
+///
+/// # Example
+///
+/// ```no_run
+/// # use xdrs::{read_xdr, serialize_cxs::BufReader};
+/// # let data = [0u8; 4];
+/// let mut reader = BufReader::new(&data);
+/// let value: u32 = read_xdr(&mut reader)?;
+/// # Ok::<(), xdrs::ReadError>(())
+/// ```
 pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T>
 where
     R: Reader<'r>,
@@ -12,13 +33,35 @@ where
 }
 
 /// Types that can be constructed by reading XDR data,
-/// possibly sharing data from the input
+/// possibly sharing data from the input.
+///
+/// The lifetime parameter `'r` represents the lifetime of data borrowed
+/// from the reader. Types that implement this trait can be deserialized
+/// from XDR-encoded data.
+///
+/// # Example
+///
+/// ```no_run
+/// # use xdrs::{ReadXDR, serialize_cxs::BufReader};
+/// # let data = [0u8; 4];
+/// let mut reader = BufReader::new(&data);
+/// let value = u32::read_xdr(&mut reader)?;
+/// # Ok::<(), xdrs::ReadError>(())
+/// ```
 pub trait ReadXDR<'r>: Sized {
+    /// Reads an XDR value from the reader.
+    ///
+    /// This method should read the appropriate amount of data from the reader
+    /// and construct a value of type `Self`.
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self>;
 }
 
 /// Types that can be constructed by reading XDR data
-/// of any lifetime
+/// of any lifetime.
+///
+/// This trait is automatically implemented for any type that implements
+/// [`ReadXDR`] for all lifetimes. It's useful for types that don't borrow
+/// data from the reader.
 pub trait ReadXDROwned: for<'r> ReadXDR<'r> {}
 
 impl<T> ReadXDROwned for T where T: for<'r> ReadXDR<'r> {}
@@ -49,6 +92,7 @@ construct_int_impls! {
 
 #[cfg(all(feature = "extras", not(feature = "int128_xdr")))]
 const _: () = {
+    #[cfg_attr(docsrs, doc(cfg(feature = "extras")))]
     impl<'r> ReadXDR<'r> for i128 {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let mut uninit = [MU::<u8>::zeroed(); 16];
@@ -61,6 +105,7 @@ const _: () = {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "extras")))]
     impl<'r> ReadXDR<'r> for u128 {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let mut uninit = [MU::<u8>::zeroed(); 16];
@@ -77,6 +122,7 @@ const _: () = {
 // An alternative way to serialize 128-bit ints
 #[cfg(all(feature = "extras", feature = "int128_xdr"))]
 const _: () = {
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "extras", feature = "int128_xdr"))))]
     impl<'r> ReadXDR<'r> for i128 {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let highbits: i64 = read_xdr(r)?;
@@ -87,6 +133,7 @@ const _: () = {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "extras", feature = "int128_xdr"))))]
     impl<'r> ReadXDR<'r> for u128 {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let highbits: u64 = read_xdr(r)?;
@@ -153,6 +200,7 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<'r> ReadXDR<'r> for alloc::string::String {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
@@ -226,6 +274,7 @@ where
 }
 
 #[cfg(all(feature = "xdr_common", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
 impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
@@ -261,6 +310,7 @@ impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
 const _: () = {
     use alloc::vec::Vec;
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<'r> ReadXDR<'r> for Vec<u8> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let bytes: &[u8] = r.read_opaque_variable(u32::MAX)?;
@@ -269,6 +319,7 @@ const _: () = {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<'r, T> ReadXDR<'r> for Vec<T>
     where
         T: ReadXDR<'r>,
@@ -301,6 +352,7 @@ const _: () = {
 
     use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
 
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
             let vec: Vec<u8> = read_xdr(r)?;
@@ -311,6 +363,7 @@ const _: () = {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
     impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
         T: ReadXDR<'r>,
