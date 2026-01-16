@@ -235,8 +235,7 @@ const _: () = {
         T: WriteXDR,
     {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            let slice: &[T] = self.as_ref();
-            slice.write_xdr(w)
+            <Self as AsRef<[T]>>::as_ref(self).write_xdr(w)
         }
     }
 
