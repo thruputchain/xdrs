@@ -243,6 +243,61 @@
 //! - [`Declare`]: Types that can create a declaration with a given name
 //! - [`XDR`]: Types that can produce a complete XDR definition
 //!
+//! ## Type Introspection with `get_type_json`
+//!
+//! The [`Declaration::get_type_json`] and [`TypeSpec::get_type_json`] methods provide
+//! a way to introspect XDR type structures programmatically by generating JSON-like
+//! string representations of type information.
+//!
+//! ### Example Usage
+//!
+//! ```rust
+//! use xdr_repr::*;
+//!
+//! // Inspect a void declaration
+//! let void_decl = Declaration::Void;
+//! assert_eq!(void_decl.get_type_json(), "{ \"type\": \"void\" }");
+//!
+//! // Inspect a fixed-length array
+//! let array_decl = Declaration::FixedArray {
+//!     name: ident("items"),
+//!     elt_ty: TypeSpec::Unsigned,
+//!     len: unsigned(5),
+//! };
+//! assert_eq!(
+//!     array_decl.get_type_json(),
+//!     "{ \"type\": \"fixed array\", \"elt_ty\": unsigned, \"len\": 5 }"
+//! );
+//!
+//! // Inspect an optional type
+//! let optional_decl = Declaration::Optional {
+//!     name: ident("value"),
+//!     opt_ty: TypeSpec::Bool,
+//! };
+//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": bool }");
+//! ```
+//!
+//! ### Important Limitations
+//!
+//! ⚠️ **The output is NOT valid JSON!** While it resembles JSON format, it has
+//! several important differences:
+//!
+//! - String values are not properly quoted (e.g., `int` instead of `"int"`)
+//! - Identifiers are inserted without escaping special characters
+//! - Cannot be parsed by standard JSON parsers
+//!
+//! **Use cases:**
+//! - ✅ Human-readable debugging and logging
+//! - ✅ Simple string-based type introspection
+//! - ❌ **NOT for serialization** or parsing with JSON libraries
+//!
+//! **Panics:**
+//! - The methods panic if they encounter embedded enum, struct, or union types
+//! - These types should be defined at the top level, not embedded in declarations
+//!
+//! See [`Declaration::get_type_json`] and [`TypeSpec::get_type_json`] for detailed
+//! documentation and more examples.
+//!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 //! [RFC-5531]: https://datatracker.ietf.org/doc/html/rfc5531
 
