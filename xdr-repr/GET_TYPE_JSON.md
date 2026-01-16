@@ -34,7 +34,7 @@ Returns the type name as a string (unquoted) for embedding in `Declaration::get_
 
 ## Known Issues and Limitations
 
-### 🚨 CRITICAL ISSUES
+### [CRITICAL] CRITICAL ISSUES
 
 #### 1. **~~NOT Valid JSON~~** (Severity: ~~HIGH~~ **FIXED**)
 
@@ -47,9 +47,9 @@ Returns the type name as a string (unquoted) for embedding in `Declaration::get_
 - Now fixed to: `{ "type": "fixed array", "elt_ty": "unsigned", "len": 5 }`
 
 **Current Status:**
-- ✅ All type values are now properly quoted
-- ✅ Output is now valid JSON that can be parsed
-- ⚠️ Still need to be careful with identifiers that may contain special characters
+- [YES] All type values are now properly quoted
+- [YES] Output is now valid JSON that can be parsed
+- [WARN] Still need to be careful with identifiers that may contain special characters
 
 **Note:** While the basic JSON structure is now valid, identifiers from custom types are still inserted without escaping (see issue #3 below).
 
@@ -76,7 +76,7 @@ TypeSpec::Union(_body) => panic!("Embedded union type not supported"),
 
 **Location:** `xdr-repr/src/xdr.rs:296-298`
 
-### ⚠️ MODERATE ISSUES
+### [WARN] MODERATE ISSUES
 
 #### 3. **No String Escaping** (Severity: MEDIUM)
 
@@ -140,13 +140,13 @@ Declaration::Named { name: _, ty } => {
 
 ## Use Cases
 
-### ✅ Recommended Use Cases
+### [YES] Recommended Use Cases
 
 1. **Debugging and logging** - Quick inspection of type structures
 2. **Simple type introspection** - String-based pattern matching for type information
 3. **Human-readable output** - Showing type info in error messages or debug output
 
-### ❌ NOT Recommended Use Cases
+### [NO] NOT Recommended Use Cases
 
 1. **Serialization** - Do NOT use for serializing XDR type information
 2. **JSON parsing** - Do NOT attempt to parse with JSON libraries
@@ -182,26 +182,26 @@ If this feature needs to be production-ready, consider:
 The feature has comprehensive test coverage in `xdr-repr/tests/declaration_json.rs`:
 
 **TypeSpec tests:**
-- ✅ All primitive types (int, unsigned, hyper, unsigned hyper, float, double, quadruple, bool)
-- ✅ Custom type identifiers
-- ✅ Embedded types panic behavior (enum, struct, union)
+- [YES] All primitive types (int, unsigned, hyper, unsigned hyper, float, double, quadruple, bool)
+- [YES] Custom type identifiers
+- [YES] Embedded types panic behavior (enum, struct, union)
 
 **Declaration tests:**
-- ✅ Void declaration
-- ✅ Named declarations with all primitive types
-- ✅ Named declarations with custom types
-- ✅ Fixed opaque
-- ✅ Variable opaque
-- ✅ String
-- ✅ Fixed array (with int, hyper, and custom types)
-- ✅ Variable array (with float and custom types)
-- ✅ Optional (with int, double, and custom types)
+- [YES] Void declaration
+- [YES] Named declarations with all primitive types
+- [YES] Named declarations with custom types
+- [YES] Fixed opaque
+- [YES] Variable opaque
+- [YES] String
+- [YES] Fixed array (with int, hyper, and custom types)
+- [YES] Variable array (with float and custom types)
+- [YES] Optional (with int, double, and custom types)
 
 **Test coverage improved:**
-- ✅ Variable array - now tested
-- ✅ All primitive types - now tested
-- ✅ Embedded types panic behavior - now tested
-- ❌ Identifiers with special characters - still missing (edge case)
+- [YES] Variable array - now tested
+- [YES] All primitive types - now tested
+- [YES] Embedded types panic behavior - now tested
+- [NO] Identifiers with special characters - still missing (edge case)
 
 ## References
 

@@ -221,9 +221,9 @@ impl Declaration {
     /// # Warning
     ///
     /// **The output is valid JSON with caveats:**
-    /// - ✅ Type values are properly quoted and can be parsed by JSON parsers
-    /// - ⚠️ Custom type identifiers are inserted without escaping special characters
-    /// - ⚠️ If an identifier contains quotes or special chars, the JSON may be malformed
+    /// - [YES] Type values are properly quoted and can be parsed by JSON parsers
+    /// - [WARN] Custom type identifiers are inserted without escaping special characters
+    /// - [WARN] If an identifier contains quotes or special chars, the JSON may be malformed
     ///
     /// Safe for debugging, logging, and type introspection with standard types.
     ///

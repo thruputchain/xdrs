@@ -280,15 +280,15 @@
 //! ### Important Limitations
 //!
 //! **Valid JSON with Caveats:**
-//! - ✅ The output is now valid JSON that can be parsed by standard JSON parsers
-//! - ⚠️ Custom type identifiers are inserted without escaping special characters
-//! - ⚠️ If an identifier contains quotes or special chars, the JSON may be malformed
+//! - [YES] The output is now valid JSON that can be parsed by standard JSON parsers
+//! - [WARN] Custom type identifiers are inserted without escaping special characters
+//! - [WARN] If an identifier contains quotes or special chars, the JSON may be malformed
 //!
 //! **Use cases:**
-//! - ✅ Human-readable debugging and logging
-//! - ✅ Type introspection and JSON parsing (for standard types)
-//! - ✅ Programmatic type analysis
-//! - ⚠️ Use with caution if custom identifiers may contain special characters
+//! - [YES] Human-readable debugging and logging
+//! - [YES] Type introspection and JSON parsing (for standard types)
+//! - [YES] Programmatic type analysis
+//! - [WARN] Use with caution if custom identifiers may contain special characters
 //!
 //! **Panics:**
 //! - The methods panic if they encounter embedded enum, struct, or union types
