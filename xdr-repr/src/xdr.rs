@@ -199,12 +199,99 @@ pub enum Declaration {
     Void,
 }
 
+/// Internal representation of type JSON - either a simple name or a complex object.
+#[derive(Debug)]
+enum TypeJsonRepr {
+    /// Simple type name like "int" or "CustomType"
+    Name(alloc::string::String),
+    /// Complex JSON object like { "type": "struct", ... }
+    Object(alloc::string::String),
+}
+
+impl TypeJsonRepr {
+    fn into_string(self) -> alloc::string::String {
+        match self {
+            TypeJsonRepr::Name(s) | TypeJsonRepr::Object(s) => s,
+        }
+    }
+}
+
 impl Declaration {
+    /// Returns the name of this declaration, or None for void declarations.
+    pub fn name(&self) -> Option<&Ident> {
+        match self {
+            Declaration::Named { name, .. } => Some(name),
+            Declaration::FixedOpaque { name, .. } => Some(name),
+            Declaration::VariableOpaque { name, .. } => Some(name),
+            Declaration::String { name, .. } => Some(name),
+            Declaration::FixedArray { name, .. } => Some(name),
+            Declaration::VariableArray { name, .. } => Some(name),
+            Declaration::Optional { name, .. } => Some(name),
+            Declaration::Void => None,
+        }
+    }
+
+    /// Returns a JSON-parseable description of this declaration's type structure.
+    ///
+    /// This method generates a JSON string describing the type information of the
+    /// declaration, excluding the name. The output can be parsed by standard JSON
+    /// parsers for programmatic type introspection.
+    ///
+    /// # Format
+    ///
+    /// The output format varies by declaration type:
+    /// - Named types: `{ "type": "<type_spec>" }`
+    /// - Fixed opaque: `{ "type": "fixed opaque", "len": <size> }`
+    /// - Variable opaque: `{ "type": "variable opaque", "max": <max> }`
+    /// - String: `{ "type": "string", "max": <max> }`
+    /// - Fixed array: `{ "type": "fixed array", "elt_ty": <element_type>, "len": <length> }`
+    /// - Variable array: `{ "type": "variable array", "elt_ty": <element_type>, "max": <max> }`
+    /// - Optional: `{ "type": "optional", "opt_ty": <wrapped_type> }`
+    /// - Void: `{ "type": "void" }`
+    ///
+    /// # Limitations
+    ///
+    /// Custom type identifiers are inserted without escaping special characters.
+    /// Identifiers containing quotes or other special characters may produce malformed JSON.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the declaration contains embedded enum or union types.
+    /// These types are not yet supported. Define them at the top level and reference
+    /// them by name instead. Embedded struct types are supported.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xdr_repr::*;
+    ///
+    /// // Void declaration
+    /// let void_decl = Declaration::Void;
+    /// assert_eq!(void_decl.get_type_json(), "{ \"type\": \"void\" }");
+    ///
+    /// // Named type with primitive
+    /// let int_decl = declare_type("value", TypeSpec::Int);
+    /// assert_eq!(int_decl.get_type_json(), "{ \"type\": \"int\" }");
+    ///
+    /// // Fixed opaque array
+    /// let opaque_decl = declare_fixed_opaque("data", 10);
+    /// assert_eq!(opaque_decl.get_type_json(), "{ \"type\": \"fixed opaque\", \"len\": 10 }");
+    /// ```
     pub fn get_type_json(&self) -> String {
         use alloc::format;
         match self {
             Declaration::Named { name: _, ty } => {
-                format!("{{ \"type\": \"{}\" }}", ty.get_type_json())
+                match ty.get_type_json_repr() {
+                    TypeJsonRepr::Name(type_name) => {
+                        // Simple type name - quote it
+                        format!("{{ \"type\": \"{}\" }}", type_name)
+                    }
+                    TypeJsonRepr::Object(type_obj) => {
+                        // Complex type (struct, etc.) - indent and embed it
+                        let indented = type_obj.replace('\n', "\n  ");
+                        format!("{{\n  \"type\": {}\n}}", indented)
+                    }
+                }
             }
             Declaration::FixedOpaque { name: _, size } => {
                 format!("{{ \"type\": \"fixed opaque\", \"len\": {} }}", size)
@@ -221,7 +308,7 @@ impl Declaration {
                 len,
             } => {
                 format!(
-                    "{{ \"type\": \"fixed array\", \"elt_ty\": {}, \"len\": {} }}",
+                    "{{ \"type\": \"fixed array\", \"elt_ty\": \"{}\", \"len\": {} }}",
                     elt_ty.get_type_json(),
                     len
                 )
@@ -232,14 +319,14 @@ impl Declaration {
                 max,
             } => {
                 format!(
-                    "{{ \"type\": \"variable array\", \"elt_ty\": {}, \"max\": {} }}",
+                    "{{ \"type\": \"variable array\", \"elt_ty\": \"{}\", \"max\": {} }}",
                     elt_ty.get_type_json(),
                     max
                 )
             }
             Declaration::Optional { name: _, opt_ty } => {
                 format!(
-                    "{{ \"type\": \"optional\", \"opt_ty\": {} }}",
+                    "{{ \"type\": \"optional\", \"opt_ty\": \"{}\" }}",
                     opt_ty.get_type_json()
                 )
             }
@@ -283,20 +370,100 @@ pub enum TypeSpec {
 }
 
 impl TypeSpec {
+    /// Returns the type name as a string for use in JSON type descriptions.
+    ///
+    /// This method returns a simple string representing the type, which can be
+    /// embedded in the JSON output generated by [`Declaration::get_type_json`].
+    ///
+    /// # Supported Types
+    ///
+    /// - Primitive types: Returns the type name as a string (`"int"`, `"unsigned"`, etc.)
+    /// - Named types: Returns the identifier name
+    /// - Struct types: Returns a JSON object with type "struct" and a "fields" array
+    ///
+    /// # Limitations
+    ///
+    /// Custom type identifiers are not escaped, which may result in invalid JSON
+    /// if the identifier contains quotes or other special characters.
+    ///
+    /// # Panics
+    ///
+    /// Panics for embedded enum and union types. These types are not yet supported.
+    /// Define them at the top level and reference them by name instead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use xdr_repr::*;
+    ///
+    /// // Primitive types
+    /// assert_eq!(TypeSpec::Int.get_type_json(), "int");
+    /// assert_eq!(TypeSpec::Unsigned.get_type_json(), "unsigned");
+    /// assert_eq!(TypeSpec::Bool.get_type_json(), "bool");
+    ///
+    /// // Named type
+    /// let custom_type = TypeSpec::Ident(ident("CustomType"));
+    /// assert_eq!(custom_type.get_type_json(), "CustomType");
+    ///
+    /// // Embedded struct type
+    /// let struct_type = TypeSpec::Struct(StructBody(vec![
+    ///     declare_type("id", TypeSpec::Unsigned),
+    ///     declare_type("name", TypeSpec::Ident(ident("String"))),
+    /// ]));
+    /// let json = struct_type.get_type_json();
+    /// // Returns: { "type": "struct", "fields": [{ "name": "id", "field_type": { "type": "unsigned" } }, ...] }
+    /// ```
     pub fn get_type_json(&self) -> alloc::string::String {
+        self.get_type_json_repr().into_string()
+    }
+
+    /// Internal method that returns the type representation with proper classification.
+    fn get_type_json_repr(&self) -> TypeJsonRepr {
+        use alloc::format;
+        use alloc::string::String;
+
         match self {
-            TypeSpec::Int => "int".to_string(),
-            TypeSpec::Unsigned => "unsigned".to_string(),
-            TypeSpec::Hyper => "hyper".to_string(),
-            TypeSpec::UnsignedHyper => "unsigned hyper".to_string(),
-            TypeSpec::Float => "float".to_string(),
-            TypeSpec::Double => "double".to_string(),
-            TypeSpec::Quadruple => "quadruple".to_string(),
-            TypeSpec::Bool => "bool".to_string(),
-            TypeSpec::Enum(_body) => panic!("Embedded enum type not supported"),
-            TypeSpec::Struct(_body) => panic!("Embedded struct type not supported"),
-            TypeSpec::Union(_body) => panic!("Embedded union type not supported"),
-            TypeSpec::Ident(ident) => ident.0.clone(),
+            TypeSpec::Int => TypeJsonRepr::Name("int".to_string()),
+            TypeSpec::Unsigned => TypeJsonRepr::Name("unsigned".to_string()),
+            TypeSpec::Hyper => TypeJsonRepr::Name("hyper".to_string()),
+            TypeSpec::UnsignedHyper => TypeJsonRepr::Name("unsigned hyper".to_string()),
+            TypeSpec::Float => TypeJsonRepr::Name("float".to_string()),
+            TypeSpec::Double => TypeJsonRepr::Name("double".to_string()),
+            TypeSpec::Quadruple => TypeJsonRepr::Name("quadruple".to_string()),
+            TypeSpec::Bool => TypeJsonRepr::Name("bool".to_string()),
+            TypeSpec::Enum(_body) => panic!("Embedded enum type not yet supported"),
+            TypeSpec::Struct(body) => {
+                if body.0.is_empty() {
+                    // Empty struct - keep it compact
+                    return TypeJsonRepr::Object("{\n  \"type\": \"struct\",\n  \"fields\": []\n}".to_string());
+                }
+
+                let mut result = String::from("{\n  \"type\": \"struct\",\n  \"fields\": [\n");
+                let mut first = true;
+                for decl in &body.0 {
+                    if !first {
+                        result.push_str(",\n");
+                    }
+                    first = false;
+
+                    result.push_str("    ");
+                    if let Some(name) = decl.name() {
+                        let field_json = decl.get_type_json();
+                        result.push_str(&format!(
+                            "{{\n      \"name\": \"{}\",\n      \"field_type\": {}\n    }}",
+                            name.0,
+                            field_json.replace('\n', "\n      ")
+                        ));
+                    } else {
+                        // Void field - shouldn't normally happen in a struct, but handle it
+                        result.push_str("{\n      \"name\": null,\n      \"field_type\": { \"type\": \"void\" }\n    }");
+                    }
+                }
+                result.push_str("\n  ]\n}");
+                TypeJsonRepr::Object(result)
+            }
+            TypeSpec::Union(_body) => panic!("Embedded union type not yet supported"),
+            TypeSpec::Ident(ident) => TypeJsonRepr::Name(ident.0.clone()),
         }
     }
 }
