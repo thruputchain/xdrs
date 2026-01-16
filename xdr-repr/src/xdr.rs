@@ -220,12 +220,12 @@ impl Declaration {
     ///
     /// # Warning
     ///
-    /// **This does NOT produce valid JSON!** The output is JSON-like but:
-    /// - String values are not properly quoted (e.g., `int` instead of `"int"`)
-    /// - Identifiers are inserted without escaping
-    /// - Not parseable by standard JSON parsers
+    /// **The output is valid JSON with caveats:**
+    /// - ✅ Type values are properly quoted and can be parsed by JSON parsers
+    /// - ⚠️ Custom type identifiers are inserted without escaping special characters
+    /// - ⚠️ If an identifier contains quotes or special chars, the JSON may be malformed
     ///
-    /// Use this for human-readable debugging or logging, not for serialization.
+    /// Safe for debugging, logging, and type introspection with standard types.
     ///
     /// # Panics
     ///
@@ -270,7 +270,7 @@ impl Declaration {
                 len,
             } => {
                 format!(
-                    "{{ \"type\": \"fixed array\", \"elt_ty\": {}, \"len\": {} }}",
+                    "{{ \"type\": \"fixed array\", \"elt_ty\": \"{}\", \"len\": {} }}",
                     elt_ty.get_type_json(),
                     len
                 )
@@ -281,14 +281,14 @@ impl Declaration {
                 max,
             } => {
                 format!(
-                    "{{ \"type\": \"variable array\", \"elt_ty\": {}, \"max\": {} }}",
+                    "{{ \"type\": \"variable array\", \"elt_ty\": \"{}\", \"max\": {} }}",
                     elt_ty.get_type_json(),
                     max
                 )
             }
             Declaration::Optional { name: _, opt_ty } => {
                 format!(
-                    "{{ \"type\": \"optional\", \"opt_ty\": {} }}",
+                    "{{ \"type\": \"optional\", \"opt_ty\": \"{}\" }}",
                     opt_ty.get_type_json()
                 )
             }
@@ -354,8 +354,10 @@ impl TypeSpec {
     ///
     /// # Warning
     ///
-    /// The returned string is NOT valid JSON - it's an unquoted string meant to
-    /// be embedded in the JSON-like output of [`Declaration::get_type_json`].
+    /// The returned string is an unquoted string meant to be embedded in the
+    /// JSON output of [`Declaration::get_type_json`]. For custom type identifiers,
+    /// special characters are not escaped, which may result in invalid JSON if
+    /// the identifier contains quotes or other special characters.
     ///
     /// # Examples
     ///
