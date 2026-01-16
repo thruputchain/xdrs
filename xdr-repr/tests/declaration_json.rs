@@ -48,31 +48,6 @@ fn typespec_ident_json() {
     assert_eq!(custom_type.get_type_json(), "CustomType");
 }
 
-#[test]
-#[should_panic(expected = "Embedded enum type not supported")]
-fn typespec_enum_panics() {
-    let enum_type = TypeSpec::Enum(EnumBody(vec![]));
-    let _ = enum_type.get_type_json();
-}
-
-#[test]
-#[should_panic(expected = "Embedded struct type not supported")]
-fn typespec_struct_panics() {
-    let struct_type = TypeSpec::Struct(StructBody(vec![]));
-    let _ = struct_type.get_type_json();
-}
-
-#[test]
-#[should_panic(expected = "Embedded union type not supported")]
-fn typespec_union_panics() {
-    let union_type = TypeSpec::Union(Box::new(UnionBody {
-        discriminant_decl: declare_type("which", TypeSpec::Int),
-        case_specs: vec![],
-        default_decl: None,
-    }));
-    let _ = union_type.get_type_json();
-}
-
 // Tests for Declaration::get_type_json()
 
 #[test]

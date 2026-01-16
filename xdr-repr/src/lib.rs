@@ -246,8 +246,8 @@
 //! ## Type Introspection with `get_type_json`
 //!
 //! The [`Declaration::get_type_json`] and [`TypeSpec::get_type_json`] methods provide
-//! a way to introspect XDR type structures programmatically by generating JSON-like
-//! string representations of type information.
+//! a way to introspect XDR type structures programmatically by generating JSON-parseable
+//! descriptions of type information.
 //!
 //! ### Example Usage
 //!
@@ -277,22 +277,14 @@
 //! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": \"bool\" }");
 //! ```
 //!
-//! ### Important Limitations
+//! ### Limitations
 //!
-//! **Valid JSON with Caveats:**
-//! - [YES] The output is now valid JSON that can be parsed by standard JSON parsers
-//! - [WARN] Custom type identifiers are inserted without escaping special characters
-//! - [WARN] If an identifier contains quotes or special chars, the JSON may be malformed
+//! The output is valid JSON that can be parsed by standard JSON parsers. However,
+//! custom type identifiers are inserted without escaping special characters, so
+//! identifiers containing quotes or other special characters may produce malformed JSON.
 //!
-//! **Use cases:**
-//! - [YES] Human-readable debugging and logging
-//! - [YES] Type introspection and JSON parsing (for standard types)
-//! - [YES] Programmatic type analysis
-//! - [WARN] Use with caution if custom identifiers may contain special characters
-//!
-//! **Panics:**
-//! - The methods panic if they encounter embedded enum, struct, or union types
-//! - These types should be defined at the top level, not embedded in declarations
+//! Embedded enum, struct, and union types are not yet supported and will cause a panic.
+//! These types should be defined at the top level and referenced by name.
 //!
 //! See [`Declaration::get_type_json`] and [`TypeSpec::get_type_json`] for detailed
 //! documentation and more examples.
