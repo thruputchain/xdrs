@@ -199,6 +199,23 @@ pub enum Declaration {
     Void,
 }
 
+/// Internal representation of type JSON - either a simple name or a complex object.
+#[derive(Debug)]
+enum TypeJsonRepr {
+    /// Simple type name like "int" or "CustomType"
+    Name(alloc::string::String),
+    /// Complex JSON object like { "type": "struct", ... }
+    Object(alloc::string::String),
+}
+
+impl TypeJsonRepr {
+    fn into_string(self) -> alloc::string::String {
+        match self {
+            TypeJsonRepr::Name(s) | TypeJsonRepr::Object(s) => s,
+        }
+    }
+}
+
 impl Declaration {
     /// Returns the name of this declaration, or None for void declarations.
     pub fn name(&self) -> Option<&Ident> {
@@ -264,14 +281,15 @@ impl Declaration {
         use alloc::format;
         match self {
             Declaration::Named { name: _, ty } => {
-                let type_json = ty.get_type_json();
-                // Check if this is a complex type (starts with '{') or a simple type name
-                if type_json.starts_with('{') {
-                    // Complex type (struct, etc.) - use as-is for the "type" field value
-                    format!("{{ \"type\": {} }}", type_json)
-                } else {
-                    // Simple type name - quote it
-                    format!("{{ \"type\": \"{}\" }}", type_json)
+                match ty.get_type_json_repr() {
+                    TypeJsonRepr::Name(type_name) => {
+                        // Simple type name - quote it
+                        format!("{{ \"type\": \"{}\" }}", type_name)
+                    }
+                    TypeJsonRepr::Object(type_obj) => {
+                        // Complex type (struct, etc.) - use as-is for the "type" field value
+                        format!("{{ \"type\": {} }}", type_obj)
+                    }
                 }
             }
             Declaration::FixedOpaque { name: _, size } => {
@@ -395,18 +413,23 @@ impl TypeSpec {
     /// // Returns: { "type": "struct", "fields": [{ "name": "id", "field_type": { "type": "unsigned" } }, ...] }
     /// ```
     pub fn get_type_json(&self) -> alloc::string::String {
+        self.get_type_json_repr().into_string()
+    }
+
+    /// Internal method that returns the type representation with proper classification.
+    fn get_type_json_repr(&self) -> TypeJsonRepr {
         use alloc::format;
         use alloc::string::String;
 
         match self {
-            TypeSpec::Int => "int".to_string(),
-            TypeSpec::Unsigned => "unsigned".to_string(),
-            TypeSpec::Hyper => "hyper".to_string(),
-            TypeSpec::UnsignedHyper => "unsigned hyper".to_string(),
-            TypeSpec::Float => "float".to_string(),
-            TypeSpec::Double => "double".to_string(),
-            TypeSpec::Quadruple => "quadruple".to_string(),
-            TypeSpec::Bool => "bool".to_string(),
+            TypeSpec::Int => TypeJsonRepr::Name("int".to_string()),
+            TypeSpec::Unsigned => TypeJsonRepr::Name("unsigned".to_string()),
+            TypeSpec::Hyper => TypeJsonRepr::Name("hyper".to_string()),
+            TypeSpec::UnsignedHyper => TypeJsonRepr::Name("unsigned hyper".to_string()),
+            TypeSpec::Float => TypeJsonRepr::Name("float".to_string()),
+            TypeSpec::Double => TypeJsonRepr::Name("double".to_string()),
+            TypeSpec::Quadruple => TypeJsonRepr::Name("quadruple".to_string()),
+            TypeSpec::Bool => TypeJsonRepr::Name("bool".to_string()),
             TypeSpec::Enum(_body) => panic!("Embedded enum type not yet supported"),
             TypeSpec::Struct(body) => {
                 let mut result = String::from("{ \"type\": \"struct\", \"fields\": [");
@@ -429,10 +452,10 @@ impl TypeSpec {
                     }
                 }
                 result.push_str("] }");
-                result
+                TypeJsonRepr::Object(result)
             }
             TypeSpec::Union(_body) => panic!("Embedded union type not yet supported"),
-            TypeSpec::Ident(ident) => ident.0.clone(),
+            TypeSpec::Ident(ident) => TypeJsonRepr::Name(ident.0.clone()),
         }
     }
 }
