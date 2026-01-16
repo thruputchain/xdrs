@@ -215,3 +215,80 @@ fn optional_all_types() {
     };
     assert_eq!(opt_custom.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": \"MyRecord\" }");
 }
+
+// Tests for embedded struct types
+
+#[test]
+fn embedded_struct_empty() {
+    let empty_struct = TypeSpec::Struct(StructBody(vec![]));
+    assert_eq!(empty_struct.get_type_json(), "{ \"type\": \"struct\", \"fields\": [] }");
+}
+
+#[test]
+fn embedded_struct_simple() {
+    let struct_body = StructBody(vec![
+        declare_type("id", TypeSpec::Unsigned),
+        declare_type("count", TypeSpec::Int),
+    ]);
+    let struct_type = TypeSpec::Struct(struct_body);
+    let json = struct_type.get_type_json();
+    assert_eq!(
+        json,
+        "{ \"type\": \"struct\", \"fields\": [{ \"name\": \"id\", \"field_type\": { \"type\": \"unsigned\" } }, { \"name\": \"count\", \"field_type\": { \"type\": \"int\" } }] }"
+    );
+}
+
+#[test]
+fn embedded_struct_complex() {
+    let struct_body = StructBody(vec![
+        declare_type("name", TypeSpec::Ident(ident("String"))),
+        declare_fixed_opaque("data", 16),
+        Declaration::FixedArray {
+            name: ident("values"),
+            elt_ty: TypeSpec::Unsigned,
+            len: unsigned(10),
+        },
+    ]);
+    let struct_type = TypeSpec::Struct(struct_body);
+    let json = struct_type.get_type_json();
+    assert_eq!(
+        json,
+        "{ \"type\": \"struct\", \"fields\": [{ \"name\": \"name\", \"field_type\": { \"type\": \"String\" } }, { \"name\": \"data\", \"field_type\": { \"type\": \"fixed opaque\", \"len\": 16 } }, { \"name\": \"values\", \"field_type\": { \"type\": \"fixed array\", \"elt_ty\": \"unsigned\", \"len\": 10 } }] }"
+    );
+}
+
+#[test]
+fn embedded_struct_in_declaration() {
+    let decl = Declaration::Named {
+        name: ident("message"),
+        ty: TypeSpec::Struct(StructBody(vec![
+            declare_type("id", TypeSpec::Unsigned),
+            declare_type("payload", TypeSpec::Ident(ident("Bytes"))),
+        ])),
+    };
+    let json = decl.get_type_json();
+    assert_eq!(
+        json,
+        "{ \"type\": { \"type\": \"struct\", \"fields\": [{ \"name\": \"id\", \"field_type\": { \"type\": \"unsigned\" } }, { \"name\": \"payload\", \"field_type\": { \"type\": \"Bytes\" } }] } }"
+    );
+}
+
+#[test]
+fn nested_struct() {
+    // Test a struct containing another struct
+    let inner_struct = TypeSpec::Struct(StructBody(vec![
+        declare_type("x", TypeSpec::Int),
+        declare_type("y", TypeSpec::Int),
+    ]));
+
+    let outer_struct = StructBody(vec![
+        declare_type("point", inner_struct),
+        declare_type("label", TypeSpec::Ident(ident("String"))),
+    ]);
+
+    let json = TypeSpec::Struct(outer_struct).get_type_json();
+    assert_eq!(
+        json,
+        "{ \"type\": \"struct\", \"fields\": [{ \"name\": \"point\", \"field_type\": { \"type\": { \"type\": \"struct\", \"fields\": [{ \"name\": \"x\", \"field_type\": { \"type\": \"int\" } }, { \"name\": \"y\", \"field_type\": { \"type\": \"int\" } }] } } }, { \"name\": \"label\", \"field_type\": { \"type\": \"String\" } }] }"
+    );
+}

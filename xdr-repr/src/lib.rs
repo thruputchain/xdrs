@@ -283,8 +283,9 @@
 //! custom type identifiers are inserted without escaping special characters, so
 //! identifiers containing quotes or other special characters may produce malformed JSON.
 //!
-//! Embedded enum, struct, and union types are not yet supported and will cause a panic.
+//! Embedded enum and union types are not yet supported and will cause a panic.
 //! These types should be defined at the top level and referenced by name.
+//! Embedded struct types are supported.
 //!
 //! See [`Declaration::get_type_json`] and [`TypeSpec::get_type_json`] for detailed
 //! documentation and more examples.
