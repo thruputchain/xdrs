@@ -1,3 +1,5 @@
+#![allow(unexpected_cfgs)]
+
 pub mod client_state;
 pub use client_state::*;
 

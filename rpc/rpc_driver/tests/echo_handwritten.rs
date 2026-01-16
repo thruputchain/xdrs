@@ -33,30 +33,29 @@ impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersion_Dispat
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
         match proc {
             0 => {
-                let _args: () =
-                    xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
+                let _args: () = xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
                 let res = self.inner.null().await.map_err(|_| RpcError::SystemError)?;
-                xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
+                xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             1 => {
                 let args: (i32,) =
-                    xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
+                    xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
                 let res = self
                     .inner
                     .takes_int(args.0)
                     .await
                     .map_err(|_| RpcError::SystemError)?;
-                xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
+                xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             2 => {
                 let args: (i32, i32) =
-                    xdrs::serialize_txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
+                    xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
                 let res = self
                     .inner
                     .takes_two_ints(args.0, args.1)
                     .await
                     .map_err(|_| RpcError::SystemError)?;
-                xdrs::serialize_txs::encode(&res).map_err(|_| RpcError::SystemError)
+                xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             _ => Err(RpcError::InvalidProcedure),
         }
@@ -82,20 +81,19 @@ impl TestProgram_TestVersion_Client {
     }
 
     pub async fn null(&self) -> Result<(), RpcError> {
-        let data = xdrs::serialize_txs::encode(&()).map_err(|_| RpcError::GarbageArguments)?;
+        let data = xdrs::txs::encode(&()).map_err(|_| RpcError::GarbageArguments)?;
         let buf = self.handle.send_call(Self::prog_vers(), 0, &data).await?;
-        xdrs::serialize_txs::decode(&buf).map_err(|_| RpcError::SystemError)
+        xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
     pub async fn takes_int(&self, i: i32) -> Result<i32, RpcError> {
-        let data = xdrs::serialize_txs::encode(&(i,)).map_err(|_| RpcError::GarbageArguments)?;
+        let data = xdrs::txs::encode(&(i,)).map_err(|_| RpcError::GarbageArguments)?;
         let buf = self.handle.send_call(Self::prog_vers(), 1, &data).await?;
-        xdrs::serialize_txs::decode(&buf).map_err(|_| RpcError::SystemError)
+        xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
     pub async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, RpcError> {
-        let data =
-            xdrs::serialize_txs::encode(&(i1, i2)).map_err(|_| RpcError::GarbageArguments)?;
+        let data = xdrs::txs::encode(&(i1, i2)).map_err(|_| RpcError::GarbageArguments)?;
         let buf = self.handle.send_call(Self::prog_vers(), 2, &data).await?;
-        xdrs::serialize_txs::decode(&buf).map_err(|_| RpcError::SystemError)
+        xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
 }
 

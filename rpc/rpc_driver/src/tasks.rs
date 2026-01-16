@@ -44,7 +44,7 @@ pub async fn launch_read_task(
 
         let mut write_buffer = Vec::new();
 
-        let mut reader = xdrs::serialize_txs::buf_reader::BufReader::new(record.unwrap());
+        let mut reader = xdrs::txs::buf_reader::BufReader::new(record.unwrap());
 
         let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
             Ok(msg) => msg,
@@ -132,7 +132,7 @@ fn prepare_success_response(xid: u32, results: &[u8], buf: &mut Vec<u8>) {
     buf.clear();
     let header = get_success_header(xid);
 
-    let header_bytes = xdrs::serialize_txs::encode(&header).unwrap();
+    let header_bytes = xdrs::txs::encode(&header).unwrap();
     let msg_len: u32 = (header_bytes.len() as u32 + results.len() as u32) | 0x8000_0000;
 
     buf.extend_from_slice(&msg_len.to_be_bytes());

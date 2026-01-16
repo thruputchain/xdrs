@@ -91,7 +91,7 @@ impl ClientHandle {
                 },
             },
         };
-        let header = xdrs::serialize_txs::encode(&msg).unwrap();
+        let header = xdrs::txs::encode(&msg).unwrap();
         let len = (header.len() as u32 + data.len() as u32) | 0x8000_0000;
         msg_bytes.extend_from_slice(&len.to_be_bytes());
         msg_bytes.extend_from_slice(&header);
