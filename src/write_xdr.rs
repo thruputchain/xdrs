@@ -230,9 +230,20 @@ const _: () = {
         }
     }
 
+    #[cfg(feature = "alloc")]
     impl<const MAX: u32, T> WriteXDR for VecM<T, MAX>
     where
         T: WriteXDR,
+    {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            <Self as AsRef<[T]>>::as_ref(self).write_xdr(w)
+        }
+    }
+
+    #[cfg(not(feature = "alloc"))]
+    impl<const MAX: u32, T> WriteXDR for VecM<T, MAX>
+    where
+        T: WriteXDR + 'static,
     {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             <Self as AsRef<[T]>>::as_ref(self).write_xdr(w)

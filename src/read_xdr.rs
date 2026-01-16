@@ -354,7 +354,7 @@ const _: () = {
 
     impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
-        T: ReadXDR<'r>,
+        T: ReadXDR<'r> + 'static,
     {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
             unimplemented!()
