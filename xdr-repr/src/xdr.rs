@@ -287,8 +287,9 @@ impl Declaration {
                         format!("{{ \"type\": \"{}\" }}", type_name)
                     }
                     TypeJsonRepr::Object(type_obj) => {
-                        // Complex type (struct, etc.) - use as-is for the "type" field value
-                        format!("{{ \"type\": {} }}", type_obj)
+                        // Complex type (struct, etc.) - indent and embed it
+                        let indented = type_obj.replace('\n', "\n  ");
+                        format!("{{\n  \"type\": {}\n}}", indented)
                     }
                 }
             }
@@ -432,26 +433,33 @@ impl TypeSpec {
             TypeSpec::Bool => TypeJsonRepr::Name("bool".to_string()),
             TypeSpec::Enum(_body) => panic!("Embedded enum type not yet supported"),
             TypeSpec::Struct(body) => {
-                let mut result = String::from("{ \"type\": \"struct\", \"fields\": [");
+                if body.0.is_empty() {
+                    // Empty struct - keep it compact
+                    return TypeJsonRepr::Object("{\n  \"type\": \"struct\",\n  \"fields\": []\n}".to_string());
+                }
+
+                let mut result = String::from("{\n  \"type\": \"struct\",\n  \"fields\": [\n");
                 let mut first = true;
                 for decl in &body.0 {
                     if !first {
-                        result.push_str(", ");
+                        result.push_str(",\n");
                     }
                     first = false;
 
+                    result.push_str("    ");
                     if let Some(name) = decl.name() {
+                        let field_json = decl.get_type_json();
                         result.push_str(&format!(
-                            "{{ \"name\": \"{}\", \"field_type\": {} }}",
+                            "{{\n      \"name\": \"{}\",\n      \"field_type\": {}\n    }}",
                             name.0,
-                            decl.get_type_json()
+                            field_json.replace('\n', "\n      ")
                         ));
                     } else {
                         // Void field - shouldn't normally happen in a struct, but handle it
-                        result.push_str("{ \"name\": null, \"field_type\": { \"type\": \"void\" } }");
+                        result.push_str("{\n      \"name\": null,\n      \"field_type\": { \"type\": \"void\" }\n    }");
                     }
                 }
-                result.push_str("] }");
+                result.push_str("\n  ]\n}");
                 TypeJsonRepr::Object(result)
             }
             TypeSpec::Union(_body) => panic!("Embedded union type not yet supported"),
