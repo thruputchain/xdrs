@@ -16,16 +16,32 @@ fn derived_struct_fields_json() {
     let type_def = SimpleStruct::type_def();
 
     // Extract struct body
-    if let TypeDef::Struct(_, body) = type_def {
+    if let TypeDef::Struct(name, body) = type_def {
+        assert_eq!(name.0, "SimpleStruct");
         assert_eq!(body.0.len(), 2);
 
-        // Test first field
-        let id_json = body.0[0].get_type_json();
-        assert_eq!(id_json, "{ \"type\": \"unsigned\" }");
+        // Test individual field JSON
+        assert_eq!(body.0[0].get_type_json(), "{ \"type\": \"unsigned\" }");
+        assert_eq!(body.0[1].get_type_json(), "{ \"type\": \"int\" }");
 
-        // Test second field
-        let count_json = body.0[1].get_type_json();
-        assert_eq!(count_json, "{ \"type\": \"int\" }");
+        // Test full struct JSON
+        let struct_json = TypeSpec::Struct(body).get_type_json();
+        assert_eq!(
+            struct_json,
+            r#"{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "id",
+      "field_type": { "type": "unsigned" }
+    },
+    {
+      "name": "count",
+      "field_type": { "type": "int" }
+    }
+  ]
+}"#
+        );
     } else {
         panic!("Expected TypeDef::Struct");
     }
@@ -112,16 +128,32 @@ pub struct ComplexStruct {
 fn derived_complex_struct_json() {
     let type_def = ComplexStruct::type_def();
 
-    if let TypeDef::Struct(_, body) = type_def {
+    if let TypeDef::Struct(name, body) = type_def {
+        assert_eq!(name.0, "ComplexStruct");
         assert_eq!(body.0.len(), 2);
 
-        // Test array field
-        let values_json = body.0[0].get_type_json();
-        assert_eq!(values_json, "{ \"type\": \"fixed array\", \"elt_ty\": \"unsigned\", \"len\": 10 }");
+        // Test individual field JSON
+        assert_eq!(body.0[0].get_type_json(), "{ \"type\": \"fixed array\", \"elt_ty\": \"unsigned\", \"len\": 10 }");
+        assert_eq!(body.0[1].get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": \"unsigned hyper\" }");
 
-        // Test optional field
-        let optional_json = body.0[1].get_type_json();
-        assert_eq!(optional_json, "{ \"type\": \"optional\", \"opt_ty\": \"unsigned hyper\" }");
+        // Test full struct JSON
+        let struct_json = TypeSpec::Struct(body).get_type_json();
+        assert_eq!(
+            struct_json,
+            r#"{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "values",
+      "field_type": { "type": "fixed array", "elt_ty": "unsigned", "len": 10 }
+    },
+    {
+      "name": "optional_id",
+      "field_type": { "type": "optional", "opt_ty": "unsigned hyper" }
+    }
+  ]
+}"#
+        );
     } else {
         panic!("Expected TypeDef::Struct");
     }
@@ -189,4 +221,49 @@ fn derived_struct_as_typespec_json() {
     let type_spec = SimpleStruct::type_spec();
     let json = type_spec.get_type_json();
     assert_eq!(json, "SimpleStruct");
+}
+
+#[test]
+fn derived_struct_xdr_def() {
+    // Test XDR spec format output for derived struct
+    let def = SimpleStruct::def();
+    let def_str = format!("{}", def);
+
+    assert_eq!(
+        def_str,
+        "struct SimpleStruct {\n\tunsigned int id;\n\tint count;\n};\n"
+    );
+}
+
+#[test]
+fn derived_enum_xdr_spec() {
+    // Test XDR spec format for enum with empty tuple variants
+    let spec = StatusEnum::spec();
+    let spec_str = format!("{}", spec);
+
+    println!("\n=== StatusEnum XDR Spec ===\n{}", spec_str);
+
+    // Should contain the enum type definition
+    assert!(spec_str.contains("enum StatusEnumType"));
+    assert!(spec_str.contains("Active = 1"));
+    assert!(spec_str.contains("Inactive = 2"));
+    assert!(spec_str.contains("Pending = 3"));
+    assert!(spec_str.contains("Error = 4"));
+
+    // Should contain the union with void cases for empty variants
+    assert!(spec_str.contains("union StatusEnum switch"));
+
+    // Check for void cases (empty tuple/struct variants)
+    assert!(spec_str.contains("void;"));
+}
+
+#[test]
+fn derived_complex_struct_xdr_def() {
+    let def = ComplexStruct::def();
+    let def_str = format!("{}", def);
+
+    assert_eq!(
+        def_str,
+        "struct ComplexStruct {\n\tunsigned int values[10];\n\tunsigned hyper *optional_id;\n};\n"
+    );
 }

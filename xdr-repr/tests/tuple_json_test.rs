@@ -125,54 +125,84 @@ fn deeply_nested_tuple() {
 
 #[test]
 fn deeply_nested_tuple_structure() {
-    // Examine the structure in detail
-    // (i32, (u32, (i64, u64), bool))
+    // Examine the structure in detail: (i32, (u32, (i64, u64), bool))
     let type_def = <(i32, (u32, (i64, u64), bool))>::type_def();
 
     if let TypeDef::Struct(name, body) = type_def {
-        println!("\n=== Outer Tuple Structure ===");
-        println!("Outer tuple name: {}", name.0);
         assert_eq!(name.0, "Tuple");
         assert_eq!(body.0.len(), 2, "Outer tuple should have 2 fields");
 
-        // Field 0 should be i32
-        let field0_json = body.0[0].get_type_json();
-        println!("Field 0 JSON: {}", field0_json);
-        assert!(field0_json.contains("int"));
+        // Check full JSON for outer tuple struct
+        let struct_json = TypeSpec::Struct(body.clone()).get_type_json();
+        assert_eq!(
+            struct_json,
+            r#"{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "0",
+      "field_type": { "type": "int" }
+    },
+    {
+      "name": "1",
+      "field_type": { "type": "Tuple" }
+    }
+  ]
+}"#
+        );
 
-        // Field 1 should be another Tuple (the nested (u32, (i64, u64), bool))
-        let field1_json = body.0[1].get_type_json();
-        println!("Field 1 JSON: {}", field1_json);
-        assert!(field1_json.contains("Tuple"), "Field 1 should reference the nested Tuple type");
-
-        // Now let's check the middle tuple: (u32, (i64, u64), bool)
-        println!("\n=== Middle Tuple Structure ===");
+        // Check middle tuple: (u32, (i64, u64), bool)
         let middle_def = <(u32, (i64, u64), bool)>::type_def();
         if let TypeDef::Struct(mid_name, mid_body) = middle_def {
-            println!("Middle tuple name: {}", mid_name.0);
-            assert_eq!(mid_body.0.len(), 3, "Middle tuple should have 3 fields");
+            assert_eq!(mid_name.0, "Tuple");
+            assert_eq!(mid_body.0.len(), 3);
 
-            println!("Middle field 0: {}", mid_body.0[0].get_type_json());
-            println!("Middle field 1: {}", mid_body.0[1].get_type_json());
-            println!("Middle field 2: {}", mid_body.0[2].get_type_json());
-
-            // Field 1 should be the innermost tuple
-            assert!(mid_body.0[1].get_type_json().contains("Tuple"));
+            let mid_struct_json = TypeSpec::Struct(mid_body).get_type_json();
+            assert_eq!(
+                mid_struct_json,
+                r#"{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "0",
+      "field_type": { "type": "unsigned" }
+    },
+    {
+      "name": "1",
+      "field_type": { "type": "Tuple" }
+    },
+    {
+      "name": "2",
+      "field_type": { "type": "bool" }
+    }
+  ]
+}"#
+            );
         }
 
-        // Now let's check the innermost tuple: (i64, u64)
-        println!("\n=== Innermost Tuple Structure ===");
+        // Check innermost tuple: (i64, u64)
         let inner_def = <(i64, u64)>::type_def();
         if let TypeDef::Struct(inner_name, inner_body) = inner_def {
-            println!("Innermost tuple name: {}", inner_name.0);
-            assert_eq!(inner_body.0.len(), 2, "Innermost tuple should have 2 fields");
+            assert_eq!(inner_name.0, "Tuple");
+            assert_eq!(inner_body.0.len(), 2);
 
-            println!("Innermost field 0: {}", inner_body.0[0].get_type_json());
-            println!("Innermost field 1: {}", inner_body.0[1].get_type_json());
-
-            // These should be primitives
-            assert!(inner_body.0[0].get_type_json().contains("hyper"));
-            assert!(inner_body.0[1].get_type_json().contains("unsigned hyper"));
+            let inner_struct_json = TypeSpec::Struct(inner_body).get_type_json();
+            assert_eq!(
+                inner_struct_json,
+                r#"{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "0",
+      "field_type": { "type": "hyper" }
+    },
+    {
+      "name": "1",
+      "field_type": { "type": "unsigned hyper" }
+    }
+  ]
+}"#
+            );
         }
     } else {
         panic!("Expected TypeDef::Struct for outer tuple");
@@ -205,18 +235,32 @@ fn tuple_type_def_structure() {
         assert_eq!(body.0.len(), 3);
 
         // Check field types
-        let field0_json = body.0[0].get_type_json();
-        let field1_json = body.0[1].get_type_json();
-        let field2_json = body.0[2].get_type_json();
+        assert_eq!(body.0[0].get_type_json(), "{ \"type\": \"int\" }");
+        assert_eq!(body.0[1].get_type_json(), "{ \"type\": \"unsigned\" }");
+        assert_eq!(body.0[2].get_type_json(), "{ \"type\": \"bool\" }");
 
-        println!("Field 0 JSON: {}", field0_json);
-        println!("Field 1 JSON: {}", field1_json);
-        println!("Field 2 JSON: {}", field2_json);
-
-        // Fields should have the correct types
-        assert!(field0_json.contains("int"));
-        assert!(field1_json.contains("unsigned"));
-        assert!(field2_json.contains("bool"));
+        // Check the full struct JSON representation
+        let struct_json = TypeSpec::Struct(body).get_type_json();
+        assert_eq!(
+            struct_json,
+            r#"{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "0",
+      "field_type": { "type": "int" }
+    },
+    {
+      "name": "1",
+      "field_type": { "type": "unsigned" }
+    },
+    {
+      "name": "2",
+      "field_type": { "type": "bool" }
+    }
+  ]
+}"#
+        );
     } else {
         panic!("Expected TypeDef::Struct for tuple");
     }
@@ -245,15 +289,42 @@ fn nested_tuple_in_derived_struct() {
     let type_def = ComplexNesting::type_def();
 
     if let TypeDef::Struct(name, body) = type_def {
-        println!("\n=== ComplexNesting Struct ===");
-        println!("Struct name: {}", name.0);
+        assert_eq!(name.0, "ComplexNesting");
         assert_eq!(body.0.len(), 1);
 
         // The field should reference the Tuple type
-        let field_json = body.0[0].get_type_json();
-        println!("Field 'data' JSON: {}", field_json);
-        assert_eq!(field_json, "{ \"type\": \"Tuple\" }");
+        assert_eq!(body.0[0].get_type_json(), "{ \"type\": \"Tuple\" }");
     } else {
         panic!("Expected TypeDef::Struct");
     }
+}
+
+#[test]
+fn tuple_xdr_def_output() {
+    // Test the XDR definition format output for a tuple
+    let def = <(i32, u32, bool)>::def();
+    let def_str = format!("{}", def);
+
+    println!("\n=== Tuple (i32, u32, bool) XDR Def ===\n{}", def_str);
+
+    // Should be a struct Tuple with numbered fields
+    assert_eq!(
+        def_str,
+        "struct Tuple {\n\tint 0;\n\tunsigned int 1;\n\tbool 2;\n};\n"
+    );
+}
+
+#[test]
+fn nested_tuple_xdr_def_output() {
+    // Test nested tuple XDR def
+    let def = <(i32, (u32, bool))>::def();
+    let def_str = format!("{}", def);
+
+    println!("\n=== Nested Tuple (i32, (u32, bool)) XDR Def ===\n{}", def_str);
+
+    // Outer tuple should reference inner Tuple type
+    assert_eq!(
+        def_str,
+        "struct Tuple {\n\tint 0;\n\tTuple 1;\n};\n"
+    );
 }
