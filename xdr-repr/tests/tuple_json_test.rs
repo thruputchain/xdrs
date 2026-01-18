@@ -110,6 +110,76 @@ fn nested_tuple() {
 }
 
 #[test]
+fn deeply_nested_tuple() {
+    // Test complex nested tuple: (A, (B, (C, D), E))
+    // Using concrete types: (i32, (u32, (i64, u64), bool))
+    let decl = <(i32, (u32, (i64, u64), bool))>::declare(ident("deeply_nested"));
+    let json = decl.get_type_json();
+
+    println!("Deeply nested tuple JSON: {}", json);
+
+    // The outer tuple should be a Tuple type
+    assert!(json.contains("Tuple"));
+    assert!(!json.is_empty());
+}
+
+#[test]
+fn deeply_nested_tuple_structure() {
+    // Examine the structure in detail
+    // (i32, (u32, (i64, u64), bool))
+    let type_def = <(i32, (u32, (i64, u64), bool))>::type_def();
+
+    if let TypeDef::Struct(name, body) = type_def {
+        println!("\n=== Outer Tuple Structure ===");
+        println!("Outer tuple name: {}", name.0);
+        assert_eq!(name.0, "Tuple");
+        assert_eq!(body.0.len(), 2, "Outer tuple should have 2 fields");
+
+        // Field 0 should be i32
+        let field0_json = body.0[0].get_type_json();
+        println!("Field 0 JSON: {}", field0_json);
+        assert!(field0_json.contains("int"));
+
+        // Field 1 should be another Tuple (the nested (u32, (i64, u64), bool))
+        let field1_json = body.0[1].get_type_json();
+        println!("Field 1 JSON: {}", field1_json);
+        assert!(field1_json.contains("Tuple"), "Field 1 should reference the nested Tuple type");
+
+        // Now let's check the middle tuple: (u32, (i64, u64), bool)
+        println!("\n=== Middle Tuple Structure ===");
+        let middle_def = <(u32, (i64, u64), bool)>::type_def();
+        if let TypeDef::Struct(mid_name, mid_body) = middle_def {
+            println!("Middle tuple name: {}", mid_name.0);
+            assert_eq!(mid_body.0.len(), 3, "Middle tuple should have 3 fields");
+
+            println!("Middle field 0: {}", mid_body.0[0].get_type_json());
+            println!("Middle field 1: {}", mid_body.0[1].get_type_json());
+            println!("Middle field 2: {}", mid_body.0[2].get_type_json());
+
+            // Field 1 should be the innermost tuple
+            assert!(mid_body.0[1].get_type_json().contains("Tuple"));
+        }
+
+        // Now let's check the innermost tuple: (i64, u64)
+        println!("\n=== Innermost Tuple Structure ===");
+        let inner_def = <(i64, u64)>::type_def();
+        if let TypeDef::Struct(inner_name, inner_body) = inner_def {
+            println!("Innermost tuple name: {}", inner_name.0);
+            assert_eq!(inner_body.0.len(), 2, "Innermost tuple should have 2 fields");
+
+            println!("Innermost field 0: {}", inner_body.0[0].get_type_json());
+            println!("Innermost field 1: {}", inner_body.0[1].get_type_json());
+
+            // These should be primitives
+            assert!(inner_body.0[0].get_type_json().contains("hyper"));
+            assert!(inner_body.0[1].get_type_json().contains("unsigned hyper"));
+        }
+    } else {
+        panic!("Expected TypeDef::Struct for outer tuple");
+    }
+}
+
+#[test]
 fn tuple_with_all_primitives() {
     // Test tuple with various primitive types (i32, u32, i64, u64, bool)
     let decl = <(i32, u32, i64, u64, bool)>::declare(ident("all_types"));
@@ -162,4 +232,28 @@ fn tuple_typespec_json() {
 
     // TypeSpec for tuples should be an identifier "Tuple"
     assert_eq!(json, "Tuple");
+}
+
+#[test]
+fn nested_tuple_in_derived_struct() {
+    // Test using a complex nested tuple in a derived struct
+    #[derive(XDR)]
+    struct ComplexNesting {
+        data: (i32, (u32, (i64, u64), bool)),
+    }
+
+    let type_def = ComplexNesting::type_def();
+
+    if let TypeDef::Struct(name, body) = type_def {
+        println!("\n=== ComplexNesting Struct ===");
+        println!("Struct name: {}", name.0);
+        assert_eq!(body.0.len(), 1);
+
+        // The field should reference the Tuple type
+        let field_json = body.0[0].get_type_json();
+        println!("Field 'data' JSON: {}", field_json);
+        assert_eq!(field_json, "{ \"type\": \"Tuple\" }");
+    } else {
+        panic!("Expected TypeDef::Struct");
+    }
 }
