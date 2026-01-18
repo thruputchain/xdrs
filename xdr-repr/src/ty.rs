@@ -288,42 +288,58 @@ impl<T: HasTypeDef> HasTypeDef for &T {
     }
 }
 
-// Tuple implementations - map tuples to XDR structs with numbered fields
-macro_rules! impl_tuple_has_type_def {
+// Tuple implementations - map tuples to inline embedded structs with numbered fields
+// Tuples use TypeSpec::Struct (embedded) instead of TypeDef (named type) to avoid
+// name conflicts with nested tuples and to embed the struct definition inline in JSON
+macro_rules! impl_tuple_types {
     ( $($idx:tt : $t:ident),+ ) => {
-        impl<$($t),+> HasTypeDef for ($($t,)+)
+        // HasTypeSpec returns an embedded struct, not a named type reference
+        impl<$($t),+> HasTypeSpec for ($($t,)+)
         where
             $( $t: Declare, )+
         {
-            fn type_def() -> TypeDef {
-                // Create an anonymous struct representation for the tuple
+            fn type_spec() -> TypeSpec {
+                // Create an embedded struct body
                 let body = StructBody(alloc::vec![
                     $(
                         $t::declare(ident(stringify!($idx))),
                     )+
                 ]);
 
-                // Use a generic Tuple name - this creates an inline struct definition
-                TypeDef::Struct(ident("Tuple"), body)
+                // Return embedded struct, not a named type
+                TypeSpec::Struct(body)
+            }
+        }
+
+        // Declare creates a Declaration::Named with the embedded struct TypeSpec
+        impl<$($t),+> Declare for ($($t,)+)
+        where
+            $( $t: Declare, )+
+        {
+            fn declare(name: Ident) -> Declaration {
+                Declaration::Named {
+                    name,
+                    ty: Self::type_spec(),
+                }
             }
         }
     };
 }
 
 // Implement for tuples of size 1-16 (matching ReadXDR/WriteXDR implementations)
-impl_tuple_has_type_def!(0: T0);
-impl_tuple_has_type_def!(0: T0, 1: T1);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13, 14: T14);
-impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13, 14: T14, 15: T15);
+impl_tuple_types!(0: T0);
+impl_tuple_types!(0: T0, 1: T1);
+impl_tuple_types!(0: T0, 1: T1, 2: T2);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13, 14: T14);
+impl_tuple_types!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13, 14: T14, 15: T15);
