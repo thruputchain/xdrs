@@ -286,3 +286,43 @@ impl<T: HasTypeDef> HasTypeDef for &T {
         T::type_def()
     }
 }
+
+// Tuple implementations - map tuples to XDR structs with numbered fields
+macro_rules! impl_tuple_has_type_def {
+    ( $($idx:tt : $t:ident),+ ) => {
+        impl<$($t),+> HasTypeDef for ($($t,)+)
+        where
+            $( $t: Declare, )+
+        {
+            fn type_def() -> TypeDef {
+                // Create an anonymous struct representation for the tuple
+                let body = StructBody(alloc::vec![
+                    $(
+                        $t::declare(ident(stringify!($idx))),
+                    )+
+                ]);
+
+                // Use a generic Tuple name - this creates an inline struct definition
+                TypeDef::Struct(ident("Tuple"), body)
+            }
+        }
+    };
+}
+
+// Implement for tuples of size 1-16 (matching ReadXDR/WriteXDR implementations)
+impl_tuple_has_type_def!(0: T0);
+impl_tuple_has_type_def!(0: T0, 1: T1);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13, 14: T14);
+impl_tuple_has_type_def!(0: T0, 1: T1, 2: T2, 3: T3, 4: T4, 5: T5, 6: T6, 7: T7, 8: T8, 9: T9, 10: T10, 11: T11, 12: T12, 13: T13, 14: T14, 15: T15);
