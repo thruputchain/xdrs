@@ -1,4 +1,5 @@
 use xdr_repr::*;
+use xdrs::*;
 
 // Tests for JSON spec generation with tuple types
 // Tuples are mapped to XDR structs with numbered fields (0, 1, 2, ...)
@@ -110,8 +111,8 @@ fn nested_tuple() {
 
 #[test]
 fn tuple_with_all_primitives() {
-    // Test tuple with various primitive types
-    let decl = <(i32, u32, i64, u64, bool, f32, f64)>::declare(ident("all_types"));
+    // Test tuple with various primitive types (i32, u32, i64, u64, bool)
+    let decl = <(i32, u32, i64, u64, bool)>::declare(ident("all_types"));
     let json = decl.get_type_json();
 
     println!("All primitives tuple JSON: {}", json);

@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 use crate::xdr::*;
+use crate::ident;
 use alloc::string::*;
 
 /// Types that can produce a complete XDR specification.

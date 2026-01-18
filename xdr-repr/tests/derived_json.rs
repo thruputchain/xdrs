@@ -1,4 +1,5 @@
 use xdr_repr::*;
+use xdrs::*;
 
 // Tests for JSON spec generation with derived types
 
@@ -44,80 +45,60 @@ pub enum StatusEnum {
 fn derived_enum_empty_tuple_variant_json() {
     // Get the specification
     let spec = StatusEnum::spec();
+    let Specification { definitions: defs } = spec;
 
-    // The spec should contain a union definition
-    if let Specification(defs) = spec {
-        // Find the union definition
-        let union_def = defs.iter().find_map(|def| {
-            if let Definition::Type(TypeDef::Union(_, union_body)) = def {
-                Some(union_body)
-            } else {
-                None
-            }
-        });
+    // Find the union definition
+    let union_def = defs.iter().find_map(|def| {
+        if let Definition::Type(TypeDef::Union(_, union_body)) = def {
+            Some(union_body)
+        } else {
+            None
+        }
+    });
 
-        assert!(union_def.is_some(), "Expected union definition");
-        let union_body = union_def.unwrap();
+    assert!(union_def.is_some(), "Expected union definition");
+    let union_body = union_def.unwrap();
 
-        // Find the case for empty tuple variant "Inactive"
-        let inactive_case = union_body.0.iter().find(|case| {
-            match case {
-                UnionCase::Case(_, _, decl) => {
-                    // Check if this is the Inactive case (discriminant 2)
-                    // by looking at the declaration type
-                    matches!(decl, Declaration::Void)
-                }
-                _ => false,
-            }
-        });
+    // Count void cases (should be 3: Inactive, Pending, Error)
+    let void_count = union_body.case_specs.iter().filter(|case_spec| {
+        matches!(case_spec.decl, Declaration::Void)
+    }).count();
 
-        // Verify that we have at least one void case
-        let void_cases: Vec<_> = union_body.0.iter().filter(|case| {
-            matches!(case, UnionCase::Case(_, _, Declaration::Void))
-        }).collect();
+    assert_eq!(void_count, 3, "Expected 3 void cases for empty variants");
 
-        assert!(!void_cases.is_empty(), "Expected at least one void case for empty tuple variant");
-
-        // Test the JSON output of void declaration
-        let void_json = Declaration::Void.get_type_json();
-        assert_eq!(void_json, "{ \"type\": \"void\" }");
-    } else {
-        panic!("Expected Specification with definitions");
-    }
+    // Test the JSON output of void declaration
+    let void_json = Declaration::Void.get_type_json();
+    assert_eq!(void_json, "{ \"type\": \"void\" }");
 }
 
 #[test]
 fn derived_enum_active_variant_json() {
     // Get the specification
     let spec = StatusEnum::spec();
+    let Specification { definitions: defs } = spec;
 
-    // The spec should contain a union definition
-    if let Specification(defs) = spec {
-        // Find the union definition
-        let union_def = defs.iter().find_map(|def| {
-            if let Definition::Type(TypeDef::Union(_, union_body)) = def {
-                Some(union_body)
-            } else {
-                None
-            }
-        });
-
-        assert!(union_def.is_some(), "Expected union definition");
-        let union_body = union_def.unwrap();
-
-        // Find the case with a field (Active variant with session_id)
-        let active_cases: Vec<_> = union_body.0.iter().filter(|case| {
-            matches!(case, UnionCase::Case(_, _, Declaration::Named { .. }))
-        }).collect();
-
-        assert!(!active_cases.is_empty(), "Expected at least one named case");
-
-        // Get the first named case and test its JSON
-        if let UnionCase::Case(_, _, decl) = active_cases[0] {
-            let json = decl.get_type_json();
-            assert_eq!(json, "{ \"type\": \"unsigned\" }");
+    // Find the union definition
+    let union_def = defs.iter().find_map(|def| {
+        if let Definition::Type(TypeDef::Union(_, union_body)) = def {
+            Some(union_body)
+        } else {
+            None
         }
-    }
+    });
+
+    assert!(union_def.is_some(), "Expected union definition");
+    let union_body = union_def.unwrap();
+
+    // Find the case with a field (Active variant with session_id)
+    let active_cases: Vec<_> = union_body.case_specs.iter().filter(|case_spec| {
+        matches!(case_spec.decl, Declaration::Named { .. })
+    }).collect();
+
+    assert!(!active_cases.is_empty(), "Expected at least one named case");
+
+    // Get the first named case and test its JSON
+    let json = active_cases[0].decl.get_type_json();
+    assert_eq!(json, "{ \"type\": \"unsigned\" }");
 }
 
 // Test a more complex struct with arrays and optionals
@@ -159,32 +140,31 @@ pub enum MultiTupleEnum {
 #[test]
 fn derived_enum_multiple_tuple_variants_json() {
     let spec = MultiTupleEnum::spec();
+    let Specification { definitions: defs } = spec;
 
-    if let Specification(defs) = spec {
-        let union_def = defs.iter().find_map(|def| {
-            if let Definition::Type(TypeDef::Union(_, union_body)) = def {
-                Some(union_body)
-            } else {
-                None
-            }
-        });
+    let union_def = defs.iter().find_map(|def| {
+        if let Definition::Type(TypeDef::Union(_, union_body)) = def {
+            Some(union_body)
+        } else {
+            None
+        }
+    });
 
-        assert!(union_def.is_some());
-        let union_body = union_def.unwrap();
+    assert!(union_def.is_some());
+    let union_body = union_def.unwrap();
 
-        // Count void cases (should be 3: First, Second, Third)
-        let void_count = union_body.0.iter().filter(|case| {
-            matches!(case, UnionCase::Case(_, _, Declaration::Void))
-        }).count();
+    // Count void cases (should be 3: First, Second, Third)
+    let void_count = union_body.case_specs.iter().filter(|case_spec| {
+        matches!(case_spec.decl, Declaration::Void)
+    }).count();
 
-        assert_eq!(void_count, 3, "Expected 3 void cases for empty tuple variants");
+    assert_eq!(void_count, 3, "Expected 3 void cases for empty tuple variants");
 
-        // Verify each void case has correct JSON
-        for case in &union_body.0 {
-            if let UnionCase::Case(_, _, Declaration::Void) = case {
-                let json = Declaration::Void.get_type_json();
-                assert_eq!(json, "{ \"type\": \"void\" }");
-            }
+    // Verify each void case has correct JSON
+    for case_spec in &union_body.case_specs {
+        if matches!(case_spec.decl, Declaration::Void) {
+            let json = case_spec.decl.get_type_json();
+            assert_eq!(json, "{ \"type\": \"void\" }");
         }
     }
 }
