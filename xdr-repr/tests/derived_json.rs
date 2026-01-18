@@ -241,8 +241,6 @@ fn derived_enum_xdr_spec() {
     let spec = StatusEnum::spec();
     let spec_str = format!("{}", spec);
 
-    println!("\n=== StatusEnum XDR Spec ===\n{}", spec_str);
-
     // Should contain the enum type definition
     assert!(spec_str.contains("enum StatusEnumType"));
     assert!(spec_str.contains("Active = 1"));

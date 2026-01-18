@@ -312,8 +312,6 @@ fn tuple_in_declaration_xdr() {
     // The declaration should have an embedded struct
     let decl_str = format!("{}", decl);
 
-    println!("\n=== Tuple in Declaration XDR ===\n{}", decl_str);
-
     // Should show the embedded struct inline
     assert!(decl_str.contains("struct"));
     assert!(decl_str.contains("int 0;"));
@@ -326,8 +324,6 @@ fn nested_tuple_in_declaration_xdr() {
     // Test nested tuple in declaration XDR output
     let decl = <(i32, (u32, bool))>::declare(ident("nested"));
     let decl_str = format!("{}", decl);
-
-    println!("\n=== Nested Tuple in Declaration XDR ===\n{}", decl_str);
 
     // Should show nested struct definitions
     assert!(decl_str.contains("struct"));
