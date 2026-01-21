@@ -219,9 +219,9 @@ fn struct_with_tuple_field() {
         x: (42, 1000),
     };
 
-    // u32: 42 (0x0000002A) and u64: 1000 (0x00000000000003E8)
-    // CXS: compact format - no padding
-    let expected = &hex!("2a03e8");
+    // u32: 42 (0x2A, fits in 1 byte) and u64: 1000 (0x03E8, needs 2-byte encoding)
+    // CXS: 42="2a", 1000=0x7F+"e803" (little-endian)
+    let expected = &hex!("2a7fe803");
     CXS::check_codec(&val, expected);
 
     // TXS: traditional format - padded to 4-byte boundaries
@@ -245,9 +245,9 @@ fn struct_with_mixed_fields_and_tuple() {
         active: true,
     };
 
-    // u32: 100 (0x64), i32: -10 (0xFFFFFFF6), i32: 20 (0x14), bool: true (0x01)
-    // CXS: compact format
-    let expected = &hex!("643af61401");
+    // u32: 100 (0x64), i32: -10 (compact: 63-10=53=0x35), i32: 20 (0x14), bool: true (0x01)
+    // CXS: 100="64", -10="35", 20="14", true="01"
+    let expected = &hex!("64351401");
     CXS::check_codec(&val, expected);
 
     // TXS: traditional format
@@ -267,9 +267,9 @@ fn struct_with_nested_tuple() {
         data: (5, (-3, false)),
     };
 
-    // u32: 5 (0x05), i32: -3 (0xFFFFFFFD), bool: false (0x00)
-    // CXS: compact format
-    let expected = &hex!("053d00");
+    // u32: 5 (0x05), i32: -3 (compact: 63-3=60=0x3C), bool: false (0x00)
+    // CXS: 5="05", -3="3c", false="00"
+    let expected = &hex!("053c00");
     CXS::check_codec(&val, expected);
 
     // TXS: traditional format
@@ -291,9 +291,10 @@ fn struct_with_different_tuple_types() {
         pair2: (9223372036854775807, true), // i64::MAX
     };
 
-    // u32: 0xAABBCCDD, u32: 0x11223344, i64: 0x7FFFFFFFFFFFFFFF, bool: 0x01
-    // CXS: compact format
-    let expected = &hex!("bfddccbbaabf443322117f7f7f7f7f7f7f7f01");
+    // u32: 0xAABBCCDD (4-byte: 0xBF+little-endian), u32: 0x11223344 (4-byte),
+    // i64: 0x7FFFFFFFFFFFFFFF (8-byte: 0xFF+little-endian), bool: 0x01
+    // CXS: 0xBF+DDCCBBAA, 0xBF+44332211, 0xFF+FFFFFFFFFFFFFF7F, 01
+    let expected = &hex!("bfddccbbaabf44332211ffffffffffffffff7f01");
     CXS::check_codec(&val, expected);
 
     // TXS: traditional format
