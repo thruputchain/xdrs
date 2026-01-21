@@ -206,3 +206,97 @@ fn phantom_data() {
     CXS::check_codec(&opera, &hex!("05"));
     TXS::check_codec(&opera, &hex!("00000005"));
 }
+
+#[test]
+fn struct_with_tuple_field() {
+    // Test struct with a simple tuple field
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct Foo {
+        x: (u32, u64),
+    }
+
+    let val = Foo {
+        x: (42, 1000),
+    };
+
+    // u32: 42 (0x0000002A) and u64: 1000 (0x00000000000003E8)
+    // CXS: compact format - no padding
+    let expected = &hex!("2a03e8");
+    CXS::check_codec(&val, expected);
+
+    // TXS: traditional format - padded to 4-byte boundaries
+    let expected = &hex!("0000002a00000000000003e8");
+    TXS::check_codec(&val, expected);
+}
+
+#[test]
+fn struct_with_mixed_fields_and_tuple() {
+    // Test struct with multiple fields including a tuple
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct Bar {
+        id: u32,
+        coords: (i32, i32),
+        active: bool,
+    }
+
+    let val = Bar {
+        id: 100,
+        coords: (-10, 20),
+        active: true,
+    };
+
+    // u32: 100 (0x64), i32: -10 (0xFFFFFFF6), i32: 20 (0x14), bool: true (0x01)
+    // CXS: compact format
+    let expected = &hex!("643af61401");
+    CXS::check_codec(&val, expected);
+
+    // TXS: traditional format
+    let expected = &hex!("00000064fffffff60000001400000001");
+    TXS::check_codec(&val, expected);
+}
+
+#[test]
+fn struct_with_nested_tuple() {
+    // Test struct with a nested tuple
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct Nested {
+        data: (u32, (i32, bool)),
+    }
+
+    let val = Nested {
+        data: (5, (-3, false)),
+    };
+
+    // u32: 5 (0x05), i32: -3 (0xFFFFFFFD), bool: false (0x00)
+    // CXS: compact format
+    let expected = &hex!("053d00");
+    CXS::check_codec(&val, expected);
+
+    // TXS: traditional format
+    let expected = &hex!("00000005fffffffd00000000");
+    TXS::check_codec(&val, expected);
+}
+
+#[test]
+fn struct_with_different_tuple_types() {
+    // Test struct with tuples of different primitive types
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct Multi {
+        pair1: (u8, u8),
+        pair2: (i64, bool),
+    }
+
+    let val = Multi {
+        pair1: (0xAA, 0xBB),
+        pair2: (9223372036854775807, true), // i64::MAX
+    };
+
+    // u8: 0xAA, u8: 0xBB, i64: 0x7FFFFFFFFFFFFFFF, bool: 0x01
+    // CXS: compact format
+    let expected = &hex!("aabb7f7f7f7f7f7f7f7f01");
+    CXS::check_codec(&val, expected);
+
+    // TXS: traditional format
+    let expected = &hex!("aa0000000000bb007fffffffffffffff00000001");
+    TXS::check_codec(&val, expected);
+}
