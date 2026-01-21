@@ -219,9 +219,9 @@ fn struct_with_tuple_field() {
         x: (42, 1000),
     };
 
-    // u32: 42 (0x2A, range 32-255 needs 0x3F prefix) and u64: 1000 (0x03E8, needs 0x7F+2-byte)
-    // CXS: 42="3f2a", 1000="7fe803" (little-endian)
-    let expected = &hex!("3f2a7fe803");
+    // u32: 42 (≤63, no prefix) and u64: 1000 (0x03E8, needs 0x7F+2-byte)
+    // CXS: 42="2a", 1000="7fe803" (little-endian)
+    let expected = &hex!("2a7fe803");
     CXS::check_codec(&val, expected);
 
     // TXS: traditional format - padded to 4-byte boundaries

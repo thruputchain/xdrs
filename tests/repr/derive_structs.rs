@@ -136,8 +136,8 @@ pub mod tuple_fields {
         =>
         "struct Foo {"
         "	struct {"
-        "		unsigned int 0;"
-        "		unsigned hyper 1;"
+        "		unsigned int unnamed_0;"
+        "		unsigned hyper unnamed_1;"
         "	} x;"
         "};"
     }
@@ -156,8 +156,8 @@ pub mod tuple_fields {
         "struct Bar {"
         "	unsigned int id;"
         "	struct {"
-        "		int 0;"
-        "		int 1;"
+        "		int unnamed_0;"
+        "		int unnamed_1;"
         "	} coords;"
         "	bool active;"
         "};"
@@ -174,11 +174,11 @@ pub mod tuple_fields {
         =>
         "struct Nested {"
         "	struct {"
-        "		unsigned int 0;"
+        "		unsigned int unnamed_0;"
         "		struct {"
-        "			int 0;"
-        "			bool 1;"
-        "		} 1;"
+        "			int unnamed_0;"
+        "			bool unnamed_1;"
+        "		} unnamed_1;"
         "	} data;"
         "};"
     }

@@ -2,7 +2,7 @@ use xdr_repr::*;
 use xdrs::*;
 
 // Tests for JSON spec generation with tuple types
-// Tuples are mapped to XDR structs with numbered fields (0, 1, 2, ...)
+// Tuples are mapped to XDR structs with numbered fields (unnamed_0, unnamed_1, unnamed_2, ...)
 // and support sizes 1-16 (matching ReadXDR/WriteXDR implementations)
 
 // First, let's verify that primitive tuples work for basic operations
@@ -20,11 +20,11 @@ fn tuple_2_declare() {
     "type": "struct",
     "fields": [
       {
-        "name": "0",
+        "name": "unnamed_0",
         "field_type": { "type": "int" }
       },
       {
-        "name": "1",
+        "name": "unnamed_1",
         "field_type": { "type": "int" }
       }
     ]
@@ -41,9 +41,9 @@ fn tuple_3_declare() {
 
     // Should have embedded struct with 3 fields
     assert!(json.contains(r#""type": "struct""#));
-    assert!(json.contains(r#""name": "0""#));
-    assert!(json.contains(r#""name": "1""#));
-    assert!(json.contains(r#""name": "2""#));
+    assert!(json.contains(r#""name": "unnamed_0""#));
+    assert!(json.contains(r#""name": "unnamed_1""#));
+    assert!(json.contains(r#""name": "unnamed_2""#));
     assert!(json.contains(r#""type": "unsigned""#));
     assert!(json.contains(r#""type": "bool""#));
     assert!(json.contains(r#""type": "hyper""#));
@@ -80,8 +80,8 @@ fn tuple_in_struct_field() {
 
         // Verify the JSON has the embedded struct
         assert!(coords_json.contains(r#""type": "struct""#));
-        assert!(coords_json.contains(r#""name": "0""#));
-        assert!(coords_json.contains(r#""name": "1""#));
+        assert!(coords_json.contains(r#""name": "unnamed_0""#));
+        assert!(coords_json.contains(r#""name": "unnamed_1""#));
     } else {
         panic!("Expected TypeDef::Struct");
     }
@@ -117,8 +117,8 @@ fn nested_tuple() {
     // Should have nested struct definitions
     assert!(json.contains(r#""type": "struct""#));
     // The outer struct should have 2 fields, each being a nested struct
-    assert!(json.contains(r#""name": "0""#));
-    assert!(json.contains(r#""name": "1""#));
+    assert!(json.contains(r#""name": "unnamed_0""#));
+    assert!(json.contains(r#""name": "unnamed_1""#));
 }
 
 #[test]
@@ -129,8 +129,8 @@ fn deeply_nested_tuple() {
 
     // Should have deeply nested struct definitions
     assert!(json.contains(r#""type": "struct""#));
-    assert!(json.contains(r#""name": "0""#));
-    assert!(json.contains(r#""name": "1""#));
+    assert!(json.contains(r#""name": "unnamed_0""#));
+    assert!(json.contains(r#""name": "unnamed_1""#));
 }
 
 #[test]
@@ -147,31 +147,31 @@ fn deeply_nested_tuple_structure() {
   "type": "struct",
   "fields": [
     {
-      "name": "0",
+      "name": "unnamed_0",
       "field_type": { "type": "int" }
     },
     {
-      "name": "1",
+      "name": "unnamed_1",
       "field_type": {
         "type": {
           "type": "struct",
           "fields": [
             {
-              "name": "0",
+              "name": "unnamed_0",
               "field_type": { "type": "unsigned" }
             },
             {
-              "name": "1",
+              "name": "unnamed_1",
               "field_type": {
                 "type": {
                   "type": "struct",
                   "fields": [
                     {
-                      "name": "0",
+                      "name": "unnamed_0",
                       "field_type": { "type": "hyper" }
                     },
                     {
-                      "name": "1",
+                      "name": "unnamed_1",
                       "field_type": { "type": "unsigned hyper" }
                     }
                   ]
@@ -179,7 +179,7 @@ fn deeply_nested_tuple_structure() {
               }
             },
             {
-              "name": "2",
+              "name": "unnamed_2",
               "field_type": { "type": "bool" }
             }
           ]
@@ -213,7 +213,7 @@ fn tuple_type_spec_structure() {
 
     // Tuples should return TypeSpec::Struct (embedded struct)
     if let TypeSpec::Struct(body) = type_spec {
-        // Should have 3 fields (0, 1, 2)
+        // Should have 3 fields (unnamed_0, unnamed_1, unnamed_2)
         assert_eq!(body.0.len(), 3);
 
         // Check field types
@@ -229,15 +229,15 @@ fn tuple_type_spec_structure() {
   "type": "struct",
   "fields": [
     {
-      "name": "0",
+      "name": "unnamed_0",
       "field_type": { "type": "int" }
     },
     {
-      "name": "1",
+      "name": "unnamed_1",
       "field_type": { "type": "unsigned" }
     },
     {
-      "name": "2",
+      "name": "unnamed_2",
       "field_type": { "type": "bool" }
     }
   ]
@@ -261,11 +261,11 @@ fn tuple_typespec_json() {
   "type": "struct",
   "fields": [
     {
-      "name": "0",
+      "name": "unnamed_0",
       "field_type": { "type": "int" }
     },
     {
-      "name": "1",
+      "name": "unnamed_1",
       "field_type": { "type": "int" }
     }
   ]
@@ -292,8 +292,8 @@ fn nested_tuple_in_derived_struct() {
 
         // Verify it contains the fully nested structure
         assert!(json.contains(r#""type": "struct""#));
-        assert!(json.contains(r#""name": "0""#));
-        assert!(json.contains(r#""name": "1""#));
+        assert!(json.contains(r#""name": "unnamed_0""#));
+        assert!(json.contains(r#""name": "unnamed_1""#));
         assert!(json.contains(r#""type": "int""#));
         assert!(json.contains(r#""type": "unsigned""#));
         assert!(json.contains(r#""type": "hyper""#));
@@ -314,9 +314,9 @@ fn tuple_in_declaration_xdr() {
 
     // Should show the embedded struct inline
     assert!(decl_str.contains("struct"));
-    assert!(decl_str.contains("int 0;"));
-    assert!(decl_str.contains("unsigned int 1;"));
-    assert!(decl_str.contains("bool 2;"));
+    assert!(decl_str.contains("int unnamed_0;"));
+    assert!(decl_str.contains("unsigned int unnamed_1;"));
+    assert!(decl_str.contains("bool unnamed_2;"));
 }
 
 #[test]
@@ -327,5 +327,5 @@ fn nested_tuple_in_declaration_xdr() {
 
     // Should show nested struct definitions
     assert!(decl_str.contains("struct"));
-    assert!(decl_str.contains("int 0;"));
+    assert!(decl_str.contains("int unnamed_0;"));
 }
