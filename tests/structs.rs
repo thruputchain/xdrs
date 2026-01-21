@@ -282,21 +282,21 @@ fn struct_with_different_tuple_types() {
     // Test struct with tuples of different primitive types
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct Multi {
-        pair1: (u8, u8),
+        pair1: (u16, u16),
         pair2: (i64, bool),
     }
 
     let val = Multi {
-        pair1: (0xAA, 0xBB),
+        pair1: (0xAABB, 0xCCDD),
         pair2: (9223372036854775807, true), // i64::MAX
     };
 
-    // u8: 0xAA, u8: 0xBB, i64: 0x7FFFFFFFFFFFFFFF, bool: 0x01
+    // u16: 0xAABB, u16: 0xCCDD, i64: 0x7FFFFFFFFFFFFFFF, bool: 0x01
     // CXS: compact format
-    let expected = &hex!("aabb7f7f7f7f7f7f7f7f01");
+    let expected = &hex!("7faabbccdd7f7f7f7f7f7f7f7f01");
     CXS::check_codec(&val, expected);
 
     // TXS: traditional format
-    let expected = &hex!("aa0000000000bb007fffffffffffffff00000001");
+    let expected = &hex!("aabbccdd7fffffffffffffff00000001");
     TXS::check_codec(&val, expected);
 }
