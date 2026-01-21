@@ -121,3 +121,65 @@ pub mod custom_name {
         "};"
     }
 }
+
+pub mod tuple_fields {
+    use super::*;
+
+    // Test struct with a simple tuple field
+    #[derive(XDR)]
+    pub struct Foo {
+        pub x: (u32, u64),
+    }
+
+    check_format! { derive_struct_with_tuple
+        Foo::def()
+        =>
+        "struct Foo {"
+        "	struct {"
+        "		unsigned int unnamed_0;"
+        "		unsigned hyper unnamed_1;"
+        "	} x;"
+        "};"
+    }
+
+    // Test struct with multiple fields including tuple
+    #[derive(XDR)]
+    pub struct Bar {
+        pub id: u32,
+        pub coords: (i32, i32),
+        pub active: bool,
+    }
+
+    check_format! { derive_struct_with_mixed_fields
+        Bar::def()
+        =>
+        "struct Bar {"
+        "	unsigned int id;"
+        "	struct {"
+        "		int unnamed_0;"
+        "		int unnamed_1;"
+        "	} coords;"
+        "	bool active;"
+        "};"
+    }
+
+    // Test struct with nested tuple
+    #[derive(XDR)]
+    pub struct Nested {
+        pub data: (u32, (i32, bool)),
+    }
+
+    check_format! { derive_struct_with_nested_tuple
+        Nested::def()
+        =>
+        "struct Nested {"
+        "	struct {"
+        "		unsigned int unnamed_0;"
+        "		struct {"
+        "			int unnamed_0;"
+        "			bool unnamed_1;"
+        "		} unnamed_1;"
+        "	} data;"
+        "};"
+    }
+}

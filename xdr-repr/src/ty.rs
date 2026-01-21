@@ -302,7 +302,7 @@ macro_rules! impl_tuple_types {
                 // Create an embedded struct body
                 let body = StructBody(alloc::vec![
                     $(
-                        $t::declare(ident(stringify!($idx))),
+                        $t::declare(ident(concat!("unnamed_", stringify!($idx)))),
                     )+
                 ]);
 
