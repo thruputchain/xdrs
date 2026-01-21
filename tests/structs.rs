@@ -219,9 +219,9 @@ fn struct_with_tuple_field() {
         x: (42, 1000),
     };
 
-    // u32: 42 (0x2A, fits in 1 byte) and u64: 1000 (0x03E8, needs 2-byte encoding)
-    // CXS: 42="2a", 1000=0x7F+"e803" (little-endian)
-    let expected = &hex!("2a7fe803");
+    // u32: 42 (0x2A, range 32-255 needs 0x3F prefix) and u64: 1000 (0x03E8, needs 0x7F+2-byte)
+    // CXS: 42="3f2a", 1000="7fe803" (little-endian)
+    let expected = &hex!("3f2a7fe803");
     CXS::check_codec(&val, expected);
 
     // TXS: traditional format - padded to 4-byte boundaries
@@ -245,9 +245,10 @@ fn struct_with_mixed_fields_and_tuple() {
         active: true,
     };
 
-    // u32: 100 (0x64), i32: -10 (compact: 63-10=53=0x35), i32: 20 (0x14), bool: true (0x01)
-    // CXS: 100="64", -10="35", 20="14", true="01"
-    let expected = &hex!("64351401");
+    // u32: 100 (0x64, range 32-255 needs 0x3F prefix), i32: -10 (compact: 63-10=53=0x35),
+    // i32: 20 (0x14, single byte), bool: true (0x01)
+    // CXS: 100="3f64", -10="35", 20="14", true="01"
+    let expected = &hex!("3f64351401");
     CXS::check_codec(&val, expected);
 
     // TXS: traditional format
