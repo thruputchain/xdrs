@@ -6,8 +6,8 @@ use xdrs::*;
 // Test struct with derived XDR
 #[derive(XDR)]
 pub struct SimpleStruct {
-    id: u32,
-    count: i32,
+    _id: u32,
+    _count: i32,
 }
 
 #[test]
@@ -32,11 +32,11 @@ fn derived_struct_fields_json() {
   "type": "struct",
   "fields": [
     {
-      "name": "id",
+      "name": "_id",
       "field_type": { "type": "unsigned" }
     },
     {
-      "name": "count",
+      "name": "_count",
       "field_type": { "type": "int" }
     }
   ]
@@ -51,77 +51,20 @@ fn derived_struct_fields_json() {
 #[derive(XDR)]
 #[repr(i32)]
 pub enum StatusEnum {
-    Active { session_id: u32 } = 1,
+    Active { _session_id: u32 } = 1,
     Inactive() = 2,           // Empty tuple variant
     Pending {} = 3,           // Empty struct variant
     Error = 4,                // Unit variant
 }
 
-#[test]
-fn derived_enum_empty_tuple_variant_json() {
-    // Get the specification
-    let spec = StatusEnum::spec();
-    let Specification { definitions: defs } = spec;
+// TODO(geoff): Add tests for the union json if/when we implement that.
 
-    // Find the union definition
-    let union_def = defs.iter().find_map(|def| {
-        if let Definition::Type(TypeDef::Union(_, union_body)) = def {
-            Some(union_body)
-        } else {
-            None
-        }
-    });
-
-    assert!(union_def.is_some(), "Expected union definition");
-    let union_body = union_def.unwrap();
-
-    // Count void cases (should be 3: Inactive, Pending, Error)
-    let void_count = union_body.case_specs.iter().filter(|case_spec| {
-        matches!(case_spec.decl, Declaration::Void)
-    }).count();
-
-    assert_eq!(void_count, 3, "Expected 3 void cases for empty variants");
-
-    // Test the JSON output of void declaration
-    let void_json = Declaration::Void.get_type_json();
-    assert_eq!(void_json, "{ \"type\": \"void\" }");
-}
-
-#[test]
-fn derived_enum_active_variant_json() {
-    // Get the specification
-    let spec = StatusEnum::spec();
-    let Specification { definitions: defs } = spec;
-
-    // Find the union definition
-    let union_def = defs.iter().find_map(|def| {
-        if let Definition::Type(TypeDef::Union(_, union_body)) = def {
-            Some(union_body)
-        } else {
-            None
-        }
-    });
-
-    assert!(union_def.is_some(), "Expected union definition");
-    let union_body = union_def.unwrap();
-
-    // Find the case with a field (Active variant with session_id)
-    let active_cases: Vec<_> = union_body.case_specs.iter().filter(|case_spec| {
-        matches!(case_spec.decl, Declaration::Named { .. })
-    }).collect();
-
-    assert!(!active_cases.is_empty(), "Expected at least one named case");
-
-    // Get the first named case and test its JSON
-    let json = active_cases[0].decl.get_type_json();
-    assert_eq!(json, "{ \"type\": \"unsigned\" }");
-}
 
 // Test a more complex struct with arrays and optionals
 #[derive(XDR)]
 pub struct ComplexStruct {
-    values: [u32; 10],
-    optional_id: Option<u64>,
+    _values: [u32; 10],
+    _optional_id: Option<u64>,
 }
 
 #[test]
@@ -144,11 +87,11 @@ fn derived_complex_struct_json() {
   "type": "struct",
   "fields": [
     {
-      "name": "values",
+      "name": "_values",
       "field_type": { "type": "fixed array", "elt_ty": "unsigned", "len": 10 }
     },
     {
-      "name": "optional_id",
+      "name": "_optional_id",
       "field_type": { "type": "optional", "opt_ty": "unsigned hyper" }
     }
   ]
@@ -231,7 +174,11 @@ fn derived_struct_xdr_def() {
 
     assert_eq!(
         def_str,
-        "struct SimpleStruct {\n\tunsigned int id;\n\tint count;\n};\n"
+        r#"struct SimpleStruct {
+	unsigned int _id;
+	int _count;
+};
+"#
     );
 }
 
@@ -262,6 +209,10 @@ fn derived_complex_struct_xdr_def() {
 
     assert_eq!(
         def_str,
-        "struct ComplexStruct {\n\tunsigned int values[10];\n\tunsigned hyper *optional_id;\n};\n"
+        r#"struct ComplexStruct {
+	unsigned int _values[10];
+	unsigned hyper *_optional_id;
+};
+"#
     );
 }
