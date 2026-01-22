@@ -41,6 +41,7 @@ permissive = [] # don't require minimal encodings when reading
 alloc = ["xdr-common/alloc"] # enable allocating interfaces
 int128 = [] # enable non-standard read/write of i128/u128
 int128_xdr = ["xdr-repr?/int128_xdr"] # replace above with alternative encoding of i128/u128
+serde = ["xdr-common/serde"] # serde support for xdr-common types
 
 # Enable optional dependencies
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
