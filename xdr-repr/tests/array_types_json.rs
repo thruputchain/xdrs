@@ -258,7 +258,7 @@ fn nested_byte_arrays() {
         assert!(json.contains(r#""type": "fixed array""#));
         assert!(json.contains(r#""len": 5"#));
         assert!(json.contains(r#""type": "struct""#));
-        assert!(json.contains(r#""name": "elements""#));
+        assert!(json.contains(r#""name": "unnamed_0""#));
         assert!(json.contains(r#""type": "fixed opaque""#));
         assert!(json.contains(r#""len": 3"#));
     } else {

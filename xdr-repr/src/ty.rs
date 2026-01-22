@@ -179,10 +179,10 @@ impl<const N: usize> Declare for [u8; N] {
 impl<const N: usize> HasTypeSpec for [u8; N] {
     fn type_spec() -> TypeSpec {
         // Arrays aren't types in XDR, so we represent them as embedded structs
-        // with a single field named "elements"
+        // with a single field named "unnamed_0"
         TypeSpec::Struct(StructBody(alloc::vec![
             Declaration::FixedOpaque {
-                name: ident("elements"),
+                name: ident("unnamed_0"),
                 size: Value::Const((N as u32).into()),
             }
         ]))
@@ -205,10 +205,10 @@ impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
 impl<const N: usize, T: HasTypeSpec> HasTypeSpec for [T; N] {
     fn type_spec() -> TypeSpec {
         // Arrays aren't types in XDR, so we represent them as embedded structs
-        // with a single field named "elements"
+        // with a single field named "unnamed_0"
         TypeSpec::Struct(StructBody(alloc::vec![
             Declaration::FixedArray {
-                name: ident("elements"),
+                name: ident("unnamed_0"),
                 elt_ty: T::type_spec(),
                 len: Value::Const((N as u32).into()),
             }
