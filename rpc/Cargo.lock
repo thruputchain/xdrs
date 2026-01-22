@@ -391,9 +391,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 
 [[package]]
+name = "xdr-common"
+version = "0.1.0"
+source = "git+ssh://git@github.com/groundhogchain/xdrs.git#ec87ef1d3a99a6f935cec12aba5b90736f421ad5"
+dependencies = [
+ "escape-bytes",
+ "hex",
+]
+
+[[package]]
 name = "xdr-derive"
 version = "0.2.0"
-source = "git+ssh://git@github.com/groundhogchain/xdrs.git#31369634a3df8b359878b3c15461df00815b4977"
+source = "git+ssh://git@github.com/groundhogchain/xdrs.git#ec87ef1d3a99a6f935cec12aba5b90736f421ad5"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -404,27 +413,18 @@ dependencies = [
 [[package]]
 name = "xdr-repr"
 version = "0.2.0"
-source = "git+ssh://git@github.com/groundhogchain/xdrs.git#31369634a3df8b359878b3c15461df00815b4977"
+source = "git+ssh://git@github.com/groundhogchain/xdrs.git#ec87ef1d3a99a6f935cec12aba5b90736f421ad5"
 dependencies = [
- "xdr_common",
-]
-
-[[package]]
-name = "xdr_common"
-version = "0.1.0"
-source = "git+ssh://git@github.com/groundhogchain/xdr_common.git#776f530f442ca966054a7bce33fb80d427386471"
-dependencies = [
- "escape-bytes",
- "hex",
+ "xdr-common",
 ]
 
 [[package]]
 name = "xdrs"
 version = "0.2.0"
-source = "git+ssh://git@github.com/groundhogchain/xdrs.git#31369634a3df8b359878b3c15461df00815b4977"
+source = "git+ssh://git@github.com/groundhogchain/xdrs.git#ec87ef1d3a99a6f935cec12aba5b90736f421ad5"
 dependencies = [
  "thiserror",
+ "xdr-common",
  "xdr-derive",
  "xdr-repr",
- "xdr_common",
 ]

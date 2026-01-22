@@ -7,7 +7,7 @@ edition = "2021"
 async-trait = "0.1.89"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
-xdrs = { git = "ssh://git@github.com/groundhogchain/xdrs.git", features = ["extras", "int128_xdr", "xdr_common", "derive", "ns", "alloc"] }
+xdrs = { git = "ssh://git@github.com/groundhogchain/xdrs.git", features = ["extras", "int128_xdr", "derive", "ns", "alloc"] }
 
 [features]
 default = ["xdrs"]
