@@ -58,5 +58,5 @@ jobs:
           cargo +nightly build -p xdr-common --features serde,std -Zbuild-std=std
       - name: Test Documentation Examples
         run: |
-          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"
-          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc --features "alloc,derive,repr,ns,int128"
+          cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"
+          cargo test --doc --features "alloc,derive,repr,ns,int128"
