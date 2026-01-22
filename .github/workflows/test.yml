@@ -23,17 +23,17 @@ jobs:
           toolchain: nightly
           override: true
       - name: Test (root lib without alloc)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F xdr_common,int128,int128_xdr
+        run: cargo test -F int128,int128_xdr
       - name: Test (feature permissive)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F permissive,int128 --test ints
+        run: cargo test -F permissive,int128 --test ints
       - name: Test (feature int128)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F int128 --test ints
+        run: cargo test -F int128 --test ints
       - name: Test (workspace)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace --all-features
+        run: cargo test --workspace --all-features
       - name: Test (benchmarks)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --benches --all-features
+        run: cargo test --benches --all-features
       - name: Docs
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo doc --workspace --all-features
+        run: cargo doc --workspace --all-features
       - name: Docs (docsrs)
         run: cargo +nightly doc --workspace --all-features --no-deps
         env:
@@ -56,5 +56,5 @@ jobs:
           cargo +nightly test -p xdr-common --features serde,std -Zbuild-std=core,alloc
       - name: Test Documentation Examples
         run: |
-          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --features "derive,xdr_common,ns,int128_xdr"
-          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc --features "alloc,derive,repr,xdr_common,ns,int128"
+          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"
+          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc --features "alloc,derive,repr,ns,int128"
