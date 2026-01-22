@@ -228,8 +228,110 @@ fn mixed_arrays_xdr_spec() {
     );
 }
 
-// Note: Nested arrays like [[u32; 3]; 4] are not currently supported
-// because arrays don't implement HasTypeSpec. This is a known limitation.
+#[test]
+fn nested_byte_arrays() {
+    // Test [[u8; 3]; 5] - nested byte arrays
+    #[derive(XDR)]
+    struct NestedBytes {
+        _matrix: [[u8; 3]; 5],
+    }
+
+    let type_def = NestedBytes::type_def();
+
+    if let TypeDef::Struct(_, body) = type_def {
+        assert_eq!(body.0.len(), 1);
+
+        let json = body.0[0].get_type_json();
+
+        // The outer array should be a fixed array
+        assert!(json.contains(r#""type": "fixed array""#));
+        assert!(json.contains(r#""len": 5"#));
+
+        // The element type should be an embedded struct containing a fixed opaque
+        assert!(json.contains(r#""fixed opaque""#));
+        assert!(json.contains(r#""len": 3"#));
+
+        // Full expected structure:
+        // fixed array of 5 elements, where each element is a struct containing
+        // a fixed opaque array of 3 bytes
+        // The element type is embedded but the JSON should be parseable
+        assert!(json.contains(r#""type": "fixed array""#));
+        assert!(json.contains(r#""len": 5"#));
+        assert!(json.contains(r#""type": "struct""#));
+        assert!(json.contains(r#""name": "elements""#));
+        assert!(json.contains(r#""type": "fixed opaque""#));
+        assert!(json.contains(r#""len": 3"#));
+    } else {
+        panic!("Expected TypeDef::Struct");
+    }
+}
+
+#[test]
+fn nested_typed_arrays() {
+    // Test [[u32; 3]; 4] - nested typed arrays
+    #[derive(XDR)]
+    struct Matrix {
+        _data: [[u32; 3]; 4],
+    }
+
+    let type_def = Matrix::type_def();
+
+    if let TypeDef::Struct(_, body) = type_def {
+        assert_eq!(body.0.len(), 1);
+
+        let json = body.0[0].get_type_json();
+
+        // Should be a fixed array of 4 elements
+        assert!(json.contains(r#""len": 4"#));
+
+        // Each element is a struct containing a fixed array of 3 u32s
+        assert!(json.contains(r#""fixed array""#));
+        assert!(json.contains(r#""len": 3"#));
+        assert!(json.contains(r#""elt_ty": "unsigned""#));
+    } else {
+        panic!("Expected TypeDef::Struct");
+    }
+}
+
+#[test]
+fn triple_nested_arrays() {
+    // Test [[[u32; 2]; 3]; 4] - triple nested arrays
+    #[derive(XDR)]
+    struct Tensor {
+        _data: [[[u32; 2]; 3]; 4],
+    }
+
+    let type_def = Tensor::type_def();
+
+    if let TypeDef::Struct(_, body) = type_def {
+        assert_eq!(body.0.len(), 1);
+
+        let json = body.0[0].get_type_json();
+
+        // Should have all three levels
+        assert!(json.contains(r#""len": 4"#));  // outer
+        assert!(json.contains(r#""len": 3"#));  // middle
+        assert!(json.contains(r#""len": 2"#));  // inner
+    } else {
+        panic!("Expected TypeDef::Struct");
+    }
+}
+
+#[test]
+fn nested_byte_array_xdr_spec() {
+    // Verify XDR spec output for nested byte arrays
+    #[derive(XDR)]
+    struct Data {
+        _keys: [[u8; 32]; 10],
+    }
+
+    let def = Data::def();
+    let def_str = format!("{}", def);
+
+    // Should show a struct with embedded struct for the array element type
+    assert!(def_str.contains("struct Data"));
+    assert!(def_str.contains("_keys"));
+}
 
 #[test]
 fn byte_array_comparison_with_other_types() {

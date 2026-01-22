@@ -174,6 +174,21 @@ impl<const N: usize> Declare for [u8; N] {
     }
 }
 
+// HasTypeSpec for [u8; N] - returns embedded struct with fixed opaque field
+// This allows nested arrays like [[u8; 3]; 5] to work
+impl<const N: usize> HasTypeSpec for [u8; N] {
+    fn type_spec() -> TypeSpec {
+        // Arrays aren't types in XDR, so we represent them as embedded structs
+        // with a single field named "elements"
+        TypeSpec::Struct(StructBody(alloc::vec![
+            Declaration::FixedOpaque {
+                name: ident("elements"),
+                size: Value::Const((N as u32).into()),
+            }
+        ]))
+    }
+}
+
 impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
     fn declare(name: Ident) -> Declaration {
         Declaration::FixedArray {
@@ -182,6 +197,22 @@ impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
             // TODO: use compile-time asserts to check N fits in u32
             len: Value::Const((N as u32).into()),
         }
+    }
+}
+
+// HasTypeSpec for [T; N] - returns embedded struct with fixed array field
+// This allows nested arrays like [[u32; 3]; 5] to work
+impl<const N: usize, T: HasTypeSpec> HasTypeSpec for [T; N] {
+    fn type_spec() -> TypeSpec {
+        // Arrays aren't types in XDR, so we represent them as embedded structs
+        // with a single field named "elements"
+        TypeSpec::Struct(StructBody(alloc::vec![
+            Declaration::FixedArray {
+                name: ident("elements"),
+                elt_ty: T::type_spec(),
+                len: Value::Const((N as u32).into()),
+            }
+        ]))
     }
 }
 
