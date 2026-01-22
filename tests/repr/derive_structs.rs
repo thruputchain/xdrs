@@ -55,7 +55,6 @@ pub mod unnamed {
     }
 }
 
-#[cfg(feature = "xdr_common")]
 pub mod test_common {
     use super::*;
 
@@ -64,7 +63,6 @@ pub mod test_common {
         pub stuff: BytesM<100>,
     }
 
-    #[cfg(feature = "xdr_common")]
     check_format! { derive_variable_opaque
         Varry::def()
         =>

@@ -116,7 +116,6 @@ check_format! { int_types_format
         "};"
 }
 
-#[cfg(feature = "xdr_common")]
 pub mod test_common {
     use super::*;
     use xdr_common::*;

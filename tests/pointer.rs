@@ -1,7 +1,7 @@
 mod common;
 use common::*;
 
-#[cfg(all(feature = "alloc", feature = "xdr_common"))]
+#[cfg(feature = "alloc")]
 #[test]
 fn vecm_empty() {
     use xdrs::*;
@@ -12,7 +12,7 @@ fn vecm_empty() {
     TXS::check_codec(&val, &hex!("00000000"));
 }
 
-#[cfg(all(feature = "alloc", feature = "xdr_common"))]
+#[cfg(feature = "alloc")]
 #[test]
 fn vecm_full() {
     use xdrs::*;
@@ -23,7 +23,7 @@ fn vecm_full() {
     TXS::check_codec(&val, &hex!("0000000100000001"));
 }
 
-#[cfg(all(feature = "alloc", feature = "xdr_common"))]
+#[cfg(feature = "alloc")]
 #[test]
 fn stringm_full() {
     use xdrs::*;
@@ -84,7 +84,7 @@ fn vec_in_tuple() {
     CXS::check_decode(&val, &hex!("0001"));
 }
 
-#[cfg(all(feature = "alloc", feature = "xdr_common"))]
+#[cfg(feature = "alloc")]
 #[test]
 fn recursive_struct() {
     use xdrs::*;
@@ -105,7 +105,7 @@ fn recursive_struct() {
     TXS::check_codec(&val, &hex!("0000000568656c6c6f00000000000000"));
 }
 
-#[cfg(all(feature = "alloc", feature = "xdr_common"))]
+#[cfg(feature = "alloc")]
 #[test]
 fn recursive_struct_box() {
     use xdrs::*;
@@ -138,7 +138,7 @@ fn option_test() {
     TXS::check_codec(&y, &hex!("0000000100000001"));
 }
 
-#[cfg(all(feature = "alloc", feature = "xdr_common"))]
+#[cfg(feature = "alloc")]
 #[test]
 fn option_box_test() {
     let x: Option<Box<i32>> = None;

@@ -11,7 +11,7 @@ edition = "2024"
 [workspace.dependencies]
 xdr-derive = { path = "xdr-derive" }
 xdr-repr = { path = "xdr-repr" }
-xdr_common = { git = "ssh://git@github.com/groundhogchain/xdr_common.git" }
+xdr-common = { path = "xdr-common" }
 thiserror = { version = "2.0.12", default-features = false }
 pretty_assertions = "1.4.1"
 
@@ -29,7 +29,7 @@ thiserror = { workspace = true }
 # Optional dependencies
 xdr-derive = { workspace = true, optional = true }
 xdr-repr = { workspace = true, optional = true }
-xdr_common = { workspace = true, optional = true }
+xdr-common = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.6.0"
@@ -38,14 +38,13 @@ pretty_assertions = { workspace = true }
 
 [features]
 permissive = [] # don't require minimal encodings when reading
-alloc = ["xdr_common?/alloc"] # enable allocating interfaces
+alloc = ["xdr-common/alloc"] # enable allocating interfaces
 int128 = [] # enable non-standard read/write of i128/u128
 int128_xdr = ["xdr-repr?/int128_xdr"] # replace above with alternative encoding of i128/u128
 
 # Enable optional dependencies
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
 repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
-xdr_common = ["dep:xdr_common", "xdr-repr?/xdr_common"]
 
 # Enable optional features of related dependencies
 ns = ["xdr-repr?/ns"]

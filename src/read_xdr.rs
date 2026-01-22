@@ -221,8 +221,8 @@ where
     }
 }
 
-#[cfg(all(feature = "xdr_common", feature = "alloc"))]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
@@ -290,8 +290,8 @@ const _: () = {
     }
 };
 
-#[cfg(all(feature = "xdr_common", feature = "alloc"))]
-#[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 const _: () = {
     use xdr_common::*;
 
@@ -334,7 +334,7 @@ const _: () = {
     }
 };
 
-#[cfg(all(feature = "xdr_common", not(feature = "alloc")))]
+#[cfg(not(feature = "alloc"))]
 const _: () = {
     use crate::ReadXDR;
     use crate::serialize::reader::{Reader, Result};
