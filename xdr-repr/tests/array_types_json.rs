@@ -308,10 +308,30 @@ fn triple_nested_arrays() {
 
         let json = body.0[0].get_type_json();
 
-        // Should have all three levels
-        assert!(json.contains(r#""len": 4"#));  // outer
-        assert!(json.contains(r#""len": 3"#));  // middle
-        assert!(json.contains(r#""len": 2"#));  // inner
+        // Full expected structure with all three nesting levels:
+        // - Outer: fixed array of 4 elements
+        // - Middle: each element is a struct containing a fixed array of 3 elements
+        // - Inner: each of those is a struct containing a fixed array of 2 unsigned values
+        assert_eq!(
+            json,
+            r#"{ "type": "fixed array", "elt_ty": "{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "unnamed_0",
+      "field_type": { "type": "fixed array", "elt_ty": "{
+        "type": "struct",
+        "fields": [
+          {
+            "name": "unnamed_0",
+            "field_type": { "type": "fixed array", "elt_ty": "unsigned", "len": 2 }
+          }
+        ]
+      }", "len": 3 }
+    }
+  ]
+}", "len": 4 }"#
+        );
     } else {
         panic!("Expected TypeDef::Struct");
     }
