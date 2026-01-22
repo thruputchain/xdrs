@@ -14,7 +14,7 @@ quote = "1.0.40"
 syn = "2.0.104"
 
 [dev-dependencies]
-xdrs = { path = "..", features = ["alloc", "derive", "cxs", "repr"] }
+xdrs = { path = "..", features = ["alloc", "derive", "repr"] }
 xdr-repr = { path = "../xdr-repr", features = ["derive"] }
 
 [lints.rust]
