@@ -9,6 +9,9 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--deny warnings"
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: webfactory/ssh-agent@v0.9.1
         with:
@@ -19,23 +22,41 @@ jobs:
         with:
           toolchain: nightly
           override: true
+          components: rust-src
       - name: Test (root lib without alloc)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F xdr_common,int128,int128_xdr
+        run: cargo test -F int128,int128_xdr
       - name: Test (feature permissive)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F permissive,int128 --test ints
+        run: cargo test -F permissive,int128 --test ints
       - name: Test (feature int128)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test -F int128 --test ints
+        run: cargo test -F int128 --test ints
       - name: Test (workspace)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace --all-features
+        run: cargo test --workspace --all-features
       - name: Test (benchmarks)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --benches --all-features
+        run: cargo test --benches --all-features
       - name: Docs
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo doc --workspace --all-features
+        run: cargo doc --workspace --all-features
       - name: Docs (docsrs)
         run: cargo +nightly doc --workspace --all-features --no-deps
         env:
           RUSTDOCFLAGS: "--cfg docsrs"
+      - name: Test (xdr-common)
+        run: |
+          cargo test -p xdr-common --no-default-features
+          cargo test -p xdr-common --features alloc
+          cargo test -p xdr-common --features std
+          cargo test -p xdr-common --features alloc,std
+          cargo test -p xdr-common --features serde
+          cargo test -p xdr-common --features serde,std
+      - name: Build (xdr-common, build-std)
+        # Make sure that we can build std, i.e. for wasm contracts
+        run: |
+          cargo +nightly build -p xdr-common --no-default-features -Zbuild-std=core,alloc
+          cargo +nightly build -p xdr-common --features alloc -Zbuild-std=core,alloc
+          cargo +nightly build -p xdr-common --features std -Zbuild-std=std
+          cargo +nightly build -p xdr-common --features alloc,std -Zbuild-std=std
+          cargo +nightly build -p xdr-common --features serde -Zbuild-std=std
+          cargo +nightly build -p xdr-common --features serde,std -Zbuild-std=std
       - name: Test Documentation Examples
         run: |
-          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --features "derive,xdr_common,ns,int128_xdr"
-          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc --features "alloc,derive,repr,xdr_common,ns,int128"
+          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"
+          CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc --features "alloc,derive,repr,ns,int128"

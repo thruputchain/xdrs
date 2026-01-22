@@ -68,7 +68,6 @@ pub mod optional {
     }
 }
 
-#[cfg(feature = "xdr_common")]
 pub mod opaque_variable {
     use super::*;
 
@@ -86,7 +85,6 @@ pub mod opaque_variable {
     }
 }
 
-#[cfg(feature = "xdr_common")]
 pub mod arrays_variable {
     use super::*;
 
@@ -131,7 +129,6 @@ pub mod arrays_variable {
     }
 }
 
-#[cfg(feature = "xdr_common")]
 pub mod variable_array_of_variable_array {
     use super::*;
 

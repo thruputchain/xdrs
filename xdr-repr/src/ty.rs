@@ -204,11 +204,9 @@ impl<T: HasTypeSpec> Declare for &[T] {
     }
 }
 
-#[cfg(feature = "xdr_common")]
 const _: () = {
     use xdr_common::{BytesM, StringM, VecM};
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
     impl<T, const MAX: u32> Declare for VecM<T, MAX>
     where
         T: HasTypeSpec,
@@ -223,7 +221,6 @@ const _: () = {
         }
     }
 
-    #[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
     impl<const MAX: u32> Declare for BytesM<MAX> {
         fn declare(name: Ident) -> Declaration {
             Declaration::VariableOpaque {

@@ -126,10 +126,4 @@ mod int128;
 #[cfg(feature = "int128_xdr")]
 mod int128_xdr;
 
-#[cfg(feature = "xdr_common")]
-#[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
-pub use xdr_common;
-
-#[cfg(feature = "xdr_common")]
-#[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
 pub use xdr_common::*;

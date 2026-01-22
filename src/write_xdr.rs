@@ -211,8 +211,6 @@ impl<T: WriteXDR> WriteXDR for Option<T> {
     }
 }
 
-#[cfg(feature = "xdr_common")]
-#[cfg_attr(docsrs, doc(cfg(feature = "xdr_common")))]
 const _: () = {
     use super::*;
     use crate::serialize::writer::{Result, Writer};
@@ -251,7 +249,7 @@ const _: () = {
     }
 
     #[cfg(feature = "alloc")]
-    #[cfg_attr(docsrs, doc(cfg(all(feature = "xdr_common", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<T: WriteXDR> WriteXDR for xdr_common::Box<T> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             self.as_ref().write_xdr(w)
