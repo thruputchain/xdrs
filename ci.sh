@@ -24,6 +24,13 @@ cargo test -p xdr-common --features alloc,std
 cargo test -p xdr-common --features serde
 cargo test -p xdr-common --features serde,std
 
+cargo +nightly build -p xdr-common --no-default-features -Zbuild-std=core,alloc
+cargo +nightly build -p xdr-common --features alloc -Zbuild-std=core,alloc
+cargo +nightly build -p xdr-common --features std -Zbuild-std=core,alloc
+cargo +nightly build -p xdr-common --features alloc,std -Zbuild-std=core,alloc
+cargo +nightly build -p xdr-common --features serde -Zbuild-std=core,alloc
+cargo +nightly build -p xdr-common --features serde,std -Zbuild-std=core,alloc
+
 # check that the benchmarks compile
 cargo test --benches --all-features
 

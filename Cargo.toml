@@ -51,8 +51,6 @@ ns = ["xdr-repr?/ns"]
 
 # Deprecated features
 strict = [] # deprecated: default is strict, use "permissive" to disable
-cxs = [] # deprecated: CXS is now always included
-txs = [] # deprecated: TXS is now always included
 extras = [] # deprecated
 
 [lints]

@@ -47,14 +47,15 @@ jobs:
           cargo test -p xdr-common --features alloc,std
           cargo test -p xdr-common --features serde
           cargo test -p xdr-common --features serde,std
-      - name: Test (xdr-common, build-std)
+      - name: Build (xdr-common, build-std)
+        # Make sure that we can build std, i.e. for wasm contracts
         run: |
-          cargo +nightly test -p xdr-common --no-default-features -Zbuild-std=core,alloc
-          cargo +nightly test -p xdr-common --features alloc -Zbuild-std=core,alloc
-          cargo +nightly test -p xdr-common --features std -Zbuild-std=core,alloc
-          cargo +nightly test -p xdr-common --features alloc,std -Zbuild-std=core,alloc
-          cargo +nightly test -p xdr-common --features serde -Zbuild-std=core,alloc
-          cargo +nightly test -p xdr-common --features serde,std -Zbuild-std=core,alloc
+          cargo +nightly build -p xdr-common --no-default-features -Zbuild-std=core,alloc
+          cargo +nightly build -p xdr-common --features alloc -Zbuild-std=core,alloc
+          cargo +nightly build -p xdr-common --features std -Zbuild-std=core,alloc
+          cargo +nightly build -p xdr-common --features alloc,std -Zbuild-std=core,alloc
+          cargo +nightly build -p xdr-common --features serde -Zbuild-std=core,alloc
+          cargo +nightly build -p xdr-common --features serde,std -Zbuild-std=core,alloc
       - name: Test Documentation Examples
         run: |
           CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"
