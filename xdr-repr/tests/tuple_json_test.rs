@@ -68,7 +68,7 @@ fn tuple_in_struct_field() {
     // Test using a tuple in a struct field through derive
     #[derive(XDR)]
     struct Point {
-        coords: (i32, i32),
+        _coords: (i32, i32),
     }
 
     let type_def = Point::type_def();
@@ -278,7 +278,7 @@ fn nested_tuple_in_derived_struct() {
     // Test using a complex nested tuple in a derived struct
     #[derive(XDR)]
     struct ComplexNesting {
-        data: (i32, (u32, (i64, u64), bool)),
+        _data: (i32, (u32, (i64, u64), bool)),
     }
 
     let type_def = ComplexNesting::type_def();
