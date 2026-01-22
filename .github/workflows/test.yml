@@ -9,6 +9,8 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--deny warnings"
     steps:
       - uses: webfactory/ssh-agent@v0.9.1
         with:
