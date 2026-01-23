@@ -222,6 +222,20 @@ const _: () = {
         }
     }
 
+    // Make VecM<u8> work like BytesM;
+    #[cfg(feature = "alloc")]
+    impl<const MAX: u32> WriteXDR for VecM<u8, MAX> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            self.0.write_xdr(w)
+        }
+    }
+    #[cfg(not(feature = "alloc"))]
+    impl<const MAX: u32> WriteXDR for VecM<u8, MAX> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
+            <Self as AsRef<[u8]>>::as_ref(self).write_xdr(w)
+        }
+    }
+
     impl<const MAX: u32> WriteXDR for StringM<MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
             self.0.write_xdr(w)

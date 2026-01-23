@@ -332,6 +332,17 @@ const _: () = {
             Ok(Self(vec))
         }
     }
+
+    // make VecM<u8> work like BytesM;
+    impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+            let vec: Vec<u8> = read_xdr(r)?;
+            if vec.len() > MAX as usize {
+                return Err(Error::MaxLengthExceeded);
+            }
+            Ok(Self(vec))
+        }
+    }
 };
 
 #[cfg(not(feature = "alloc"))]
@@ -356,6 +367,13 @@ const _: () = {
     where
         T: ReadXDR<'r> + 'static,
     {
+        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
+            unimplemented!()
+        }
+    }
+
+    // make VecM<u8> work like BytesM;
+    impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
             unimplemented!()
         }
