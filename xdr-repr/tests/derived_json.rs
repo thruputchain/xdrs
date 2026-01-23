@@ -52,13 +52,12 @@ fn derived_struct_fields_json() {
 #[repr(i32)]
 pub enum StatusEnum {
     Active { _session_id: u32 } = 1,
-    Inactive() = 2,           // Empty tuple variant
-    Pending {} = 3,           // Empty struct variant
-    Error = 4,                // Unit variant
+    Inactive() = 2, // Empty tuple variant
+    Pending {} = 3, // Empty struct variant
+    Error = 4,      // Unit variant
 }
 
 // TODO(geoff): Add tests for the union json if/when we implement that.
-
 
 // Test a more complex struct with arrays and optionals
 #[derive(XDR)]
@@ -76,8 +75,14 @@ fn derived_complex_struct_json() {
         assert_eq!(body.0.len(), 2);
 
         // Test individual field JSON
-        assert_eq!(body.0[0].get_type_json(), "{ \"type\": \"fixed array\", \"elt_ty\": \"unsigned\", \"len\": 10 }");
-        assert_eq!(body.0[1].get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": \"unsigned hyper\" }");
+        assert_eq!(
+            body.0[0].get_type_json(),
+            "{ \"type\": \"fixed array\", \"elt_ty\": \"unsigned\", \"len\": 10 }"
+        );
+        assert_eq!(
+            body.0[1].get_type_json(),
+            "{ \"type\": \"optional\", \"opt_ty\": \"unsigned hyper\" }"
+        );
 
         // Test full struct JSON
         let struct_json = TypeSpec::Struct(body).get_type_json();
@@ -129,11 +134,16 @@ fn derived_enum_multiple_tuple_variants_json() {
     let union_body = union_def.unwrap();
 
     // Count void cases (should be 3: First, Second, Third)
-    let void_count = union_body.case_specs.iter().filter(|case_spec| {
-        matches!(case_spec.decl, Declaration::Void)
-    }).count();
+    let void_count = union_body
+        .case_specs
+        .iter()
+        .filter(|case_spec| matches!(case_spec.decl, Declaration::Void))
+        .count();
 
-    assert_eq!(void_count, 3, "Expected 3 void cases for empty tuple variants");
+    assert_eq!(
+        void_count, 3,
+        "Expected 3 void cases for empty tuple variants"
+    );
 
     // Verify each void case has correct JSON
     for case_spec in &union_body.case_specs {

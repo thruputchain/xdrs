@@ -352,7 +352,10 @@ impl Declaration {
                 match opt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it
-                        format!("{{ \"type\": \"optional\", \"opt_ty\": \"{}\" }}", type_name)
+                        format!(
+                            "{{ \"type\": \"optional\", \"opt_ty\": \"{}\" }}",
+                            type_name
+                        )
                     }
                     TypeJsonRepr::Object(type_obj) => {
                         // Complex type (struct, etc.) - indent and embed it
@@ -364,9 +367,7 @@ impl Declaration {
                     }
                 }
             }
-            Declaration::Void => {
-                "{ \"type\": \"void\" }".to_string()
-            }
+            Declaration::Void => "{ \"type\": \"void\" }".to_string(),
         }
     }
 }
@@ -469,7 +470,9 @@ impl TypeSpec {
             TypeSpec::Struct(body) => {
                 if body.0.is_empty() {
                     // Empty struct - keep it compact
-                    return TypeJsonRepr::Object("{\n  \"type\": \"struct\",\n  \"fields\": []\n}".to_string());
+                    return TypeJsonRepr::Object(
+                        "{\n  \"type\": \"struct\",\n  \"fields\": []\n}".to_string(),
+                    );
                 }
 
                 let mut result = String::from("{\n  \"type\": \"struct\",\n  \"fields\": [\n");

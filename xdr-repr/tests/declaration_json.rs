@@ -99,7 +99,10 @@ fn fixed_array_declaration_json() {
         len: unsigned(5),
     };
     let json = fixed_array.get_type_json();
-    assert_eq!(json, "{ \"type\": \"fixed array\", \"elt_ty\": \"unsigned\", \"len\": 5 }");
+    assert_eq!(
+        json,
+        "{ \"type\": \"fixed array\", \"elt_ty\": \"unsigned\", \"len\": 5 }"
+    );
 }
 
 #[test]
@@ -110,7 +113,10 @@ fn variable_array_declaration_json() {
         max: unsigned(100),
     };
     let json = var_array.get_type_json();
-    assert_eq!(json, "{ \"type\": \"variable array\", \"elt_ty\": \"int\", \"max\": 100 }");
+    assert_eq!(
+        json,
+        "{ \"type\": \"variable array\", \"elt_ty\": \"int\", \"max\": 100 }"
+    );
 }
 
 #[test]
@@ -159,21 +165,30 @@ fn fixed_array_all_types() {
         elt_ty: TypeSpec::Int,
         len: unsigned(10),
     };
-    assert_eq!(int_array.get_type_json(), "{ \"type\": \"fixed array\", \"elt_ty\": \"int\", \"len\": 10 }");
+    assert_eq!(
+        int_array.get_type_json(),
+        "{ \"type\": \"fixed array\", \"elt_ty\": \"int\", \"len\": 10 }"
+    );
 
     let hyper_array = Declaration::FixedArray {
         name: ident("big_nums"),
         elt_ty: TypeSpec::Hyper,
         len: unsigned(5),
     };
-    assert_eq!(hyper_array.get_type_json(), "{ \"type\": \"fixed array\", \"elt_ty\": \"hyper\", \"len\": 5 }");
+    assert_eq!(
+        hyper_array.get_type_json(),
+        "{ \"type\": \"fixed array\", \"elt_ty\": \"hyper\", \"len\": 5 }"
+    );
 
     let custom_array = Declaration::FixedArray {
         name: ident("items"),
         elt_ty: TypeSpec::Ident(ident("CustomType")),
         len: unsigned(3),
     };
-    assert_eq!(custom_array.get_type_json(), "{ \"type\": \"fixed array\", \"elt_ty\": \"CustomType\", \"len\": 3 }");
+    assert_eq!(
+        custom_array.get_type_json(),
+        "{ \"type\": \"fixed array\", \"elt_ty\": \"CustomType\", \"len\": 3 }"
+    );
 }
 
 #[test]
@@ -184,14 +199,20 @@ fn variable_array_all_types() {
         elt_ty: TypeSpec::Float,
         max: unsigned(100),
     };
-    assert_eq!(float_array.get_type_json(), "{ \"type\": \"variable array\", \"elt_ty\": \"float\", \"max\": 100 }");
+    assert_eq!(
+        float_array.get_type_json(),
+        "{ \"type\": \"variable array\", \"elt_ty\": \"float\", \"max\": 100 }"
+    );
 
     let custom_array = Declaration::VariableArray {
         name: ident("items"),
         elt_ty: TypeSpec::Ident(ident("Record")),
         max: unsigned(50),
     };
-    assert_eq!(custom_array.get_type_json(), "{ \"type\": \"variable array\", \"elt_ty\": \"Record\", \"max\": 50 }");
+    assert_eq!(
+        custom_array.get_type_json(),
+        "{ \"type\": \"variable array\", \"elt_ty\": \"Record\", \"max\": 50 }"
+    );
 }
 
 #[test]
@@ -201,19 +222,28 @@ fn optional_all_types() {
         name: ident("maybe_num"),
         opt_ty: TypeSpec::Int,
     };
-    assert_eq!(opt_int.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": \"int\" }");
+    assert_eq!(
+        opt_int.get_type_json(),
+        "{ \"type\": \"optional\", \"opt_ty\": \"int\" }"
+    );
 
     let opt_double = Declaration::Optional {
         name: ident("maybe_float"),
         opt_ty: TypeSpec::Double,
     };
-    assert_eq!(opt_double.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": \"double\" }");
+    assert_eq!(
+        opt_double.get_type_json(),
+        "{ \"type\": \"optional\", \"opt_ty\": \"double\" }"
+    );
 
     let opt_custom = Declaration::Optional {
         name: ident("maybe_record"),
         opt_ty: TypeSpec::Ident(ident("MyRecord")),
     };
-    assert_eq!(opt_custom.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": \"MyRecord\" }");
+    assert_eq!(
+        opt_custom.get_type_json(),
+        "{ \"type\": \"optional\", \"opt_ty\": \"MyRecord\" }"
+    );
 }
 
 // Tests for embedded struct types
