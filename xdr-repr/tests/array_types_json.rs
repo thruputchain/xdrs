@@ -9,10 +9,7 @@ fn byte_array_fixed_opaque_json() {
     let decl = <[u8; 10]>::declare(ident("data"));
     let json = decl.get_type_json();
 
-    assert_eq!(
-        json,
-        r#"{ "type": "fixed opaque", "len": 10 }"#
-    );
+    assert_eq!(json, r#"{ "type": "fixed opaque", "len": 10 }"#);
 }
 
 #[test]
@@ -98,10 +95,7 @@ fn byte_array_in_derived_struct() {
         assert_eq!(body.0.len(), 3);
 
         // First field should be unsigned
-        assert_eq!(
-            body.0[0].get_type_json(),
-            r#"{ "type": "unsigned" }"#
-        );
+        assert_eq!(body.0[0].get_type_json(), r#"{ "type": "unsigned" }"#);
 
         // Second field should be fixed opaque (not fixed array!)
         assert_eq!(
@@ -314,23 +308,31 @@ fn triple_nested_arrays() {
         // - Inner: each of those is a struct containing a fixed array of 2 unsigned values
         assert_eq!(
             json,
-            r#"{ "type": "fixed array", "elt_ty": "{
-  "type": "struct",
-  "fields": [
-    {
-      "name": "unnamed_0",
-      "field_type": { "type": "fixed array", "elt_ty": "{
-        "type": "struct",
-        "fields": [
-          {
-            "name": "unnamed_0",
-            "field_type": { "type": "fixed array", "elt_ty": "unsigned", "len": 2 }
-          }
-        ]
-      }", "len": 3 }
-    }
-  ]
-}", "len": 4 }"#
+            r#"{
+  "type": "fixed array",
+  "elt_ty": {
+    "type": "struct",
+    "fields": [
+      {
+        "name": "unnamed_0",
+        "field_type": {
+          "type": "fixed array",
+          "elt_ty": {
+            "type": "struct",
+            "fields": [
+              {
+                "name": "unnamed_0",
+                "field_type": { "type": "fixed array", "elt_ty": "unsigned", "len": 2 }
+              }
+            ]
+          },
+          "len": 3
+        }
+      }
+    ]
+  },
+  "len": 4
+}"#
         );
     } else {
         panic!("Expected TypeDef::Struct");

@@ -307,32 +307,67 @@ impl Declaration {
                 elt_ty,
                 len,
             } => {
-                format!(
-                    "{{ \"type\": \"fixed array\", \"elt_ty\": \"{}\", \"len\": {} }}",
-                    elt_ty.get_type_json(),
-                    len
-                )
+                match elt_ty.get_type_json_repr() {
+                    TypeJsonRepr::Name(type_name) => {
+                        // Simple type name - quote it
+                        format!(
+                            "{{ \"type\": \"fixed array\", \"elt_ty\": \"{}\", \"len\": {} }}",
+                            type_name, len
+                        )
+                    }
+                    TypeJsonRepr::Object(type_obj) => {
+                        // Complex type (struct, etc.) - indent and embed it
+                        let indented = type_obj.replace('\n', "\n  ");
+                        format!(
+                            "{{\n  \"type\": \"fixed array\",\n  \"elt_ty\": {},\n  \"len\": {}\n}}",
+                            indented, len
+                        )
+                    }
+                }
             }
             Declaration::VariableArray {
                 name: _,
                 elt_ty,
                 max,
             } => {
-                format!(
-                    "{{ \"type\": \"variable array\", \"elt_ty\": \"{}\", \"max\": {} }}",
-                    elt_ty.get_type_json(),
-                    max
-                )
+                match elt_ty.get_type_json_repr() {
+                    TypeJsonRepr::Name(type_name) => {
+                        // Simple type name - quote it
+                        format!(
+                            "{{ \"type\": \"variable array\", \"elt_ty\": \"{}\", \"max\": {} }}",
+                            type_name, max
+                        )
+                    }
+                    TypeJsonRepr::Object(type_obj) => {
+                        // Complex type (struct, etc.) - indent and embed it
+                        let indented = type_obj.replace('\n', "\n  ");
+                        format!(
+                            "{{\n  \"type\": \"variable array\",\n  \"elt_ty\": {},\n  \"max\": {}\n}}",
+                            indented, max
+                        )
+                    }
+                }
             }
             Declaration::Optional { name: _, opt_ty } => {
-                format!(
-                    "{{ \"type\": \"optional\", \"opt_ty\": \"{}\" }}",
-                    opt_ty.get_type_json()
-                )
+                match opt_ty.get_type_json_repr() {
+                    TypeJsonRepr::Name(type_name) => {
+                        // Simple type name - quote it
+                        format!(
+                            "{{ \"type\": \"optional\", \"opt_ty\": \"{}\" }}",
+                            type_name
+                        )
+                    }
+                    TypeJsonRepr::Object(type_obj) => {
+                        // Complex type (struct, etc.) - indent and embed it
+                        let indented = type_obj.replace('\n', "\n  ");
+                        format!(
+                            "{{\n  \"type\": \"optional\",\n  \"opt_ty\": {}\n}}",
+                            indented
+                        )
+                    }
+                }
             }
-            Declaration::Void => {
-                "{ \"type\": \"void\" }".to_string()
-            }
+            Declaration::Void => "{ \"type\": \"void\" }".to_string(),
         }
     }
 }
@@ -435,7 +470,9 @@ impl TypeSpec {
             TypeSpec::Struct(body) => {
                 if body.0.is_empty() {
                     // Empty struct - keep it compact
-                    return TypeJsonRepr::Object("{\n  \"type\": \"struct\",\n  \"fields\": []\n}".to_string());
+                    return TypeJsonRepr::Object(
+                        "{\n  \"type\": \"struct\",\n  \"fields\": []\n}".to_string(),
+                    );
                 }
 
                 let mut result = String::from("{\n  \"type\": \"struct\",\n  \"fields\": [\n");

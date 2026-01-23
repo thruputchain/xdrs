@@ -5,8 +5,8 @@
 
 #![allow(dead_code)]
 
-use crate::xdr::*;
 use crate::ident;
+use crate::xdr::*;
 use alloc::string::*;
 
 /// Types that can produce a complete XDR specification.
@@ -149,12 +149,10 @@ impl<T: HasTypeSpec> HasTypeSpec for Option<T> {
     fn type_spec() -> TypeSpec {
         // Options aren't types in XDR, so we represent them as embedded structs
         // with a single optional field named "unnamed_optional"
-        TypeSpec::Struct(StructBody(alloc::vec![
-            Declaration::Optional {
-                name: ident("unnamed_optional"),
-                opt_ty: T::type_spec(),
-            }
-        ]))
+        TypeSpec::Struct(StructBody(alloc::vec![Declaration::Optional {
+            name: ident("unnamed_optional"),
+            opt_ty: T::type_spec(),
+        }]))
     }
 }
 
@@ -193,12 +191,10 @@ impl<const N: usize> HasTypeSpec for [u8; N] {
     fn type_spec() -> TypeSpec {
         // Arrays aren't types in XDR, so we represent them as embedded structs
         // with a single field named "unnamed_0"
-        TypeSpec::Struct(StructBody(alloc::vec![
-            Declaration::FixedOpaque {
-                name: ident("unnamed_0"),
-                size: Value::Const((N as u32).into()),
-            }
-        ]))
+        TypeSpec::Struct(StructBody(alloc::vec![Declaration::FixedOpaque {
+            name: ident("unnamed_0"),
+            size: Value::Const((N as u32).into()),
+        }]))
     }
 }
 
@@ -219,13 +215,11 @@ impl<const N: usize, T: HasTypeSpec> HasTypeSpec for [T; N] {
     fn type_spec() -> TypeSpec {
         // Arrays aren't types in XDR, so we represent them as embedded structs
         // with a single field named "unnamed_0"
-        TypeSpec::Struct(StructBody(alloc::vec![
-            Declaration::FixedArray {
-                name: ident("unnamed_0"),
-                elt_ty: T::type_spec(),
-                len: Value::Const((N as u32).into()),
-            }
-        ]))
+        TypeSpec::Struct(StructBody(alloc::vec![Declaration::FixedArray {
+            name: ident("unnamed_0"),
+            elt_ty: T::type_spec(),
+            len: Value::Const((N as u32).into()),
+        }]))
     }
 }
 
@@ -249,11 +243,11 @@ impl<T: HasTypeSpec> Declare for &[T] {
 }
 
 const _: () = {
-    use xdr_common::{BytesM, StringM, VecM};
+    use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
 
     impl<T, const MAX: u32> Declare for VecM<T, MAX>
     where
-        T: HasTypeSpec,
+        T: HasTypeSpec + StaticIfNoAlloc,
     {
         fn declare(name: Ident) -> Declaration {
             Declaration::VariableArray {
@@ -265,8 +259,8 @@ const _: () = {
         }
     }
 
-    /// We default a VecM<u8> to declaring as a BytesM;
-    /// It's not clear to an end user what the difference is between a VecM<u8> and a BytesM,
+    /// We default a `VecM<u8>` to declaring as a BytesM;
+    /// It's not clear to an end user what the difference is between a `VecM<u8>` and a BytesM,
     /// so this makes the two types work more like each other.
     impl<const MAX: u32> Declare for VecM<u8, MAX> {
         fn declare(name: Ident) -> Declaration {
