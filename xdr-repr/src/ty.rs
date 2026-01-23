@@ -148,10 +148,10 @@ impl_declare_named! {
 impl<T: HasTypeSpec> HasTypeSpec for Option<T> {
     fn type_spec() -> TypeSpec {
         // Options aren't types in XDR, so we represent them as embedded structs
-        // with a single optional field named "unnamed_0"
+        // with a single optional field named "unnamed_optional"
         TypeSpec::Struct(StructBody(alloc::vec![
             Declaration::Optional {
-                name: ident("unnamed_0"),
+                name: ident("unnamed_optional"),
                 opt_ty: T::type_spec(),
             }
         ]))
