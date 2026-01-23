@@ -23,6 +23,8 @@ jobs:
           toolchain: nightly
           override: true
           components: rust-src
+      - name: Build workspace (no features)
+        run: cargo build --workspace
       - name: Test (root lib without alloc)
         run: cargo test -F int128,int128_xdr
       - name: Test (feature permissive)
