@@ -145,6 +145,19 @@ impl_declare_named! {
     u128 => TypeSpec::Ident(Ident("uint128_xdr".to_string())),
 }
 
+impl<T: HasTypeSpec> HasTypeSpec for Option<T> {
+    fn type_spec() -> TypeSpec {
+        // Options aren't types in XDR, so we represent them as embedded structs
+        // with a single optional field named "unnamed_0"
+        TypeSpec::Struct(StructBody(alloc::vec![
+            Declaration::Optional {
+                name: ident("unnamed_0"),
+                opt_ty: T::type_spec(),
+            }
+        ]))
+    }
+}
+
 impl<T: HasTypeSpec> Declare for Option<T> {
     fn declare(name: Ident) -> Declaration {
         Declaration::Optional {
