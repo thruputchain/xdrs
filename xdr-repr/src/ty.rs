@@ -221,6 +221,15 @@ const _: () = {
         }
     }
 
+    /// We default a VecM<u8> to declaring as a BytesM;
+    /// It's not clear to an end user what the difference is between a VecM<u8> and a BytesM,
+    /// so this makes the two types work more like each other.
+    impl<const MAX: u32> Declare for VecM<u8, MAX> {
+        fn declare(name: Ident) -> Declaration {
+            BytesM::<MAX>::declare(name)
+        }
+    }
+
     impl<const MAX: u32> Declare for BytesM<MAX> {
         fn declare(name: Ident) -> Declaration {
             Declaration::VariableOpaque {
