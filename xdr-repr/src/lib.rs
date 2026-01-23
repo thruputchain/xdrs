@@ -266,7 +266,7 @@
 //! };
 //! assert_eq!(
 //!     array_decl.get_type_json(),
-//!     "{ \"type\": \"fixed array\", \"elt_ty\": \"unsigned\", \"len\": 5 }"
+//!     "{ \"type\": \"fixed array\", \"elt_ty\": { \"type\": \"unsigned\" }, \"len\": 5 }"
 //! );
 //!
 //! // Inspect an optional type
@@ -274,7 +274,7 @@
 //!     name: ident("value"),
 //!     opt_ty: TypeSpec::Bool,
 //! };
-//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": \"bool\" }");
+//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": { \"type\": \"bool\" } }");
 //! ```
 //!
 //! ### Limitations
