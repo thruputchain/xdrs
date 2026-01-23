@@ -45,7 +45,7 @@ fn non_byte_array_fixed_array_json() {
 
     assert_eq!(
         json,
-        r#"{ "type": "fixed array", "elt_ty": "unsigned", "len": 10 }"#
+        r#"{ "type": "fixed array", "elt_ty": { "type": "unsigned" }, "len": 10 }"#
     );
 }
 
@@ -54,27 +54,27 @@ fn various_primitive_arrays() {
     // Test arrays of different primitive types
     assert_eq!(
         <[i32; 5]>::declare(ident("ints")).get_type_json(),
-        r#"{ "type": "fixed array", "elt_ty": "int", "len": 5 }"#
+        r#"{ "type": "fixed array", "elt_ty": { "type": "int" }, "len": 5 }"#
     );
 
     assert_eq!(
         <[u32; 5]>::declare(ident("uints")).get_type_json(),
-        r#"{ "type": "fixed array", "elt_ty": "unsigned", "len": 5 }"#
+        r#"{ "type": "fixed array", "elt_ty": { "type": "unsigned" }, "len": 5 }"#
     );
 
     assert_eq!(
         <[i64; 5]>::declare(ident("hypers")).get_type_json(),
-        r#"{ "type": "fixed array", "elt_ty": "hyper", "len": 5 }"#
+        r#"{ "type": "fixed array", "elt_ty": { "type": "hyper" }, "len": 5 }"#
     );
 
     assert_eq!(
         <[u64; 5]>::declare(ident("uhypers")).get_type_json(),
-        r#"{ "type": "fixed array", "elt_ty": "unsigned hyper", "len": 5 }"#
+        r#"{ "type": "fixed array", "elt_ty": { "type": "unsigned hyper" }, "len": 5 }"#
     );
 
     assert_eq!(
         <[bool; 5]>::declare(ident("flags")).get_type_json(),
-        r#"{ "type": "fixed array", "elt_ty": "bool", "len": 5 }"#
+        r#"{ "type": "fixed array", "elt_ty": { "type": "bool" }, "len": 5 }"#
     );
 }
 
@@ -161,7 +161,7 @@ fn mixed_arrays_in_struct() {
         // u32 array should be fixed array
         assert_eq!(
             body.0[1].get_type_json(),
-            r#"{ "type": "fixed array", "elt_ty": "unsigned", "len": 10 }"#
+            r#"{ "type": "fixed array", "elt_ty": { "type": "unsigned" }, "len": 10 }"#
         );
 
         // Another byte array should be fixed opaque
@@ -173,7 +173,7 @@ fn mixed_arrays_in_struct() {
         // bool array should be fixed array
         assert_eq!(
             body.0[3].get_type_json(),
-            r#"{ "type": "fixed array", "elt_ty": "bool", "len": 5 }"#
+            r#"{ "type": "fixed array", "elt_ty": { "type": "bool" }, "len": 5 }"#
         );
     } else {
         panic!("Expected TypeDef::Struct");
@@ -281,7 +281,7 @@ fn nested_typed_arrays() {
         // Each element is a struct containing a fixed array of 3 u32s
         assert!(json.contains(r#""fixed array""#));
         assert!(json.contains(r#""len": 3"#));
-        assert!(json.contains(r#""elt_ty": "unsigned""#));
+        assert!(json.contains(r#""elt_ty": { "type": "unsigned" }"#));
     } else {
         panic!("Expected TypeDef::Struct");
     }
@@ -322,7 +322,7 @@ fn triple_nested_arrays() {
             "fields": [
               {
                 "name": "unnamed_0",
-                "field_type": { "type": "fixed array", "elt_ty": "unsigned", "len": 2 }
+                "field_type": { "type": "fixed array", "elt_ty": { "type": "unsigned" }, "len": 2 }
               }
             ]
           },

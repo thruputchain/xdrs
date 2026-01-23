@@ -311,7 +311,7 @@ impl Declaration {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it
                         format!(
-                            "{{ \"type\": \"fixed array\", \"elt_ty\": \"{}\", \"len\": {} }}",
+                            "{{ \"type\": \"fixed array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"len\": {} }}",
                             type_name, len
                         )
                     }
@@ -334,7 +334,7 @@ impl Declaration {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it
                         format!(
-                            "{{ \"type\": \"variable array\", \"elt_ty\": \"{}\", \"max\": {} }}",
+                            "{{ \"type\": \"variable array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"max\": {} }}",
                             type_name, max
                         )
                     }
@@ -353,7 +353,7 @@ impl Declaration {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it
                         format!(
-                            "{{ \"type\": \"optional\", \"opt_ty\": \"{}\" }}",
+                            "{{ \"type\": \"optional\", \"opt_ty\": {{ \"type\": \"{}\" }} }}",
                             type_name
                         )
                     }
