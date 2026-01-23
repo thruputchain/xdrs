@@ -331,7 +331,6 @@ fn embedded_struct_in_declaration() {
     assert_eq!(
         json,
         r#"{
-  "type": {
     "type": "struct",
     "fields": [
       {
@@ -343,8 +342,7 @@ fn embedded_struct_in_declaration() {
         "field_type": { "type": "Bytes" }
       }
     ]
-  }
-}"#
+  }"#
     );
 }
 
@@ -370,7 +368,6 @@ fn nested_struct() {
     {
       "name": "point",
       "field_type": {
-        "type": {
           "type": "struct",
           "fields": [
             {
@@ -383,7 +380,6 @@ fn nested_struct() {
             }
           ]
         }
-      }
     },
     {
       "name": "label",
