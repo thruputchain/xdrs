@@ -16,7 +16,6 @@ fn tuple_2_declare() {
     assert_eq!(
         json,
         r#"{
-  "type": {
     "type": "struct",
     "fields": [
       {
@@ -28,8 +27,7 @@ fn tuple_2_declare() {
         "field_type": { "type": "int" }
       }
     ]
-  }
-}"#
+  }"#
     );
 }
 
@@ -153,7 +151,6 @@ fn deeply_nested_tuple_structure() {
     {
       "name": "unnamed_1",
       "field_type": {
-        "type": {
           "type": "struct",
           "fields": [
             {
@@ -163,7 +160,6 @@ fn deeply_nested_tuple_structure() {
             {
               "name": "unnamed_1",
               "field_type": {
-                "type": {
                   "type": "struct",
                   "fields": [
                     {
@@ -176,7 +172,6 @@ fn deeply_nested_tuple_structure() {
                     }
                   ]
                 }
-              }
             },
             {
               "name": "unnamed_2",
@@ -184,7 +179,6 @@ fn deeply_nested_tuple_structure() {
             }
           ]
         }
-      }
     }
   ]
 }"#

@@ -289,7 +289,7 @@ impl Declaration {
                     TypeJsonRepr::Object(type_obj) => {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
-                        format!("{{\n  \"type\": {}\n}}", indented)
+                        format!("{}", indented)
                     }
                 }
             }
