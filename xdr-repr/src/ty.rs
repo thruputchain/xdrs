@@ -249,11 +249,11 @@ impl<T: HasTypeSpec> Declare for &[T] {
 }
 
 const _: () = {
-    use xdr_common::{BytesM, StringM, VecM};
+    use xdr_common::{BytesM, StringM, VecM, StaticIfNoAlloc};
 
     impl<T, const MAX: u32> Declare for VecM<T, MAX>
     where
-        T: HasTypeSpec,
+        T: HasTypeSpec + StaticIfNoAlloc
     {
         fn declare(name: Ident) -> Declaration {
             Declaration::VariableArray {

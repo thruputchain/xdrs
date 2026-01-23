@@ -53,14 +53,12 @@ where
 
 // Helper trait to conditionally require 'static for no_alloc
 #[cfg(feature = "alloc")]
-#[allow(private_bounds)]
-trait StaticIfNoAlloc {}
+pub trait StaticIfNoAlloc {}
 #[cfg(feature = "alloc")]
 impl<T> StaticIfNoAlloc for T {}
 
 #[cfg(not(feature = "alloc"))]
-#[allow(private_bounds)]
-trait StaticIfNoAlloc: 'static {}
+pub trait StaticIfNoAlloc: 'static {}
 #[cfg(not(feature = "alloc"))]
 impl<T: 'static> StaticIfNoAlloc for T {}
 
