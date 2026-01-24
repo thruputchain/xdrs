@@ -547,18 +547,6 @@
 //! assert!(int_array.get_type_json().contains("fixed array"));
 //! ```
 //!
-//! ### Formatting Rules
-//!
-//! - **Compact format**: Used for simple types and single-line representations
-//! - **Pretty-printed format**: Used for structs and complex nested structures
-//! - **Indentation**: 2 spaces per level
-//! - **Field ordering**: Preserved as defined in the type
-//! - **Identifier validation**: All identifiers (type names, field names) are validated to be valid:
-//!   - Must start with a letter (a-z, A-Z) or underscore (_)
-//!   - Can contain only ASCII letters, digits (0-9), and underscores (_)
-//!   - Invalid identifiers cause a panic with a descriptive error message
-//!   - Leading underscores are allowed as an extension for Rust compatibility
-//!
 //! ### Complete Example
 //!
 //! ```rust
