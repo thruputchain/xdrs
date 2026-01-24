@@ -992,6 +992,7 @@ name = "xdr-repr"
 version = "0.2.0"
 dependencies = [
  "pretty_assertions",
+ "serde_json",
  "xdr-common",
  "xdr-derive",
  "xdrs",

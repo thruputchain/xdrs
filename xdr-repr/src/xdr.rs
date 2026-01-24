@@ -216,6 +216,36 @@ impl TypeJsonRepr {
     }
 }
 
+/// Escapes a string for safe inclusion in JSON output.
+///
+/// This function escapes special characters according to JSON string rules:
+/// - `"` → `\"`
+/// - `\` → `\\`
+/// - `/` → `\/` (optional but safe)
+/// - Control characters (0x00-0x1F) are escaped as `\uXXXX`
+/// - Backspace, form feed, newline, carriage return, tab get special escapes
+fn escape_json_string(s: &str) -> alloc::string::String {
+    use alloc::string::String;
+    let mut result = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            '\x08' => result.push_str("\\b"),
+            '\x0C' => result.push_str("\\f"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            ch if ch.is_control() => {
+                use core::fmt::Write;
+                let _ = write!(result, "\\u{:04x}", ch as u32);
+            }
+            ch => result.push(ch),
+        }
+    }
+    result
+}
+
 impl Declaration {
     /// Returns the name of this declaration, or None for void declarations.
     pub fn name(&self) -> Option<&Ident> {
@@ -249,16 +279,11 @@ impl Declaration {
     /// - Optional: `{ "type": "optional", "opt_ty": <wrapped_type> }`
     /// - Void: `{ "type": "void" }`
     ///
-    /// # Limitations
-    ///
-    /// Custom type identifiers are inserted without escaping special characters.
-    /// Identifiers containing quotes or other special characters may produce malformed JSON.
-    ///
     /// # Panics
     ///
-    /// Panics if the declaration contains embedded enum or union types.
+    /// **Panics if the declaration contains embedded enum or union types.**
     /// These types are not yet supported. Define them at the top level and reference
-    /// them by name instead. Embedded struct types are supported.
+    /// them by name instead. Embedded struct types are fully supported.
     ///
     /// # Examples
     ///
@@ -283,7 +308,7 @@ impl Declaration {
             Declaration::Named { name: _, ty } => {
                 match ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it
+                        // Simple type name - quote it (already escaped in get_type_json_repr)
                         format!("{{ \"type\": \"{}\" }}", type_name)
                     }
                     TypeJsonRepr::Object(type_obj) => {
@@ -309,7 +334,7 @@ impl Declaration {
             } => {
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it
+                        // Simple type name - quote it (already escaped in get_type_json_repr)
                         format!(
                             "{{ \"type\": \"fixed array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"len\": {} }}",
                             type_name, len
@@ -332,7 +357,7 @@ impl Declaration {
             } => {
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it
+                        // Simple type name - quote it (already escaped in get_type_json_repr)
                         format!(
                             "{{ \"type\": \"variable array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"max\": {} }}",
                             type_name, max
@@ -351,7 +376,7 @@ impl Declaration {
             Declaration::Optional { name: _, opt_ty } => {
                 match opt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it
+                        // Simple type name - quote it (already escaped in get_type_json_repr)
                         format!(
                             "{{ \"type\": \"optional\", \"opt_ty\": {{ \"type\": \"{}\" }} }}",
                             type_name
@@ -413,17 +438,12 @@ impl TypeSpec {
     /// # Supported Types
     ///
     /// - Primitive types: Returns the type name as a string (`"int"`, `"unsigned"`, etc.)
-    /// - Named types: Returns the identifier name
+    /// - Named types: Returns the identifier name (properly escaped for JSON)
     /// - Struct types: Returns a JSON object with type "struct" and a "fields" array
-    ///
-    /// # Limitations
-    ///
-    /// Custom type identifiers are not escaped, which may result in invalid JSON
-    /// if the identifier contains quotes or other special characters.
     ///
     /// # Panics
     ///
-    /// Panics for embedded enum and union types. These types are not yet supported.
+    /// **Panics for embedded enum and union types.** These types are not yet supported.
     /// Define them at the top level and reference them by name instead.
     ///
     /// # Examples
@@ -486,9 +506,10 @@ impl TypeSpec {
                     result.push_str("    ");
                     if let Some(name) = decl.name() {
                         let field_json = decl.get_type_json();
+                        let escaped_name = escape_json_string(&name.0);
                         result.push_str(&format!(
                             "{{\n      \"name\": \"{}\",\n      \"field_type\": {}\n    }}",
-                            name.0,
+                            escaped_name,
                             field_json.replace('\n', "\n      ")
                         ));
                     } else {
@@ -500,7 +521,7 @@ impl TypeSpec {
                 TypeJsonRepr::Object(result)
             }
             TypeSpec::Union(_body) => panic!("Embedded union type not yet supported"),
-            TypeSpec::Ident(ident) => TypeJsonRepr::Name(ident.0.clone()),
+            TypeSpec::Ident(ident) => TypeJsonRepr::Name(escape_json_string(&ident.0)),
         }
     }
 }
