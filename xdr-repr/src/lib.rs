@@ -266,7 +266,7 @@
 //! };
 //! assert_eq!(
 //!     array_decl.get_type_json(),
-//!     "{ \"type\": \"fixed array\", \"elt_ty\": { \"type\": \"unsigned\" }, \"len\": 5 }"
+//!     "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"unsigned\" }, \"len\": 5 }"
 //! );
 //!
 //! // Inspect an optional type
@@ -274,21 +274,307 @@
 //!     name: ident("value"),
 //!     opt_ty: TypeSpec::Bool,
 //! };
-//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": { \"type\": \"bool\" } }");
+//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"element_type\": { \"type\": \"bool\" } }");
 //! ```
 //!
 //! ### Limitations
 //!
-//! The output is valid JSON that can be parsed by standard JSON parsers. However,
-//! custom type identifiers are inserted without escaping special characters, so
-//! identifiers containing quotes or other special characters may produce malformed JSON.
+//! **IMPORTANT:** Embedded enum and union types are **not supported** and will cause a **panic** at runtime.
 //!
-//! Embedded enum and union types are not yet supported and will cause a panic.
-//! These types should be defined at the top level and referenced by name.
-//! Embedded struct types are supported.
+//! ```rust,should_panic
+//! # use xdr_repr::*;
+//! // This will PANIC:
+//! let enum_type = TypeSpec::Enum(EnumBody(vec![]));
+//! let json = enum_type.get_type_json();  // PANIC!
+//! ```
+//!
+//! ```rust,should_panic
+//! # use xdr_repr::*;
+//! // This will also PANIC:
+//! let union_type = TypeSpec::Union(Box::new(UnionBody {
+//!     discriminant_decl: Declaration::Void,
+//!     case_specs: vec![],
+//!     default_decl: None,
+//! }));
+//! let json = union_type.get_type_json();  // PANIC!
+//! ```
+//!
+//! **Workaround:** Define enum and union types at the top level in your XDR specification
+//! and reference them by name using `TypeSpec::Ident`. Embedded struct types are fully supported.
+//!
+//! ```rust
+//! # use xdr_repr::*;
+//! // Instead, reference enums and unions by name:
+//! let named_type = TypeSpec::Ident(ident("MyEnum"));
+//! let json = named_type.get_type_json();  // OK: "MyEnum"
+//! ```
+//!
+//! The output is valid JSON that can be parsed by standard JSON parsers. Type and field identifiers
+//! must be valid XDR-like identifiers (ASCII letters, digits, underscores only, starting with a letter or underscore).
+//! Leading underscores are allowed as an extension for Rust compatibility. Invalid identifiers will cause a
+//! panic with a descriptive error message.
 //!
 //! See [`Declaration::get_type_json`] and [`TypeSpec::get_type_json`] for detailed
 //! documentation and more examples.
+//!
+//! ## JSON Type Format Specification
+//!
+//! This section provides a complete specification of the JSON output format for XDR type introspection.
+//!
+//! ### Primitive Types
+//!
+//! Primitive types are represented as simple JSON objects with a `"type"` field:
+//!
+//! | XDR Type | Rust Type | JSON Output |
+//! |----------|-----------|-------------|
+//! | `void` | (none) | `{ "type": "void" }` |
+//! | `int` | `i32` | `{ "type": "int" }` |
+//! | `unsigned int` | `u32` | `{ "type": "unsigned" }` |
+//! | `hyper` | `i64` | `{ "type": "hyper" }` |
+//! | `unsigned hyper` | `u64` | `{ "type": "unsigned hyper" }` |
+//! | `float` | `f32` | `{ "type": "float" }` |
+//! | `double` | `f64` | `{ "type": "double" }` |
+//! | `quadruple` | (none) | `{ "type": "quadruple" }` |
+//! | `bool` | `bool` | `{ "type": "bool" }` |
+//!
+//! ### Named Types
+//!
+//! References to named types (custom types, enums, unions defined elsewhere):
+//!
+//! ```json
+//! { "type": "TypeName" }
+//! ```
+//!
+//! Type names are validated as XDR identifiers (no special characters allowed).
+//!
+//! ### Fixed Opaque (Byte Arrays)
+//!
+//! Fixed-length opaque data, represented by `[u8; N]` in Rust:
+//!
+//! ```json
+//! {
+//!   "type": "fixed opaque",
+//!   "len": 32
+//! }
+//! ```
+//!
+//! - **`len`**: The fixed size in bytes (integer)
+//!
+//! ### Variable Opaque
+//!
+//! Variable-length opaque data:
+//!
+//! ```json
+//! {
+//!   "type": "variable opaque",
+//!   "max": 1024
+//! }
+//! ```
+//!
+//! - **`max`**: Maximum size in bytes (integer)
+//!
+//! ### String
+//!
+//! Variable-length string:
+//!
+//! ```json
+//! {
+//!   "type": "string",
+//!   "max": 255
+//! }
+//! ```
+//!
+//! - **`max`**: Maximum length in characters (integer)
+//!
+//! ### Fixed Array
+//!
+//! Fixed-length array of typed elements:
+//!
+//! ```json
+//! {
+//!   "type": "fixed array",
+//!   "element_type": { "type": "unsigned" },
+//!   "len": 10
+//! }
+//! ```
+//!
+//! - **`element_type`**: Element type (recursive type specification)
+//! - **`len`**: Fixed length of the array (integer)
+//!
+//! For simple element types, the output is compact:
+//! ```json
+//! { "type": "fixed array", "element_type": { "type": "int" }, "len": 5 }
+//! ```
+//!
+//! For complex element types (embedded structs), the output is pretty-printed:
+//! ```json
+//! {
+//!   "type": "fixed array",
+//!   "element_type": {
+//!     "type": "struct",
+//!     "fields": [...]
+//!   },
+//!   "len": 5
+//! }
+//! ```
+//!
+//! ### Variable Array
+//!
+//! Variable-length array:
+//!
+//! ```json
+//! {
+//!   "type": "variable array",
+//!   "element_type": { "type": "int" },
+//!   "max": 100
+//! }
+//! ```
+//!
+//! - **`element_type`**: Element type (recursive type specification)
+//! - **`max`**: Maximum number of elements (integer)
+//!
+//! ### Optional
+//!
+//! Optional (nullable) value:
+//!
+//! ```json
+//! {
+//!   "type": "optional",
+//!   "element_type": { "type": "bool" }
+//! }
+//! ```
+//!
+//! - **`optional_type`**: The wrapped type (recursive type specification)
+//!
+//! ### Struct
+//!
+//! Struct with named fields:
+//!
+//! ```json
+//! {
+//!   "type": "struct",
+//!   "fields": [
+//!     {
+//!       "name": "id",
+//!       "element_type": { "type": "unsigned" }
+//!     },
+//!     {
+//!       "name": "data",
+//!       "element_type": { "type": "fixed opaque", "len": 16 }
+//!     }
+//!   ]
+//! }
+//! ```
+//!
+//! - **`fields`**: Array of field objects
+//!   - **`name`**: Field name (validated as XDR identifier)
+//!   - **`element_type`**: Field type (recursive type specification)
+//!
+//! Empty structs:
+//! ```json
+//! {
+//!   "type": "struct",
+//!   "fields": []
+//! }
+//! ```
+//!
+//! ### Tuple Types
+//!
+//! Rust tuples are represented as structs with auto-generated field names:
+//!
+//! ```rust
+//! # use xdr_repr::*;
+//! let tuple_decl = <(i32, u32, bool)>::declare(ident("point"));
+//! let json = tuple_decl.get_type_json();
+//! ```
+//!
+//! Produces:
+//! ```json
+//! {
+//!   "type": "struct",
+//!   "fields": [
+//!     { "name": "unnamed_0", "element_type": { "type": "int" } },
+//!     { "name": "unnamed_1", "element_type": { "type": "unsigned" } },
+//!     { "name": "unnamed_2", "element_type": { "type": "bool" } }
+//!   ]
+//! }
+//! ```
+//!
+//! Field names follow the pattern `unnamed_0`, `unnamed_1`, etc.
+//!
+//! ### Nested Structures
+//!
+//! Types can be nested arbitrarily. For example, a struct containing an array of structs:
+//!
+//! ```json
+//! {
+//!   "type": "struct",
+//!   "fields": [
+//!     {
+//!       "name": "items",
+//!       "element_type": {
+//!         "type": "fixed array",
+//!         "element_type": {
+//!           "type": "struct",
+//!           "fields": [
+//!             { "name": "id", "element_type": { "type": "unsigned" } },
+//!             { "name": "value", "element_type": { "type": "int" } }
+//!           ]
+//!         },
+//!         "len": 10
+//!       }
+//!     }
+//!   ]
+//! }
+//! ```
+//!
+//! ### Special Array Handling
+//!
+//! - **Byte arrays** (`[u8; N]`): Represented as `"fixed opaque"` (not `"fixed array"`)
+//! - **Typed arrays** (`[T; N]` where T ≠ u8): Represented as `"fixed array"` with element type
+//! - **Nested byte arrays** (`[[u8; M]; N]`): Outer array is `"fixed array"` with element type being a struct containing `"fixed opaque"`
+//!
+//! Example:
+//! ```rust
+//! # use xdr_repr::*;
+//! # use xdrs::*;
+//! // [u8; 32] → fixed opaque
+//! let byte_array = <[u8; 32]>::declare(ident("hash"));
+//! assert!(byte_array.get_type_json().contains("fixed opaque"));
+//!
+//! // [u32; 10] → fixed array
+//! let int_array = <[u32; 10]>::declare(ident("numbers"));
+//! assert!(int_array.get_type_json().contains("fixed array"));
+//! ```
+//!
+//! ### Complete Example
+//!
+//! ```rust
+//! # #[cfg(feature = "derive")]
+//! # {
+//! use xdr_repr::*;
+//! use xdrs::*;
+//!
+//! #[derive(XDR)]
+//! struct Transaction {
+//!     _id: u64,
+//!     _from: [u8; 32],
+//!     _to: [u8; 32],
+//!     _amount: i64,
+//!     _signature: [u8; 64],
+//! }
+//!
+//! let type_def = Transaction::type_def();
+//! if let TypeDef::Struct(_, body) = type_def {
+//!     let json = TypeSpec::Struct(body).get_type_json();
+//!
+//!     // The JSON is valid and parseable
+//!     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+//!     assert_eq!(parsed["type"], "struct");
+//!     assert_eq!(parsed["fields"].as_array().unwrap().len(), 5);
+//! }
+//! # }
+//! ```
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 //! [RFC-5531]: https://datatracker.ietf.org/doc/html/rfc5531

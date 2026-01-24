@@ -20,11 +20,11 @@ fn tuple_2_declare() {
     "fields": [
       {
         "name": "unnamed_0",
-        "field_type": { "type": "int" }
+        "element_type": { "type": "int" }
       },
       {
         "name": "unnamed_1",
-        "field_type": { "type": "int" }
+        "element_type": { "type": "int" }
       }
     ]
   }"#
@@ -146,36 +146,36 @@ fn deeply_nested_tuple_structure() {
   "fields": [
     {
       "name": "unnamed_0",
-      "field_type": { "type": "int" }
+      "element_type": { "type": "int" }
     },
     {
       "name": "unnamed_1",
-      "field_type": {
+      "element_type": {
           "type": "struct",
           "fields": [
             {
               "name": "unnamed_0",
-              "field_type": { "type": "unsigned" }
+              "element_type": { "type": "unsigned" }
             },
             {
               "name": "unnamed_1",
-              "field_type": {
+              "element_type": {
                   "type": "struct",
                   "fields": [
                     {
                       "name": "unnamed_0",
-                      "field_type": { "type": "hyper" }
+                      "element_type": { "type": "hyper" }
                     },
                     {
                       "name": "unnamed_1",
-                      "field_type": { "type": "unsigned hyper" }
+                      "element_type": { "type": "unsigned hyper" }
                     }
                   ]
                 }
             },
             {
               "name": "unnamed_2",
-              "field_type": { "type": "bool" }
+              "element_type": { "type": "bool" }
             }
           ]
         }
@@ -224,15 +224,15 @@ fn tuple_type_spec_structure() {
   "fields": [
     {
       "name": "unnamed_0",
-      "field_type": { "type": "int" }
+      "element_type": { "type": "int" }
     },
     {
       "name": "unnamed_1",
-      "field_type": { "type": "unsigned" }
+      "element_type": { "type": "unsigned" }
     },
     {
       "name": "unnamed_2",
-      "field_type": { "type": "bool" }
+      "element_type": { "type": "bool" }
     }
   ]
 }"#
@@ -256,11 +256,11 @@ fn tuple_typespec_json() {
   "fields": [
     {
       "name": "unnamed_0",
-      "field_type": { "type": "int" }
+      "element_type": { "type": "int" }
     },
     {
       "name": "unnamed_1",
-      "field_type": { "type": "int" }
+      "element_type": { "type": "int" }
     }
   ]
 }"#

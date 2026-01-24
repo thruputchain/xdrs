@@ -216,6 +216,55 @@ impl TypeJsonRepr {
     }
 }
 
+/// Validates that a string is a valid XDR identifier.
+///
+/// According to RFC 4506 section 6.1, XDR identifiers must:
+/// - Start with a letter (a-z, A-Z) or underscore (_)
+/// - Contain only letters, digits (0-9), and underscores (_)
+/// - Be pure ASCII (no Unicode characters)
+///
+/// Note: Leading underscores are allowed as an extension for Rust compatibility,
+/// though strict RFC 4506 requires starting with a letter.
+///
+/// # Panics
+///
+/// Panics if the string is not a valid identifier, with a descriptive error message.
+fn validate_xdr_identifier(s: &str) {
+    if s.is_empty() {
+        panic!("XDR identifier cannot be empty");
+    }
+
+    let mut chars = s.chars();
+
+    // First character must be a letter or underscore
+    if let Some(first) = chars.next() {
+        if !first.is_ascii_alphabetic() && first != '_' {
+            panic!(
+                "Invalid XDR identifier '{}': must start with a letter (a-z, A-Z) or underscore (_), found '{}'",
+                s, first
+            );
+        }
+    }
+
+    // Remaining characters must be letters, digits, or underscores
+    for (idx, ch) in chars.enumerate() {
+        if !ch.is_ascii_alphanumeric() && ch != '_' {
+            panic!(
+                "Invalid XDR identifier '{}': character at position {} ('{}') is not allowed. \
+                 XDR identifiers can only contain ASCII letters, digits, and underscores.",
+                s, idx + 1, ch
+            );
+        }
+    }
+}
+
+/// Returns the identifier string after validating it's a valid XDR identifier.
+/// Panics if the identifier is invalid.
+fn get_validated_identifier(s: &str) -> &str {
+    validate_xdr_identifier(s);
+    s
+}
+
 impl Declaration {
     /// Returns the name of this declaration, or None for void declarations.
     pub fn name(&self) -> Option<&Ident> {
@@ -244,21 +293,16 @@ impl Declaration {
     /// - Fixed opaque: `{ "type": "fixed opaque", "len": <size> }`
     /// - Variable opaque: `{ "type": "variable opaque", "max": <max> }`
     /// - String: `{ "type": "string", "max": <max> }`
-    /// - Fixed array: `{ "type": "fixed array", "elt_ty": <element_type>, "len": <length> }`
-    /// - Variable array: `{ "type": "variable array", "elt_ty": <element_type>, "max": <max> }`
-    /// - Optional: `{ "type": "optional", "opt_ty": <wrapped_type> }`
+    /// - Fixed array: `{ "type": "fixed array", "element_type": <element_type>, "len": <length> }`
+    /// - Variable array: `{ "type": "variable array", "element_type": <element_type>, "max": <max> }`
+    /// - Optional: `{ "type": "optional", "element_type": <wrapped_type> }`
     /// - Void: `{ "type": "void" }`
-    ///
-    /// # Limitations
-    ///
-    /// Custom type identifiers are inserted without escaping special characters.
-    /// Identifiers containing quotes or other special characters may produce malformed JSON.
     ///
     /// # Panics
     ///
-    /// Panics if the declaration contains embedded enum or union types.
+    /// **Panics if the declaration contains embedded enum or union types.**
     /// These types are not yet supported. Define them at the top level and reference
-    /// them by name instead. Embedded struct types are supported.
+    /// them by name instead. Embedded struct types are fully supported.
     ///
     /// # Examples
     ///
@@ -283,7 +327,7 @@ impl Declaration {
             Declaration::Named { name: _, ty } => {
                 match ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it
+                        // Simple type name - quote it (already validated in get_type_json_repr)
                         format!("{{ \"type\": \"{}\" }}", type_name)
                     }
                     TypeJsonRepr::Object(type_obj) => {
@@ -309,9 +353,9 @@ impl Declaration {
             } => {
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it
+                        // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
-                            "{{ \"type\": \"fixed array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"len\": {} }}",
+                            "{{ \"type\": \"fixed array\", \"element_type\": {{ \"type\": \"{}\" }}, \"len\": {} }}",
                             type_name, len
                         )
                     }
@@ -319,7 +363,7 @@ impl Declaration {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
-                            "{{\n  \"type\": \"fixed array\",\n  \"elt_ty\": {},\n  \"len\": {}\n}}",
+                            "{{\n  \"type\": \"fixed array\",\n  \"element_type\": {},\n  \"len\": {}\n}}",
                             indented, len
                         )
                     }
@@ -332,9 +376,9 @@ impl Declaration {
             } => {
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it
+                        // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
-                            "{{ \"type\": \"variable array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"max\": {} }}",
+                            "{{ \"type\": \"variable array\", \"element_type\": {{ \"type\": \"{}\" }}, \"max\": {} }}",
                             type_name, max
                         )
                     }
@@ -342,7 +386,7 @@ impl Declaration {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
-                            "{{\n  \"type\": \"variable array\",\n  \"elt_ty\": {},\n  \"max\": {}\n}}",
+                            "{{\n  \"type\": \"variable array\",\n  \"element_type\": {},\n  \"max\": {}\n}}",
                             indented, max
                         )
                     }
@@ -351,9 +395,9 @@ impl Declaration {
             Declaration::Optional { name: _, opt_ty } => {
                 match opt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it
+                        // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
-                            "{{ \"type\": \"optional\", \"opt_ty\": {{ \"type\": \"{}\" }} }}",
+                            "{{ \"type\": \"optional\", \"element_type\": {{ \"type\": \"{}\" }} }}",
                             type_name
                         )
                     }
@@ -361,7 +405,7 @@ impl Declaration {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
-                            "{{\n  \"type\": \"optional\",\n  \"opt_ty\": {}\n}}",
+                            "{{\n  \"type\": \"optional\",\n  \"element_type\": {}\n}}",
                             indented
                         )
                     }
@@ -413,17 +457,12 @@ impl TypeSpec {
     /// # Supported Types
     ///
     /// - Primitive types: Returns the type name as a string (`"int"`, `"unsigned"`, etc.)
-    /// - Named types: Returns the identifier name
+    /// - Named types: Returns the identifier name (validated as XDR identifier)
     /// - Struct types: Returns a JSON object with type "struct" and a "fields" array
-    ///
-    /// # Limitations
-    ///
-    /// Custom type identifiers are not escaped, which may result in invalid JSON
-    /// if the identifier contains quotes or other special characters.
     ///
     /// # Panics
     ///
-    /// Panics for embedded enum and union types. These types are not yet supported.
+    /// **Panics for embedded enum and union types.** These types are not yet supported.
     /// Define them at the top level and reference them by name instead.
     ///
     /// # Examples
@@ -486,21 +525,22 @@ impl TypeSpec {
                     result.push_str("    ");
                     if let Some(name) = decl.name() {
                         let field_json = decl.get_type_json();
+                        let validated_name = get_validated_identifier(&name.0);
                         result.push_str(&format!(
-                            "{{\n      \"name\": \"{}\",\n      \"field_type\": {}\n    }}",
-                            name.0,
+                            "{{\n      \"name\": \"{}\",\n      \"element_type\": {}\n    }}",
+                            validated_name,
                             field_json.replace('\n', "\n      ")
                         ));
                     } else {
                         // Void field - shouldn't normally happen in a struct, but handle it
-                        result.push_str("{\n      \"name\": null,\n      \"field_type\": { \"type\": \"void\" }\n    }");
+                        result.push_str("{\n      \"name\": null,\n      \"element_type\": { \"type\": \"void\" }\n    }");
                     }
                 }
                 result.push_str("\n  ]\n}");
                 TypeJsonRepr::Object(result)
             }
             TypeSpec::Union(_body) => panic!("Embedded union type not yet supported"),
-            TypeSpec::Ident(ident) => TypeJsonRepr::Name(ident.0.clone()),
+            TypeSpec::Ident(ident) => TypeJsonRepr::Name(get_validated_identifier(&ident.0).to_string()),
         }
     }
 }
