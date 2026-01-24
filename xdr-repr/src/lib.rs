@@ -266,7 +266,7 @@
 //! };
 //! assert_eq!(
 //!     array_decl.get_type_json(),
-//!     "{ \"type\": \"fixed array\", \"elt_ty\": { \"type\": \"unsigned\" }, \"len\": 5 }"
+//!     "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"unsigned\" }, \"len\": 5 }"
 //! );
 //!
 //! // Inspect an optional type
@@ -274,7 +274,7 @@
 //!     name: ident("value"),
 //!     opt_ty: TypeSpec::Bool,
 //! };
-//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"opt_ty\": { \"type\": \"bool\" } }");
+//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"bool\" } }");
 //! ```
 //!
 //! ### Limitations
@@ -393,24 +393,24 @@
 //! ```json
 //! {
 //!   "type": "fixed array",
-//!   "elt_ty": { "type": "unsigned" },
+//!   "element_type": { "type": "unsigned" },
 //!   "len": 10
 //! }
 //! ```
 //!
-//! - **`elt_ty`**: Element type (recursive type specification)
+//! - **`element_type`**: Element type (recursive type specification)
 //! - **`len`**: Fixed length of the array (integer)
 //!
 //! For simple element types, the output is compact:
 //! ```json
-//! { "type": "fixed array", "elt_ty": { "type": "int" }, "len": 5 }
+//! { "type": "fixed array", "element_type": { "type": "int" }, "len": 5 }
 //! ```
 //!
 //! For complex element types (embedded structs), the output is pretty-printed:
 //! ```json
 //! {
 //!   "type": "fixed array",
-//!   "elt_ty": {
+//!   "element_type": {
 //!     "type": "struct",
 //!     "fields": [...]
 //!   },
@@ -425,12 +425,12 @@
 //! ```json
 //! {
 //!   "type": "variable array",
-//!   "elt_ty": { "type": "int" },
+//!   "element_type": { "type": "int" },
 //!   "max": 100
 //! }
 //! ```
 //!
-//! - **`elt_ty`**: Element type (recursive type specification)
+//! - **`element_type`**: Element type (recursive type specification)
 //! - **`max`**: Maximum number of elements (integer)
 //!
 //! ### Optional
@@ -440,11 +440,11 @@
 //! ```json
 //! {
 //!   "type": "optional",
-//!   "opt_ty": { "type": "bool" }
+//!   "optional_type": { "type": "bool" }
 //! }
 //! ```
 //!
-//! - **`opt_ty`**: The wrapped type (recursive type specification)
+//! - **`optional_type`**: The wrapped type (recursive type specification)
 //!
 //! ### Struct
 //!
@@ -514,7 +514,7 @@
 //!       "name": "items",
 //!       "field_type": {
 //!         "type": "fixed array",
-//!         "elt_ty": {
+//!         "element_type": {
 //!           "type": "struct",
 //!           "fields": [
 //!             { "name": "id", "field_type": { "type": "unsigned" } },

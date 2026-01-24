@@ -77,11 +77,11 @@ fn derived_complex_struct_json() {
         // Test individual field JSON
         assert_eq!(
             body.0[0].get_type_json(),
-            "{ \"type\": \"fixed array\", \"elt_ty\": { \"type\": \"unsigned\" }, \"len\": 10 }"
+            "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"unsigned\" }, \"len\": 10 }"
         );
         assert_eq!(
             body.0[1].get_type_json(),
-            "{ \"type\": \"optional\", \"opt_ty\": { \"type\": \"unsigned hyper\" } }"
+            "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"unsigned hyper\" } }"
         );
 
         // Test full struct JSON
@@ -93,11 +93,11 @@ fn derived_complex_struct_json() {
   "fields": [
     {
       "name": "_values",
-      "field_type": { "type": "fixed array", "elt_ty": { "type": "unsigned" }, "len": 10 }
+      "field_type": { "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 10 }
     },
     {
       "name": "_optional_id",
-      "field_type": { "type": "optional", "opt_ty": { "type": "unsigned hyper" } }
+      "field_type": { "type": "optional", "optional_type": { "type": "unsigned hyper" } }
     }
   ]
 }"#

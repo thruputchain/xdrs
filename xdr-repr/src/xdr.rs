@@ -293,9 +293,9 @@ impl Declaration {
     /// - Fixed opaque: `{ "type": "fixed opaque", "len": <size> }`
     /// - Variable opaque: `{ "type": "variable opaque", "max": <max> }`
     /// - String: `{ "type": "string", "max": <max> }`
-    /// - Fixed array: `{ "type": "fixed array", "elt_ty": <element_type>, "len": <length> }`
-    /// - Variable array: `{ "type": "variable array", "elt_ty": <element_type>, "max": <max> }`
-    /// - Optional: `{ "type": "optional", "opt_ty": <wrapped_type> }`
+    /// - Fixed array: `{ "type": "fixed array", "element_type": <element_type>, "len": <length> }`
+    /// - Variable array: `{ "type": "variable array", "element_type": <element_type>, "max": <max> }`
+    /// - Optional: `{ "type": "optional", "optional_type": <wrapped_type> }`
     /// - Void: `{ "type": "void" }`
     ///
     /// # Panics
@@ -355,7 +355,7 @@ impl Declaration {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
-                            "{{ \"type\": \"fixed array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"len\": {} }}",
+                            "{{ \"type\": \"fixed array\", \"element_type\": {{ \"type\": \"{}\" }}, \"len\": {} }}",
                             type_name, len
                         )
                     }
@@ -363,7 +363,7 @@ impl Declaration {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
-                            "{{\n  \"type\": \"fixed array\",\n  \"elt_ty\": {},\n  \"len\": {}\n}}",
+                            "{{\n  \"type\": \"fixed array\",\n  \"element_type\": {},\n  \"len\": {}\n}}",
                             indented, len
                         )
                     }
@@ -378,7 +378,7 @@ impl Declaration {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
-                            "{{ \"type\": \"variable array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"max\": {} }}",
+                            "{{ \"type\": \"variable array\", \"element_type\": {{ \"type\": \"{}\" }}, \"max\": {} }}",
                             type_name, max
                         )
                     }
@@ -386,7 +386,7 @@ impl Declaration {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
-                            "{{\n  \"type\": \"variable array\",\n  \"elt_ty\": {},\n  \"max\": {}\n}}",
+                            "{{\n  \"type\": \"variable array\",\n  \"element_type\": {},\n  \"max\": {}\n}}",
                             indented, max
                         )
                     }
@@ -397,7 +397,7 @@ impl Declaration {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
-                            "{{ \"type\": \"optional\", \"opt_ty\": {{ \"type\": \"{}\" }} }}",
+                            "{{ \"type\": \"optional\", \"optional_type\": {{ \"type\": \"{}\" }} }}",
                             type_name
                         )
                     }
@@ -405,7 +405,7 @@ impl Declaration {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
-                            "{{\n  \"type\": \"optional\",\n  \"opt_ty\": {}\n}}",
+                            "{{\n  \"type\": \"optional\",\n  \"optional_type\": {}\n}}",
                             indented
                         )
                     }

@@ -101,7 +101,7 @@ fn fixed_array_declaration_json() {
     let json = fixed_array.get_type_json();
     assert_eq!(
         json,
-        "{ \"type\": \"fixed array\", \"elt_ty\": { \"type\": \"unsigned\" }, \"len\": 5 }"
+        "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"unsigned\" }, \"len\": 5 }"
     );
 }
 
@@ -115,7 +115,7 @@ fn variable_array_declaration_json() {
     let json = var_array.get_type_json();
     assert_eq!(
         json,
-        "{ \"type\": \"variable array\", \"elt_ty\": { \"type\": \"int\" }, \"max\": 100 }"
+        "{ \"type\": \"variable array\", \"element_type\": { \"type\": \"int\" }, \"max\": 100 }"
     );
 }
 
@@ -126,7 +126,7 @@ fn optional_declaration_json() {
         opt_ty: TypeSpec::Bool,
     };
     let json = optional_decl.get_type_json();
-    assert_eq!(json, "{ \"type\": \"optional\", \"opt_ty\": { \"type\": \"bool\" } }");
+    assert_eq!(json, "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"bool\" } }");
 }
 
 // Tests for all primitive types in Named declarations
@@ -167,7 +167,7 @@ fn fixed_array_all_types() {
     };
     assert_eq!(
         int_array.get_type_json(),
-        "{ \"type\": \"fixed array\", \"elt_ty\": { \"type\": \"int\" }, \"len\": 10 }"
+        "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"int\" }, \"len\": 10 }"
     );
 
     let hyper_array = Declaration::FixedArray {
@@ -177,7 +177,7 @@ fn fixed_array_all_types() {
     };
     assert_eq!(
         hyper_array.get_type_json(),
-        "{ \"type\": \"fixed array\", \"elt_ty\": { \"type\": \"hyper\" }, \"len\": 5 }"
+        "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"hyper\" }, \"len\": 5 }"
     );
 
     let custom_array = Declaration::FixedArray {
@@ -187,7 +187,7 @@ fn fixed_array_all_types() {
     };
     assert_eq!(
         custom_array.get_type_json(),
-        "{ \"type\": \"fixed array\", \"elt_ty\": { \"type\": \"CustomType\" }, \"len\": 3 }"
+        "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"CustomType\" }, \"len\": 3 }"
     );
 }
 
@@ -201,7 +201,7 @@ fn variable_array_all_types() {
     };
     assert_eq!(
         float_array.get_type_json(),
-        "{ \"type\": \"variable array\", \"elt_ty\": { \"type\": \"float\" }, \"max\": 100 }"
+        "{ \"type\": \"variable array\", \"element_type\": { \"type\": \"float\" }, \"max\": 100 }"
     );
 
     let custom_array = Declaration::VariableArray {
@@ -211,7 +211,7 @@ fn variable_array_all_types() {
     };
     assert_eq!(
         custom_array.get_type_json(),
-        "{ \"type\": \"variable array\", \"elt_ty\": { \"type\": \"Record\" }, \"max\": 50 }"
+        "{ \"type\": \"variable array\", \"element_type\": { \"type\": \"Record\" }, \"max\": 50 }"
     );
 }
 
@@ -224,7 +224,7 @@ fn optional_all_types() {
     };
     assert_eq!(
         opt_int.get_type_json(),
-        "{ \"type\": \"optional\", \"opt_ty\": { \"type\": \"int\" } }"
+        "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"int\" } }"
     );
 
     let opt_double = Declaration::Optional {
@@ -233,7 +233,7 @@ fn optional_all_types() {
     };
     assert_eq!(
         opt_double.get_type_json(),
-        "{ \"type\": \"optional\", \"opt_ty\": { \"type\": \"double\" } }"
+        "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"double\" } }"
     );
 
     let opt_custom = Declaration::Optional {
@@ -242,7 +242,7 @@ fn optional_all_types() {
     };
     assert_eq!(
         opt_custom.get_type_json(),
-        "{ \"type\": \"optional\", \"opt_ty\": { \"type\": \"MyRecord\" } }"
+        "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"MyRecord\" } }"
     );
 }
 
@@ -311,7 +311,7 @@ fn embedded_struct_complex() {
     },
     {
       "name": "values",
-      "field_type": { "type": "fixed array", "elt_ty": { "type": "unsigned" }, "len": 10 }
+      "field_type": { "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 10 }
     }
   ]
 }"#

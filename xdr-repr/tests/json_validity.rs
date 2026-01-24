@@ -98,7 +98,7 @@ fn fixed_array_json_is_valid() {
         .expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "fixed array");
-    assert_eq!(parsed["elt_ty"]["type"], "unsigned");
+    assert_eq!(parsed["element_type"]["type"], "unsigned");
     assert_eq!(parsed["len"], 5);
 }
 
@@ -115,7 +115,7 @@ fn variable_array_json_is_valid() {
         .expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "variable array");
-    assert_eq!(parsed["elt_ty"]["type"], "int");
+    assert_eq!(parsed["element_type"]["type"], "int");
     assert_eq!(parsed["max"], 10);
 }
 
@@ -131,7 +131,7 @@ fn optional_json_is_valid() {
         .expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "optional");
-    assert_eq!(parsed["opt_ty"]["type"], "bool");
+    assert_eq!(parsed["optional_type"]["type"], "bool");
 }
 
 #[test]
@@ -346,13 +346,13 @@ fn deeply_nested_arrays_json_is_valid() {
         assert_eq!(parsed["len"], 4);
 
         // Validate the middle level (embedded struct with array)
-        assert_eq!(parsed["elt_ty"]["type"], "struct");
-        let middle_fields = parsed["elt_ty"]["fields"].as_array().unwrap();
+        assert_eq!(parsed["element_type"]["type"], "struct");
+        let middle_fields = parsed["element_type"]["fields"].as_array().unwrap();
         assert_eq!(middle_fields[0]["field_type"]["type"], "fixed array");
         assert_eq!(middle_fields[0]["field_type"]["len"], 3);
 
         // Validate the innermost level
-        let inner_elt_ty = &middle_fields[0]["field_type"]["elt_ty"];
+        let inner_elt_ty = &middle_fields[0]["field_type"]["element_type"];
         assert_eq!(inner_elt_ty["type"], "struct");
     } else {
         panic!("Expected TypeDef::Struct");
@@ -402,7 +402,7 @@ fn typed_array_json_is_valid() {
         .expect("JSON output should be valid for typed array");
 
     assert_eq!(parsed["type"], "fixed array");
-    assert_eq!(parsed["elt_ty"]["type"], "unsigned");
+    assert_eq!(parsed["element_type"]["type"], "unsigned");
     assert_eq!(parsed["len"], 10);
 }
 

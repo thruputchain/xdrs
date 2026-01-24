@@ -88,6 +88,48 @@ pub fn declare_int(s: &str) -> Declaration {
     declare_type(s, TypeSpec::Int)
 }
 
+/// Creates a variable-length opaque data declaration.
+pub fn declare_variable_opaque(name: &str, max: u32) -> Declaration {
+    Declaration::VariableOpaque {
+        name: ident(name),
+        max: unsigned(max),
+    }
+}
+
+/// Creates a string declaration.
+pub fn declare_string(name: &str, max: u32) -> Declaration {
+    Declaration::String {
+        name: ident(name),
+        max: unsigned(max),
+    }
+}
+
+/// Creates a fixed-length array declaration.
+pub fn declare_fixed_array(name: &str, element_type: TypeSpec, len: u32) -> Declaration {
+    Declaration::FixedArray {
+        name: ident(name),
+        elt_ty: element_type,
+        len: unsigned(len),
+    }
+}
+
+/// Creates a variable-length array declaration.
+pub fn declare_variable_array(name: &str, element_type: TypeSpec, max: u32) -> Declaration {
+    Declaration::VariableArray {
+        name: ident(name),
+        elt_ty: element_type,
+        max: unsigned(max),
+    }
+}
+
+/// Creates an optional (pointer) declaration.
+pub fn declare_optional(name: &str, optional_type: TypeSpec) -> Declaration {
+    Declaration::Optional {
+        name: ident(name),
+        opt_ty: optional_type,
+    }
+}
+
 /// Creates a type specification that references a named type.
 pub fn named_type(name: &str) -> TypeSpec {
     TypeSpec::Ident(ident(name))
