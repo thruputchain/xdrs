@@ -295,7 +295,7 @@ impl Declaration {
     /// - String: `{ "type": "string", "max": <max> }`
     /// - Fixed array: `{ "type": "fixed array", "element_type": <element_type>, "len": <length> }`
     /// - Variable array: `{ "type": "variable array", "element_type": <element_type>, "max": <max> }`
-    /// - Optional: `{ "type": "optional", "optional_type": <wrapped_type> }`
+    /// - Optional: `{ "type": "optional", "element_type": <wrapped_type> }`
     /// - Void: `{ "type": "void" }`
     ///
     /// # Panics
@@ -397,7 +397,7 @@ impl Declaration {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
-                            "{{ \"type\": \"optional\", \"optional_type\": {{ \"type\": \"{}\" }} }}",
+                            "{{ \"type\": \"optional\", \"element_type\": {{ \"type\": \"{}\" }} }}",
                             type_name
                         )
                     }
@@ -405,7 +405,7 @@ impl Declaration {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
-                            "{{\n  \"type\": \"optional\",\n  \"optional_type\": {}\n}}",
+                            "{{\n  \"type\": \"optional\",\n  \"element_type\": {}\n}}",
                             indented
                         )
                     }
@@ -527,13 +527,13 @@ impl TypeSpec {
                         let field_json = decl.get_type_json();
                         let validated_name = get_validated_identifier(&name.0);
                         result.push_str(&format!(
-                            "{{\n      \"name\": \"{}\",\n      \"field_type\": {}\n    }}",
+                            "{{\n      \"name\": \"{}\",\n      \"element_type\": {}\n    }}",
                             validated_name,
                             field_json.replace('\n', "\n      ")
                         ));
                     } else {
                         // Void field - shouldn't normally happen in a struct, but handle it
-                        result.push_str("{\n      \"name\": null,\n      \"field_type\": { \"type\": \"void\" }\n    }");
+                        result.push_str("{\n      \"name\": null,\n      \"element_type\": { \"type\": \"void\" }\n    }");
                     }
                 }
                 result.push_str("\n  ]\n}");

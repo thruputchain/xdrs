@@ -118,15 +118,15 @@ fn byte_array_in_derived_struct() {
   "fields": [
     {
       "name": "_id",
-      "field_type": { "type": "unsigned" }
+      "element_type": { "type": "unsigned" }
     },
     {
       "name": "_data",
-      "field_type": { "type": "fixed opaque", "len": 16 }
+      "element_type": { "type": "fixed opaque", "len": 16 }
     },
     {
       "name": "_signature",
-      "field_type": { "type": "fixed opaque", "len": 64 }
+      "element_type": { "type": "fixed opaque", "len": 64 }
     }
   ]
 }"#
@@ -315,14 +315,14 @@ fn triple_nested_arrays() {
     "fields": [
       {
         "name": "unnamed_0",
-        "field_type": {
+        "element_type": {
           "type": "fixed array",
           "element_type": {
             "type": "struct",
             "fields": [
               {
                 "name": "unnamed_0",
-                "field_type": { "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 2 }
+                "element_type": { "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 2 }
               }
             ]
           },

@@ -274,7 +274,7 @@
 //!     name: ident("value"),
 //!     opt_ty: TypeSpec::Bool,
 //! };
-//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"bool\" } }");
+//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"element_type\": { \"type\": \"bool\" } }");
 //! ```
 //!
 //! ### Limitations
@@ -440,7 +440,7 @@
 //! ```json
 //! {
 //!   "type": "optional",
-//!   "optional_type": { "type": "bool" }
+//!   "element_type": { "type": "bool" }
 //! }
 //! ```
 //!
@@ -456,11 +456,11 @@
 //!   "fields": [
 //!     {
 //!       "name": "id",
-//!       "field_type": { "type": "unsigned" }
+//!       "element_type": { "type": "unsigned" }
 //!     },
 //!     {
 //!       "name": "data",
-//!       "field_type": { "type": "fixed opaque", "len": 16 }
+//!       "element_type": { "type": "fixed opaque", "len": 16 }
 //!     }
 //!   ]
 //! }
@@ -493,9 +493,9 @@
 //! {
 //!   "type": "struct",
 //!   "fields": [
-//!     { "name": "unnamed_0", "field_type": { "type": "int" } },
-//!     { "name": "unnamed_1", "field_type": { "type": "unsigned" } },
-//!     { "name": "unnamed_2", "field_type": { "type": "bool" } }
+//!     { "name": "unnamed_0", "element_type": { "type": "int" } },
+//!     { "name": "unnamed_1", "element_type": { "type": "unsigned" } },
+//!     { "name": "unnamed_2", "element_type": { "type": "bool" } }
 //!   ]
 //! }
 //! ```
@@ -512,13 +512,13 @@
 //!   "fields": [
 //!     {
 //!       "name": "items",
-//!       "field_type": {
+//!       "element_type": {
 //!         "type": "fixed array",
 //!         "element_type": {
 //!           "type": "struct",
 //!           "fields": [
-//!             { "name": "id", "field_type": { "type": "unsigned" } },
-//!             { "name": "value", "field_type": { "type": "int" } }
+//!             { "name": "id", "element_type": { "type": "unsigned" } },
+//!             { "name": "value", "element_type": { "type": "int" } }
 //!           ]
 //!         },
 //!         "len": 10

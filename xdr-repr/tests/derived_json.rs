@@ -33,11 +33,11 @@ fn derived_struct_fields_json() {
   "fields": [
     {
       "name": "_id",
-      "field_type": { "type": "unsigned" }
+      "element_type": { "type": "unsigned" }
     },
     {
       "name": "_count",
-      "field_type": { "type": "int" }
+      "element_type": { "type": "int" }
     }
   ]
 }"#
@@ -81,7 +81,7 @@ fn derived_complex_struct_json() {
         );
         assert_eq!(
             body.0[1].get_type_json(),
-            "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"unsigned hyper\" } }"
+            "{ \"type\": \"optional\", \"element_type\": { \"type\": \"unsigned hyper\" } }"
         );
 
         // Test full struct JSON
@@ -93,11 +93,11 @@ fn derived_complex_struct_json() {
   "fields": [
     {
       "name": "_values",
-      "field_type": { "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 10 }
+      "element_type": { "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 10 }
     },
     {
       "name": "_optional_id",
-      "field_type": { "type": "optional", "optional_type": { "type": "unsigned hyper" } }
+      "element_type": { "type": "optional", "element_type": { "type": "unsigned hyper" } }
     }
   ]
 }"#

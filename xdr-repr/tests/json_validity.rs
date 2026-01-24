@@ -131,7 +131,7 @@ fn optional_json_is_valid() {
         .expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "optional");
-    assert_eq!(parsed["optional_type"]["type"], "bool");
+    assert_eq!(parsed["element_type"]["type"], "bool");
 }
 
 #[test]
@@ -157,16 +157,16 @@ fn struct_json_is_valid() {
 
         // Validate first field
         assert_eq!(fields[0]["name"], "_id");
-        assert_eq!(fields[0]["field_type"]["type"], "unsigned");
+        assert_eq!(fields[0]["element_type"]["type"], "unsigned");
 
         // Validate second field
         assert_eq!(fields[1]["name"], "_data");
-        assert_eq!(fields[1]["field_type"]["type"], "fixed opaque");
-        assert_eq!(fields[1]["field_type"]["len"], 16);
+        assert_eq!(fields[1]["element_type"]["type"], "fixed opaque");
+        assert_eq!(fields[1]["element_type"]["len"], 16);
 
         // Validate third field
         assert_eq!(fields[2]["name"], "_count");
-        assert_eq!(fields[2]["field_type"]["type"], "int");
+        assert_eq!(fields[2]["element_type"]["type"], "int");
     } else {
         panic!("Expected TypeDef::Struct");
     }
@@ -198,11 +198,11 @@ fn nested_struct_json_is_valid() {
 
         // Validate nested struct field - when using a custom type, it's referenced by name
         assert_eq!(fields[0]["name"], "_inner");
-        assert_eq!(fields[0]["field_type"]["type"], "Inner");
+        assert_eq!(fields[0]["element_type"]["type"], "Inner");
 
         // Validate boolean field
         assert_eq!(fields[1]["name"], "_flag");
-        assert_eq!(fields[1]["field_type"]["type"], "bool");
+        assert_eq!(fields[1]["element_type"]["type"], "bool");
     } else {
         panic!("Expected TypeDef::Struct");
     }
@@ -348,11 +348,11 @@ fn deeply_nested_arrays_json_is_valid() {
         // Validate the middle level (embedded struct with array)
         assert_eq!(parsed["element_type"]["type"], "struct");
         let middle_fields = parsed["element_type"]["fields"].as_array().unwrap();
-        assert_eq!(middle_fields[0]["field_type"]["type"], "fixed array");
-        assert_eq!(middle_fields[0]["field_type"]["len"], 3);
+        assert_eq!(middle_fields[0]["element_type"]["type"], "fixed array");
+        assert_eq!(middle_fields[0]["element_type"]["len"], 3);
 
         // Validate the innermost level
-        let inner_elt_ty = &middle_fields[0]["field_type"]["element_type"];
+        let inner_elt_ty = &middle_fields[0]["element_type"]["element_type"];
         assert_eq!(inner_elt_ty["type"], "struct");
     } else {
         panic!("Expected TypeDef::Struct");
@@ -372,13 +372,13 @@ fn tuple_json_is_valid() {
     assert_eq!(fields.len(), 3);
 
     assert_eq!(fields[0]["name"], "unnamed_0");
-    assert_eq!(fields[0]["field_type"]["type"], "int");
+    assert_eq!(fields[0]["element_type"]["type"], "int");
 
     assert_eq!(fields[1]["name"], "unnamed_1");
-    assert_eq!(fields[1]["field_type"]["type"], "unsigned");
+    assert_eq!(fields[1]["element_type"]["type"], "unsigned");
 
     assert_eq!(fields[2]["name"], "unnamed_2");
-    assert_eq!(fields[2]["field_type"]["type"], "bool");
+    assert_eq!(fields[2]["element_type"]["type"], "bool");
 }
 
 #[test]

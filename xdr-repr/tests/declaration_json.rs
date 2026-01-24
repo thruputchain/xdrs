@@ -126,7 +126,7 @@ fn optional_declaration_json() {
         opt_ty: TypeSpec::Bool,
     };
     let json = optional_decl.get_type_json();
-    assert_eq!(json, "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"bool\" } }");
+    assert_eq!(json, "{ \"type\": \"optional\", \"element_type\": { \"type\": \"bool\" } }");
 }
 
 // Tests for all primitive types in Named declarations
@@ -224,7 +224,7 @@ fn optional_all_types() {
     };
     assert_eq!(
         opt_int.get_type_json(),
-        "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"int\" } }"
+        "{ \"type\": \"optional\", \"element_type\": { \"type\": \"int\" } }"
     );
 
     let opt_double = Declaration::Optional {
@@ -233,7 +233,7 @@ fn optional_all_types() {
     };
     assert_eq!(
         opt_double.get_type_json(),
-        "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"double\" } }"
+        "{ \"type\": \"optional\", \"element_type\": { \"type\": \"double\" } }"
     );
 
     let opt_custom = Declaration::Optional {
@@ -242,7 +242,7 @@ fn optional_all_types() {
     };
     assert_eq!(
         opt_custom.get_type_json(),
-        "{ \"type\": \"optional\", \"optional_type\": { \"type\": \"MyRecord\" } }"
+        "{ \"type\": \"optional\", \"element_type\": { \"type\": \"MyRecord\" } }"
     );
 }
 
@@ -272,11 +272,11 @@ fn embedded_struct_simple() {
   "fields": [
     {
       "name": "id",
-      "field_type": { "type": "unsigned" }
+      "element_type": { "type": "unsigned" }
     },
     {
       "name": "count",
-      "field_type": { "type": "int" }
+      "element_type": { "type": "int" }
     }
   ]
 }"#
@@ -303,15 +303,15 @@ fn embedded_struct_complex() {
   "fields": [
     {
       "name": "name",
-      "field_type": { "type": "String" }
+      "element_type": { "type": "String" }
     },
     {
       "name": "data",
-      "field_type": { "type": "fixed opaque", "len": 16 }
+      "element_type": { "type": "fixed opaque", "len": 16 }
     },
     {
       "name": "values",
-      "field_type": { "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 10 }
+      "element_type": { "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 10 }
     }
   ]
 }"#
@@ -335,11 +335,11 @@ fn embedded_struct_in_declaration() {
     "fields": [
       {
         "name": "id",
-        "field_type": { "type": "unsigned" }
+        "element_type": { "type": "unsigned" }
       },
       {
         "name": "payload",
-        "field_type": { "type": "Bytes" }
+        "element_type": { "type": "Bytes" }
       }
     ]
   }"#
@@ -367,23 +367,23 @@ fn nested_struct() {
   "fields": [
     {
       "name": "point",
-      "field_type": {
+      "element_type": {
           "type": "struct",
           "fields": [
             {
               "name": "x",
-              "field_type": { "type": "int" }
+              "element_type": { "type": "int" }
             },
             {
               "name": "y",
-              "field_type": { "type": "int" }
+              "element_type": { "type": "int" }
             }
           ]
         }
     },
     {
       "name": "label",
-      "field_type": { "type": "String" }
+      "element_type": { "type": "String" }
     }
   ]
 }"#
