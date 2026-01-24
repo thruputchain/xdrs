@@ -279,18 +279,18 @@
 //!
 //! ### Limitations
 //!
-//! **⚠️ IMPORTANT:** Embedded enum and union types are **not supported** and will cause a **panic** at runtime.
+//! **IMPORTANT:** Embedded enum and union types are **not supported** and will cause a **panic** at runtime.
 //!
 //! ```rust,should_panic
 //! # use xdr_repr::*;
-//! // ❌ This will PANIC:
+//! // This will PANIC:
 //! let enum_type = TypeSpec::Enum(EnumBody(vec![]));
 //! let json = enum_type.get_type_json();  // PANIC!
 //! ```
 //!
 //! ```rust,should_panic
 //! # use xdr_repr::*;
-//! // ❌ This will also PANIC:
+//! // This will also PANIC:
 //! let union_type = TypeSpec::Union(Box::new(UnionBody {
 //!     discriminant_decl: Declaration::Void,
 //!     case_specs: vec![],
@@ -304,7 +304,7 @@
 //!
 //! ```rust
 //! # use xdr_repr::*;
-//! // ✅ Instead, reference enums and unions by name:
+//! // Instead, reference enums and unions by name:
 //! let named_type = TypeSpec::Ident(ident("MyEnum"));
 //! let json = named_type.get_type_json();  // OK: "MyEnum"
 //! ```
