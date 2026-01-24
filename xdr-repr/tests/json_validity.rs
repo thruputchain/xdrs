@@ -283,7 +283,7 @@ fn unicode_identifier_panics() {
     // XDR identifiers must be ASCII only, no Unicode allowed
     let decl = Declaration::Named {
         name: ident("valid_name"),
-        ty: TypeSpec::Ident(ident("Type_中文")),
+        ty: TypeSpec::Ident(ident("Type_🎉")),
     };
     let _ = decl.get_type_json(); // Should panic
 }
