@@ -216,34 +216,53 @@ impl TypeJsonRepr {
     }
 }
 
-/// Escapes a string for safe inclusion in JSON output.
+/// Validates that a string is a valid XDR identifier.
 ///
-/// This function escapes special characters according to JSON string rules:
-/// - `"` → `\"`
-/// - `\` → `\\`
-/// - `/` → `\/` (optional but safe)
-/// - Control characters (0x00-0x1F) are escaped as `\uXXXX`
-/// - Backspace, form feed, newline, carriage return, tab get special escapes
-fn escape_json_string(s: &str) -> alloc::string::String {
-    use alloc::string::String;
-    let mut result = String::with_capacity(s.len());
-    for ch in s.chars() {
-        match ch {
-            '"' => result.push_str("\\\""),
-            '\\' => result.push_str("\\\\"),
-            '\x08' => result.push_str("\\b"),
-            '\x0C' => result.push_str("\\f"),
-            '\n' => result.push_str("\\n"),
-            '\r' => result.push_str("\\r"),
-            '\t' => result.push_str("\\t"),
-            ch if ch.is_control() => {
-                use core::fmt::Write;
-                let _ = write!(result, "\\u{:04x}", ch as u32);
-            }
-            ch => result.push(ch),
+/// According to RFC 4506 section 6.1, XDR identifiers must:
+/// - Start with a letter (a-z, A-Z) or underscore (_)
+/// - Contain only letters, digits (0-9), and underscores (_)
+/// - Be pure ASCII (no Unicode characters)
+///
+/// Note: Leading underscores are allowed as an extension for Rust compatibility,
+/// though strict RFC 4506 requires starting with a letter.
+///
+/// # Panics
+///
+/// Panics if the string is not a valid identifier, with a descriptive error message.
+fn validate_xdr_identifier(s: &str) {
+    if s.is_empty() {
+        panic!("XDR identifier cannot be empty");
+    }
+
+    let mut chars = s.chars();
+
+    // First character must be a letter or underscore
+    if let Some(first) = chars.next() {
+        if !first.is_ascii_alphabetic() && first != '_' {
+            panic!(
+                "Invalid XDR identifier '{}': must start with a letter (a-z, A-Z) or underscore (_), found '{}'",
+                s, first
+            );
         }
     }
-    result
+
+    // Remaining characters must be letters, digits, or underscores
+    for (idx, ch) in chars.enumerate() {
+        if !ch.is_ascii_alphanumeric() && ch != '_' {
+            panic!(
+                "Invalid XDR identifier '{}': character at position {} ('{}') is not allowed. \
+                 XDR identifiers can only contain ASCII letters, digits, and underscores.",
+                s, idx + 1, ch
+            );
+        }
+    }
+}
+
+/// Returns the identifier string after validating it's a valid XDR identifier.
+/// Panics if the identifier is invalid.
+fn get_validated_identifier(s: &str) -> &str {
+    validate_xdr_identifier(s);
+    s
 }
 
 impl Declaration {
@@ -308,7 +327,7 @@ impl Declaration {
             Declaration::Named { name: _, ty } => {
                 match ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it (already escaped in get_type_json_repr)
+                        // Simple type name - quote it (already validated in get_type_json_repr)
                         format!("{{ \"type\": \"{}\" }}", type_name)
                     }
                     TypeJsonRepr::Object(type_obj) => {
@@ -334,7 +353,7 @@ impl Declaration {
             } => {
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it (already escaped in get_type_json_repr)
+                        // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
                             "{{ \"type\": \"fixed array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"len\": {} }}",
                             type_name, len
@@ -357,7 +376,7 @@ impl Declaration {
             } => {
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it (already escaped in get_type_json_repr)
+                        // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
                             "{{ \"type\": \"variable array\", \"elt_ty\": {{ \"type\": \"{}\" }}, \"max\": {} }}",
                             type_name, max
@@ -376,7 +395,7 @@ impl Declaration {
             Declaration::Optional { name: _, opt_ty } => {
                 match opt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
-                        // Simple type name - quote it (already escaped in get_type_json_repr)
+                        // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
                             "{{ \"type\": \"optional\", \"opt_ty\": {{ \"type\": \"{}\" }} }}",
                             type_name
@@ -506,10 +525,10 @@ impl TypeSpec {
                     result.push_str("    ");
                     if let Some(name) = decl.name() {
                         let field_json = decl.get_type_json();
-                        let escaped_name = escape_json_string(&name.0);
+                        let validated_name = get_validated_identifier(&name.0);
                         result.push_str(&format!(
                             "{{\n      \"name\": \"{}\",\n      \"field_type\": {}\n    }}",
-                            escaped_name,
+                            validated_name,
                             field_json.replace('\n', "\n      ")
                         ));
                     } else {
@@ -521,7 +540,7 @@ impl TypeSpec {
                 TypeJsonRepr::Object(result)
             }
             TypeSpec::Union(_body) => panic!("Embedded union type not yet supported"),
-            TypeSpec::Ident(ident) => TypeJsonRepr::Name(escape_json_string(&ident.0)),
+            TypeSpec::Ident(ident) => TypeJsonRepr::Name(get_validated_identifier(&ident.0).to_string()),
         }
     }
 }

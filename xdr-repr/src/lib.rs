@@ -309,8 +309,10 @@
 //! let json = named_type.get_type_json();  // OK: "MyEnum"
 //! ```
 //!
-//! The output is valid JSON that can be parsed by standard JSON parsers. Type identifiers
-//! are properly escaped to handle special characters like quotes, backslashes, and control characters.
+//! The output is valid JSON that can be parsed by standard JSON parsers. Type and field identifiers
+//! must be valid XDR-like identifiers (ASCII letters, digits, underscores only, starting with a letter or underscore).
+//! Leading underscores are allowed as an extension for Rust compatibility. Invalid identifiers will cause a
+//! panic with a descriptive error message.
 //!
 //! See [`Declaration::get_type_json`] and [`TypeSpec::get_type_json`] for detailed
 //! documentation and more examples.
@@ -551,12 +553,11 @@
 //! - **Pretty-printed format**: Used for structs and complex nested structures
 //! - **Indentation**: 2 spaces per level
 //! - **Field ordering**: Preserved as defined in the type
-//! - **Escaping**: All string values (type names, field names) are properly escaped according to JSON rules:
-//!   - `"` → `\"`
-//!   - `\` → `\\`
-//!   - Newline → `\n`
-//!   - Tab → `\t`
-//!   - Control characters → `\uXXXX`
+//! - **Identifier validation**: All identifiers (type names, field names) are validated to be valid:
+//!   - Must start with a letter (a-z, A-Z) or underscore (_)
+//!   - Can contain only ASCII letters, digits (0-9), and underscores (_)
+//!   - Invalid identifiers cause a panic with a descriptive error message
+//!   - Leading underscores are allowed as an extension for Rust compatibility
 //!
 //! ### Complete Example
 //!

@@ -223,51 +223,92 @@ fn custom_type_name_json_is_valid() {
 }
 
 #[test]
-fn escaped_identifier_json_is_valid() {
-    // Test that identifiers with special characters are properly escaped
-    let special_names = vec![
-        "Type\"WithQuotes",
-        "Type\\WithBackslash",
-        "Type\nWithNewline",
-        "Type\tWithTab",
-        "Type\rWithCarriageReturn",
-    ];
-
-    for name in special_names {
-        let decl = Declaration::Named {
-            name: ident(name),
-            ty: TypeSpec::Ident(ident(name)),
-        };
-        let json = decl.get_type_json();
-
-        // The key test: the JSON must be parseable despite special characters
-        let parsed: serde_json::Value = serde_json::from_str(&json)
-            .expect(&format!("JSON should be valid even with special chars in identifier: {:?}", name));
-
-        // The parsed value should match the original (serde_json handles unescaping)
-        assert_eq!(parsed["type"], name);
-    }
+#[should_panic(expected = "Invalid XDR identifier")]
+fn invalid_identifier_with_quotes_panics() {
+    // XDR identifiers cannot contain quotes
+    let decl = Declaration::Named {
+        name: ident("valid_name"),
+        ty: TypeSpec::Ident(ident("Type\"WithQuotes")),
+    };
+    let _ = decl.get_type_json(); // Should panic
 }
 
 #[test]
-fn unicode_identifier_json_is_valid() {
-    // Test Unicode identifiers
-    let unicode_names = vec![
-        "Type_中文",
-        "Type_Русский",
-        "Type_🎉",
-        "Type_العربية",
+#[should_panic(expected = "Invalid XDR identifier")]
+fn invalid_identifier_with_backslash_panics() {
+    // XDR identifiers cannot contain backslashes
+    let decl = Declaration::Named {
+        name: ident("valid_name"),
+        ty: TypeSpec::Ident(ident("Type\\WithBackslash")),
+    };
+    let _ = decl.get_type_json(); // Should panic
+}
+
+#[test]
+#[should_panic(expected = "Invalid XDR identifier")]
+fn invalid_identifier_with_newline_panics() {
+    // XDR identifiers cannot contain newlines
+    let decl = Declaration::Named {
+        name: ident("valid_name"),
+        ty: TypeSpec::Ident(ident("Type\nWithNewline")),
+    };
+    let _ = decl.get_type_json(); // Should panic
+}
+
+#[test]
+#[should_panic(expected = "Invalid XDR identifier")]
+fn invalid_identifier_starting_with_digit_panics() {
+    // XDR identifiers must start with a letter
+    let decl = Declaration::Named {
+        name: ident("valid_name"),
+        ty: TypeSpec::Ident(ident("9InvalidStart")),
+    };
+    let _ = decl.get_type_json(); // Should panic
+}
+
+#[test]
+#[should_panic(expected = "Invalid XDR identifier")]
+fn invalid_identifier_with_dash_panics() {
+    // XDR identifiers cannot contain dashes
+    let decl = Declaration::Named {
+        name: ident("valid_name"),
+        ty: TypeSpec::Ident(ident("Invalid-Name")),
+    };
+    let _ = decl.get_type_json(); // Should panic
+}
+
+#[test]
+#[should_panic(expected = "Invalid XDR identifier")]
+fn unicode_identifier_panics() {
+    // XDR identifiers must be ASCII only, no Unicode allowed
+    let decl = Declaration::Named {
+        name: ident("valid_name"),
+        ty: TypeSpec::Ident(ident("Type_中文")),
+    };
+    let _ = decl.get_type_json(); // Should panic
+}
+
+#[test]
+fn valid_identifiers_work() {
+    // Test that valid XDR identifiers work correctly
+    let valid_names = vec![
+        "SimpleType",
+        "Type123",
+        "type_with_underscores",
+        "T",
+        "a1b2c3",
+        "UPPERCASE_TYPE",
     ];
 
-    for name in unicode_names {
+    for name in valid_names {
         let decl = Declaration::Named {
-            name: ident(name),
+            name: ident("field"),
             ty: TypeSpec::Ident(ident(name)),
         };
         let json = decl.get_type_json();
 
         let parsed: serde_json::Value = serde_json::from_str(&json)
-            .expect(&format!("JSON should be valid with Unicode identifier: {:?}", name));
+            .expect(&format!("JSON should be valid for valid identifier: {:?}", name));
 
         assert_eq!(parsed["type"], name);
     }
@@ -366,36 +407,47 @@ fn typed_array_json_is_valid() {
 }
 
 #[test]
-fn complex_field_names_json_is_valid() {
-    // Test that field names with special characters are properly escaped
-    // Build a struct manually with special character field names
+#[should_panic(expected = "Invalid XDR identifier")]
+fn invalid_field_name_panics() {
+    // Field names with special characters should cause a panic
     let body = StructBody(vec![
         Declaration::Named {
-            name: ident("field\"with\"quotes"),
+            name: ident("field-with-dashes"), // Invalid: contains dashes
+            ty: TypeSpec::Unsigned,
+        },
+    ]);
+
+    let _ = TypeSpec::Struct(body).get_type_json(); // Should panic
+}
+
+#[test]
+fn valid_field_names_work() {
+    // Test that valid XDR field names work correctly
+    let body = StructBody(vec![
+        Declaration::Named {
+            name: ident("field_one"),
             ty: TypeSpec::Unsigned,
         },
         Declaration::Named {
-            name: ident("field\\with\\backslashes"),
-            ty: TypeSpec::Unsigned,
+            name: ident("field2"),
+            ty: TypeSpec::Int,
         },
         Declaration::Named {
-            name: ident("field\nwith\nnewlines"),
-            ty: TypeSpec::Unsigned,
+            name: ident("FIELD_THREE"),
+            ty: TypeSpec::Bool,
         },
     ]);
 
     let json = TypeSpec::Struct(body).get_type_json();
 
-    // The critical test: JSON must be parseable despite special chars in field names
     let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON should be valid even with special chars in field names");
+        .expect("JSON should be valid for valid field names");
 
     assert_eq!(parsed["type"], "struct");
     let fields = parsed["fields"].as_array().unwrap();
     assert_eq!(fields.len(), 3);
 
-    // Verify the field names were properly escaped and unescaped
-    assert_eq!(fields[0]["name"], "field\"with\"quotes");
-    assert_eq!(fields[1]["name"], "field\\with\\backslashes");
-    assert_eq!(fields[2]["name"], "field\nwith\nnewlines");
+    assert_eq!(fields[0]["name"], "field_one");
+    assert_eq!(fields[1]["name"], "field2");
+    assert_eq!(fields[2]["name"], "FIELD_THREE");
 }
