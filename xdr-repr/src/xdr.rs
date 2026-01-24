@@ -457,7 +457,7 @@ impl TypeSpec {
     /// # Supported Types
     ///
     /// - Primitive types: Returns the type name as a string (`"int"`, `"unsigned"`, etc.)
-    /// - Named types: Returns the identifier name (properly escaped for JSON)
+    /// - Named types: Returns the identifier name (validated as XDR identifier)
     /// - Struct types: Returns a JSON object with type "struct" and a "fields" array
     ///
     /// # Panics

@@ -345,7 +345,7 @@
 //! { "type": "TypeName" }
 //! ```
 //!
-//! Type names are properly escaped according to JSON string rules.
+//! Type names are validated as XDR identifiers (no special characters allowed).
 //!
 //! ### Fixed Opaque (Byte Arrays)
 //!
@@ -467,8 +467,8 @@
 //! ```
 //!
 //! - **`fields`**: Array of field objects
-//!   - **`name`**: Field name (string, properly escaped)
-//!   - **`field_type`**: Field type (recursive type specification)
+//!   - **`name`**: Field name (validated as XDR identifier)
+//!   - **`element_type`**: Field type (recursive type specification)
 //!
 //! Empty structs:
 //! ```json
