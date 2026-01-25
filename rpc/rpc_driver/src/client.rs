@@ -1,3 +1,5 @@
+//! RPC client connection.
+
 use std::{net::SocketAddr, sync::Arc};
 
 use tokio::sync::mpsc;
@@ -8,6 +10,9 @@ use crate::{
     ClientHandle, ServiceMap,
 };
 
+/// Connect to an RPC server and return a handle for making calls.
+///
+/// Spawns background tasks for reading and writing on the connection.
 pub async fn connect_client(addr: &SocketAddr) -> Result<Arc<ClientHandle>, std::io::Error> {
     let (client_read, client_write) = connect(addr).await?;
     let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();

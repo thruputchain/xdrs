@@ -1,3 +1,5 @@
+//! Client connection state and RPC call handling.
+
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot, RwLock};
 
@@ -71,7 +73,10 @@ impl Drop for ClientState {
     }
 }
 
-// TODO(geoff): Rename this -- this contains data structures for both server and client
+/// Handle for making RPC calls over an established connection.
+///
+/// Manages pending requests and provides methods for sending calls
+/// and graceful shutdown via poisoning.
 #[derive(Debug)]
 pub struct ClientHandle {
     pub(crate) client_state: RwLock<ClientState>,
@@ -79,6 +84,9 @@ pub struct ClientHandle {
 }
 
 impl ClientHandle {
+    /// Create a new client handle with the given write channel.
+    ///
+    /// Returns the handle and a shutdown receiver for the write task.
     pub fn new(channel: mpsc::UnboundedSender<Vec<u8>>) -> (Self, oneshot::Receiver<()>) {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         (
@@ -90,6 +98,7 @@ impl ClientHandle {
         )
     }
 
+    /// Poison the connection, failing all pending requests and signaling shutdown.
     pub async fn poison(&self) {
         self.client_state.write().await.poison();
     }
@@ -125,6 +134,9 @@ impl ClientHandle {
         msg_bytes
     }
 
+    /// Send an RPC call and wait for the response.
+    ///
+    /// Returns the response data on success, or an error if the call fails.
     pub async fn send_call(
         &self,
         progvers: ProgVers,
@@ -142,6 +154,7 @@ impl ClientHandle {
         rx.await.map_err(|_| RpcError::SystemError)?
     }
 
+    /// Returns the number of pending (in-flight) requests.
     pub async fn num_pending_requests(&self) -> usize {
         self.client_state.read().await.pending_requests.len()
     }

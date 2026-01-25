@@ -1,7 +1,10 @@
+//! Program-level error wrapper.
+
 use std::fmt;
 
-// A generic error type that can be returned by an rpc implementation.
-// This type is converted into an RpcError::SystemError automatically.
+/// Generic error type for RPC program implementations.
+///
+/// Wraps any error type and converts to `RpcError::SystemError` when returned.
 #[derive(Debug, thiserror::Error)]
 pub struct ProgramError(Box<dyn std::error::Error + Send + Sync>);
 

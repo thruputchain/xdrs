@@ -1,7 +1,10 @@
+//! RPC error types and conversions.
+
 use xdrs::BytesM;
 
 use crate::rpc_msg;
 
+/// Errors that can occur during RPC calls.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RpcError {
     #[error("Invalid procedure")]

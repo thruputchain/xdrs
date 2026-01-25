@@ -1,3 +1,5 @@
+//! RPC server implementation.
+
 use std::{net::SocketAddr, sync::Arc};
 
 use tokio::{net::TcpListener, sync::mpsc};
@@ -8,12 +10,14 @@ use crate::{
     ClientHandle, ServiceMap,
 };
 
+/// TCP-based RPC server that dispatches calls to registered services.
 pub struct RpcServer {
     service_map: Arc<ServiceMap>,
     listener: TcpListener,
 }
 
 impl RpcServer {
+    /// Create a new server with the given services and TCP listener.
     pub fn new(service_map: ServiceMap, listener: TcpListener) -> Arc<Self> {
         Arc::new(Self {
             service_map: Arc::new(service_map),
@@ -21,15 +25,18 @@ impl RpcServer {
         })
     }
 
+    /// Returns the local address the server is bound to.
     pub fn addr(&self) -> Result<SocketAddr, std::io::Error> {
         self.listener.local_addr()
     }
 
+    /// Start the server in a background task, returning a handle to it.
     pub async fn start(self: Arc<Self>) -> tokio::task::JoinHandle<Result<(), std::io::Error>> {
         let x = self.clone();
         tokio::spawn(async move { x.run().await })
     }
 
+    /// Run the server, accepting connections and handling requests.
     pub async fn run(&self) -> Result<(), std::io::Error> {
         loop {
             let (read, write) = match accept(&self.listener).await {
