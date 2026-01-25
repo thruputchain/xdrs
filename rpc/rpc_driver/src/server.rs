@@ -1,9 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use tokio::{
-    net::TcpListener,
-    sync::{mpsc, oneshot},
-};
+use tokio::{net::TcpListener, sync::mpsc};
 
 use crate::{
     tasks::{launch_read_task, launch_write_task},
@@ -45,14 +42,9 @@ impl RpcServer {
 
             let (tx, rx) = mpsc::unbounded_channel();
 
-            // Create a shutdown signal for the server write task (never fires, but required by API)
-            // We need to keep the sender alive, otherwise the receiver will complete immediately
-            let (shutdown_tx, shutdown_rx) = oneshot::channel();
+            let (client_handle, shutdown_rx) = ClientHandle::new(tx);
 
-            // server write task
-            let shutdown_tx_handle = shutdown_tx; // Keep sender alive
             tokio::spawn(async move {
-                let _shutdown_tx = shutdown_tx_handle; // Keep sender alive for the lifetime of the task
                 match launch_write_task(rx, write, shutdown_rx).await {
                     Ok(_) => (),
                     Err(e) => eprintln!("Error from server write task: {}", e),
@@ -62,7 +54,6 @@ impl RpcServer {
             let service_map = self.service_map.clone();
             // server read task
             tokio::spawn(async move {
-                let (client_handle, _shutdown_rx) = ClientHandle::new(tx);
                 let client_handle = Arc::new(client_handle);
                 match launch_read_task(service_map, client_handle.clone(), read).await {
                     Ok(_) => (),
