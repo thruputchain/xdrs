@@ -1,6 +1,9 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::{
+    net::TcpListener,
+    sync::{mpsc, oneshot},
+};
 
 use crate::{
     tasks::{launch_read_task, launch_write_task},
@@ -35,27 +38,38 @@ impl RpcServer {
             let (read, write) = match accept(&self.listener).await {
                 Ok((read, write)) => (read, write),
                 Err(e) => {
-                    eprintln!("Error accepting connection: {}", e);
+                    eprintln!("Error server accepting connection: {}", e);
                     continue;
                 }
             };
 
             let (tx, rx) = mpsc::unbounded_channel();
 
+            // Create a shutdown signal for the server write task (never fires, but required by API)
+            // We need to keep the sender alive, otherwise the receiver will complete immediately
+            let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
             // server write task
+            let shutdown_tx_handle = shutdown_tx; // Keep sender alive
             tokio::spawn(async move {
-                match launch_write_task(rx, write).await {
+                let _shutdown_tx = shutdown_tx_handle; // Keep sender alive for the lifetime of the task
+                match launch_write_task(rx, write, shutdown_rx).await {
                     Ok(_) => (),
-                    Err(e) => eprintln!("Error from write task: {}", e),
+                    Err(e) => eprintln!("Error from server write task: {}", e),
                 }
             });
 
             let service_map = self.service_map.clone();
             // server read task
             tokio::spawn(async move {
-                match launch_read_task(service_map, Arc::new(ClientHandle::new(tx)), read).await {
+                let (client_handle, _shutdown_rx) = ClientHandle::new(tx);
+                let client_handle = Arc::new(client_handle);
+                match launch_read_task(service_map, client_handle.clone(), read).await {
                     Ok(_) => (),
-                    Err(e) => eprintln!("Error from read task: {}", e),
+                    Err(e) => {
+                        eprintln!("Error from server read task: {}", e);
+                        client_handle.poison().await;
+                    }
                 }
             });
         }

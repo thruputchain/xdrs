@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     client_state::ClientHandle,
@@ -31,6 +31,7 @@ pub enum WriteTaskError {
     RecvError,
 }
 
+// Never returns (), just error when the connection is closed
 pub async fn launch_read_task(
     service_map: Arc<ServiceMap>,
     client_cbs: Arc<ClientHandle>,
@@ -41,10 +42,11 @@ pub async fn launch_read_task(
         if record.is_none() {
             continue;
         }
+        let record = record.unwrap();
 
         let mut write_buffer = Vec::new();
 
-        let mut reader = xdrs::txs::buf_reader::BufReader::new(record.unwrap());
+        let mut reader = xdrs::txs::buf_reader::BufReader::new(record);
 
         let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
             Ok(msg) => msg,
@@ -55,7 +57,7 @@ pub async fn launch_read_task(
             }
         };
 
-        let remaining_bytes: &[u8] = &record.unwrap()[reader.position()..];
+        let remaining_bytes: &[u8] = &record[reader.position()..];
 
         match msg.body {
             rpc_msg::rpc_msg_body::CALL { cbody } => {
@@ -143,15 +145,20 @@ fn prepare_success_response(xid: u32, results: &[u8], buf: &mut Vec<u8>) {
 pub async fn launch_write_task(
     mut receive_channel: mpsc::UnboundedReceiver<Vec<u8>>,
     mut write_half: WriteHalf,
+    mut shutdown: oneshot::Receiver<()>,
 ) -> Result<(), WriteTaskError> {
     loop {
-        let msg = receive_channel
-            .recv()
-            .await
-            .ok_or(WriteTaskError::RecvError)?;
-        write_half
-            .write_data(&msg)
-            .await
-            .map_err(WriteTaskError::WriteError)?;
+        tokio::select! {
+            msg = receive_channel.recv() => {
+                let msg = msg.ok_or(WriteTaskError::RecvError)?;
+                write_half
+                    .write_data(&msg)
+                    .await
+                    .map_err(WriteTaskError::WriteError)?;
+            }
+            _ = &mut shutdown => {
+                return Err(WriteTaskError::Shutdown);
+            }
+        }
     }
 }

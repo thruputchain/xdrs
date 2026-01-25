@@ -142,14 +142,18 @@ mod tests {
         let server = RpcServer::new(service_map, listener);
         server.start().await;
 
+        println!("server started");
         // client
         let client = TestProgram_TestVersion_Client::new(connect_client(&addr).await.unwrap());
 
+        println!("client created");
         // Give tasks a moment to start up
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
+        println!("client null");
         let res = client.null().await.unwrap();
         assert_eq!(res, ());
+        println!("client null done");
 
         let res = client.takes_int(1).await.unwrap();
         assert_eq!(res, 1);
@@ -172,9 +176,11 @@ mod tests {
 
         // Set up write channel
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
-        let client_handle = Arc::new(ClientHandle::new(client_write_tx));
+        let (client_handle, client_shutdown_rx) = ClientHandle::new(client_write_tx);
+        let client_handle = Arc::new(client_handle);
         let (server_write_tx, server_write_rx) = mpsc::unbounded_channel();
-        let server_handle: Arc<ClientHandle> = Arc::new(ClientHandle::new(server_write_tx));
+        let (server_handle, server_shutdown_rx) = ClientHandle::new(server_write_tx);
+        let server_handle: Arc<ClientHandle> = Arc::new(server_handle);
 
         // Accept incoming connection in background task - we'll use this for the server side
         let listener_handle = tokio::spawn(async move { accept(&listener).await.unwrap() });
@@ -184,7 +190,7 @@ mod tests {
         let (server_read, server_write) = listener_handle.await.unwrap();
 
         let client_write_task = tokio::spawn(async move {
-            launch_write_task(client_write_rx, client_write)
+            launch_write_task(client_write_rx, client_write, client_shutdown_rx)
                 .await
                 .unwrap();
         });
@@ -198,7 +204,7 @@ mod tests {
         });
 
         let server_write_task = tokio::spawn(async move {
-            launch_write_task(server_write_rx, server_write)
+            launch_write_task(server_write_rx, server_write, server_shutdown_rx)
                 .await
                 .unwrap();
         });

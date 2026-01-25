@@ -15,22 +15,29 @@ pub struct CallbackHandle {
 pub struct ClientState {
     pub pending_requests: HashMap<u32, CallbackHandle>,
     last_xid: u32,
+    poisoned: bool,
+    shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
 impl ClientState {
-    pub fn new() -> Self {
+    pub fn new(shutdown_tx: oneshot::Sender<()>) -> Self {
         Self {
             pending_requests: HashMap::new(),
             last_xid: 0,
+            poisoned: false,
+            shutdown_tx: Some(shutdown_tx),
         }
     }
 
-    pub fn add_callback(&mut self, callback: CallbackHandle) -> u32 {
+    pub fn add_callback(&mut self, callback: CallbackHandle) -> Result<u32, RpcError> {
+        if self.poisoned {
+            return Err(RpcError::SystemError);
+        }
         loop {
             self.last_xid = self.last_xid.wrapping_add(1);
             if !self.pending_requests.contains_key(&self.last_xid) {
                 self.pending_requests.insert(self.last_xid, callback);
-                return self.last_xid;
+                return Ok(self.last_xid);
             }
         }
     }
@@ -42,14 +49,25 @@ impl ClientState {
         }
         eprintln!("Received reply for unknown xid: {}", xid);
     }
-}
 
-impl Drop for ClientState {
-    fn drop(&mut self) {
+    pub fn poison(&mut self) {
+        self.poisoned = true;
         for (_xid, callback) in self.pending_requests.drain() {
             // if these error out, then receiver must be dropped
             let _ = callback.tx.send(Err(RpcError::SystemError));
         }
+        match self.shutdown_tx.take() {
+            Some(tx) => {
+                let _ = tx.send(());
+            }
+            None => {}
+        }
+    }
+}
+
+impl Drop for ClientState {
+    fn drop(&mut self) {
+        self.poison();
     }
 }
 
@@ -61,11 +79,19 @@ pub struct ClientHandle {
 }
 
 impl ClientHandle {
-    pub fn new(channel: mpsc::UnboundedSender<Vec<u8>>) -> Self {
-        Self {
-            client_state: RwLock::new(ClientState::new()),
-            channel,
-        }
+    pub fn new(channel: mpsc::UnboundedSender<Vec<u8>>) -> (Self, oneshot::Receiver<()>) {
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        (
+            Self {
+                client_state: RwLock::new(ClientState::new(shutdown_tx)),
+                channel,
+            },
+            shutdown_rx,
+        )
+    }
+
+    pub async fn poison(&self) {
+        self.client_state.write().await.poison();
     }
 
     pub(crate) fn send_msg(
@@ -110,7 +136,7 @@ impl ClientHandle {
             .client_state
             .write()
             .await
-            .add_callback(CallbackHandle { tx });
+            .add_callback(CallbackHandle { tx })?;
         self.send_msg(&self.make_call_msg(xid, progvers, proc, data))
             .map_err(|_| RpcError::SystemError)?;
         rx.await.map_err(|_| RpcError::SystemError)?
@@ -124,11 +150,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_callback_roundtrip() {
-        let mut state = ClientState::new();
+        let (shutdown_tx, _shutdown_rx) = oneshot::channel();
+        let mut state = ClientState::new(shutdown_tx);
 
         let (tx, rx) = oneshot::channel();
 
-        state.add_callback(CallbackHandle { tx });
+        state.add_callback(CallbackHandle { tx }).unwrap();
         state.handle_reply(0, Ok(b"world".to_vec()));
 
         state.handle_reply(1, Ok(b"hello".to_vec()));
