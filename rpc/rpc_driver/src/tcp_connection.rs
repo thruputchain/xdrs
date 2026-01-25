@@ -51,18 +51,15 @@ impl WriteHalf {
 }
 
 impl ReadHalf {
-    pub async fn read_u32(&mut self) -> Result<u32, std::io::Error> {
+    async fn read_u32(&mut self) -> Result<u32, std::io::Error> {
         let mut buffer = [0u8; 4];
         self.read_half.read_exact(&mut buffer).await?;
         Ok(u32::from_be_bytes(buffer))
     }
 
-    pub async fn read_data(&mut self, data: &mut [u8]) -> Result<(), std::io::Error> {
-        let n = self.read_half.read_exact(data).await?;
-        assert_eq!(n, data.len());
-        Ok(())
-    }
-
+    /// Read a single RPC record from the connection.
+    ///
+    /// Returns `None` if the record is too large or requests a multi-part message.
     pub async fn read_record(&mut self) -> Result<Option<&[u8]>, std::io::Error> {
         let n = self.read_u32().await?;
         let size = n & 0x7fffffff;
@@ -116,7 +113,7 @@ mod tests {
         write.write_data(b"test message").await.unwrap();
         let mut buf = vec![0u8; (b"test message").len()];
 
-        read.read_data(&mut buf).await.unwrap();
+        read.read_half.read_exact(&mut buf).await.unwrap();
 
         assert_eq!(buf, b"test message");
     }
