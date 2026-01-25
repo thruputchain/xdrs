@@ -10,18 +10,45 @@ use crate::{
     ClientHandle, ServiceMap,
 };
 
+/// Configuration options for the RPC server.
+#[derive(Debug, Clone)]
+pub struct ServerConfig {
+    /// Maximum size of a single RPC message in bytes.
+    /// If not set, defaults to 16MB (0x100_0000).
+    pub max_message_size: Option<u32>,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            max_message_size: None,
+        }
+    }
+}
+
 /// TCP-based RPC server that dispatches calls to registered services.
 pub struct RpcServer {
     service_map: Arc<ServiceMap>,
     listener: TcpListener,
+    config: ServerConfig,
 }
 
 impl RpcServer {
     /// Create a new server with the given services and TCP listener.
     pub fn new(service_map: ServiceMap, listener: TcpListener) -> Arc<Self> {
+        Self::new_with_config(service_map, listener, ServerConfig::default())
+    }
+
+    /// Create a new server with custom configuration.
+    pub fn new_with_config(
+        service_map: ServiceMap,
+        listener: TcpListener,
+        config: ServerConfig,
+    ) -> Arc<Self> {
         Arc::new(Self {
             service_map: Arc::new(service_map),
             listener,
+            config,
         })
     }
 
@@ -39,7 +66,7 @@ impl RpcServer {
     /// Run the server, accepting connections and handling requests.
     pub async fn run(&self) -> Result<(), std::io::Error> {
         loop {
-            let (read, write) = match accept(&self.listener).await {
+            let (read, write) = match accept(&self.listener, self.config.max_message_size).await {
                 Ok((read, write)) => (read, write),
                 Err(e) => {
                     eprintln!("Error server accepting connection: {}", e);

@@ -57,10 +57,10 @@ mod tests {
         let server_handle = Arc::new(server_handle);
 
         // Accept incoming connection in background task - we'll use this for the server side
-        let listener_handle = tokio::spawn(async move { accept(&listener).await.unwrap() });
+        let listener_handle = tokio::spawn(async move { accept(&listener, None).await.unwrap() });
 
         // Connect from client side
-        let (client_read, client_write) = connect(addr).await.unwrap();
+        let (client_read, client_write) = connect(addr, None).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
         let client_write_task = tokio::spawn(async move {
@@ -160,7 +160,7 @@ mod tests {
         });
 
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
-        let (client_read, client_write) = connect(addr).await.unwrap();
+        let (client_read, client_write) = connect(addr, None).await.unwrap();
 
         let (client_handle, client_shutdown_rx) = ClientHandle::new(client_write_tx);
         let client_handle = Arc::new(client_handle);
@@ -338,6 +338,58 @@ mod tests {
         let new_result = new_call_handle.await.unwrap();
         assert!(new_result.is_ok());
         assert_eq!(new_result.unwrap(), b"new_test");
+    }
+
+    #[tokio::test]
+    async fn test_custom_max_message_size() {
+        use rpc_driver::{ClientConfig, ServerConfig};
+
+        // Set up RpcServer with a custom max message size of 1KB
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let mut service_map = ServiceMap::new();
+        service_map.add_service(Box::new(EchoCallbackService {}));
+
+        let config = ServerConfig {
+            max_message_size: Some(1024), // 1KB max
+        };
+        let server = RpcServer::new_with_config(service_map, listener, config);
+        let server_handle = server.clone();
+
+        // Start server in background
+        tokio::spawn(async move {
+            server_handle.run().await.unwrap();
+        });
+
+        // Give server a moment to start
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Connect client with matching max message size
+        let client_config = ClientConfig {
+            max_message_size: Some(1024),
+        };
+        let client_handle = rpc_driver::connect_client_with_config(&addr, client_config)
+            .await
+            .unwrap();
+
+        // Give client tasks a moment to start up
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Small message should work fine
+        let small_data = vec![0u8; 100];
+        let result = client_handle
+            .send_call(ProgVers::new(1, 1), 1, &small_data)
+            .await;
+        assert!(result.is_ok());
+
+        // Message larger than 1KB should fail
+        let large_data = vec![0u8; 2000];
+        let result = client_handle
+            .send_call(ProgVers::new(1, 1), 1, &large_data)
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), RpcError::SystemError);
     }
 
     #[tokio::test]

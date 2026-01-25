@@ -18,27 +18,33 @@ pub struct ReadHalf {
     max_message_size: u32,
 }
 
-pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
+pub async fn connect<A: ToSocketAddrs>(
+    addr: A,
+    max_message_size: Option<u32>,
+) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let stream = TcpStream::connect(addr).await?;
     let (read_half, write_half) = stream.into_split();
     Ok((
         ReadHalf {
             read_half,
             buffer: Vec::with_capacity(8192),
-            max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
+            max_message_size: max_message_size.unwrap_or(DEFAULT_MAX_MESSAGE_SIZE),
         },
         WriteHalf { write_half },
     ))
 }
 
-pub async fn accept(listener: &TcpListener) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
+pub async fn accept(
+    listener: &TcpListener,
+    max_message_size: Option<u32>,
+) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let (stream, _) = listener.accept().await?;
     let (read_half, write_half) = stream.into_split();
     Ok((
         ReadHalf {
             read_half,
             buffer: Vec::with_capacity(8192),
-            max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
+            max_message_size: max_message_size.unwrap_or(DEFAULT_MAX_MESSAGE_SIZE),
         },
         WriteHalf { write_half },
     ))
@@ -108,7 +114,7 @@ mod tests {
         });
 
         // Connect and test
-        let (mut read, mut write) = connect(addr).await.unwrap();
+        let (mut read, mut write) = connect(addr, None).await.unwrap();
 
         write.write_data(b"test message").await.unwrap();
         let mut buf = vec![0u8; (b"test message").len()];

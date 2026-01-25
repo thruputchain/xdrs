@@ -21,10 +21,10 @@ pub mod server_state;
 pub use server_state::*;
 
 mod server;
-pub use server::RpcServer;
+pub use server::{RpcServer, ServerConfig};
 
 mod client;
-pub use client::connect_client;
+pub use client::{connect_client, connect_client_with_config, ClientConfig};
 
 pub mod tcp_connection;
 

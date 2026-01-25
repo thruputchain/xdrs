@@ -10,11 +10,37 @@ use crate::{
     ClientHandle, ServiceMap,
 };
 
+/// Configuration options for the RPC client.
+#[derive(Debug, Clone)]
+pub struct ClientConfig {
+    /// Maximum size of a single RPC message in bytes.
+    /// If not set, defaults to 16MB (0x100_0000).
+    pub max_message_size: Option<u32>,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self {
+            max_message_size: None,
+        }
+    }
+}
+
 /// Connect to an RPC server and return a handle for making calls.
 ///
 /// Spawns background tasks for reading and writing on the connection.
 pub async fn connect_client(addr: &SocketAddr) -> Result<Arc<ClientHandle>, std::io::Error> {
-    let (client_read, client_write) = connect(addr).await?;
+    connect_client_with_config(addr, ClientConfig::default()).await
+}
+
+/// Connect to an RPC server with custom configuration.
+///
+/// Spawns background tasks for reading and writing on the connection.
+pub async fn connect_client_with_config(
+    addr: &SocketAddr,
+    config: ClientConfig,
+) -> Result<Arc<ClientHandle>, std::io::Error> {
+    let (client_read, client_write) = connect(addr, config.max_message_size).await?;
     let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
 
     let (client_handle, shutdown_rx) = ClientHandle::new(client_write_tx);
