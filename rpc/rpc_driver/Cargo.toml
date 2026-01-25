@@ -13,4 +13,3 @@ xdrs = { git = "ssh://git@github.com/groundhogchain/xdrs.git", features = ["extr
 default = ["xdrs"]
 xdrs = []
 
-

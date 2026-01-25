@@ -5,11 +5,58 @@ use std::fmt;
 /// Generic error type for RPC program implementations.
 ///
 /// Wraps any error type and converts to `RpcError::SystemError` when returned.
-#[derive(Debug, thiserror::Error)]
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use rpc_driver::ProgramError;
+///
+/// async fn my_rpc_method(&self) -> Result<(), ProgramError> {
+///     // Use .map_err() to convert errors
+///     let file = std::fs::File::open("config.txt")
+///         .map_err(ProgramError::new)?;
+///     Ok(())
+/// }
+/// ```
+#[derive(Debug)]
 pub struct ProgramError(Box<dyn std::error::Error + Send + Sync>);
+
+impl ProgramError {
+    /// Create a new ProgramError from any error type.
+    pub fn new<E>(err: E) -> Self
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        Self(Box::new(err))
+    }
+
+    /// Create a ProgramError from a string message.
+    pub fn msg(msg: impl Into<String>) -> Self {
+        Self(msg.into().into())
+    }
+}
+
+impl std::error::Error for ProgramError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.source()
+    }
+}
 
 impl fmt::Display for ProgramError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "rpc program error: {}", self.0.to_string())
+        write!(f, "rpc program error: {}", self.0)
+    }
+}
+
+// Implement From for common error types to enable ? operator
+impl From<std::io::Error> for ProgramError {
+    fn from(err: std::io::Error) -> Self {
+        Self::new(err)
+    }
+}
+
+impl From<Box<dyn std::error::Error + Send + Sync>> for ProgramError {
+    fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        Self(err)
     }
 }

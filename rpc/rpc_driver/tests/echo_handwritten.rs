@@ -107,20 +107,45 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio::sync::mpsc;
 
-    struct EchoCallbackSerivce {}
+    struct EchoCallbackService {}
 
     #[async_trait]
-    impl TestProgram_TestVersion for EchoCallbackSerivce {
+    impl TestProgram_TestVersion for EchoCallbackService {
         async fn null(&self) -> Result<(), ProgramError> {
             Ok(())
         }
         async fn takes_int(&self, i: i32) -> Result<i32, ProgramError> {
-            println!("EchoCallbackSerivce: takes_int: i={}", i);
+            println!("EchoCallbackService: takes_int: i={}", i);
             Ok(i)
         }
         async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgramError> {
-            println!("EchoCallbackSerivce: takes_two_ints: i1={}, i2={}", i1, i2);
+            println!("EchoCallbackService: takes_two_ints: i1={}, i2={}", i1, i2);
             Ok(i1 + i2)
+        }
+    }
+
+    /// Example service that always returns errors, demonstrating ProgramError usage.
+    struct FailingService {}
+
+    #[async_trait]
+    impl TestProgram_TestVersion for FailingService {
+        async fn null(&self) -> Result<(), ProgramError> {
+            // Using ProgramError::msg() for simple string errors
+            Err(ProgramError::msg("null always fails"))
+        }
+
+        async fn takes_int(&self, _i: i32) -> Result<i32, ProgramError> {
+            // Using From<std::io::Error> impl - the ? operator works with io::Error
+            let _file = std::fs::File::open("/nonexistent/path/that/doesnt/exist")?;
+            Ok(0)
+        }
+
+        async fn takes_two_ints(&self, _i1: i32, _i2: i32) -> Result<i32, ProgramError> {
+            // Using ProgramError::new() explicitly for other error types
+            Err(ProgramError::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "takes_two_ints always fails",
+            )))
         }
     }
 
@@ -133,7 +158,7 @@ mod tests {
         // Create service map
         let mut service_map = ServiceMap::new();
         service_map.add_service(Box::new(TestProgram_TestVersion_Dispatcher {
-            inner: Box::new(EchoCallbackSerivce {}),
+            inner: Box::new(EchoCallbackService {}),
         }));
 
         // server
@@ -169,7 +194,7 @@ mod tests {
         // Create service map
         let mut service_map = ServiceMap::new();
         service_map.add_service(Box::new(TestProgram_TestVersion_Dispatcher {
-            inner: Box::new(EchoCallbackSerivce {}),
+            inner: Box::new(EchoCallbackService {}),
         }));
 
         // Set up write channel
@@ -243,5 +268,33 @@ mod tests {
         assert!(client_read_task.await.unwrap_err().is_cancelled());
         assert!(server_write_task.await.unwrap_err().is_cancelled());
         assert!(server_read_task.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn test_failing_service() {
+        // Test that a service returning errors produces RpcError::SystemError on the client
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let mut service_map = ServiceMap::new();
+        service_map.add_service(Box::new(TestProgram_TestVersion_Dispatcher {
+            inner: Box::new(FailingService {}),
+        }));
+
+        let server = RpcServer::new(service_map, listener);
+        server.start().await;
+
+        let client = TestProgram_TestVersion_Client::new(connect_client(&addr).await.unwrap());
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // All methods should return SystemError because the service returns ProgramError
+        let res = client.null().await;
+        assert_eq!(res, Err(RpcError::SystemError));
+
+        let res = client.takes_int(42).await;
+        assert_eq!(res, Err(RpcError::SystemError));
+
+        let res = client.takes_two_ints(1, 2).await;
+        assert_eq!(res, Err(RpcError::SystemError));
     }
 }

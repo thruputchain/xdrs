@@ -61,112 +61,97 @@ impl From<rpc_msg::accepted_reply_reply_data> for RpcError {
 impl RpcError {
     pub fn to_rpc_msg(&self, xid: u32) -> rpc_msg::rpc_msg {
         match self {
-            RpcError::InvalidVersion { low, high } => {
-                return rpc_msg::rpc_msg {
-                    xid,
-                    body: rpc_msg::rpc_msg_body::REPLY {
-                        rbody: rpc_msg::reply_body::MSG_ACCEPTED {
-                            areply: rpc_msg::accepted_reply {
-                                verf: DEFAULT_OPAQUE_AUTH,
-                                reply_data: rpc_msg::accepted_reply_reply_data::PROG_MISMATCH {
-                                    mismatch_info:
-                                        rpc_msg::accepted_reply_reply_data_mismatch_info {
-                                            low: *low,
-                                            high: *high,
-                                        },
+            RpcError::InvalidVersion { low, high } => rpc_msg::rpc_msg {
+                xid,
+                body: rpc_msg::rpc_msg_body::REPLY {
+                    rbody: rpc_msg::reply_body::MSG_ACCEPTED {
+                        areply: rpc_msg::accepted_reply {
+                            verf: DEFAULT_OPAQUE_AUTH,
+                            reply_data: rpc_msg::accepted_reply_reply_data::PROG_MISMATCH {
+                                mismatch_info: rpc_msg::accepted_reply_reply_data_mismatch_info {
+                                    low: *low,
+                                    high: *high,
                                 },
                             },
                         },
                     },
-                };
-            }
-            RpcError::InvalidProcedure => {
-                return rpc_msg::rpc_msg {
-                    xid,
-                    body: rpc_msg::rpc_msg_body::REPLY {
-                        rbody: rpc_msg::reply_body::MSG_ACCEPTED {
-                            areply: rpc_msg::accepted_reply {
-                                verf: DEFAULT_OPAQUE_AUTH,
-                                reply_data: rpc_msg::accepted_reply_reply_data::Default {
-                                    stat: rpc_msg::accept_stat::PROC_UNAVAIL as i32,
-                                },
+                },
+            },
+            RpcError::InvalidProcedure => rpc_msg::rpc_msg {
+                xid,
+                body: rpc_msg::rpc_msg_body::REPLY {
+                    rbody: rpc_msg::reply_body::MSG_ACCEPTED {
+                        areply: rpc_msg::accepted_reply {
+                            verf: DEFAULT_OPAQUE_AUTH,
+                            reply_data: rpc_msg::accepted_reply_reply_data::Default {
+                                stat: rpc_msg::accept_stat::PROC_UNAVAIL as i32,
                             },
                         },
                     },
-                }
-            }
-            RpcError::RpcMismatch => {
-                return rpc_msg::rpc_msg {
-                    xid,
-                    body: rpc_msg::rpc_msg_body::REPLY {
-                        rbody: rpc_msg::reply_body::MSG_DENIED {
-                            rreply: rpc_msg::rejected_reply::RPC_MISMATCH {
-                                mismatch_info: rpc_msg::rejected_reply_mismatch_info {
-                                    low: 2,
-                                    high: 2,
-                                },
+                },
+            },
+            RpcError::RpcMismatch => rpc_msg::rpc_msg {
+                xid,
+                body: rpc_msg::rpc_msg_body::REPLY {
+                    rbody: rpc_msg::reply_body::MSG_DENIED {
+                        rreply: rpc_msg::rejected_reply::RPC_MISMATCH {
+                            mismatch_info: rpc_msg::rejected_reply_mismatch_info {
+                                low: 2,
+                                high: 2,
                             },
                         },
                     },
-                }
-            }
-            RpcError::GarbageArguments => {
-                return rpc_msg::rpc_msg {
-                    xid,
-                    body: rpc_msg::rpc_msg_body::REPLY {
-                        rbody: rpc_msg::reply_body::MSG_ACCEPTED {
-                            areply: rpc_msg::accepted_reply {
-                                verf: DEFAULT_OPAQUE_AUTH,
-                                reply_data: rpc_msg::accepted_reply_reply_data::Default {
-                                    stat: rpc_msg::accept_stat::GARBAGE_ARGS as i32,
-                                },
+                },
+            },
+            RpcError::GarbageArguments => rpc_msg::rpc_msg {
+                xid,
+                body: rpc_msg::rpc_msg_body::REPLY {
+                    rbody: rpc_msg::reply_body::MSG_ACCEPTED {
+                        areply: rpc_msg::accepted_reply {
+                            verf: DEFAULT_OPAQUE_AUTH,
+                            reply_data: rpc_msg::accepted_reply_reply_data::Default {
+                                stat: rpc_msg::accept_stat::GARBAGE_ARGS as i32,
                             },
                         },
                     },
-                }
-            }
-            RpcError::SystemError => {
-                return rpc_msg::rpc_msg {
-                    xid,
-                    body: rpc_msg::rpc_msg_body::REPLY {
-                        rbody: rpc_msg::reply_body::MSG_ACCEPTED {
-                            areply: rpc_msg::accepted_reply {
-                                verf: DEFAULT_OPAQUE_AUTH,
-                                reply_data: rpc_msg::accepted_reply_reply_data::Default {
-                                    stat: rpc_msg::accept_stat::SYSTEM_ERR as i32,
-                                },
+                },
+            },
+            RpcError::SystemError => rpc_msg::rpc_msg {
+                xid,
+                body: rpc_msg::rpc_msg_body::REPLY {
+                    rbody: rpc_msg::reply_body::MSG_ACCEPTED {
+                        areply: rpc_msg::accepted_reply {
+                            verf: DEFAULT_OPAQUE_AUTH,
+                            reply_data: rpc_msg::accepted_reply_reply_data::Default {
+                                stat: rpc_msg::accept_stat::SYSTEM_ERR as i32,
                             },
                         },
                     },
-                }
-            }
-            RpcError::AuthenticationError => {
-                return rpc_msg::rpc_msg {
-                    xid,
-                    body: rpc_msg::rpc_msg_body::REPLY {
-                        rbody: rpc_msg::reply_body::MSG_DENIED {
-                            rreply: rpc_msg::rejected_reply::AUTH_ERROR {
-                                rj_why: rpc_msg::auth_stat::AUTH_FAILED,
+                },
+            },
+            RpcError::AuthenticationError => rpc_msg::rpc_msg {
+                xid,
+                body: rpc_msg::rpc_msg_body::REPLY {
+                    rbody: rpc_msg::reply_body::MSG_DENIED {
+                        rreply: rpc_msg::rejected_reply::AUTH_ERROR {
+                            rj_why: rpc_msg::auth_stat::AUTH_FAILED,
+                        },
+                    },
+                },
+            },
+            RpcError::ProgUnavail => rpc_msg::rpc_msg {
+                xid,
+                body: rpc_msg::rpc_msg_body::REPLY {
+                    rbody: rpc_msg::reply_body::MSG_ACCEPTED {
+                        areply: rpc_msg::accepted_reply {
+                            verf: DEFAULT_OPAQUE_AUTH,
+                            reply_data: rpc_msg::accepted_reply_reply_data::Default {
+                                stat: rpc_msg::accept_stat::PROG_UNAVAIL as i32,
                             },
                         },
                     },
-                }
-            }
-            RpcError::ProgUnavail => {
-                return rpc_msg::rpc_msg {
-                    xid,
-                    body: rpc_msg::rpc_msg_body::REPLY {
-                        rbody: rpc_msg::reply_body::MSG_ACCEPTED {
-                            areply: rpc_msg::accepted_reply {
-                                verf: DEFAULT_OPAQUE_AUTH,
-                                reply_data: rpc_msg::accepted_reply_reply_data::Default {
-                                    stat: rpc_msg::accept_stat::PROG_UNAVAIL as i32,
-                                },
-                            },
-                        },
-                    },
-                }
-            }
+                },
+            },
         }
     }
 

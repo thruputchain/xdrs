@@ -18,16 +18,16 @@ mod tests {
     };
 
     use super::*;
-    struct EchoCallbackSerivce {}
+    struct EchoCallbackService {}
 
     #[async_trait]
-    impl ServerDispatch for EchoCallbackSerivce {
+    impl ServerDispatch for EchoCallbackService {
         async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
             println!(
-                "EchoCallbackSerivce: dispatch: proc={}, data={:?}",
+                "EchoCallbackService: dispatch: proc={}, data={:?}",
                 proc, data
             );
             Ok(data.to_vec())
@@ -46,7 +46,7 @@ mod tests {
 
         // Create service map
         let mut service_map = ServiceMap::new();
-        service_map.add_service(Box::new(EchoCallbackSerivce {}));
+        service_map.add_service(Box::new(EchoCallbackService {}));
 
         // Set up write channel
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
@@ -151,7 +151,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
 
         let mut service_map = ServiceMap::new();
-        service_map.add_service(Box::new(EchoCallbackSerivce {}));
+        service_map.add_service(Box::new(EchoCallbackService {}));
 
         let server = RpcServer::new(service_map, listener);
 
@@ -347,7 +347,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
 
         let mut service_map = ServiceMap::new();
-        service_map.add_service(Box::new(EchoCallbackSerivce {}));
+        service_map.add_service(Box::new(EchoCallbackService {}));
 
         let server = RpcServer::new(service_map, listener);
         let server_handle = server.clone();

@@ -14,8 +14,6 @@
 //! # }
 //! ```
 
-#![allow(unexpected_cfgs)]
-
 pub mod client_state;
 pub use client_state::*;
 
@@ -43,7 +41,7 @@ pub use prog_error::ProgramError;
 pub mod tasks;
 
 /// RPC program and version identifier.
-#[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ProgVers {
     prog: u32,
     vers: u32,
@@ -53,5 +51,15 @@ impl ProgVers {
     /// Create a new program/version pair.
     pub fn new(prog: u32, vers: u32) -> Self {
         Self { prog, vers }
+    }
+
+    /// Returns the program number.
+    pub fn prog(&self) -> u32 {
+        self.prog
+    }
+
+    /// Returns the version number.
+    pub fn vers(&self) -> u32 {
+        self.vers
     }
 }

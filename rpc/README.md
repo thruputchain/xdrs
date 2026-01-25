@@ -13,15 +13,19 @@ An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [
 ## Usage
 
 ```rust
-use rpc_driver::{RpcServer, connect_client, ProgVers};
+use rpc_driver::{RpcServer, ServiceMap, connect_client, ProgVers};
+use tokio::net::TcpListener;
 
 // Server
-let server = RpcServer::new();
-server.register(ProgVers::new(100000, 1), my_service);
-server.listen("0.0.0.0:111").await?;
+let mut service_map = ServiceMap::new();
+service_map.add_service(Box::new(my_service));
+let listener = TcpListener::bind("0.0.0.0:111").await?;
+let server = RpcServer::new(service_map, listener);
+server.run().await?;
 
 // Client
 let client = connect_client(&addr).await?;
+let response = client.send_call(ProgVers::new(100000, 1), 0, b"").await?;
 ```
 
 ## Documentation
