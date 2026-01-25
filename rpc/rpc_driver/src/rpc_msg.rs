@@ -1,7 +1,7 @@
 // -*-Rust-*-
 // Generated Code: DO NOT CHECK IN
 
-// Generated from xdrc commit: 91b1c67721f63ea74532ffd3b5bf32ec40a573b0
+// Generated from xdrc commit: 3cd9e334c60beb16595adcfdea7eee069fb92456
 
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
@@ -25,14 +25,17 @@ use xdrs::*;
 use xdrs::xdr_repr::*;
 
 
-#[cfg(not(feature="xdrs"))]
-use xdr_common::*;
+#[cfg(feature = "serde")]
+use ::serde::{Serialize, Deserialize};
+#[cfg(feature = "serde")]
+use ::serde_arrays;
 
 
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
 #[repr(i32)]
 pub enum auth_flavor {
@@ -42,8 +45,6 @@ pub enum auth_flavor {
     AUTH_DH = 3 as i32,
     RPCSEC_GSS = 6 as i32,
 }
-pub use auth_flavor::*;
-
 impl TryFrom<i32> for auth_flavor {
     type Error = ();
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -59,26 +60,26 @@ impl TryFrom<i32> for auth_flavor {
 }
 
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct opaque_auth {
     pub flavor: auth_flavor,
     pub body: BytesM<400>,
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
 #[repr(i32)]
 pub enum msg_type {
     CALL = 0 as i32,
     REPLY = 1 as i32,
 }
-pub use msg_type::*;
-
 impl TryFrom<i32> for msg_type {
     type Error = ();
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -93,17 +94,16 @@ impl TryFrom<i32> for msg_type {
 
 /* A reply to a call message can take on two forms: the message was
    either accepted or rejected. */
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
 #[repr(i32)]
 pub enum reply_stat {
     MSG_ACCEPTED = 0 as i32,
     MSG_DENIED = 1 as i32,
 }
-pub use reply_stat::*;
-
 impl TryFrom<i32> for reply_stat {
     type Error = ();
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -118,9 +118,10 @@ impl TryFrom<i32> for reply_stat {
 
 /* Given that a call message was accepted, the following is the status
    of an attempt to call a remote procedure. */
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
 #[repr(i32)]
 pub enum accept_stat {
@@ -142,8 +143,6 @@ pub enum accept_stat {
     /* e.g. memory allocation failure  */
     SYSTEM_ERR = 5 as i32,
 }
-pub use accept_stat::*;
-
 impl TryFrom<i32> for accept_stat {
     type Error = ();
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -161,9 +160,10 @@ impl TryFrom<i32> for accept_stat {
 
 
 /* Reasons why a call message was rejected: */
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
 #[repr(i32)]
 pub enum reject_stat {
@@ -173,8 +173,6 @@ pub enum reject_stat {
     /* remote can't authenticate caller */
     AUTH_ERROR = 1 as i32,
 }
-pub use reject_stat::*;
-
 impl TryFrom<i32> for reject_stat {
     type Error = ();
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -188,9 +186,10 @@ impl TryFrom<i32> for reject_stat {
 
 
 /* Why authentication failed: */
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
 #[repr(i32)]
 pub enum auth_stat {
@@ -251,8 +250,6 @@ pub enum auth_stat {
     /* problem with context */
     RPCSEC_GSS_CTXPROBLEM = 14 as i32,
 }
-pub use auth_stat::*;
-
 impl TryFrom<i32> for auth_stat {
     type Error = ();
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -279,9 +276,10 @@ impl TryFrom<i32> for auth_stat {
 
 
 /* Body of an RPC call: */
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct call_body {
     /* must be equal to two (2) */
@@ -294,38 +292,41 @@ pub struct call_body {
 }
 
 /* Reply to an RPC call that was accepted by the server: */
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct accepted_reply_reply_data_mismatch_info {
     pub low: u32,
     pub high: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
 #[repr(i32)]
 pub enum accepted_reply_reply_data {
     // case SUCCESS:
-    //   [u8; 0] results;
-    SUCCESS { results: [u8; 0] } = accept_stat::SUCCESS as i32,
+    //   [u8; 0 as usize] results;
+    SUCCESS { results: [u8; 0 as usize] } = accept_stat::SUCCESS as i32,
     // case PROG_MISMATCH:
     //   mismatch_info mismatch_info;
     PROG_MISMATCH { mismatch_info: accepted_reply_reply_data_mismatch_info } = accept_stat::PROG_MISMATCH as i32,
+    /*
+     * Void.  Cases include PROG_UNAVAIL, PROC_UNAVAIL,
+     * GARBAGE_ARGS, and SYSTEM_ERR.
+     */
     // default:
-    //   /*
-    //    * Void.  Cases include PROG_UNAVAIL, PROC_UNAVAIL,
-    //    * GARBAGE_ARGS, and SYSTEM_ERR.
-    //    */
     //   void;
     Default { stat: i32 },
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct accepted_reply {
     pub verf: opaque_auth,
@@ -333,16 +334,18 @@ pub struct accepted_reply {
 }
 
 /* Reply to an RPC call that was rejected by the server: */
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct rejected_reply_mismatch_info {
     pub low: u32,
     pub high: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
 #[repr(i32)]
@@ -357,7 +360,8 @@ pub enum rejected_reply {
 }
 
 /* Body of a reply to an RPC call: */
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
 #[repr(i32)]
@@ -372,7 +376,8 @@ pub enum reply_body {
 }
 
 /* The RPC message: */
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
 #[repr(i32)]
@@ -386,9 +391,10 @@ pub enum rpc_msg_body {
     
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "xdrs", derive(ReadXDR, WriteXDR))]
 #[cfg_attr(feature = "spec", derive(XDR))]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct rpc_msg {
     pub xid: u32,
