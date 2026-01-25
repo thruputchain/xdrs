@@ -51,22 +51,24 @@ impl RpcServer {
 
             let (client_handle, shutdown_rx) = ClientHandle::new(tx);
 
+            let client_handle = Arc::new(client_handle);
+            let client_handle_read = client_handle.clone();
             tokio::spawn(async move {
                 match launch_write_task(rx, write, shutdown_rx).await {
                     Ok(_) => (),
                     Err(e) => eprintln!("Error from server write task: {}", e),
                 }
+                client_handle.poison().await;
             });
 
             let service_map = self.service_map.clone();
             // server read task
             tokio::spawn(async move {
-                let client_handle = Arc::new(client_handle);
-                match launch_read_task(service_map, client_handle.clone(), read).await {
+                match launch_read_task(service_map, client_handle_read.clone(), read).await {
                     Ok(_) => (),
                     Err(e) => {
                         eprintln!("Error from server read task: {}", e);
-                        client_handle.poison().await;
+                        client_handle_read.poison().await;
                     }
                 }
             });
