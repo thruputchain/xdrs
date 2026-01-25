@@ -40,7 +40,9 @@ pub async fn launch_read_task(
     loop {
         let record = read_half.read_record().await?;
         if record.is_none() {
-            continue;
+            // Multi-part messages unsupported; if the record fails to read
+            // we shut down the connection
+            return Err(ReadTaskError::Shutdown);
         }
         let record = record.unwrap();
 

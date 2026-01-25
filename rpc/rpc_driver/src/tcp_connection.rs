@@ -1,6 +1,9 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
+// TODO(geoff): make this configurable
+const DEFAULT_MAX_MESSAGE_SIZE: u32 = 0x100_0000;
+
 pub struct WriteHalf {
     // We may choose to multiplex this over multiple connections later.
     write_half: tokio::net::tcp::OwnedWriteHalf,
@@ -10,6 +13,7 @@ pub struct ReadHalf {
     // We may choose to multiplex this over multiple connections later.
     read_half: tokio::net::tcp::OwnedReadHalf,
     buffer: Vec<u8>,
+    max_message_size: u32,
 }
 
 pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
@@ -19,6 +23,7 @@ pub async fn connect<A: ToSocketAddrs>(addr: A) -> Result<(ReadHalf, WriteHalf),
         ReadHalf {
             read_half,
             buffer: Vec::with_capacity(8192),
+            max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
         },
         WriteHalf { write_half },
     ))
@@ -31,6 +36,7 @@ pub async fn accept(listener: &TcpListener) -> Result<(ReadHalf, WriteHalf), std
         ReadHalf {
             read_half,
             buffer: Vec::with_capacity(8192),
+            max_message_size: DEFAULT_MAX_MESSAGE_SIZE,
         },
         WriteHalf { write_half },
     ))
@@ -62,6 +68,11 @@ impl ReadHalf {
         // multi part messages unimplemented
         if highbit == 0 {
             eprintln!("Multi-part messages unsupported: n={:X}", n);
+            return Ok(None);
+        }
+
+        if size > self.max_message_size {
+            eprintln!("Message size too large: n={:X}", n);
             return Ok(None);
         }
 

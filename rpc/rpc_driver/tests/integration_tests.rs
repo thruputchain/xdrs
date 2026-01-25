@@ -357,4 +357,55 @@ mod tests {
         assert!(new_result.is_ok());
         assert_eq!(new_result.unwrap(), b"new_test");
     }
+
+    #[tokio::test]
+    async fn test_message_too_large() {
+        // Set up RpcServer
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let mut service_map = ServiceMap::new();
+        service_map.add_service(Box::new(EchoCallbackSerivce {}));
+
+        let server = RpcServer::new(service_map, listener);
+        let server_handle = server.clone();
+
+        // Start server in background
+        tokio::spawn(async move {
+            server_handle.run().await.unwrap();
+        });
+
+        // Give server a moment to start
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Connect client using high-level API
+        let client_handle = connect_client(&addr).await.unwrap();
+
+        // Give client tasks a moment to start up
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Create a message that exceeds the max message size (0x100_0000 = 16,777,216 bytes)
+        // The message size includes both header and data, so we need data that makes
+        // the total exceed the limit. The header is typically around 100-200 bytes,
+        // so we'll create data that's larger than the max to be safe.
+        const MAX_MESSAGE_SIZE: usize = 0x100_0000; // 16,777,216 bytes
+        let large_data = vec![0u8; MAX_MESSAGE_SIZE + 1];
+
+        // Try to send a call with data that's too large
+        let result = client_handle
+            .send_call(ProgVers::new(1, 1), 1, &large_data)
+            .await;
+
+        // The call should fail with SystemError because the connection was closed
+        // when the server detected the message was too large
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+
+        // Connection should be closed, so future calls should fail
+        let result = client_handle
+            .send_call(ProgVers::new(1, 1), 1, b"test")
+            .await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+    }
 }
