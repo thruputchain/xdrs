@@ -13,8 +13,8 @@ mod tests {
 
     use async_trait::async_trait;
     use rpc_driver::{
-        connect_client, rpc_error::RpcError, server_state::ServerDispatch, tcp_connection::accept,
-        ProgVers, RpcServer,
+        connect_client, server_state::ServerDispatch, tcp_connection::accept, ProgVers, RpcError,
+        RpcServer,
     };
 
     use super::*;
@@ -98,16 +98,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response, b"hello");
-        assert_eq!(
-            client_handle
-                .as_ref()
-                .client_state
-                .read()
-                .await
-                .pending_requests
-                .len(),
-            0
-        );
+        assert_eq!(client_handle.as_ref().num_pending_requests().await, 0);
 
         // some error cases
         assert_eq!(
@@ -194,16 +185,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response, b"hello");
-        assert_eq!(
-            client_handle
-                .as_ref()
-                .client_state
-                .read()
-                .await
-                .pending_requests
-                .len(),
-            0
-        );
+        assert_eq!(client_handle.as_ref().num_pending_requests().await, 0);
 
         assert!(!client_write_task.is_finished());
         assert!(!client_read_task.is_finished());

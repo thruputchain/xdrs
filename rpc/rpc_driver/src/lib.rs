@@ -17,12 +17,13 @@ pub mod tcp_connection;
 #[rustfmt::skip]
 mod rpc_msg;
 
-pub mod rpc_error;
+mod rpc_error;
 pub use rpc_error::RpcError;
 
-pub mod prog_error;
+mod prog_error;
 pub use prog_error::ProgramError;
 
+#[doc(hidden)]
 pub mod tasks;
 
 #[derive(Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

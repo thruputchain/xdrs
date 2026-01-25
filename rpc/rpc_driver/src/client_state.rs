@@ -7,13 +7,13 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct CallbackHandle {
+pub(crate) struct CallbackHandle {
     tx: oneshot::Sender<Result<Vec<u8>, RpcError>>,
 }
 
 #[derive(Debug)]
-pub struct ClientState {
-    pub pending_requests: HashMap<u32, CallbackHandle>,
+pub(crate) struct ClientState {
+    pub(crate) pending_requests: HashMap<u32, CallbackHandle>,
     last_xid: u32,
     poisoned: bool,
     shutdown_tx: Option<oneshot::Sender<()>>,
@@ -29,7 +29,7 @@ impl ClientState {
         }
     }
 
-    pub fn add_callback(&mut self, callback: CallbackHandle) -> Result<u32, RpcError> {
+    pub(crate) fn add_callback(&mut self, callback: CallbackHandle) -> Result<u32, RpcError> {
         if self.poisoned {
             return Err(RpcError::SystemError);
         }
@@ -140,6 +140,10 @@ impl ClientHandle {
         self.send_msg(&self.make_call_msg(xid, progvers, proc, data))
             .map_err(|_| RpcError::SystemError)?;
         rx.await.map_err(|_| RpcError::SystemError)?
+    }
+
+    pub async fn num_pending_requests(&self) -> usize {
+        self.client_state.read().await.pending_requests.len()
     }
 }
 
