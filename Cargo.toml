@@ -1,9 +1,9 @@
 [workspace]
 members = [
+    "xdr-common",
     "xdr-derive",
     "xdr-repr",
-    "xdr-common",
-    ]
+]
 
 [workspace.package]
 version = "0.2.0"
@@ -48,11 +48,11 @@ categories.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
+xdr-common = { workspace = true }
 
 # Optional dependencies
 xdr-derive = { workspace = true, optional = true }
 xdr-repr = { workspace = true, optional = true }
-xdr-common = { workspace = true }
 
 [dev-dependencies]
 criterion = "0.6.0"
