@@ -28,6 +28,10 @@ pub use client::{connect_client, connect_client_with_config, ClientConfig};
 
 pub mod tcp_connection;
 
+// This module is genreated, with the following modifications
+// over the default x23c generated rust:
+// - remove unneeded features (serde, spec)
+// - force enable xdrs feature
 #[rustfmt::skip]
 mod rpc_msg;
 
