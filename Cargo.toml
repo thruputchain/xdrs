@@ -73,10 +73,6 @@ repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
 # Enable optional features of related dependencies
 ns = ["xdr-repr?/ns"]
 
-# Deprecated features
-strict = [] # deprecated: default is strict, use "permissive" to disable
-extras = [] # deprecated
-
 [lints]
 workspace = true
 
