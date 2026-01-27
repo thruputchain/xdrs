@@ -10,8 +10,8 @@ fn void_json_is_valid() {
     let json = decl.get_type_json();
 
     // Parse the JSON to ensure it's valid
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "void");
 }
@@ -36,8 +36,10 @@ fn primitive_types_json_is_valid() {
         };
         let json = decl.get_type_json();
 
-        let parsed: serde_json::Value = serde_json::from_str(&json)
-            .expect(&format!("JSON output should be valid for {}", expected_name));
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect(&format!(
+            "JSON output should be valid for {}",
+            expected_name
+        ));
 
         assert_eq!(parsed["type"], expected_name);
     }
@@ -48,8 +50,8 @@ fn fixed_opaque_json_is_valid() {
     let decl = declare_fixed_opaque("data", 10);
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "fixed opaque");
     assert_eq!(parsed["len"], 10);
@@ -63,8 +65,8 @@ fn variable_opaque_json_is_valid() {
     };
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "variable opaque");
     assert_eq!(parsed["max"], 100);
@@ -78,8 +80,8 @@ fn string_json_is_valid() {
     };
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "string");
     assert_eq!(parsed["max"], 255);
@@ -94,8 +96,8 @@ fn fixed_array_json_is_valid() {
     };
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "fixed array");
     assert_eq!(parsed["element_type"]["type"], "unsigned");
@@ -111,8 +113,8 @@ fn variable_array_json_is_valid() {
     };
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "variable array");
     assert_eq!(parsed["element_type"]["type"], "int");
@@ -127,8 +129,8 @@ fn optional_json_is_valid() {
     };
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "optional");
     assert_eq!(parsed["element_type"]["type"], "bool");
@@ -147,8 +149,8 @@ fn struct_json_is_valid() {
     if let TypeDef::Struct(_, body) = type_def {
         let json = TypeSpec::Struct(body).get_type_json();
 
-        let parsed: serde_json::Value = serde_json::from_str(&json)
-            .expect("JSON output should be valid");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("JSON output should be valid");
 
         assert_eq!(parsed["type"], "struct");
         assert!(parsed["fields"].is_array());
@@ -189,8 +191,8 @@ fn nested_struct_json_is_valid() {
     if let TypeDef::Struct(_, body) = type_def {
         let json = TypeSpec::Struct(body).get_type_json();
 
-        let parsed: serde_json::Value = serde_json::from_str(&json)
-            .expect("JSON output should be valid for nested struct");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("JSON output should be valid for nested struct");
 
         assert_eq!(parsed["type"], "struct");
         let fields = parsed["fields"].as_array().unwrap();
@@ -216,8 +218,8 @@ fn custom_type_name_json_is_valid() {
     };
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid");
 
     assert_eq!(parsed["type"], "CustomType");
 }
@@ -307,8 +309,10 @@ fn valid_identifiers_work() {
         };
         let json = decl.get_type_json();
 
-        let parsed: serde_json::Value = serde_json::from_str(&json)
-            .expect(&format!("JSON should be valid for valid identifier: {:?}", name));
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect(&format!(
+            "JSON should be valid for valid identifier: {:?}",
+            name
+        ));
 
         assert_eq!(parsed["type"], name);
     }
@@ -319,8 +323,8 @@ fn empty_struct_json_is_valid() {
     let body = StructBody(vec![]);
     let json = TypeSpec::Struct(body).get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid for empty struct");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid for empty struct");
 
     assert_eq!(parsed["type"], "struct");
     assert_eq!(parsed["fields"].as_array().unwrap().len(), 0);
@@ -364,8 +368,8 @@ fn tuple_json_is_valid() {
     let decl = <(i32, u32, bool)>::declare(ident("triple"));
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid for tuple");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid for tuple");
 
     assert_eq!(parsed["type"], "struct");
     let fields = parsed["fields"].as_array().unwrap();
@@ -386,8 +390,8 @@ fn byte_array_json_is_valid() {
     let decl = <[u8; 32]>::declare(ident("hash"));
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid for byte array");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid for byte array");
 
     assert_eq!(parsed["type"], "fixed opaque");
     assert_eq!(parsed["len"], 32);
@@ -398,8 +402,8 @@ fn typed_array_json_is_valid() {
     let decl = <[u32; 10]>::declare(ident("numbers"));
     let json = decl.get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON output should be valid for typed array");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid for typed array");
 
     assert_eq!(parsed["type"], "fixed array");
     assert_eq!(parsed["element_type"]["type"], "unsigned");
@@ -410,12 +414,10 @@ fn typed_array_json_is_valid() {
 #[should_panic(expected = "Invalid XDR identifier")]
 fn invalid_field_name_panics() {
     // Field names with special characters should cause a panic
-    let body = StructBody(vec![
-        Declaration::Named {
-            name: ident("field-with-dashes"), // Invalid: contains dashes
-            ty: TypeSpec::Unsigned,
-        },
-    ]);
+    let body = StructBody(vec![Declaration::Named {
+        name: ident("field-with-dashes"), // Invalid: contains dashes
+        ty: TypeSpec::Unsigned,
+    }]);
 
     let _ = TypeSpec::Struct(body).get_type_json(); // Should panic
 }
@@ -440,8 +442,8 @@ fn valid_field_names_work() {
 
     let json = TypeSpec::Struct(body).get_type_json();
 
-    let parsed: serde_json::Value = serde_json::from_str(&json)
-        .expect("JSON should be valid for valid field names");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON should be valid for valid field names");
 
     assert_eq!(parsed["type"], "struct");
     let fields = parsed["fields"].as_array().unwrap();

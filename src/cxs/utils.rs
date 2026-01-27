@@ -3,9 +3,9 @@
 //! This module provides high-level functions for encoding and decoding XDR
 //! data using the CXS (Compact XDR Serialization) format.
 
-use crate::*;
 use crate::cxs::buf_reader::*;
 use crate::cxs::into_buf_writer::*;
+use crate::*;
 use core::mem::MaybeUninit as MU;
 
 /// Decodes CXS-encoded XDR data from a byte slice.
@@ -70,8 +70,8 @@ pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Write
 
 #[cfg(feature = "alloc")]
 mod utils_alloc {
-    use crate::*;
     use crate::cxs::buf_writer::*;
+    use crate::*;
     use alloc::vec::Vec;
 
     /// Encodes a value as CXS-encoded XDR data, returning an owned vector.

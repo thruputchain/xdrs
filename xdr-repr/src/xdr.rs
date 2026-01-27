@@ -252,7 +252,9 @@ fn validate_xdr_identifier(s: &str) {
             panic!(
                 "Invalid XDR identifier '{}': character at position {} ('{}') is not allowed. \
                  XDR identifiers can only contain ASCII letters, digits, and underscores.",
-                s, idx + 1, ch
+                s,
+                idx + 1,
+                ch
             );
         }
     }
@@ -540,7 +542,9 @@ impl TypeSpec {
                 TypeJsonRepr::Object(result)
             }
             TypeSpec::Union(_body) => panic!("Embedded union type not yet supported"),
-            TypeSpec::Ident(ident) => TypeJsonRepr::Name(get_validated_identifier(&ident.0).to_string()),
+            TypeSpec::Ident(ident) => {
+                TypeJsonRepr::Name(get_validated_identifier(&ident.0).to_string())
+            }
         }
     }
 }

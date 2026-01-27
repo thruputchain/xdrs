@@ -215,9 +215,7 @@ fn struct_with_tuple_field() {
         x: (u32, u64),
     }
 
-    let val = Foo {
-        x: (42, 1000),
-    };
+    let val = Foo { x: (42, 1000) };
 
     // u32: 42 (≤63, no prefix) and u64: 1000 (0x03E8, needs 0x7F+2-byte)
     // CXS: 42="2a", 1000="7fe803" (little-endian)

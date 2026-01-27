@@ -2,8 +2,8 @@
 //! (The encoding is non-standard because the XDR spec gives none.)
 
 const _: () = {
-    use crate::read_xdr::*;
     use crate::mu;
+    use crate::read_xdr::*;
     use crate::serialize::reader::*;
     use core::mem::MaybeUninit as MU;
 

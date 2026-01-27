@@ -39,7 +39,9 @@ pub trait Format {
 pub struct CXS;
 
 impl Format for CXS {
-    fn name() -> &'static str { "CXS" }
+    fn name() -> &'static str {
+        "CXS"
+    }
 
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
         cxs::decode(buf)
@@ -58,7 +60,9 @@ impl Format for CXS {
 pub struct TXS;
 
 impl Format for TXS {
-    fn name() -> &'static str { "TXS" }
+    fn name() -> &'static str {
+        "TXS"
+    }
 
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
         txs::decode(buf)

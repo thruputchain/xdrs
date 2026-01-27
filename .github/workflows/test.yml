@@ -58,6 +58,8 @@ jobs:
           cargo +nightly build -p xdr-common --features alloc,std -Zbuild-std=std
           cargo +nightly build -p xdr-common --features serde -Zbuild-std=std
           cargo +nightly build -p xdr-common --features serde,std -Zbuild-std=std
+      - name: Check format
+        run: cargo fmt --check
       - name: Test Documentation Examples
         run: |
           cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"

@@ -126,7 +126,10 @@ fn optional_declaration_json() {
         opt_ty: TypeSpec::Bool,
     };
     let json = optional_decl.get_type_json();
-    assert_eq!(json, "{ \"type\": \"optional\", \"element_type\": { \"type\": \"bool\" } }");
+    assert_eq!(
+        json,
+        "{ \"type\": \"optional\", \"element_type\": { \"type\": \"bool\" } }"
+    );
 }
 
 // Tests for all primitive types in Named declarations
