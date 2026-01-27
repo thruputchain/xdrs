@@ -1,1 +1,5 @@
 /target
+#CI clones into an actions/ directory for gh workflows.
+# We can remove this once the actions/ repo is public and we don't have to 
+# explicitly clone it.
+actions/
