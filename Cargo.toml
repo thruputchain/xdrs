@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"  
@@ -23,9 +23,10 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.2.0" }
-xdr-repr = { path = "xdr-repr", version = "=0.2.0" }
-xdr-common = { path = "xdr-common", version = "=0.2.0" }
+xdr-derive = { path = "xdr-derive", version = "=0.2.1" }
+xdr-repr = { path = "xdr-repr", version = "=0.2.1" }
+xdr-common = { path = "xdr-common", version = "=0.2.1" }
+
 thiserror = { version = "2.0.12", default-features = false }
 pretty_assertions = "1.4.1"
 
