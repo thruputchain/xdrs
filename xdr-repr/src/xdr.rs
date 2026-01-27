@@ -237,13 +237,11 @@ fn validate_xdr_identifier(s: &str) {
     let mut chars = s.chars();
 
     // First character must be a letter or underscore
-    if let Some(first) = chars.next() {
-        if !first.is_ascii_alphabetic() && first != '_' {
-            panic!(
-                "Invalid XDR identifier '{}': must start with a letter (a-z, A-Z) or underscore (_), found '{}'",
-                s, first
-            );
-        }
+    if let Some(first) = chars.next() && !first.is_ascii_alphabetic() && first != '_' {
+        panic!(
+            "Invalid XDR identifier '{}': must start with a letter (a-z, A-Z) or underscore (_), found '{}'",
+            s, first
+        );
     }
 
     // Remaining characters must be letters, digits, or underscores
@@ -335,7 +333,7 @@ impl Declaration {
                     TypeJsonRepr::Object(type_obj) => {
                         // Complex type (struct, etc.) - indent and embed it
                         let indented = type_obj.replace('\n', "\n  ");
-                        format!("{}", indented)
+                        indented.to_string()
                     }
                 }
             }
