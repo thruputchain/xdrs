@@ -36,6 +36,7 @@ pub trait Format {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 pub struct CXS;
 
 impl Format for CXS {
@@ -57,6 +58,7 @@ impl Format for CXS {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 pub struct TXS;
 
 impl Format for TXS {
