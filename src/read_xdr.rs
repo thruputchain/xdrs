@@ -98,9 +98,20 @@ where
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
 
-        // TODO: catch errors to avoid memory leaks
-        for elt in arr.iter_mut() {
-            elt.write(read_xdr(r)?);
+        // Initialize elements one by one, dropping already-initialized elements on error
+        for (i, elt) in arr.iter_mut().enumerate() {
+            match read_xdr(r) {
+                Ok(val) => {
+                    elt.write(val);
+                }
+                Err(e) => {
+                    // Drop all initialized elements to avoid memory leak
+                    arr.iter_mut().take(i).for_each(|elt| unsafe {
+                        elt.assume_init_drop();
+                    });
+                    return Err(e);
+                }
+            }
         }
 
         // SAFETY: all elements have been initialized
@@ -277,9 +288,20 @@ const _: () = {
             let mut vec: Vec<T> = Vec::with_capacity(len);
             let slice = vec.spare_capacity_mut();
 
-            // TODO: catch errors to avoid memory leaks
-            for elt in slice.iter_mut() {
-                elt.write(read_xdr(r)?);
+            // Initialize elements one by one, dropping already-initialized elements on error
+            for (i, elt) in slice.iter_mut().enumerate() {
+                match read_xdr(r) {
+                    Ok(val) => {
+                        elt.write(val);
+                    }
+                    Err(e) => {
+                        // Drop all initialized elements to avoid memory leak
+                        slice.iter_mut().take(i).for_each(|elt| unsafe {
+                            elt.assume_init_drop();
+                        });
+                        return Err(e);
+                    }
+                }
             }
 
             // SAFETY: all elts up to `len` have been initialized
