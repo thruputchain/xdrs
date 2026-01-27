@@ -28,6 +28,4 @@ enabled with feature `alloc`.
 
 - Limit stack depth when reading potentially-recursive datastructures
 
-- Check handling of not-minimal encodings, with and without feature "permissive"
-
 [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
