@@ -87,12 +87,8 @@ mod cxs {
             let result: Result<T, _> = cxs::decode(bytes);
             match result {
                 Err(Error::NotMinimalEncoding) => {} // expected
-                Err(e) => panic!(
-                    "{type_name}: expected NotMinimalEncoding error, got: {e:?}"
-                ),
-                Ok(v) => panic!(
-                    "{type_name}: expected NotMinimalEncoding error, got value: {v:?}"
-                ),
+                Err(e) => panic!("{type_name}: expected NotMinimalEncoding error, got: {e:?}"),
+                Ok(v) => panic!("{type_name}: expected NotMinimalEncoding error, got value: {v:?}"),
             }
         }
 
