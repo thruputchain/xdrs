@@ -117,7 +117,7 @@ where
                     buf.push(value);
                 }
 
-                VecM::<T, MAX>::try_from(buf).map_err(|e| <A::Error as DeError>::custom(e))
+                VecM::<T, MAX>::try_from(buf).map_err(<A::Error as DeError>::custom)
             }
         }
 

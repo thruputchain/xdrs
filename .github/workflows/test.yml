@@ -60,6 +60,8 @@ jobs:
           cargo +nightly build -p xdr-common --features serde,std -Zbuild-std=std
       - name: Check format
         run: cargo fmt --check
+      - name: Check clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test Documentation Examples
         run: |
           cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"
