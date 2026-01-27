@@ -22,7 +22,7 @@ jobs:
         with:
           toolchain: nightly
           override: true
-          components: rust-src
+          components: rust-src, rustfmt, clippy
       - name: Build workspace (no features)
         run: cargo build --workspace
       - name: Test (root lib without alloc)
