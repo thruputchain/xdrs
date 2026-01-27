@@ -73,6 +73,247 @@ mod txs {
 mod cxs {
     use super::*;
 
+    // Tests for non-minimal encoding handling
+    mod non_minimal {
+        use xdrs::cxs;
+        use xdrs::serialize::reader::Error;
+
+        // Helper to decode and check for NotMinimalEncoding error
+        #[cfg_attr(feature = "permissive", allow(dead_code))]
+        fn expect_non_minimal_error<T: for<'r> xdrs::ReadXDR<'r> + std::fmt::Debug>(
+            bytes: &[u8],
+            type_name: &str,
+        ) {
+            let result: Result<T, _> = cxs::decode(bytes);
+            match result {
+                Err(Error::NotMinimalEncoding) => {} // expected
+                Err(e) => panic!("{type_name}: expected NotMinimalEncoding error, got: {e:?}"),
+                Ok(v) => panic!("{type_name}: expected NotMinimalEncoding error, got value: {v:?}"),
+            }
+        }
+
+        // Helper to decode and verify successful decoding with expected value
+        #[cfg_attr(not(feature = "permissive"), allow(dead_code))]
+        fn expect_decode_ok<T>(bytes: &[u8], expected: T, type_name: &str)
+        where
+            T: for<'r> xdrs::ReadXDR<'r> + std::fmt::Debug + PartialEq,
+        {
+            let result: Result<T, _> = cxs::decode(bytes);
+            match result {
+                Ok(v) => assert_eq!(v, expected, "{type_name}: decoded value mismatch"),
+                Err(e) => panic!(
+                    "{type_name}: expected successful decode of {expected:?}, got error: {e:?}"
+                ),
+            }
+        }
+
+        // =====================================================================
+        // Tests that run WITHOUT the permissive feature (strict mode)
+        // These verify that non-minimal encodings are REJECTED
+        // =====================================================================
+        #[cfg(not(feature = "permissive"))]
+        mod strict {
+            use super::*;
+
+            // --- Unsigned non-minimal encodings ---
+
+            #[test]
+            fn u32_zero_with_1byte_ext_rejected() {
+                // Value 0 should be encoded as just 0x00 (fits in header)
+                // Non-minimal: 0x3f 0x00 (header says 1-byte extension, byte is 0)
+                let bytes = &[0x3f, 0x00];
+                expect_non_minimal_error::<u32>(bytes, "u32");
+            }
+
+            #[test]
+            fn u32_62_with_1byte_ext_rejected() {
+                // Value 62 should be encoded as just 0x3e (fits in header)
+                // Non-minimal: 0x3f 0x3e (header says 1-byte extension)
+                let bytes = &[0x3f, 0x3e];
+                expect_non_minimal_error::<u32>(bytes, "u32");
+            }
+
+            #[test]
+            fn u32_255_with_2byte_ext_rejected() {
+                // Value 255 fits in 1-byte extension: 0x3f 0xff
+                // Non-minimal: 0x7f 0xff 0x00 (2-byte extension, little-endian)
+                let bytes = &[0x7f, 0xff, 0x00];
+                expect_non_minimal_error::<u32>(bytes, "u32");
+            }
+
+            #[test]
+            fn u32_100_with_4byte_ext_rejected() {
+                // Value 100 fits in 1-byte extension: 0x3f 0x64
+                // Non-minimal: 0xbf 0x64 0x00 0x00 0x00 (4-byte extension)
+                let bytes = &[0xbf, 0x64, 0x00, 0x00, 0x00];
+                expect_non_minimal_error::<u32>(bytes, "u32");
+            }
+
+            #[test]
+            fn u64_100_with_8byte_ext_rejected() {
+                // Value 100 fits in 1-byte extension
+                // Non-minimal: 0xff + 8 bytes (8-byte extension)
+                let bytes = &[0xff, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                expect_non_minimal_error::<u64>(bytes, "u64");
+            }
+
+            #[test]
+            fn u16_zero_with_1byte_ext_rejected() {
+                let bytes = &[0x3f, 0x00];
+                expect_non_minimal_error::<u16>(bytes, "u16");
+            }
+
+            // --- Signed non-minimal encodings ---
+
+            #[test]
+            fn i32_zero_with_1byte_ext_rejected() {
+                // Value 0 should be encoded as just 0x00 (fits in header)
+                // Non-minimal: 0x3f 0x00 (1-byte extension)
+                let bytes = &[0x3f, 0x00];
+                expect_non_minimal_error::<i32>(bytes, "i32");
+            }
+
+            #[test]
+            fn i32_31_with_1byte_ext_rejected() {
+                // Value 31 should be encoded as 0x1f (fits in header, IH_MAX)
+                // Non-minimal: 0x3f 0x1f (1-byte extension)
+                let bytes = &[0x3f, 0x1f];
+                expect_non_minimal_error::<i32>(bytes, "i32");
+            }
+
+            #[test]
+            fn i32_neg31_with_1byte_ext_rejected() {
+                // Value -31 should be encoded in header (IH_MIN)
+                // Non-minimal: 0x3f 0xe1 (1-byte extension, -31 as signed byte)
+                let bytes = &[0x3f, 0xe1];
+                expect_non_minimal_error::<i32>(bytes, "i32");
+            }
+
+            #[test]
+            fn i32_127_with_2byte_ext_rejected() {
+                // Value 127 fits in 1-byte extension: 0x3f 0x7f
+                // Non-minimal: 0x7f 0x7f 0x00 (2-byte extension, little-endian)
+                let bytes = &[0x7f, 0x7f, 0x00];
+                expect_non_minimal_error::<i32>(bytes, "i32");
+            }
+
+            #[test]
+            fn i32_neg128_with_2byte_ext_rejected() {
+                // Value -128 fits in 1-byte extension: 0x3f 0x80
+                // Non-minimal: 0x7f 0x80 0xff (2-byte extension, little-endian sign-extended)
+                let bytes = &[0x7f, 0x80, 0xff];
+                expect_non_minimal_error::<i32>(bytes, "i32");
+            }
+
+            #[test]
+            fn i64_zero_with_8byte_ext_rejected() {
+                // Value 0 fits in header
+                // Non-minimal: 0xff + 8 zero bytes
+                let bytes = &[0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                expect_non_minimal_error::<i64>(bytes, "i64");
+            }
+
+            #[test]
+            fn i16_neg1_with_1byte_ext_rejected() {
+                // Value -1 should be encoded as 0x3e (fits in header)
+                // Non-minimal: 0x3f 0xff (1-byte extension, -1 as signed byte)
+                let bytes = &[0x3f, 0xff];
+                expect_non_minimal_error::<i16>(bytes, "i16");
+            }
+        }
+
+        // =====================================================================
+        // Tests that run WITH the permissive feature
+        // These verify that non-minimal encodings are ACCEPTED and decode correctly
+        // =====================================================================
+        #[cfg(feature = "permissive")]
+        mod permissive {
+            use super::*;
+
+            // --- Unsigned non-minimal encodings ---
+
+            #[test]
+            fn u32_zero_with_1byte_ext_accepted() {
+                let bytes = &[0x3f, 0x00];
+                expect_decode_ok::<u32>(bytes, 0, "u32");
+            }
+
+            #[test]
+            fn u32_62_with_1byte_ext_accepted() {
+                let bytes = &[0x3f, 0x3e];
+                expect_decode_ok::<u32>(bytes, 62, "u32");
+            }
+
+            #[test]
+            fn u32_255_with_2byte_ext_accepted() {
+                let bytes = &[0x7f, 0xff, 0x00];
+                expect_decode_ok::<u32>(bytes, 255, "u32");
+            }
+
+            #[test]
+            fn u32_100_with_4byte_ext_accepted() {
+                let bytes = &[0xbf, 0x64, 0x00, 0x00, 0x00];
+                expect_decode_ok::<u32>(bytes, 100, "u32");
+            }
+
+            #[test]
+            fn u64_100_with_8byte_ext_accepted() {
+                let bytes = &[0xff, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                expect_decode_ok::<u64>(bytes, 100, "u64");
+            }
+
+            #[test]
+            fn u16_zero_with_1byte_ext_accepted() {
+                let bytes = &[0x3f, 0x00];
+                expect_decode_ok::<u16>(bytes, 0, "u16");
+            }
+
+            // --- Signed non-minimal encodings ---
+
+            #[test]
+            fn i32_zero_with_1byte_ext_accepted() {
+                let bytes = &[0x3f, 0x00];
+                expect_decode_ok::<i32>(bytes, 0, "i32");
+            }
+
+            #[test]
+            fn i32_31_with_1byte_ext_accepted() {
+                let bytes = &[0x3f, 0x1f];
+                expect_decode_ok::<i32>(bytes, 31, "i32");
+            }
+
+            #[test]
+            fn i32_neg31_with_1byte_ext_accepted() {
+                let bytes = &[0x3f, 0xe1];
+                expect_decode_ok::<i32>(bytes, -31, "i32");
+            }
+
+            #[test]
+            fn i32_127_with_2byte_ext_accepted() {
+                let bytes = &[0x7f, 0x7f, 0x00];
+                expect_decode_ok::<i32>(bytes, 127, "i32");
+            }
+
+            #[test]
+            fn i32_neg128_with_2byte_ext_accepted() {
+                let bytes = &[0x7f, 0x80, 0xff];
+                expect_decode_ok::<i32>(bytes, -128, "i32");
+            }
+
+            #[test]
+            fn i64_zero_with_8byte_ext_accepted() {
+                let bytes = &[0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+                expect_decode_ok::<i64>(bytes, 0, "i64");
+            }
+
+            #[test]
+            fn i16_neg1_with_1byte_ext_accepted() {
+                let bytes = &[0x3f, 0xff];
+                expect_decode_ok::<i16>(bytes, -1, "i16");
+            }
+        }
+    }
+
     enc_test_int! { CXS
         [u16_zero, u16, 0, "00"],
         [u16_max, u16, u16::MAX, "7fffff"],
