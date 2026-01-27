@@ -36,7 +36,9 @@ impl Drop for LeakDetector {
 }
 
 impl<'r> ReadXDR<'r> for LeakDetector {
-    fn read_xdr<R: xdrs::serialize::reader::Reader<'r>>(r: &mut R) -> xdrs::serialize::reader::Result<Self> {
+    fn read_xdr<R: xdrs::serialize::reader::Reader<'r>>(
+        r: &mut R,
+    ) -> xdrs::serialize::reader::Result<Self> {
         let id = r.read_u32()? as usize;
 
         // Fail on id == 999 to simulate an error during array/vec initialization
