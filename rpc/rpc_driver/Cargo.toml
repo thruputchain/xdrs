@@ -8,7 +8,7 @@ publish = ["groundhog"]
 description = "Async ONC-RPC (RFC 5531) client/server library built on tokio."
 repository = "https://github.com/groundhogchain/rpc_rs"
 homepage = "https://github.com/groundhogchain/rpc_rs"
-readme = "README.md"
+readme = "../README.md"
 keywords = ["xdr", "rpc"]
 categories = ["rpc"]
 
