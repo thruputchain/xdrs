@@ -56,7 +56,7 @@ impl RpcServer {
     }
 
     /// Run the server, accepting connections and handling requests.
-    pub async fn run(&self) -> Result<(), std::io::Error> {
+    async fn run(&self) -> Result<(), std::io::Error> {
         loop {
             let (read, write) = match accept(&self.listener, self.config.max_message_size).await {
                 Ok((read, write)) => (read, write),

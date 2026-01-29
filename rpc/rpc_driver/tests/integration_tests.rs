@@ -155,9 +155,7 @@ mod tests {
 
         let server = RpcServer::new(service_map, listener);
 
-        tokio::spawn(async move {
-            server.run().await.unwrap();
-        });
+        server.start().await;
 
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
         let (client_read, client_write) = connect(addr, None).await.unwrap();
@@ -276,9 +274,7 @@ mod tests {
         let server_handle = server.clone();
 
         // Start server in background
-        tokio::spawn(async move {
-            server_handle.run().await.unwrap();
-        });
+        server_handle.start().await;
 
         // Give server a moment to start
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -358,9 +354,7 @@ mod tests {
         let server_handle = server.clone();
 
         // Start server in background
-        tokio::spawn(async move {
-            server_handle.run().await.unwrap();
-        });
+        server_handle.start().await;
 
         // Give server a moment to start
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
@@ -405,9 +399,7 @@ mod tests {
         let server_handle = server.clone();
 
         // Start server in background
-        tokio::spawn(async move {
-            server_handle.run().await.unwrap();
-        });
+        server_handle.start().await;
 
         // Give server a moment to start
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
