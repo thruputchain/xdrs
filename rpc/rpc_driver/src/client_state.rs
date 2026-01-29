@@ -1,11 +1,12 @@
 //! Client connection state and RPC call handling.
 
 use std::collections::HashMap;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{RwLock, mpsc, oneshot};
 
 use crate::{
-    rpc_error::{RpcError, DEFAULT_OPAQUE_AUTH},
-    rpc_msg, ProgVers,
+    ProgVers,
+    rpc_error::{DEFAULT_OPAQUE_AUTH, RpcError},
+    rpc_msg,
 };
 
 #[derive(Debug)]

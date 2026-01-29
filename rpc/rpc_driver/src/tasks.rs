@@ -3,12 +3,12 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
+    ProgVers,
     client_state::ClientHandle,
     rpc_error::DEFAULT_OPAQUE_AUTH,
     rpc_msg,
     server_state::ServiceMap,
     tcp_connection::{ReadHalf, WriteHalf},
-    ProgVers,
 };
 
 #[derive(Debug, thiserror::Error)]

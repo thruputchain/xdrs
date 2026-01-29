@@ -5,9 +5,9 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 
 use crate::{
+    ClientHandle, ServiceMap,
     tasks::{launch_read_task, launch_write_task},
     tcp_connection::connect,
-    ClientHandle, ServiceMap,
 };
 
 /// Configuration options for the RPC client.

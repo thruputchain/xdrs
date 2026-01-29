@@ -1,6 +1,6 @@
 //! Server-side service dispatch and registration.
 
-use crate::{rpc_error::RpcError, ProgVers};
+use crate::{ProgVers, rpc_error::RpcError};
 use async_trait::async_trait;
 use std::collections::BTreeMap;
 

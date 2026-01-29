@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rpc_driver::{client_state::ClientHandle, ProgVers, ProgramError, RpcError};
+use rpc_driver::{ProgVers, ProgramError, RpcError, client_state::ClientHandle};
 
 #[allow(non_camel_case_types)]
 #[async_trait]
@@ -98,11 +98,11 @@ impl TestProgram_TestVersion_Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rpc_driver::ProgramError;
     use rpc_driver::client_state::ClientHandle;
     use rpc_driver::tasks::{launch_read_task, launch_write_task};
     use rpc_driver::tcp_connection::connect;
-    use rpc_driver::ProgramError;
-    use rpc_driver::{connect_client, server_state::ServiceMap, tcp_connection::accept, RpcServer};
+    use rpc_driver::{RpcServer, connect_client, server_state::ServiceMap, tcp_connection::accept};
     use std::sync::Arc;
     use tokio::net::TcpListener;
     use tokio::sync::mpsc;

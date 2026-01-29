@@ -24,7 +24,7 @@ mod server;
 pub use server::{RpcServer, ServerConfig};
 
 mod client;
-pub use client::{connect_client, connect_client_with_config, ClientConfig};
+pub use client::{ClientConfig, connect_client, connect_client_with_config};
 
 pub mod tcp_connection;
 
