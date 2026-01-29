@@ -44,5 +44,5 @@ jobs:
         uses: ./actions/cargo-publish
         with:
           git-tag: ${{ github.ref_name }}
-          registry-name: sfgh_hog1
+          registry-name: groundhog
           registry-token: ${{ secrets.CARGO_PUBLISH_TOKEN }}
