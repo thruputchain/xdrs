@@ -45,7 +45,7 @@ jobs:
         id: publish-tag
         uses: ./actions/cargo-version-tag
         with:
-          push_tag: true
+          push-tag: true
           
       - name: publish
         uses: ./actions/cargo-publish
