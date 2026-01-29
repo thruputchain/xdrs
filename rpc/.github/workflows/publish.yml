@@ -26,6 +26,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Configure git to use SSH
         run: |
@@ -47,7 +49,9 @@ jobs:
       
       - name: push tag
         run: |
+          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git
           git push origin ${{ steps.publish-tag.outputs.tag }}
+          git remote set-url origin git@github.com:${{ github.repository }}.git
           
       - name: publish
         uses: ./actions/cargo-publish
