@@ -41,9 +41,9 @@ jobs:
       - name: dry run
         uses: ./actions/cargo-publish-dry-run
 
-      - name: publish tag
+      - name: tag commit with version
         id: publish-tag
-        uses: ./actions/cargo-publish-tag
+        uses: ./actions/cargo-version-tag
         with:
           push_tag: true
           
