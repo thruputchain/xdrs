@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+      CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
     steps:
       - uses: webfactory/ssh-agent@v0.9.1
         with:
