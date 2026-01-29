@@ -28,7 +28,7 @@ jobs:
       - name: Build workspace (no features)
         run: cargo build --workspace
       - name: Test (root lib without alloc)
-        run: cargo test -F int128,int128_xdr
+        run: cargo test -F int128
       - name: Test (feature permissive)
         run: cargo test -F permissive,int128 --test ints
       - name: Test (feature int128)
