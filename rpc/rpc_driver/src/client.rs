@@ -11,19 +11,11 @@ use crate::{
 };
 
 /// Configuration options for the RPC client.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ClientConfig {
     /// Maximum size of a single RPC message in bytes.
     /// If not set, defaults to 16MB (0x100_0000).
     pub max_message_size: Option<u32>,
-}
-
-impl Default for ClientConfig {
-    fn default() -> Self {
-        Self {
-            max_message_size: None,
-        }
-    }
 }
 
 /// Connect to an RPC server and return a handle for making calls.

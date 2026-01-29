@@ -119,7 +119,7 @@ pub async fn launch_read_task(
 }
 
 fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
-    return rpc_msg::rpc_msg {
+    rpc_msg::rpc_msg {
         xid,
         body: rpc_msg::rpc_msg_body::REPLY {
             rbody: rpc_msg::reply_body::MSG_ACCEPTED {
@@ -129,7 +129,7 @@ fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
                 },
             },
         },
-    };
+    }
 }
 
 fn prepare_success_response(xid: u32, results: &[u8], buf: &mut Vec<u8>) {

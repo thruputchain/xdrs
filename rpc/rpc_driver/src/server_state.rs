@@ -62,7 +62,7 @@ impl ServiceMap {
         if first_match
             .clone()
             .next()
-            .map_or(true, |entry| entry.0.prog() != srv.prog())
+            .is_none_or(|entry| entry.0.prog() != srv.prog())
         {
             return Err(RpcError::ProgUnavail);
         }

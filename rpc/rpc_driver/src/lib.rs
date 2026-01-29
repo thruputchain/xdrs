@@ -14,6 +14,10 @@
 //! # }
 //! ```
 
+// Lints on the generate rpc_msg.rs file
+#![allow(clippy::upper_case_acronyms)]
+#![allow(clippy::match_single_binding)]
+
 pub mod client_state;
 pub use client_state::*;
 

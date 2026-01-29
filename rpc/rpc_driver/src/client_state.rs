@@ -59,11 +59,8 @@ impl ClientState {
             // if these error out, then receiver must be dropped
             let _ = callback.tx.send(Err(RpcError::SystemError));
         }
-        match self.shutdown_tx.take() {
-            Some(tx) => {
-                let _ = tx.send(());
-            }
-            None => {}
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
         }
     }
 }
