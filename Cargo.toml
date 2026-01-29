@@ -23,9 +23,9 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.2.1" }
-xdr-repr = { path = "xdr-repr", version = "=0.2.1" }
-xdr-common = { path = "xdr-common", version = "=0.2.1" }
+xdr-derive = { path = "xdr-derive", version = "=0.2.1", registry = "groundhog" }
+xdr-repr = { path = "xdr-repr", version = "=0.2.1", registry = "groundhog" }
+xdr-common = { path = "xdr-common", version = "=0.2.1", registry = "groundhog" }
 
 thiserror = { version = "2.0.12", default-features = false }
 pretty_assertions = "1.4.1"

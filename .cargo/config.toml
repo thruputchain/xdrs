@@ -1,5 +1,5 @@
 [registries]
-sfgh_hog1 = { index = "sparse+http://hog1:8000/api/v1/crates/" }
+groundhog = { index = "sparse+http://groundhog.dev/crates/api/v1/crates/" }
 
 [source]
-sfgh_hog1 = { registry = "sparse+http://hog1:8000/api/v1/crates/" }
+groundhog = { registry = "sparse+http://groundhog.dev/crates/api/v1/crates/" }
