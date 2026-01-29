@@ -103,7 +103,7 @@ impl_has_type_spec! {
 // These refer to double-u64 structures defined outside this package
 impl_has_type_spec! {
     i128 => <(i64, u64)>::type_spec(),
-    u128 => <(u64, u64)::type_spec()
+    u128 => <(u64, u64)>::type_spec()
 }
 
 /// Types that can create an XDR declaration with a given name.

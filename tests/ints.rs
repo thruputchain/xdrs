@@ -340,7 +340,6 @@ mod cxs {
         [i64_max, i64, i64::MAX, "ffffffffffffffff7f"],
     }
 
-
     #[cfg(feature = "int128")]
     enc_test_int! { CXS
         [u128_min, u128, u128::MIN, "0000"],
