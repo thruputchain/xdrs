@@ -115,6 +115,7 @@ pub use xdr_repr;
 pub use xdr_derive::*;
 
 #[cfg(feature = "int128")]
+#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 mod int128;
 
 pub use xdr_common::*;
