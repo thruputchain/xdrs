@@ -37,8 +37,8 @@ jobs:
           path: actions
           ref: main
 
-      #- name: dry run
-      #  uses: ./actions/cargo-publish-dry-run
+      - name: dry run
+        uses: ./actions/cargo-publish-dry-run
 
       - name: publish
         uses: ./actions/cargo-publish
