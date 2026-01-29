@@ -26,7 +26,7 @@ unsafe_code = "forbid"
 default = []
 derive = ["dep:xdr-derive"] # derive the XDR trait
 ns = [] # C++-like namespaces for XDR specs
-int128_xdr = []
+int128 = []
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

@@ -1,35 +1,27 @@
-//! Implement `ReadXDR` and `WriteXDR` for `i128` and `u128`.
-//! (The encoding is non-standard because the XDR spec gives none.)
+//! Implement `ReadXDR` and `WriteXDR` for `i128` and `u128` using encodings `(i64,u64)` and
+//! `(u64,u64)`, respectively.
 
 const _: () = {
-    use crate::mu;
     use crate::read_xdr::*;
     use crate::serialize::reader::*;
-    use core::mem::MaybeUninit as MU;
 
     impl<'r> ReadXDR<'r> for i128 {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let mut uninit = [MU::<u8>::zeroed(); 16];
+            let highbits: i64 = read_xdr(r)?;
+            let lowbits: u64 = read_xdr(r)?;
+            let i: i128 = ((highbits as i128) << 64) | (lowbits as i128);
 
-            let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
-
-            // SAFETY: the pre-zeroed bytes are valid u8's
-            let bytes = unsafe { mu::array_assume_init(uninit) };
-
-            Ok(i128::from_le_bytes(bytes))
+            Ok(i)
         }
     }
 
     impl<'r> ReadXDR<'r> for u128 {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
-            let mut uninit = [MU::<u8>::zeroed(); 16];
+            let highbits: u64 = read_xdr(r)?;
+            let lowbits: u64 = read_xdr(r)?;
+            let u: u128 = ((highbits as u128) << 64) | (lowbits as u128);
 
-            let _ = r.read_opaque_variable_into(&mut uninit, 16)?;
-
-            // SAFETY: the pre-zeroed bytes are valid u8's
-            let bytes = unsafe { mu::array_assume_init(uninit) };
-
-            Ok(u128::from_le_bytes(bytes))
+            Ok(u)
         }
     }
 };
@@ -41,31 +33,21 @@ const _: () = {
 
     impl WriteXDR for i128 {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            let bytes = self.to_le_bytes();
+            let highbits = (*self >> 64) as i64;
+            let lowbits = (*self & 0xffffffffffffffff) as u64;
 
-            let leading_sign_bytes = if *self >= 0 {
-                self.leading_zeros()
-            } else {
-                self.leading_ones()
-            } / 8;
-
-            let n_send_bytes = 16 - leading_sign_bytes as usize;
-            let buf = &bytes[..n_send_bytes];
-
-            w.write_opaque_variable(buf)
+            write_xdr(&highbits, w)?;
+            write_xdr(&lowbits, w)
         }
     }
 
     impl WriteXDR for u128 {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<()> {
-            let bytes = self.to_le_bytes();
+            let highbits = (*self >> 64) as u64;
+            let lowbits = (*self & 0xffffffffffffffff) as u64;
 
-            let leading_zero_bytes = self.leading_zeros() / 8;
-
-            let n_send_bytes = 16 - leading_zero_bytes as usize;
-            let buf = &bytes[..n_send_bytes];
-
-            w.write_opaque_variable(buf)
+            write_xdr(&highbits, w)?;
+            write_xdr(&lowbits, w)
         }
     }
 };

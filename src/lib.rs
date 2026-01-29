@@ -36,14 +36,8 @@
 //! ### Extended types
 //!
 //! - **`int128`**: Enables convenient extensions to the XDR specification:
-//!   support for `i128` and `u128` (using a variable-length opaque encoding).
-//!
-//! - **`int128_xdr`**: Uses an alternate encoding for 128-bit integers,
-//!   encoding them as two 64-bit integers (high bits and low bits) instead of
-//!   variable-length opaque.
-//!
-//! *Note:* If the two above features are both requested, the `int128_xdr`
-//! encoding takes precedence.
+//!   support for `i128` and `u128`. These types are encoded as two 64-bit
+//!   integers (high bits and low bits).
 //!
 //! ### Optional dependencies
 //!
@@ -120,10 +114,7 @@ pub use xdr_repr;
 #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
 pub use xdr_derive::*;
 
-#[cfg(all(feature = "int128", not(feature = "int128_xdr")))]
+#[cfg(feature = "int128")]
 mod int128;
-
-#[cfg(feature = "int128_xdr")]
-mod int128_xdr;
 
 pub use xdr_common::*;
