@@ -44,8 +44,10 @@ jobs:
       - name: tag commit with version
         id: publish-tag
         uses: ./actions/cargo-version-tag
-        with:
-          push-tag: true
+      
+      - name: push tag
+        run: |
+          git push origin ${{ steps.publish-tag.outputs.tag }}
           
       - name: publish
         uses: ./actions/cargo-publish
