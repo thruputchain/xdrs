@@ -64,14 +64,6 @@
 //! - **`ns`**: Enables namespace support in `xdr-repr` for C++-like scoping of
 //!   XDR definitions.
 //!
-//! ### Deprecated features
-//!
-//! - **`strict`**: Now ignored. The default is strict processing; use
-//!   feature `permissive` to disable that.
-//! - **`cxs`**: Now ignored.  CXS is now always available.
-//! - **`txs`**: Now ignored.  TXS is now always available.
-//! - **`extras`**: Now ignored.  See above for `i128/u128` features.
-//!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 #![no_std]

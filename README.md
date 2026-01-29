@@ -18,11 +18,11 @@ This package provides:
 The library is `no_std`, but a few extra things can be
 enabled with feature `alloc`.
 
+Please see `cargo doc` for the detailed API.
+
 ## TODOs
 
 (See "TODO" comments in sources.)
-
-- Address some memory-leaks that can happen around read failures
 
 - Provide an out-parameter (i.e., in-place) decoding interface
 
