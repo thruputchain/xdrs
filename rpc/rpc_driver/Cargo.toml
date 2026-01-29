@@ -1,7 +1,16 @@
 [package]
 name = "rpc_driver"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+authors = ["Groundhog Team"]
+license = "Apache-2.0"  
+publish = ["groundhog"]
+description = "Async ONC-RPC (RFC 5531) client/server library built on tokio."
+repository = "https://github.com/groundhogchain/rpc_rs"
+homepage = "https://github.com/groundhogchain/rpc_rs"
+readme = "README.md"
+keywords = ["xdr", "rpc"]
+categories = ["rpc"]
 
 [dependencies]
 async-trait = "0.1.89"
