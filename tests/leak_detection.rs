@@ -3,8 +3,7 @@
 //! These tests ensure that when ReadXDR fails partway through initialization,
 //! all already-initialized elements are properly dropped.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use xdrs::{ReadXDR, txs};
+use xdrs::txs;
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -12,51 +11,83 @@ extern crate alloc;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-/// Tracks the number of active LeakDetector instances
-static ACTIVE_COUNT: AtomicUsize = AtomicUsize::new(0);
+mod active_counter {
+    use xdrs::{ReadXDR, serialize::reader};
+    use std::cell::Cell;
 
-/// A type that tracks when it's created and dropped.
-/// If instances are leaked, ACTIVE_COUNT will not return to zero.
-#[derive(Debug)]
-struct LeakDetector {
-    _id: usize,
-}
-
-impl LeakDetector {
-    fn new(id: usize) -> Self {
-        ACTIVE_COUNT.fetch_add(1, Ordering::SeqCst);
-        Self { _id: id }
+    std::thread_local! {
+        /// Tracks the number of active LeakDetector instances
+        static ACTIVE_COUNT: Cell<usize> = Cell::new(0);
     }
-}
 
-impl Drop for LeakDetector {
-    fn drop(&mut self) {
-        ACTIVE_COUNT.fetch_sub(1, Ordering::SeqCst);
+    fn active_increment() {
+        let n = ACTIVE_COUNT.get();
+        ACTIVE_COUNT.set(n.strict_add(1));
     }
-}
 
-impl<'r> ReadXDR<'r> for LeakDetector {
-    fn read_xdr<R: xdrs::serialize::reader::Reader<'r>>(
-        r: &mut R,
-    ) -> xdrs::serialize::reader::Result<Self> {
-        let id = r.read_u32()? as usize;
+    fn active_decrement() {
+        let n = ACTIVE_COUNT.get();
+        ACTIVE_COUNT.set(n.strict_sub(1));
+    }
 
-        // Fail on id == 999 to simulate an error during array/vec initialization
-        if id == 999 {
-            return Err(xdrs::serialize::reader::Error::BadDiscriminator(999));
+    /// A type that tracks when it's created and dropped.
+    /// If instances are leaked, ACTIVE_COUNT will not return to zero.
+    #[derive(Debug)]
+    pub struct LeakDetector {
+        _id: usize,
+    }
+
+    impl LeakDetector {
+        fn new(id: usize) -> Self {
+            active_increment();
+
+            Self { _id: id }
         }
+    }
 
-        Ok(LeakDetector::new(id))
+    impl Drop for LeakDetector {
+        fn drop(&mut self) {
+            active_decrement();
+        }
+    }
+
+    impl<'r> ReadXDR<'r> for LeakDetector {
+        fn read_xdr<R: reader::Reader<'r>>(
+            r: &mut R,
+        ) -> reader::Result<Self> {
+            let id = r.read_u32()? as usize;
+
+            // Fail on id == 999 to simulate an error during array/vec initialization
+            if id == 999 {
+                return Err(reader::Error::BadDiscriminator(999));
+            }
+
+            Ok(LeakDetector::new(id))
+        }
+    }
+
+    pub fn reset_active_counter() {
+        ACTIVE_COUNT.set(0);
+    }
+
+    pub fn assert_none_active() {
+        let active = ACTIVE_COUNT.get();
+
+        assert_eq!(active, 0, "Memory leak detected! {} LeakDetector instances \
+            were not dropped", active);
+    }
+
+    pub fn assert_n_active(n: usize) {
+        assert_eq!(ACTIVE_COUNT.get(), n)
     }
 }
+use active_counter::*;
 
 #[test]
 fn test_array_no_leak_on_error() {
-    // Reset counter
-    ACTIVE_COUNT.store(0, Ordering::SeqCst);
+    reset_active_counter();
 
     // Create test data: TXS encoding of [5u32, 10u32, 999u32]
-    // Arrays are encoded without a length prefix in XDR
     #[rustfmt::skip]
     let data: &[u8] = &[
         0x00, 0x00, 0x00, 0x05,  // id = 5
@@ -73,19 +104,13 @@ fn test_array_no_leak_on_error() {
     // Critical: All initialized elements should have been dropped
     // If the fix is working, ACTIVE_COUNT should be 0
     // If there's a leak, ACTIVE_COUNT will be 2 (first two elements)
-    assert_eq!(
-        ACTIVE_COUNT.load(Ordering::SeqCst),
-        0,
-        "Memory leak detected! {} LeakDetector instances were not dropped",
-        ACTIVE_COUNT.load(Ordering::SeqCst)
-    );
+    assert_none_active();
 }
 
 #[test]
 #[cfg(feature = "alloc")]
 fn test_vec_no_leak_on_error() {
-    // Reset counter
-    ACTIVE_COUNT.store(0, Ordering::SeqCst);
+    reset_active_counter();
 
     // Create test data: TXS encoding of Vec with length prefix
     #[rustfmt::skip]
@@ -103,18 +128,12 @@ fn test_vec_no_leak_on_error() {
     assert!(result.is_err());
 
     // Critical: All initialized elements should have been dropped
-    assert_eq!(
-        ACTIVE_COUNT.load(Ordering::SeqCst),
-        0,
-        "Memory leak detected! {} LeakDetector instances were not dropped",
-        ACTIVE_COUNT.load(Ordering::SeqCst)
-    );
+    assert_none_active();
 }
 
 #[test]
 fn test_array_all_elements_succeed() {
-    // Reset counter
-    ACTIVE_COUNT.store(0, Ordering::SeqCst);
+    reset_active_counter();
 
     // Create test data with valid ids
     #[rustfmt::skip]
@@ -129,20 +148,19 @@ fn test_array_all_elements_succeed() {
         assert!(result.is_ok());
 
         // Should have 3 active instances
-        assert_eq!(ACTIVE_COUNT.load(Ordering::SeqCst), 3);
+        assert_n_active(3);
 
         // result goes out of scope here, dropping all LeakDetectors
     }
 
     // All should be dropped now
-    assert_eq!(ACTIVE_COUNT.load(Ordering::SeqCst), 0);
+    assert_none_active();
 }
 
 #[test]
 #[cfg(feature = "alloc")]
 fn test_vec_all_elements_succeed() {
-    // Reset counter
-    ACTIVE_COUNT.store(0, Ordering::SeqCst);
+    reset_active_counter();
 
     // Create test data with valid ids
     #[rustfmt::skip]
@@ -158,11 +176,11 @@ fn test_vec_all_elements_succeed() {
         assert!(result.is_ok());
 
         // Should have 3 active instances
-        assert_eq!(ACTIVE_COUNT.load(Ordering::SeqCst), 3);
+        assert_n_active(3);
 
         // result goes out of scope here, dropping all LeakDetectors
     }
 
     // All should be dropped now
-    assert_eq!(ACTIVE_COUNT.load(Ordering::SeqCst), 0);
+    assert_none_active();
 }
