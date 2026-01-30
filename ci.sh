@@ -5,7 +5,7 @@ set -e
 set -x
 
 # check the root library without alloc
-cargo test -F int128,int128_xdr
+cargo test -F int128
 
 # check feature "permissive"
 cargo test -F permissive,int128 --test ints
@@ -38,7 +38,7 @@ RUSTDOCFLAGS="--cfg docsrs" \
     cargo +nightly doc --workspace --all-features --no-deps
 
 # Test Documentation Examples
-cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"
+cargo test --doc -p xdr-repr --features "derive,ns,int128"
 cargo test --doc --features "alloc,derive,repr,ns,int128"
 
 set +x

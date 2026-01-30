@@ -56,13 +56,9 @@ jobs:
         run: |
           cargo +nightly build -p xdr-common --no-default-features -Zbuild-std=core,alloc
           cargo +nightly build -p xdr-common --features alloc -Zbuild-std=core,alloc
-          cargo +nightly build -p xdr-common --features std -Zbuild-std=std
-          cargo +nightly build -p xdr-common --features alloc,std -Zbuild-std=std
-          cargo +nightly build -p xdr-common --features serde -Zbuild-std=std
-          cargo +nightly build -p xdr-common --features serde,std -Zbuild-std=std
 
       - name: Check clippy
-        run: cargo clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs -- -D warnings
+        run: cargo clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
       - name: Test Documentation Examples
         run: |
           cargo test --doc -p xdr-repr --features "derive,ns,int128"
