@@ -28,7 +28,7 @@ jobs:
       - name: Build workspace (no features)
         run: cargo build --workspace
       - name: Test (root lib without alloc)
-        run: cargo test -F int128,int128_xdr
+        run: cargo test -F int128
       - name: Test (feature permissive)
         run: cargo test -F permissive,int128 --test ints
       - name: Test (feature int128)
@@ -65,5 +65,5 @@ jobs:
         run: cargo clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs -- -D warnings
       - name: Test Documentation Examples
         run: |
-          cargo test --doc -p xdr-repr --features "derive,ns,int128_xdr"
+          cargo test --doc -p xdr-repr --features "derive,ns,int128"
           cargo test --doc --features "alloc,derive,repr,ns,int128"

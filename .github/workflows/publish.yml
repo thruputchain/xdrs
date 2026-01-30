@@ -1,15 +1,15 @@
-name: Release test packages
+name: Release package
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 jobs:
- publish:
+  publish:
+    permissions:
+      contents: write
     runs-on: hog1
 
     steps:
@@ -17,6 +17,7 @@ jobs:
         run: |
             echo "Cleaning up .gitconfig"
             rm -f /home/hogci/.gitconfig
+
       - name: Setup SSH Agent
         uses: webfactory/ssh-agent@v0.9.1
         with:
@@ -25,6 +26,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Configure git to use SSH
         run: |
@@ -40,9 +43,19 @@ jobs:
       - name: dry run
         uses: ./actions/cargo-publish-dry-run
 
+      - name: tag commit with version
+        id: publish-tag
+        uses: ./actions/cargo-version-tag
+
+      - name: push tag
+        run: |
+          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git
+          git push origin ${{ steps.publish-tag.outputs.tag }}
+          git remote set-url origin git@github.com:${{ github.repository }}.git
+
       - name: publish
         uses: ./actions/cargo-publish
         with:
-          git-tag: ${{ github.ref_name }}
+          git-tag: ${{ steps.publish-tag.outputs.tag }}
           registry-name: groundhog
           registry-token: ${{ secrets.CARGO_PUBLISH_TOKEN }}

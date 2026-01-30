@@ -96,14 +96,14 @@ impl_has_type_spec! {
 }
 
 // 128-bit integer types using the alternate XDR encoding.
-// When the `int128_xdr` feature is enabled, `i128` and `u128` are represented
+// When the `int128` feature is enabled, `i128` and `u128` are represented
 // as named types referring to double-u64 structures defined outside this package.
-#[cfg(feature = "int128_xdr")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128_xdr")))]
+#[cfg(feature = "int128")]
+#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 // These refer to double-u64 structures defined outside this package
 impl_has_type_spec! {
-    i128 => TypeSpec::Ident(Ident("int128_xdr".to_string())),
-    u128 => TypeSpec::Ident(Ident("uint128_xdr".to_string())),
+    i128 => <(i64, u64)>::type_spec(),
+    u128 => <(u64, u64)>::type_spec()
 }
 
 /// Types that can create an XDR declaration with a given name.
@@ -137,12 +137,12 @@ impl_declare_named! {
     bool => TypeSpec::Bool,
 }
 
-#[cfg(feature = "int128_xdr")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128_xdr")))]
+#[cfg(feature = "int128")]
+#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 // These refer to double-u64 structures defined outside this package
 impl_declare_named! {
-    i128 => TypeSpec::Ident(Ident("int128_xdr".to_string())),
-    u128 => TypeSpec::Ident(Ident("uint128_xdr".to_string())),
+    i128 => <(i64, u64)>::type_spec(),
+    u128 => <(u64, u64)>::type_spec(),
 }
 
 impl<T: HasTypeSpec> HasTypeSpec for Option<T> {
