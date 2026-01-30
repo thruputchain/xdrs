@@ -12,8 +12,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 mod active_counter {
-    use xdrs::{ReadXDR, serialize::reader};
     use std::cell::Cell;
+    use xdrs::{ReadXDR, serialize::reader};
 
     std::thread_local! {
         /// Tracks the number of active LeakDetector instances
@@ -52,9 +52,7 @@ mod active_counter {
     }
 
     impl<'r> ReadXDR<'r> for LeakDetector {
-        fn read_xdr<R: reader::Reader<'r>>(
-            r: &mut R,
-        ) -> reader::Result<Self> {
+        fn read_xdr<R: reader::Reader<'r>>(r: &mut R) -> reader::Result<Self> {
             let id = r.read_u32()? as usize;
 
             // Fail on id == 999 to simulate an error during array/vec initialization
@@ -73,8 +71,12 @@ mod active_counter {
     pub fn assert_none_active() {
         let active = ACTIVE_COUNT.get();
 
-        assert_eq!(active, 0, "Memory leak detected! {} LeakDetector instances \
-            were not dropped", active);
+        assert_eq!(
+            active, 0,
+            "Memory leak detected! {} LeakDetector instances \
+            were not dropped",
+            active
+        );
     }
 
     pub fn assert_n_active(n: usize) {
