@@ -256,7 +256,7 @@
 //!
 //! // Inspect a void declaration
 //! let void_decl = Declaration::Void;
-//! assert_eq!(void_decl.get_type_json(), "{ \"type\": \"void\" }");
+//! assert_eq!(void_decl.get_type_json(), r#"{ "type": "void" }"#);
 //!
 //! // Inspect a fixed-length array
 //! let array_decl = Declaration::FixedArray {
@@ -266,7 +266,7 @@
 //! };
 //! assert_eq!(
 //!     array_decl.get_type_json(),
-//!     "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"unsigned\" }, \"len\": 5 }"
+//!     r#"{ "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 5 }"#
 //! );
 //!
 //! // Inspect an optional type
@@ -274,7 +274,10 @@
 //!     name: ident("value"),
 //!     opt_ty: TypeSpec::Bool,
 //! };
-//! assert_eq!(optional_decl.get_type_json(), "{ \"type\": \"optional\", \"element_type\": { \"type\": \"bool\" } }");
+//! assert_eq!(
+//!     optional_decl.get_type_json(),
+//!     r#"{ "type": "optional", "element_type": { "type": "bool" } }"#
+//! );
 //! ```
 //!
 //! ### Limitations
