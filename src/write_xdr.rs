@@ -8,6 +8,7 @@
 use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 use crate::valid_u32::*;
+use core::convert::Infallible;
 
 /// Types that can be written as XDR data.
 ///
@@ -155,6 +156,12 @@ impl WriteXDR for alloc::string::String {
 impl WriteXDR for () {
     fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> Result<()> {
         Ok(())
+    }
+}
+
+impl WriteXDR for Infallible {
+    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> Result<()> {
+        unreachable!()
     }
 }
 

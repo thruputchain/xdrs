@@ -9,6 +9,7 @@
 use crate::mu;
 use crate::serialize::reader::*;
 use crate::valid_u32::*;
+use core::convert::Infallible;
 use core::mem::MaybeUninit as MU;
 
 /// Reads an XDR value of type `T` from the reader `r`.
@@ -154,6 +155,13 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     }
 }
 
+impl<'r> ReadXDR<'r> for &'r str {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self> {
+        let bytes = r.read_opaque_variable(u32::MAX)?;
+        str::from_utf8(bytes).map_err(|_| Error::BadUTF8)
+    }
+}
+
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<'r> ReadXDR<'r> for alloc::string::String {
@@ -168,6 +176,12 @@ impl<'r> ReadXDR<'r> for alloc::string::String {
 impl<'r> ReadXDR<'r> for () {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
         Ok(())
+    }
+}
+
+impl<'r> ReadXDR<'r> for Infallible {
+    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self> {
+        unreachable!()
     }
 }
 

@@ -36,8 +36,8 @@ fn byte_array() {
     TXS::check_codec(&buf, expected);
 }
 
-#[test]
 #[cfg(feature = "alloc")]
+#[test]
 fn byte_vec() {
     let vec: Vec<u8> = vec![0, 1, 2];
 
@@ -46,6 +46,26 @@ fn byte_vec() {
 
     let expected = &hex!("0000000300010200");
     TXS::check_codec(&vec, expected);
+}
+
+#[test]
+fn string_slice() {
+    let s = "frobozz";
+    let buf = s.as_bytes();
+
+    CXS::check_codec(&buf, &hex!("0766726f626f7a7a"));
+    TXS::check_codec(&buf, &hex!("0000000766726f626f7a7a00"));
+}
+
+#[cfg(feature = "heapless")]
+#[test]
+fn heapless_string() {
+    let s = heapless::String::<100>::try_from("frobozz").unwrap();
+
+    let buf = s.as_bytes();
+
+    CXS::check_codec(&buf, &hex!("0766726f626f7a7a"));
+    TXS::check_codec(&buf, &hex!("0000000766726f626f7a7a00"));
 }
 
 #[test]

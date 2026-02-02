@@ -55,6 +55,8 @@
 //!   - `xdr_common::Box<T>` implementations
 //!   - `xdr_common::BytesM<MAX>` and `xdr_common::VecM<T, MAX>` implementations
 //!
+//! - **`heapless`**: Enables support for types from the `heapless` package.
+//!
 //! - **`ns`**: Enables namespace support in `xdr-repr` for C++-like scoping of
 //!   XDR definitions.
 //!
@@ -111,3 +113,7 @@ pub use xdr_derive::*;
 mod int128;
 
 pub use xdr_common::*;
+
+#[cfg(feature = "heapless")]
+#[cfg_attr(docsrs, doc(cfg(feature = "heapless")))]
+mod heapless;

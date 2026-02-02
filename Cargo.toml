@@ -29,6 +29,7 @@ xdr-common = { path = "xdr-common", version = "=0.3.0", registry = "groundhog" }
 
 thiserror = { version = "2.0.12", default-features = false }
 pretty_assertions = "1.4.1"
+heapless = "0.9.2"
 
 [workspace.lints.rust]
 unsafe_code = "allow"
@@ -54,6 +55,7 @@ xdr-common = { workspace = true }
 # Optional dependencies
 xdr-derive = { workspace = true, optional = true }
 xdr-repr = { workspace = true, optional = true }
+heapless = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = "0.6.0"
@@ -69,6 +71,7 @@ serde = ["xdr-common/serde"] # serde support for xdr-common types
 # Enable optional dependencies
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
 repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
+heapless = ["dep:heapless"] # serialization for types from the `heapless` package
 
 # Enable optional features of related dependencies
 ns = ["xdr-repr?/ns"]
