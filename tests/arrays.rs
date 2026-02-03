@@ -62,10 +62,17 @@ fn string_slice() {
 fn heapless_string() {
     let s = heapless::String::<100>::try_from("frobozz").unwrap();
 
-    let buf = s.as_bytes();
+    CXS::check_codec(&s, &hex!("0766726f626f7a7a"));
+    TXS::check_codec(&s, &hex!("0000000766726f626f7a7a00"));
+}
 
-    CXS::check_codec(&buf, &hex!("0766726f626f7a7a"));
-    TXS::check_codec(&buf, &hex!("0000000766726f626f7a7a00"));
+#[cfg(feature = "heapless")]
+#[test]
+fn heapless_vec() {
+    let v = heapless::Vec::<u8, 100>::try_from("frobozz".as_bytes()).unwrap();
+
+    CXS::check_codec(&v, &hex!("0766726f626f7a7a"));
+    TXS::check_codec(&v, &hex!("0000000766726f626f7a7a00"));
 }
 
 #[test]
