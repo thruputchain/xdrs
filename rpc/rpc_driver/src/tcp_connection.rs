@@ -3,9 +3,6 @@
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
-/// Maximum message size (16MB). Messages exceeding this are rejected.
-const DEFAULT_MAX_MESSAGE_SIZE: u32 = 0x100_0000;
-
 /// Write half of a TCP connection.
 pub struct WriteHalf {
     write_half: tokio::net::tcp::OwnedWriteHalf,
