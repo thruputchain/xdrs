@@ -115,7 +115,7 @@ mod tests {
         });
 
         // Connect and test
-        let (mut read, mut write) = connect(addr, DEFAULT_MAX_MESSAGE_SIZE).await.unwrap();
+        let (mut read, mut write) = connect(addr, 1024).await.unwrap();
 
         write.write_data(b"test message").await.unwrap();
         let mut buf = vec![0u8; (b"test message").len()];
