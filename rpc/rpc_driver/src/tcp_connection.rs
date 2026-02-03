@@ -20,7 +20,7 @@ pub struct ReadHalf {
 
 pub async fn connect<A: ToSocketAddrs>(
     addr: A,
-    max_message_size: Option<u32>,
+    max_message_size: u32,
 ) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let stream = TcpStream::connect(addr).await?;
     let (read_half, write_half) = stream.into_split();
@@ -28,7 +28,7 @@ pub async fn connect<A: ToSocketAddrs>(
         ReadHalf {
             read_half,
             buffer: Vec::with_capacity(8192),
-            max_message_size: max_message_size.unwrap_or(DEFAULT_MAX_MESSAGE_SIZE),
+            max_message_size,
         },
         WriteHalf { write_half },
     ))
@@ -36,7 +36,7 @@ pub async fn connect<A: ToSocketAddrs>(
 
 pub async fn accept(
     listener: &TcpListener,
-    max_message_size: Option<u32>,
+    max_message_size: u32,
 ) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let (stream, _) = listener.accept().await?;
     let (read_half, write_half) = stream.into_split();
@@ -44,7 +44,7 @@ pub async fn accept(
         ReadHalf {
             read_half,
             buffer: Vec::with_capacity(8192),
-            max_message_size: max_message_size.unwrap_or(DEFAULT_MAX_MESSAGE_SIZE),
+            max_message_size,
         },
         WriteHalf { write_half },
     ))
@@ -81,8 +81,12 @@ impl ReadHalf {
             return Ok(None);
         }
 
-        self.buffer.clear();
-        self.buffer.resize(size as usize, 0);
+        // Only resize buffer if current capacity is insufficient
+        // This prevents allocation thrashing from alternating message sizes
+        if self.buffer.len() < size as usize {
+            self.buffer.resize(size as usize, 0);
+        }
+
         let slice = &mut self.buffer[..size as usize];
         self.read_half.read_exact(slice).await?;
         Ok(Some(slice))
@@ -114,7 +118,7 @@ mod tests {
         });
 
         // Connect and test
-        let (mut read, mut write) = connect(addr, None).await.unwrap();
+        let (mut read, mut write) = connect(addr, DEFAULT_MAX_MESSAGE_SIZE).await.unwrap();
 
         write.write_data(b"test message").await.unwrap();
         let mut buf = vec![0u8; (b"test message").len()];

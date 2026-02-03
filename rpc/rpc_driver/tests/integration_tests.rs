@@ -57,10 +57,11 @@ mod tests {
         let server_handle = Arc::new(server_handle);
 
         // Accept incoming connection in background task - we'll use this for the server side
-        let listener_handle = tokio::spawn(async move { accept(&listener, None).await.unwrap() });
+        let listener_handle =
+            tokio::spawn(async move { accept(&listener, 0x100_0000).await.unwrap() });
 
         // Connect from client side
-        let (client_read, client_write) = connect(addr, None).await.unwrap();
+        let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
         let client_write_task = tokio::spawn(async move {
@@ -158,7 +159,7 @@ mod tests {
         server.start().await;
 
         let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
-        let (client_read, client_write) = connect(addr, None).await.unwrap();
+        let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
 
         let (client_handle, client_shutdown_rx) = ClientHandle::new(client_write_tx);
         let client_handle = Arc::new(client_handle);
@@ -348,7 +349,7 @@ mod tests {
         service_map.add_service(Box::new(EchoCallbackService {}));
 
         let config = ServerConfig {
-            max_message_size: Some(1024), // 1KB max
+            max_message_size: 1024, // 1KB max
         };
         let server = RpcServer::new_with_config(service_map, listener, config);
         let server_handle = server.clone();
@@ -361,7 +362,7 @@ mod tests {
 
         // Connect client with matching max message size
         let client_config = ClientConfig {
-            max_message_size: Some(1024),
+            max_message_size: 1024,
         };
         let client_handle = rpc_driver::connect_client_with_config(&addr, client_config)
             .await

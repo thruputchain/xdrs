@@ -36,6 +36,7 @@ impl ClientState {
         if self.poisoned {
             return Err(RpcError::SystemError);
         }
+
         loop {
             self.last_xid = self.last_xid.wrapping_add(1);
             if !self.pending_requests.contains_key(&self.last_xid) {
@@ -101,14 +102,17 @@ impl ClientHandle {
         self.client_state.write().await.poison();
     }
 
-    pub(crate) fn send_msg(
-        &self,
-        msg: &[u8],
-    ) -> Result<(), tokio::sync::mpsc::error::SendError<Vec<u8>>> {
+    pub(crate) fn send_msg(&self, msg: &[u8]) -> Result<(), mpsc::error::SendError<Vec<u8>>> {
         self.channel.send(msg.to_vec())
     }
 
-    fn make_call_msg(&self, xid: u32, progvers: ProgVers, proc: u32, data: &[u8]) -> Vec<u8> {
+    fn make_call_msg(
+        &self,
+        xid: u32,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<Vec<u8>, RpcError> {
         let mut msg_bytes = Vec::new();
 
         let msg = rpc_msg::rpc_msg {
@@ -125,11 +129,28 @@ impl ClientHandle {
             },
         };
         let header = xdrs::txs::encode(&msg).unwrap();
-        let len = (header.len() as u32 + data.len() as u32) | 0x8000_0000;
+
+        // Check for integer overflow when calculating message length
+        // Total length must fit in u32 AND have top bit clear (for ORing with 0x8000_0000)
+        let total_len = header
+            .len()
+            .checked_add(data.len())
+            .and_then(|sum| u32::try_from(sum).ok())
+            .filter(|&len| len <= 0x7FFF_FFFF)
+            .ok_or_else(|| {
+                eprintln!(
+                    "Message too large: header={} + data={} exceeds max (0x7FFF_FFFF)",
+                    header.len(),
+                    data.len()
+                );
+                RpcError::SystemError
+            })?;
+
+        let len = total_len | 0x8000_0000;
         msg_bytes.extend_from_slice(&len.to_be_bytes());
         msg_bytes.extend_from_slice(&header);
         msg_bytes.extend_from_slice(data);
-        msg_bytes
+        Ok(msg_bytes)
     }
 
     /// Send an RPC call and wait for the response.
@@ -147,8 +168,8 @@ impl ClientHandle {
             .write()
             .await
             .add_callback(CallbackHandle { tx })?;
-        self.send_msg(&self.make_call_msg(xid, progvers, proc, data))
-            .map_err(|_| RpcError::SystemError)?;
+        let msg = self.make_call_msg(xid, progvers, proc, data)?;
+        self.send_msg(&msg).map_err(|_| RpcError::SystemError)?;
         rx.await.map_err(|_| RpcError::SystemError)?
     }
 

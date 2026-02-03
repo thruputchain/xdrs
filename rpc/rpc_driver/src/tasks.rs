@@ -72,14 +72,13 @@ pub async fn launch_read_task(
                     .await;
                 match res {
                     Ok(response) => {
-                        prepare_success_response(msg.xid, &response, &mut write_buffer);
+                        prepare_success_response(msg.xid, &response, &mut write_buffer)?;
                         client_cbs
                             .send_msg(&write_buffer)
                             .map_err(ReadTaskError::WriteError)?;
                     }
                     Err(e) => {
                         let out_bytes = e.to_error_record(msg.xid);
-
                         client_cbs
                             .send_msg(&out_bytes)
                             .map_err(ReadTaskError::WriteError)?;
@@ -132,16 +131,38 @@ fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
     }
 }
 
-fn prepare_success_response(xid: u32, results: &[u8], buf: &mut Vec<u8>) {
+fn prepare_success_response(
+    xid: u32,
+    results: &[u8],
+    buf: &mut Vec<u8>,
+) -> Result<(), ReadTaskError> {
     buf.clear();
     let header = get_success_header(xid);
 
     let header_bytes = xdrs::txs::encode(&header).unwrap();
-    let msg_len: u32 = (header_bytes.len() as u32 + results.len() as u32) | 0x8000_0000;
+
+    // Check for integer overflow when calculating message length
+    // Total length must fit in u32 AND have top bit clear (for ORing with 0x8000_0000)
+    let total_len = header_bytes
+        .len()
+        .checked_add(results.len())
+        .and_then(|sum| u32::try_from(sum).ok())
+        .filter(|&len| len <= 0x7FFF_FFFF)
+        .ok_or_else(|| {
+            eprintln!(
+                "Message too large: header={} + results={} exceeds max (0x7FFF_FFFF)",
+                header_bytes.len(),
+                results.len()
+            );
+            ReadTaskError::Shutdown
+        })?;
+
+    let msg_len: u32 = total_len | 0x8000_0000;
 
     buf.extend_from_slice(&msg_len.to_be_bytes());
     buf.extend_from_slice(&header_bytes);
     buf.extend_from_slice(results);
+    Ok(())
 }
 
 pub async fn launch_write_task(
