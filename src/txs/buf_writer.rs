@@ -50,9 +50,9 @@ impl From<BufWriter> for Vec<u8> {
 // Implement the basic byte operations in order
 // to get a Writer implementation for free
 impl Put for BufWriter {
-    fn put_bytes(&mut self, bytes: &[u8]) -> Result<()> {
+    fn put_bytes(&mut self, bytes: &[u8]) -> Result<(), WriteError> {
         if bytes.len() > u32::MAX as usize {
-            return Err(Error::InvalidArrayLength);
+            return Err(WriteError::InvalidArrayLength);
         }
 
         self.0.extend_from_slice(bytes);

@@ -22,7 +22,7 @@ use core::mem::MaybeUninit as MU;
 /// let value: u32 = cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
-pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
+pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> Result<T, ReadError>
 where
     T: ReadXDR<'r>,
 {
@@ -60,7 +60,7 @@ where
 /// let written = cxs::encode_into(&value, &mut buf)?;
 /// # Ok::<(), xdrs::WriteError>(())
 /// ```
-pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
+pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Result<usize, WriteError> {
     let mut writer = IntoBufWriter::new(buf);
 
     value.write_xdr(&mut writer)?;
@@ -93,7 +93,7 @@ mod utils_alloc {
     /// ```
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-    pub fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
+    pub fn encode<T: WriteXDR + ?Sized>(value: &T) -> Result<Vec<u8>, WriteError> {
         let mut writer = BufWriter::new();
 
         value.write_xdr(&mut writer)?;

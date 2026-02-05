@@ -8,11 +8,11 @@ use xdrs::*;
 pub trait Format {
     fn name() -> &'static str;
 
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T>;
-    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize>;
+    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> Result<T, ReadError>;
+    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Result<usize, WriteError>;
 
     #[cfg(feature = "alloc")]
-    fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>>;
+    fn encode<T: WriteXDR + ?Sized>(value: &T) -> Result<Vec<u8>, WriteError>;
 
     // Allocate a buffer of the expected size and encode
     // the value into it
@@ -44,16 +44,16 @@ impl Format for CXS {
         "CXS"
     }
 
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
+    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> Result<T, ReadError> {
         cxs::decode(buf)
     }
 
-    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
+    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Result<usize, WriteError> {
         cxs::encode_into(value, buf)
     }
 
     #[cfg(feature = "alloc")]
-    fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
+    fn encode<T: WriteXDR + ?Sized>(value: &T) -> Result<Vec<u8>, WriteError> {
         cxs::encode(value)
     }
 }
@@ -66,16 +66,16 @@ impl Format for TXS {
         "TXS"
     }
 
-    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> ReadResult<T> {
+    fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> Result<T, ReadError> {
         txs::decode(buf)
     }
 
-    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
+    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Result<usize, WriteError> {
         txs::encode_into(value, buf)
     }
 
     #[cfg(feature = "alloc")]
-    fn encode<T: WriteXDR + ?Sized>(value: &T) -> WriteResult<Vec<u8>> {
+    fn encode<T: WriteXDR + ?Sized>(value: &T) -> Result<Vec<u8>, WriteError> {
         txs::encode(value)
     }
 }

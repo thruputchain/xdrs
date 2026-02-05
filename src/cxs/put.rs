@@ -4,7 +4,6 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use super::limits::*;
-use crate::serialize::writer::Result;
 use crate::serialize::writer::*;
 
 const V_MULTIBYTE: u8 = 63;
@@ -18,8 +17,8 @@ const S_HEADER: u8 = 0 << 6;
 /// to get a `Writer<CXS>` implementation for free
 pub(crate) trait Put {
     // Required:
-    fn put_byte(&mut self, b: u8) -> Result<()>;
-    fn put_bytes(&mut self, bytes: &[u8]) -> Result<()>;
+    fn put_byte(&mut self, b: u8) -> Result<(), WriteError>;
+    fn put_bytes(&mut self, bytes: &[u8]) -> Result<(), WriteError>;
 }
 
 pub struct CXS;
@@ -28,24 +27,24 @@ impl<P> Writer<CXS> for P
 where
     P: Put,
 {
-    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> Result<()> {
+    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> Result<(), WriteError> {
         self.put_bytes(bytes)
     }
 
-    fn write_opaque_variable(&mut self, bytes: &[u8]) -> Result<()> {
+    fn write_opaque_variable(&mut self, bytes: &[u8]) -> Result<(), WriteError> {
         if bytes.len() > u32::MAX as usize {
-            return Err(Error::InvalidArrayLength);
+            return Err(WriteError::InvalidArrayLength);
         }
 
         self.write_u32(bytes.len() as u32)?;
         self.put_bytes(bytes)
     }
 
-    fn write_bool(&mut self, v: bool) -> Result<()> {
+    fn write_bool(&mut self, v: bool) -> Result<(), WriteError> {
         self.write_i32(if v { 1 } else { 0 })
     }
 
-    fn write_i64(&mut self, n: i64) -> Result<()> {
+    fn write_i64(&mut self, n: i64) -> Result<(), WriteError> {
         if n > i32::MAX as i64 || n < i32::MIN as i64 {
             // Use the 8-byte representation
             let s = S_8BYTE;
@@ -60,7 +59,7 @@ where
         }
     }
 
-    fn write_i32(&mut self, n: i32) -> Result<()> {
+    fn write_i32(&mut self, n: i32) -> Result<(), WriteError> {
         if n > i16::MAX as i32 || n < i16::MIN as i32 {
             // use 4-byte repr
             let s = S_4BYTE;
@@ -75,7 +74,7 @@ where
         }
     }
 
-    fn write_i16(&mut self, n: i16) -> Result<()> {
+    fn write_i16(&mut self, n: i16) -> Result<(), WriteError> {
         if n > i8::MAX as i16 || n < i8::MIN as i16 {
             // use 2-byte repr
             let s = S_2BYTE;
@@ -90,7 +89,7 @@ where
         }
     }
 
-    fn write_u64(&mut self, n: u64) -> Result<()> {
+    fn write_u64(&mut self, n: u64) -> Result<(), WriteError> {
         if n > u32::MAX as u64 {
             // Use 8-byte representation
             let s = S_8BYTE;
@@ -105,7 +104,7 @@ where
         }
     }
 
-    fn write_u32(&mut self, n: u32) -> Result<()> {
+    fn write_u32(&mut self, n: u32) -> Result<(), WriteError> {
         if n > u16::MAX as u32 {
             // Use 4-byte representation
             let s = S_4BYTE;
@@ -120,7 +119,7 @@ where
         }
     }
 
-    fn write_u16(&mut self, n: u16) -> Result<()> {
+    fn write_u16(&mut self, n: u16) -> Result<(), WriteError> {
         if n > u8::MAX as u16 {
             // Use 2-byte representation
             let s = S_2BYTE;
@@ -136,7 +135,7 @@ where
     }
 }
 
-fn write_u8<P>(p: &mut P, n: u8) -> Result<()>
+fn write_u8<P>(p: &mut P, n: u8) -> Result<(), WriteError>
 where
     P: Put,
 {
@@ -155,7 +154,7 @@ where
     }
 }
 
-fn write_i8<P>(p: &mut P, n: i8) -> Result<()>
+fn write_i8<P>(p: &mut P, n: i8) -> Result<(), WriteError>
 where
     P: Put,
 {

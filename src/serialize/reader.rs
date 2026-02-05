@@ -26,35 +26,35 @@ use thiserror::Error;
 ///
 pub trait Reader<'r>: Sized {
     /// Reads a signed 64-bit integer.
-    fn read_i64(&mut self) -> Result<i64>;
+    fn read_i64(&mut self) -> Result<i64, ReadError>;
 
     /// Reads a signed 32-bit integer.
-    fn read_i32(&mut self) -> Result<i32>;
+    fn read_i32(&mut self) -> Result<i32, ReadError>;
 
     /// Reads a signed 16-bit integer.
-    fn read_i16(&mut self) -> Result<i16>;
+    fn read_i16(&mut self) -> Result<i16, ReadError>;
 
     /// Reads an unsigned 64-bit integer.
-    fn read_u64(&mut self) -> Result<u64>;
+    fn read_u64(&mut self) -> Result<u64, ReadError>;
 
     /// Reads an unsigned 32-bit integer.
-    fn read_u32(&mut self) -> Result<u32>;
+    fn read_u32(&mut self) -> Result<u32, ReadError>;
 
     /// Reads an unsigned 16-bit integer.
-    fn read_u16(&mut self) -> Result<u16>;
+    fn read_u16(&mut self) -> Result<u16, ReadError>;
 
     /// Reads a byte array of known length, borrowing the contents from the reader.
-    fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]>;
+    fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8], ReadError>;
 
     /// Reads a byte sequence of variable length (not exceeding `max`), borrowing the contents from the reader.
-    fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8]>;
+    fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8], ReadError>;
 
     /// Reads a boolean value.
-    fn read_bool(&mut self) -> Result<bool> {
+    fn read_bool(&mut self) -> Result<bool, ReadError> {
         match self.read_i32()? {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(Error::BadBool),
+            _ => Err(ReadError::BadBool),
         }
     }
 
@@ -67,7 +67,7 @@ pub trait Reader<'r>: Sized {
         &mut self,
         dst: &'a mut [MU<u8>],
         len: u32,
-    ) -> Result<&'a mut [u8]> {
+    ) -> Result<&'a mut [u8], ReadError> {
         debug_assert_eq!(dst.len(), len as usize);
 
         let data = self.read_opaque_fixed(len)?;
@@ -86,13 +86,13 @@ pub trait Reader<'r>: Sized {
         &mut self,
         dst: &'a mut [MU<u8>],
         max: u32,
-    ) -> Result<&'a mut [u8]> {
+    ) -> Result<&'a mut [u8], ReadError> {
         debug_assert!(dst.len() >= max as usize);
 
         let len = self.read_u32()?;
 
         if len > max {
-            return Err(Error::MaxLengthExceeded);
+            return Err(ReadError::MaxLengthExceeded);
         }
 
         self.read_opaque_fixed_into(&mut dst[..len as usize], len)
@@ -103,7 +103,7 @@ pub trait Reader<'r>: Sized {
     /// *Requires feature `alloc`.*
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-    fn read_opaque_fixed_owned(&mut self, len: u32) -> Result<Vec<u8>> {
+    fn read_opaque_fixed_owned(&mut self, len: u32) -> Result<Vec<u8>, ReadError> {
         let bytes = self.read_opaque_fixed(len)?;
         let buf = Vec::from(bytes); // copy from input
         Ok(buf)
@@ -114,19 +114,16 @@ pub trait Reader<'r>: Sized {
     /// *Requires feature `alloc`.*
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-    fn read_opaque_variable_owned(&mut self, max: u32) -> Result<Vec<u8>> {
+    fn read_opaque_variable_owned(&mut self, max: u32) -> Result<Vec<u8>, ReadError> {
         let bytes = self.read_opaque_variable(max)?;
         let buf = Vec::from(bytes); // copy from input
         Ok(buf)
     }
 }
 
-/// Result type for reading operations.
-pub type Result<T, E = Error> = core::result::Result<T, E>;
-
 /// Errors that can occur when reading XDR data.
 #[derive(Copy, Clone, Debug, Error)]
-pub enum Error {
+pub enum ReadError {
     #[error(
         "unexpected end of input (requested: {}, remaining: {})",
         requested,
