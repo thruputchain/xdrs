@@ -37,7 +37,7 @@ impl<'a> IntoBufWriter<'a> {
         self.written
     }
 
-    fn reserve<'s>(&'s mut self, len: usize) -> Result<&'s mut [Mu8], WriteError>
+    fn reserve<'s>(&'s mut self, len: usize) -> WriteResult<&'s mut [Mu8]>
     where
         'a: 's,
     {
@@ -56,13 +56,13 @@ impl<'a> IntoBufWriter<'a> {
 }
 
 impl<'a> Put for IntoBufWriter<'a> {
-    fn put_byte(&mut self, b: u8) -> Result<(), WriteError> {
+    fn put_byte(&mut self, b: u8) -> WriteResult<()> {
         let p = self.reserve(1)?;
         p[0].write(b);
         Ok(())
     }
 
-    fn put_bytes(&mut self, bytes: &[u8]) -> Result<(), WriteError> {
+    fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 

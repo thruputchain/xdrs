@@ -32,7 +32,7 @@ impl<'a> BufReader<'a> {
         self.pos
     }
 
-    fn get_input(&mut self, requested: u32) -> Result<&'a [u8], ReadError> {
+    fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
             // no panic can occur because remaining < requested <= u32::MAX
@@ -50,13 +50,13 @@ impl<'a> BufReader<'a> {
         Ok(buf)
     }
 
-    fn read_byte(&mut self) -> Result<u8, ReadError> {
+    fn read_byte(&mut self) -> ReadResult<u8> {
         let byte = self.get_input(1)?;
 
         Ok(byte[0])
     }
 
-    fn read_signed(&mut self) -> Result<i64, ReadError> {
+    fn read_signed(&mut self) -> ReadResult<i64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
         let v = h & !0xc0;
@@ -123,7 +123,7 @@ impl<'a> BufReader<'a> {
         Ok(n)
     }
 
-    fn read_unsigned(&mut self) -> Result<u64, ReadError> {
+    fn read_unsigned(&mut self) -> ReadResult<u64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
         let v = h & !0xc0;
@@ -175,7 +175,7 @@ impl<'a> BufReader<'a> {
 macro_rules! read_signed {
     { $( [$f:ident, $ty:ty] ),* $(,)? } => { $(
 
-        fn $f(&mut self) -> Result<$ty, ReadError> {
+        fn $f(&mut self) -> ReadResult<$ty> {
             let n = self.read_signed()?;
             let n = n.try_into().map_err(|_| ReadError::IntegerOutOfRange)?;
             Ok(n)
@@ -187,7 +187,7 @@ macro_rules! read_signed {
 macro_rules! read_unsigned {
     { $( [$f:ident, $ty:ty] ),* $(,)? } => { $(
 
-        fn $f(&mut self) -> Result<$ty, ReadError> {
+        fn $f(&mut self) -> ReadResult<$ty> {
             let n = self.read_unsigned()?;
             let n = n.try_into().map_err(|_| ReadError::IntegerOutOfRange)?;
             Ok(n)
@@ -209,11 +209,11 @@ impl<'r> Reader<'r> for BufReader<'r> {
         [read_u16, u16],
     }
 
-    fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8], ReadError> {
+    fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
         self.get_input(len)
     }
 
-    fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8], ReadError> {
+    fn read_opaque_variable(&mut self, max: u32) -> ReadResult<&'r [u8]> {
         let len = self.read_u32()?;
 
         if len > max {

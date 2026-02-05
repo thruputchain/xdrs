@@ -9,7 +9,7 @@ use crate::serialize::writer::*;
 /// to get a `Writer<TXS>` implementation for free
 pub(crate) trait Put {
     // fn put_byte(&mut self, b: u8) -> Result<()>;
-    fn put_bytes(&mut self, bytes: &[u8]) -> Result<(), WriteError>;
+    fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()>;
 }
 
 pub struct TXS;
@@ -20,7 +20,7 @@ macro_rules! write_int {
     [ $($write:ident($nbytes:expr): $ty:ty),* $(,)? ] => {
 
     $(
-        fn $write(&mut self, n: $ty) -> Result<(), WriteError> {
+        fn $write(&mut self, n: $ty) -> WriteResult<()> {
             let bytes: [u8; $nbytes] = n.to_be_bytes();
             self.put_bytes(&bytes)
         }
@@ -33,7 +33,7 @@ impl<P> Writer<TXS> for P
 where
     P: Put,
 {
-    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> Result<(), WriteError> {
+    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
         self.put_bytes(bytes)?;
 
         let rem = bytes.len() % 4;
@@ -45,7 +45,7 @@ where
         Ok(())
     }
 
-    fn write_opaque_variable(&mut self, bytes: &[u8]) -> Result<(), WriteError> {
+    fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
         if bytes.len() > u32::MAX as usize {
             return Err(WriteError::InvalidArrayLength);
         }
@@ -54,7 +54,7 @@ where
         self.write_opaque_fixed(bytes)
     }
 
-    fn write_bool(&mut self, v: bool) -> Result<(), WriteError> {
+    fn write_bool(&mut self, v: bool) -> WriteResult<()> {
         self.write_i32(if v { 1 } else { 0 })
     }
 
