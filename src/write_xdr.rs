@@ -30,7 +30,7 @@ pub trait WriteXDR {
     ///
     /// This method should write the appropriate XDR-encoded representation
     /// of `self` to the writer.
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError>;
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()>;
 }
 
 /// Writes an XDR value to the writer.
@@ -48,7 +48,7 @@ pub trait WriteXDR {
 /// let written = cxs::encode_into(&value, &mut buf)?;
 /// # Ok::<(), xdrs::WriteError>(())
 /// ```
-pub fn write_xdr<T, F, W>(this: &T, w: &mut W) -> Result<(), WriteError>
+pub fn write_xdr<T, F, W>(this: &T, w: &mut W) -> WriteResult<()>
 where
     T: WriteXDR,
     W: Writer<F>,
@@ -60,7 +60,7 @@ macro_rules! write_xdr_int_impls {
     { $( $write_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
         impl WriteXDR for $int_ty {
-            fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+            fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
                 w.$write_method(*self)
             }
         }
@@ -81,19 +81,19 @@ write_xdr_int_impls! {
 }
 
 impl WriteXDR for [u8] {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         w.write_opaque_variable(self)
     }
 }
 
 impl WriteXDR for &[u8] {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         w.write_opaque_variable(self)
     }
 }
 
 impl<const N: usize> WriteXDR for [u8; N] {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         let () = ValidU32::<N>::OK;
 
         w.write_opaque_fixed(self)
@@ -101,7 +101,7 @@ impl<const N: usize> WriteXDR for [u8; N] {
 }
 
 impl<T: WriteXDR, const N: usize> WriteXDR for [T; N] {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         let () = ValidU32::<N>::OK;
 
         for elt in self {
@@ -112,7 +112,7 @@ impl<T: WriteXDR, const N: usize> WriteXDR for [T; N] {
 }
 
 impl<T: WriteXDR> WriteXDR for [T] {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         if self.len() > u32::MAX as usize {
             return Err(WriteError::InvalidArrayLength);
         }
@@ -127,19 +127,19 @@ impl<T: WriteXDR> WriteXDR for [T] {
 }
 
 impl<T: WriteXDR> WriteXDR for &T {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         (*self).write_xdr(w)
     }
 }
 
 impl WriteXDR for str {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         w.write_opaque_variable(self.as_bytes())
     }
 }
 
 impl WriteXDR for &str {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         w.write_opaque_variable((*self).as_bytes())
     }
 }
@@ -147,19 +147,19 @@ impl WriteXDR for &str {
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl WriteXDR for alloc::string::String {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         self.as_str().write_xdr(w)
     }
 }
 
 impl WriteXDR for () {
-    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> WriteResult<()> {
         Ok(())
     }
 }
 
 impl WriteXDR for Infallible {
-    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> WriteResult<()> {
         unreachable!()
     }
 }
@@ -171,7 +171,7 @@ macro_rules! write_tuple {
         where
             $( $t: WriteXDR, )+
         {
-            fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+            fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
                 let ( $($v),+ ) = self;
                 $( write_xdr($v, w)?; )+
                 Ok(())
@@ -200,14 +200,14 @@ write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, 
 
 // impl for single-element tuples
 impl<T: WriteXDR> WriteXDR for (T,) {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         let (t,) = self;
         t.write_xdr(w)
     }
 }
 
 impl<T: WriteXDR> WriteXDR for Option<T> {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         if let Some(val) = self {
             w.write_i32(1)?;
             val.write_xdr(w)
@@ -223,7 +223,7 @@ const _: () = {
     use xdr_common::*;
 
     impl<const MAX: u32> WriteXDR for BytesM<MAX> {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             self.0.write_xdr(w)
         }
     }
@@ -231,19 +231,19 @@ const _: () = {
     // Make VecM<u8> work like BytesM;
     #[cfg(feature = "alloc")]
     impl<const MAX: u32> WriteXDR for VecM<u8, MAX> {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             self.0.write_xdr(w)
         }
     }
     #[cfg(not(feature = "alloc"))]
     impl<const MAX: u32> WriteXDR for VecM<u8, MAX> {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             <Self as AsRef<[u8]>>::as_ref(self).write_xdr(w)
         }
     }
 
     impl<const MAX: u32> WriteXDR for StringM<MAX> {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             self.0.write_xdr(w)
         }
     }
@@ -253,7 +253,7 @@ const _: () = {
     where
         T: WriteXDR,
     {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             <Self as AsRef<[T]>>::as_ref(self).write_xdr(w)
         }
     }
@@ -263,7 +263,7 @@ const _: () = {
     where
         T: WriteXDR + 'static,
     {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             <Self as AsRef<[T]>>::as_ref(self).write_xdr(w)
         }
     }
@@ -271,7 +271,7 @@ const _: () = {
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<T: WriteXDR> WriteXDR for xdr_common::Box<T> {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             self.as_ref().write_xdr(w)
         }
     }
@@ -282,7 +282,7 @@ where
     T: WriteXDR,
     E: WriteXDR,
 {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         match self {
             Ok(x) => {
                 w.write_i32(0)?;
@@ -297,7 +297,7 @@ where
 }
 
 impl<T> WriteXDR for core::marker::PhantomData<T> {
-    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> Result<(), WriteError> {
+    fn write_xdr<F, W: Writer<F>>(&self, _w: &mut W) -> WriteResult<()> {
         Ok(())
     }
 }
@@ -308,7 +308,7 @@ const _: () = {
     use alloc::vec::Vec;
 
     impl WriteXDR for Vec<u8> {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             w.write_opaque_variable(self.as_ref())
         }
     }
@@ -317,7 +317,7 @@ const _: () = {
     where
         T: WriteXDR,
     {
-        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> Result<(), WriteError> {
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             let slice: &[T] = self.as_ref();
             slice.write_xdr(w)
         }
