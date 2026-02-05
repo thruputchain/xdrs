@@ -52,12 +52,12 @@ mod active_counter {
     }
 
     impl<'r> ReadXDR<'r> for LeakDetector {
-        fn read_xdr<R: reader::Reader<'r>>(r: &mut R) -> reader::Result<Self> {
+        fn read_xdr<R: reader::Reader<'r>>(r: &mut R) -> Result<Self, reader::ReadError> {
             let id = r.read_u32()? as usize;
 
             // Fail on id == 999 to simulate an error during array/vec initialization
             if id == 999 {
-                return Err(reader::Error::BadDiscriminator(999));
+                return Err(reader::ReadError::BadDiscriminator(999));
             }
 
             Ok(LeakDetector::new(id))

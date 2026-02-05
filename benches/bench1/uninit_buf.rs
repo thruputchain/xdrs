@@ -1,6 +1,6 @@
 use core::mem::MaybeUninit as MU;
 use xdrs::mu;
-use xdrs::serialize::writer::Result as WriteResult;
+use xdrs::serialize::writer::WriteResult;
 
 pub struct UninitBuf<const N: usize> {
     buf: [MU<u8>; N],

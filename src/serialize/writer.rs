@@ -12,7 +12,7 @@ use thiserror::Error;
 
 /// Errors that can occur when writing XDR data.
 #[derive(Copy, Clone, Debug, Error)]
-pub enum Error {
+pub enum WriteError {
     /// The writer has run out of space.
     #[error("space exhausted")]
     SpaceExhausted,
@@ -22,8 +22,8 @@ pub enum Error {
     InvalidArrayLength,
 }
 
-/// Result type for writing operations.
-pub type Result<T = (), E = Error> = core::result::Result<T, E>;
+/// A result type for writer operations.
+pub type WriteResult<T> = core::result::Result<T, WriteError>;
 
 /// Something that can write XDR values to a serialization format.
 ///
@@ -36,29 +36,29 @@ pub type Result<T = (), E = Error> = core::result::Result<T, E>;
 ///
 pub trait Writer<F> {
     /// Writes a byte array of fixed length.
-    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> Result<()>;
+    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()>;
 
     /// Writes a byte sequence of variable length.
-    fn write_opaque_variable(&mut self, bytes: &[u8]) -> Result<()>;
+    fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()>;
 
     /// Writes a signed 64-bit integer.
-    fn write_i64(&mut self, n: i64) -> Result<()>;
+    fn write_i64(&mut self, n: i64) -> WriteResult<()>;
 
     /// Writes a signed 32-bit integer.
-    fn write_i32(&mut self, n: i32) -> Result<()>;
+    fn write_i32(&mut self, n: i32) -> WriteResult<()>;
 
     /// Writes a signed 16-bit integer.
-    fn write_i16(&mut self, n: i16) -> Result<()>;
+    fn write_i16(&mut self, n: i16) -> WriteResult<()>;
 
     /// Writes an unsigned 64-bit integer.
-    fn write_u64(&mut self, n: u64) -> Result<()>;
+    fn write_u64(&mut self, n: u64) -> WriteResult<()>;
 
     /// Writes an unsigned 32-bit integer.
-    fn write_u32(&mut self, n: u32) -> Result<()>;
+    fn write_u32(&mut self, n: u32) -> WriteResult<()>;
 
     /// Writes an unsigned 16-bit integer.
-    fn write_u16(&mut self, n: u16) -> Result<()>;
+    fn write_u16(&mut self, n: u16) -> WriteResult<()>;
 
     /// Writes a boolean value.
-    fn write_bool(&mut self, b: bool) -> Result<()>;
+    fn write_bool(&mut self, b: bool) -> WriteResult<()>;
 }

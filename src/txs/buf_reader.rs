@@ -17,7 +17,7 @@ pub struct BufReader<'r> {
 
 macro_rules! read_int {
     [ $($read:ident($nbytes:expr): $ty:ty),* $(,)? ] => { $(
-        fn $read(&mut self) -> Result<$ty> {
+        fn $read(&mut self) -> ReadResult<$ty> {
             let bytes: [u8; $nbytes] = self.get_input($nbytes)?.try_into().unwrap();
             let n = <$ty>::from_be_bytes(bytes);
             Ok(n)
@@ -39,12 +39,12 @@ impl<'a> BufReader<'a> {
         self.pos
     }
 
-    fn get_input(&mut self, requested: u32) -> Result<&'a [u8]> {
+    fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
             // no panic because remaining < requested <= u32::MAX
             let remaining = (self.data.len() - self.pos).try_into().unwrap();
-            return Err(Error::SourceEmpty {
+            return Err(ReadError::SourceEmpty {
                 requested,
                 remaining,
             });
@@ -61,7 +61,7 @@ impl<'a> BufReader<'a> {
     ///
     /// This is used internally for padding. The number of bytes to skip
     /// must be at most 3 (for 4-byte alignment padding).
-    pub fn skip_input(&mut self, skip_bytes: u32) -> Result<()> {
+    pub fn skip_input(&mut self, skip_bytes: u32) -> ReadResult<()> {
         debug_assert!(skip_bytes <= 3);
 
         let _ = self.get_input(skip_bytes)?;
@@ -70,7 +70,7 @@ impl<'a> BufReader<'a> {
 }
 
 impl<'r> Reader<'r> for BufReader<'r> {
-    fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
+    fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
         let buf = self.get_input(len)?;
 
         let rem = len % 4;
@@ -82,11 +82,11 @@ impl<'r> Reader<'r> for BufReader<'r> {
         Ok(buf)
     }
 
-    fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8]> {
+    fn read_opaque_variable(&mut self, max: u32) -> ReadResult<&'r [u8]> {
         let len = self.read_u32()?;
 
         if len > max {
-            return Err(Error::MaxLengthExceeded);
+            return Err(ReadError::MaxLengthExceeded);
         }
 
         self.read_opaque_fixed(len)

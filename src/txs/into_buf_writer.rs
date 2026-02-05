@@ -37,13 +37,13 @@ impl<'a> IntoBufWriter<'a> {
         self.written
     }
 
-    fn reserve<'s>(&'s mut self, len: usize) -> Result<&'s mut [Mu8]>
+    fn reserve<'s>(&'s mut self, len: usize) -> WriteResult<&'s mut [Mu8]>
     where
         'a: 's,
     {
         let extent = self.written + len;
         if extent > self.buf.len() {
-            return Err(Error::SpaceExhausted);
+            return Err(WriteError::SpaceExhausted);
         }
 
         let start = self.written;
@@ -56,7 +56,7 @@ impl<'a> IntoBufWriter<'a> {
 }
 
 impl<'a> Put for IntoBufWriter<'a> {
-    fn put_bytes(&mut self, bytes: &[u8]) -> Result<()> {
+    fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 

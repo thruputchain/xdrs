@@ -92,12 +92,12 @@ pub use discrim::*;
 pub use read_xdr::*;
 pub use write_xdr::*;
 
-pub use serialize::reader::Error as ReadError;
-pub use serialize::reader::Result as ReadResult;
+pub use serialize::reader::ReadError;
+pub use serialize::reader::ReadResult;
 pub use serialize::reader::*;
 
-pub use serialize::writer::Error as WriteError;
-pub use serialize::writer::Result as WriteResult;
+pub use serialize::writer::WriteError;
+pub use serialize::writer::WriteResult;
 pub use serialize::writer::*;
 
 #[cfg(feature = "repr")]

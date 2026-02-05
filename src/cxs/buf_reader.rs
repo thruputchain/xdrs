@@ -32,12 +32,12 @@ impl<'a> BufReader<'a> {
         self.pos
     }
 
-    fn get_input(&mut self, requested: u32) -> Result<&'a [u8]> {
+    fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {
             // no panic can occur because remaining < requested <= u32::MAX
             let remaining = (self.data.len() - self.pos).try_into().unwrap();
-            return Err(Error::SourceEmpty {
+            return Err(ReadError::SourceEmpty {
                 requested,
                 remaining,
             });
@@ -50,13 +50,13 @@ impl<'a> BufReader<'a> {
         Ok(buf)
     }
 
-    fn read_byte(&mut self) -> Result<u8> {
+    fn read_byte(&mut self) -> ReadResult<u8> {
         let byte = self.get_input(1)?;
 
         Ok(byte[0])
     }
 
-    fn read_signed(&mut self) -> Result<i64> {
+    fn read_signed(&mut self) -> ReadResult<i64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
         let v = h & !0xc0;
@@ -98,17 +98,17 @@ impl<'a> BufReader<'a> {
 
                 if n > 0 {
                     if n < repr_min {
-                        return Err(Error::NotMinimalEncoding);
+                        return Err(ReadError::NotMinimalEncoding);
                     }
                 } else if n > repr_max {
-                    return Err(Error::NotMinimalEncoding);
+                    return Err(ReadError::NotMinimalEncoding);
                 }
             }
         } else {
             // The number is the 6-bit, one's-complement signed integer in `v`
 
             if s != 0 {
-                return Err(Error::InvalidHeaderByte { h });
+                return Err(ReadError::InvalidHeaderByte { h });
             }
 
             if v & 0b10_0000 != 0 {
@@ -123,7 +123,7 @@ impl<'a> BufReader<'a> {
         Ok(n)
     }
 
-    fn read_unsigned(&mut self) -> Result<u64> {
+    fn read_unsigned(&mut self) -> ReadResult<u64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
         let v = h & !0xc0;
@@ -155,7 +155,7 @@ impl<'a> BufReader<'a> {
                 let repr_min = N_BYTE_REPR_MIN[s as usize];
 
                 if uint < repr_min {
-                    return Err(Error::NotMinimalEncoding);
+                    return Err(ReadError::NotMinimalEncoding);
                 }
             }
 
@@ -164,7 +164,7 @@ impl<'a> BufReader<'a> {
             // The number is the 6-bit unsigned integer in `v`
 
             if s != 0 {
-                return Err(Error::InvalidHeaderByte { h });
+                return Err(ReadError::InvalidHeaderByte { h });
             }
 
             Ok(v as u64)
@@ -175,9 +175,9 @@ impl<'a> BufReader<'a> {
 macro_rules! read_signed {
     { $( [$f:ident, $ty:ty] ),* $(,)? } => { $(
 
-        fn $f(&mut self) -> Result<$ty> {
+        fn $f(&mut self) -> ReadResult<$ty> {
             let n = self.read_signed()?;
-            let n = n.try_into().map_err(|_| Error::IntegerOutOfRange)?;
+            let n = n.try_into().map_err(|_| ReadError::IntegerOutOfRange)?;
             Ok(n)
         }
 
@@ -187,9 +187,9 @@ macro_rules! read_signed {
 macro_rules! read_unsigned {
     { $( [$f:ident, $ty:ty] ),* $(,)? } => { $(
 
-        fn $f(&mut self) -> Result<$ty> {
+        fn $f(&mut self) -> ReadResult<$ty> {
             let n = self.read_unsigned()?;
-            let n = n.try_into().map_err(|_| Error::IntegerOutOfRange)?;
+            let n = n.try_into().map_err(|_| ReadError::IntegerOutOfRange)?;
             Ok(n)
         }
 
@@ -209,15 +209,15 @@ impl<'r> Reader<'r> for BufReader<'r> {
         [read_u16, u16],
     }
 
-    fn read_opaque_fixed(&mut self, len: u32) -> Result<&'r [u8]> {
+    fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
         self.get_input(len)
     }
 
-    fn read_opaque_variable(&mut self, max: u32) -> Result<&'r [u8]> {
+    fn read_opaque_variable(&mut self, max: u32) -> ReadResult<&'r [u8]> {
         let len = self.read_u32()?;
 
         if len > max {
-            return Err(Error::MaxLengthExceeded);
+            return Err(ReadError::MaxLengthExceeded);
         }
 
         self.read_opaque_fixed(len)

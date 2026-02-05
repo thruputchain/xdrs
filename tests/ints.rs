@@ -64,7 +64,7 @@ mod cxs {
     // Tests for non-minimal encoding handling
     mod non_minimal {
         use xdrs::cxs;
-        use xdrs::serialize::reader::Error;
+        use xdrs::serialize::reader::ReadError;
 
         // Helper to decode and check for NotMinimalEncoding error
         #[cfg_attr(feature = "permissive", allow(dead_code))]
@@ -74,7 +74,7 @@ mod cxs {
         ) {
             let result: Result<T, _> = cxs::decode(bytes);
             match result {
-                Err(Error::NotMinimalEncoding) => {} // expected
+                Err(ReadError::NotMinimalEncoding) => {} // expected
                 Err(e) => panic!("{type_name}: expected NotMinimalEncoding error, got: {e:?}"),
                 Ok(v) => panic!("{type_name}: expected NotMinimalEncoding error, got value: {v:?}"),
             }

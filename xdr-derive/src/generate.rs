@@ -19,7 +19,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     Ok(quote! {
         const _: () = {
             mod __xdrs {
-                pub use ::xdrs::serialize::writer::{Writer, Result};
+                pub use ::xdrs::serialize::writer::{Writer, WriteResult};
                 pub use ::xdrs::discrim::XDRDiscriminant;
                 pub use ::xdrs::WriteXDR;
             }
@@ -50,7 +50,7 @@ fn write_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> TokenStream {
 
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::Result {
+            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
                 let as_val: #as_type = self.clone().into();
                 as_val.write_xdr(w)
             }
@@ -69,7 +69,7 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream
 
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::Result {
+            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
                 #(#write_fields)*
                 Ok(())
             }
@@ -109,7 +109,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
 
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
-            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::Result {
+            fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::WriteResult<()> {
                 match self {
                     #write_variants
                 }
@@ -241,7 +241,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
                 pub use core::mem::MaybeUninit as MU;
                 pub use ::xdrs::discrim::XDRDiscriminant;
                 pub use ::xdrs::read_xdr::{ReadXDR, read_xdr};
-                pub use ::xdrs::serialize::reader::{Reader, Error, Result};
+                pub use ::xdrs::serialize::reader::{Reader, ReadError, ReadResult};
             }
 
             #impls
@@ -269,7 +269,7 @@ fn read_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> Result<TokenSt
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
-            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::Result<Self> {
+            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let as_val: #as_type = __xdrs::read_xdr(r)?;
                 Ok(as_val.into())
             }
@@ -288,7 +288,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream 
 
     quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
-            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::Result<Self> {
+            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 Ok(#ty_ident #read_fields)
             }
         }
@@ -344,14 +344,14 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
         .map(|(i, v)| read_variant(i, v, input));
 
     let catch_bad_index = if default_variant.is_none() {
-        quote! { _ => Err(__xdrs::Error::BadDiscriminator(d)) }
+        quote! { _ => Err(__xdrs::ReadError::BadDiscriminator(d)) }
     } else {
         quote! {}
     };
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
-            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::Result<Self> {
+            fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let d = r.read_i32()?;
 
                 match d {
