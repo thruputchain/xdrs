@@ -60,10 +60,7 @@ where
 /// let written = cxs::encode_into(&value, &mut buf)?;
 /// # Ok::<(), xdrs::WriteError>(())
 /// ```
-pub fn encode_into<T: WriteXDR + ?Sized>(
-    value: &T,
-    buf: &mut [MU<u8>],
-) -> WriteResult<usize> {
+pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> WriteResult<usize> {
     let mut writer = IntoBufWriter::new(buf);
 
     value.write_xdr(&mut writer)?;
