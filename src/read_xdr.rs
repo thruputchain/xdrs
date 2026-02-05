@@ -25,7 +25,7 @@ use core::mem::MaybeUninit as MU;
 /// let _value: u32 = cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
-pub fn read_xdr<'r, R, T>(r: &mut R) -> Result<T, ReadError>
+pub fn read_xdr<'r, R, T>(r: &mut R) -> ReadResult<T>
 where
     R: Reader<'r>,
     T: ReadXDR<'r>,
@@ -53,7 +53,7 @@ pub trait ReadXDR<'r>: Sized {
     ///
     /// This method should read the appropriate amount of data from the reader
     /// and construct a value of type `Self`.
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError>;
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self>;
 }
 
 /// Types that can be constructed by reading XDR data
@@ -70,7 +70,7 @@ macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
         impl<'r> ReadXDR<'r> for $int_ty {
-            fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<$int_ty, ReadError> {
+            fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<$int_ty> {
                 r.$read_method()
             }
         }
@@ -94,7 +94,7 @@ impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
 where
     T: ReadXDR<'r>,
 {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
@@ -384,7 +384,7 @@ const _: () = {
 #[cfg(not(feature = "alloc"))]
 const _: () = {
     use crate::ReadXDR;
-    use crate::serialize::reader::{ReadError, Reader};
+    use crate::serialize::reader::Reader;
     use xdr_common::*;
 
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
