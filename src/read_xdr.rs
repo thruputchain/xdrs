@@ -123,13 +123,13 @@ where
 }
 
 impl<'r> ReadXDR<'r> for &'r [u8] {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         r.read_opaque_variable(u32::MAX)
     }
 }
 
 impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
         let len = N as u32;
 
@@ -141,7 +141,7 @@ impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
 }
 
 impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
 
         let mut arr: [MU<u8>; N] = [MU::uninit(); N];
@@ -156,7 +156,7 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
 }
 
 impl<'r> ReadXDR<'r> for &'r str {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
         str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)
     }
@@ -165,7 +165,7 @@ impl<'r> ReadXDR<'r> for &'r str {
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<'r> ReadXDR<'r> for alloc::string::String {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
         let v = alloc::vec::Vec::from(bytes);
         let s = alloc::string::String::from_utf8(v).map_err(|_| ReadError::BadUTF8)?;
@@ -174,13 +174,13 @@ impl<'r> ReadXDR<'r> for alloc::string::String {
 }
 
 impl<'r> ReadXDR<'r> for () {
-    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         Ok(())
     }
 }
 
 impl<'r> ReadXDR<'r> for Infallible {
-    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         unreachable!()
     }
 }
@@ -192,7 +192,7 @@ macro_rules! read_tuple {
         where
             $( $t: ReadXDR<'r>, )+
         {
-            fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+            fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
                 Ok(($(
                         { let v: $t = read_xdr(r)?; v }
                         ),+))
@@ -227,7 +227,7 @@ impl<'r, T> ReadXDR<'r> for (T,)
 where
     T: ReadXDR<'r>,
 {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         Ok((read_xdr(r)?,))
     }
 }
@@ -236,7 +236,7 @@ impl<'r, T> ReadXDR<'r> for Option<T>
 where
     T: ReadXDR<'r>,
 {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let is_present = r.read_bool()?;
         if is_present {
             Ok(Some(read_xdr(r)?))
@@ -252,7 +252,7 @@ impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
 {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         Ok(Self::new(read_xdr(r)?))
     }
 }
@@ -262,7 +262,7 @@ where
     T: ReadXDR<'r>,
     E: ReadXDR<'r>,
 {
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let d = r.read_i32()?;
 
         match d {
@@ -274,7 +274,7 @@ where
 }
 
 impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
-    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
+    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         Ok(core::marker::PhantomData)
     }
 }
@@ -285,7 +285,7 @@ const _: () = {
     use alloc::vec::Vec;
 
     impl<'r> ReadXDR<'r> for Vec<u8> {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes: &[u8] = r.read_opaque_variable(u32::MAX)?;
             let vec = Vec::from(bytes); // copy the slice
             Ok(vec)
@@ -296,7 +296,7 @@ const _: () = {
     where
         T: ReadXDR<'r>,
     {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
 
             let mut vec: Vec<T> = Vec::with_capacity(len);
@@ -337,7 +337,7 @@ const _: () = {
     use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
 
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let vec: Vec<u8> = read_xdr(r)?;
             if vec.len() > MAX as usize {
                 return Err(ReadError::MaxLengthExceeded);
@@ -347,7 +347,7 @@ const _: () = {
     }
 
     impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let vec: Vec<u8> = read_xdr(r)?;
             if vec.len() > MAX as usize {
                 return Err(ReadError::MaxLengthExceeded);
@@ -360,7 +360,7 @@ const _: () = {
     where
         T: ReadXDR<'r>,
     {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let vec: Vec<T> = read_xdr(r)?;
             if vec.len() > MAX as usize {
                 return Err(ReadError::MaxLengthExceeded);
@@ -371,7 +371,7 @@ const _: () = {
 
     // make VecM<u8> work like BytesM;
     impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
-        fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let vec: Vec<u8> = read_xdr(r)?;
             if vec.len() > MAX as usize {
                 return Err(ReadError::MaxLengthExceeded);
@@ -388,13 +388,13 @@ const _: () = {
     use xdr_common::*;
 
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
-        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }
     }
 
     impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
-        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }
     }
@@ -403,14 +403,14 @@ const _: () = {
     where
         T: ReadXDR<'r> + 'static,
     {
-        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }
     }
 
     // make VecM<u8> work like BytesM;
     impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
-        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
+        fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }
     }

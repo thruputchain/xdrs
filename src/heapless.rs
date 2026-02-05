@@ -1,6 +1,6 @@
 use crate::read_xdr::ReadXDR;
-use crate::serialize::reader::{Error, Reader, Result as ReadResult};
-use crate::serialize::writer::{Result as WriteResult, Writer};
+use crate::serialize::reader::{ReadError, Reader, ReadResult};
+use crate::serialize::writer::{WriteResult, Writer};
 use crate::valid_u32::*;
 use crate::write_xdr::WriteXDR;
 
@@ -33,7 +33,7 @@ impl<'r, const N: usize> ReadXDR<'r> for String<N> {
         let () = ValidU32::<N>::OK;
 
         let bytes = r.read_opaque_variable(N as u32)?;
-        let slice = str::from_utf8(bytes).map_err(|_| Error::BadUTF8)?;
+        let slice = str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)?;
 
         let mut s = String::new();
         s.push_str(slice).unwrap();
