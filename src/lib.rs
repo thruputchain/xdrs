@@ -93,9 +93,11 @@ pub use read_xdr::*;
 pub use write_xdr::*;
 
 pub use serialize::reader::ReadError;
+pub use serialize::reader::ReadResult;
 pub use serialize::reader::*;
 
 pub use serialize::writer::WriteError;
+pub use serialize::writer::WriteResult;
 pub use serialize::writer::*;
 
 #[cfg(feature = "repr")]
