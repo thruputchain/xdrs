@@ -1,5 +1,5 @@
 use crate::read_xdr::ReadXDR;
-use crate::serialize::reader::{ReadError, Reader, ReadResult};
+use crate::serialize::reader::{ReadError, ReadResult, Reader};
 use crate::serialize::writer::{WriteResult, Writer};
 use crate::valid_u32::*;
 use crate::write_xdr::WriteXDR;
