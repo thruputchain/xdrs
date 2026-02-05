@@ -9,7 +9,10 @@ pub trait Format {
     fn name() -> &'static str;
 
     fn decode<'r, 'a: 'r, T: ReadXDR<'r>>(buf: &'a [u8]) -> Result<T, ReadError>;
-    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Result<usize, WriteError>;
+    fn encode_into<T: WriteXDR + ?Sized>(
+        value: &T,
+        buf: &mut [MU<u8>],
+    ) -> Result<usize, WriteError>;
 
     #[cfg(feature = "alloc")]
     fn encode<T: WriteXDR + ?Sized>(value: &T) -> Result<Vec<u8>, WriteError>;
@@ -48,7 +51,10 @@ impl Format for CXS {
         cxs::decode(buf)
     }
 
-    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Result<usize, WriteError> {
+    fn encode_into<T: WriteXDR + ?Sized>(
+        value: &T,
+        buf: &mut [MU<u8>],
+    ) -> Result<usize, WriteError> {
         cxs::encode_into(value, buf)
     }
 
@@ -70,7 +76,10 @@ impl Format for TXS {
         txs::decode(buf)
     }
 
-    fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Result<usize, WriteError> {
+    fn encode_into<T: WriteXDR + ?Sized>(
+        value: &T,
+        buf: &mut [MU<u8>],
+    ) -> Result<usize, WriteError> {
         txs::encode_into(value, buf)
     }
 
