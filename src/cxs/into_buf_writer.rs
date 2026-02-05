@@ -19,7 +19,7 @@ type Mu8 = MaybeUninit<u8>;
 /// allocation is not available.
 ///
 /// The buffer must be large enough to hold all the data being written, or
-/// [`Error::SpaceExhausted`] will be returned.
+/// [`WriteError::SpaceExhausted`] will be returned.
 ///
 pub struct IntoBufWriter<'a> {
     buf: &'a mut [Mu8],
