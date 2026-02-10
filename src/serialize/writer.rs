@@ -23,7 +23,7 @@ pub enum WriteError {
 }
 
 /// A result type for writer operations.
-pub type WriteResult<T> = core::result::Result<T, WriteError>;
+pub type WriteResult<T = ()> = core::result::Result<T, WriteError>;
 
 /// Something that can write XDR values to a serialization format.
 ///
