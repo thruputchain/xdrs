@@ -5,35 +5,16 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::mpsc;
 
 use crate::{
-    ClientHandle, ServiceMap,
+    ClientHandle, ConnectionConfig,
     tasks::{launch_read_task, launch_write_task},
     tcp_connection::connect,
 };
-
-/// Configuration options for the RPC client.
-pub struct ClientConfig {
-    /// Maximum size of a single RPC message in bytes.
-    /// Defaults to 16MB (0x100_0000).
-    pub max_message_size: u32,
-    /// Optional services to handle incoming RPC calls from the server.
-    /// Enables bidirectional RPC when set.
-    pub services: Option<ServiceMap>,
-}
-
-impl Default for ClientConfig {
-    fn default() -> Self {
-        Self {
-            max_message_size: 0x100_0000,
-            services: None,
-        }
-    }
-}
 
 /// Connect to an RPC server and return a handle for making calls.
 ///
 /// Spawns background tasks for reading and writing on the connection.
 pub async fn connect_client(addr: &SocketAddr) -> Result<Arc<ClientHandle>, std::io::Error> {
-    connect_client_with_config(addr, ClientConfig::default()).await
+    connect_client_with_config(addr, ConnectionConfig::default()).await
 }
 
 /// Connect to an RPC server with custom configuration.
@@ -41,10 +22,10 @@ pub async fn connect_client(addr: &SocketAddr) -> Result<Arc<ClientHandle>, std:
 /// Spawns background tasks for reading and writing on the connection.
 pub async fn connect_client_with_config(
     addr: &SocketAddr,
-    config: ClientConfig,
+    config: ConnectionConfig,
 ) -> Result<Arc<ClientHandle>, std::io::Error> {
     let (client_read, client_write) = connect(addr, config.max_message_size).await?;
-    let service_map = Arc::new(config.services.unwrap_or_default());
+    let service_map = config.services.clone();
     let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
 
     let (client_handle, shutdown_rx) = ClientHandle::new(client_write_tx);

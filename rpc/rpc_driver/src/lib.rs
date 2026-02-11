@@ -24,15 +24,18 @@ pub use client_state::*;
 pub mod server_state;
 pub use server_state::*;
 
+mod config;
+pub use config::ConnectionConfig;
+
 mod server;
-pub use server::{RpcServer, ServerConfig};
+pub use server::RpcServer;
 
 mod client;
-pub use client::{ClientConfig, connect_client, connect_client_with_config};
+pub use client::{connect_client, connect_client_with_config};
 
 pub mod tcp_connection;
 
-// This module is genreated, with the following modifications
+// This module is generated, with the following modifications
 // over the default x23c generated rust:
 // - remove unneeded features (serde, spec)
 // - force enable xdrs feature

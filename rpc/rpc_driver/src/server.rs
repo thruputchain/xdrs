@@ -5,51 +5,26 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{net::TcpListener, sync::mpsc};
 
 use crate::{
-    ClientHandle, ServiceMap,
+    ClientHandle, ConnectionConfig, ServiceMap,
     tasks::{launch_read_task, launch_write_task},
     tcp_connection::accept,
 };
 
-/// Configuration options for the RPC server.
-#[derive(Debug, Clone)]
-pub struct ServerConfig {
-    /// Maximum size of a single RPC message in bytes.
-    /// Defaults to 16MB (0x100_0000).
-    pub max_message_size: u32,
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self {
-            max_message_size: 0x100_0000,
-        }
-    }
-}
-
 /// TCP-based RPC server that dispatches calls to registered services.
 pub struct RpcServer {
-    service_map: Arc<ServiceMap>,
     listener: TcpListener,
-    config: ServerConfig,
+    config: ConnectionConfig,
 }
 
 impl RpcServer {
     /// Create a new server with the given services and TCP listener.
-    pub fn new(service_map: ServiceMap, listener: TcpListener) -> Arc<Self> {
-        Self::new_with_config(service_map, listener, ServerConfig::default())
+    pub fn new(listener: TcpListener, services: ServiceMap) -> Arc<Self> {
+        Self::new_with_config(listener, ConnectionConfig::new(None, services))
     }
 
     /// Create a new server with custom configuration.
-    pub fn new_with_config(
-        service_map: ServiceMap,
-        listener: TcpListener,
-        config: ServerConfig,
-    ) -> Arc<Self> {
-        Arc::new(Self {
-            service_map: Arc::new(service_map),
-            listener,
-            config,
-        })
+    pub fn new_with_config(listener: TcpListener, config: ConnectionConfig) -> Arc<Self> {
+        Arc::new(Self { config, listener })
     }
 
     /// Returns the local address the server is bound to.
@@ -88,7 +63,7 @@ impl RpcServer {
                 client_handle.poison().await;
             });
 
-            let service_map = self.service_map.clone();
+            let service_map = self.config.services.clone();
             // server read task
             tokio::spawn(async move {
                 match launch_read_task(service_map, client_handle_read.clone(), read).await {

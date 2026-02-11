@@ -13,8 +13,8 @@ mod tests {
 
     use async_trait::async_trait;
     use rpc_driver::{
-        ProgVers, RpcError, RpcServer, connect_client, server_state::ServerDispatch,
-        tcp_connection::accept,
+        ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client,
+        server_state::ServerDispatch, tcp_connection::accept,
     };
 
     use super::*;
@@ -159,7 +159,7 @@ mod tests {
         let mut service_map = ServiceMap::new();
         service_map.add_service(Box::new(EchoCallbackService {}));
 
-        let server = RpcServer::new(service_map, listener);
+        let server = RpcServer::new(listener, service_map);
 
         server.start().await;
 
@@ -281,7 +281,7 @@ mod tests {
         let mut service_map = ServiceMap::new();
         service_map.add_service(Box::new(service));
 
-        let server = RpcServer::new(service_map, listener);
+        let server = RpcServer::new(listener, service_map);
         let server_handle = server.clone();
 
         // Start server in background
@@ -349,8 +349,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_custom_max_message_size() {
-        use rpc_driver::{ClientConfig, ServerConfig};
-
         // Set up RpcServer with a custom max message size of 1KB
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -358,10 +356,8 @@ mod tests {
         let mut service_map = ServiceMap::new();
         service_map.add_service(Box::new(EchoCallbackService {}));
 
-        let config = ServerConfig {
-            max_message_size: 1024, // 1KB max
-        };
-        let server = RpcServer::new_with_config(service_map, listener, config);
+        let server =
+            RpcServer::new_with_config(listener, ConnectionConfig::new(Some(1024), service_map));
         let server_handle = server.clone();
 
         // Start server in background
@@ -371,10 +367,7 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         // Connect client with matching max message size
-        let client_config = ClientConfig {
-            max_message_size: 1024,
-            ..Default::default()
-        };
+        let client_config = ConnectionConfig::new(Some(1024), ServiceMap::new());
         let client_handle = rpc_driver::connect_client_with_config(&addr, client_config)
             .await
             .unwrap();
@@ -407,7 +400,7 @@ mod tests {
         let mut service_map = ServiceMap::new();
         service_map.add_service(Box::new(EchoCallbackService {}));
 
-        let server = RpcServer::new(service_map, listener);
+        let server = RpcServer::new(listener, service_map);
         let server_handle = server.clone();
 
         // Start server in background

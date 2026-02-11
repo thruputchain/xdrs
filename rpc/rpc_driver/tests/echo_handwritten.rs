@@ -194,7 +194,7 @@ mod tests {
         }));
 
         // server
-        let server = RpcServer::new(service_map, listener);
+        let server = RpcServer::new(listener, service_map);
         server.start().await;
 
         println!("server started");
@@ -314,7 +314,7 @@ mod tests {
             inner: Box::new(FailingService {}),
         }));
 
-        let server = RpcServer::new(service_map, listener);
+        let server = RpcServer::new(listener, service_map);
         server.start().await;
 
         let client = TestProgram_TestVersion_Client::new(connect_client(&addr).await.unwrap());
@@ -383,7 +383,7 @@ mod tests {
             },
         ))));
 
-        let server = RpcServer::new(server_services, listener);
+        let server = RpcServer::new(listener, server_services);
         server.start().await;
 
         // Client connects with its own ServiceMap containing a TestProgram dispatcher
@@ -392,10 +392,7 @@ mod tests {
             EchoCallbackService {},
         ))));
 
-        let client_config = rpc_driver::ClientConfig {
-            services: Some(client_services),
-            ..Default::default()
-        };
+        let client_config = rpc_driver::ConnectionConfig::new(None, client_services);
         let client_handle = rpc_driver::connect_client_with_config(&addr, client_config)
             .await
             .unwrap();
