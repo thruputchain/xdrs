@@ -68,7 +68,13 @@ pub async fn launch_read_task(
                     vers: cbody.vers,
                 };
                 let res = service_map
-                    .dispatch(cbody.rpcvers, vers, cbody.proc, remaining_bytes)
+                    .dispatch(
+                        cbody.rpcvers,
+                        vers,
+                        cbody.proc,
+                        remaining_bytes,
+                        &client_cbs,
+                    )
                     .await;
                 match res {
                     Ok(response) => {

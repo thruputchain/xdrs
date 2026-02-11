@@ -22,7 +22,12 @@ mod tests {
 
     #[async_trait]
     impl ServerDispatch for EchoCallbackService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        async fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            _client: &Arc<ClientHandle>,
+        ) -> Result<Vec<u8>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
@@ -238,7 +243,12 @@ mod tests {
 
     #[async_trait]
     impl ServerDispatch for BlockingEchoService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        async fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            _client: &Arc<ClientHandle>,
+        ) -> Result<Vec<u8>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
@@ -363,6 +373,7 @@ mod tests {
         // Connect client with matching max message size
         let client_config = ClientConfig {
             max_message_size: 1024,
+            ..Default::default()
         };
         let client_handle = rpc_driver::connect_client_with_config(&addr, client_config)
             .await
