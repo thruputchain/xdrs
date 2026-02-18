@@ -16,7 +16,7 @@ categories = ["rpc"]
 async-trait = "0.1.89"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
-xdrs = { registry = "groundhog", version = "0.4.3", features = ["derive", "alloc"] }
+xdrs = { registry = "groundhog", version = "0.4.4", features = ["derive", "alloc"] }
 
 [[bench]]
 name = "rpc_latency"
