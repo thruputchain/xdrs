@@ -67,6 +67,12 @@ impl AsRef<[u8]> for BufWriter {
     }
 }
 
+impl AsMut<[u8]> for BufWriter {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.0
+    }
+}
+
 impl From<BufWriter> for Vec<u8> {
     fn from(w: BufWriter) -> Self {
         w.0
