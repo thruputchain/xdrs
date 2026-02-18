@@ -67,8 +67,8 @@ impl AsRef<[u8]> for BufWriter {
     }
 }
 
-impl AsMut<[u8]> for BufWriter {
-    fn as_mut(&mut self) -> &mut [u8] {
+impl AsMut<Vec<u8>> for BufWriter {
+    fn as_mut(&mut self) -> &mut Vec<u8> {
         &mut self.0
     }
 }
