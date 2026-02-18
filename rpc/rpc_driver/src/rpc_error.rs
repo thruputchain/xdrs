@@ -159,7 +159,7 @@ impl RpcError {
         let msg = self.to_rpc_msg(xid);
         let header_bytes = xdrs::txs::encode(&msg).unwrap();
         let msg_len: u32 = (header_bytes.len() as u32) | 0x8000_0000;
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(4 + header_bytes.len());
         buf.extend_from_slice(&msg_len.to_be_bytes());
         buf.extend_from_slice(&header_bytes);
         buf

@@ -1,12 +1,14 @@
 //! Client connection state and RPC call handling.
 
 use std::collections::HashMap;
-use tokio::sync::{RwLock, mpsc, oneshot};
+use std::sync::Mutex as StdMutex;
+use tokio::sync::{Mutex, oneshot};
 
 use crate::{
     ProgVers,
     rpc_error::{DEFAULT_OPAQUE_AUTH, RpcError},
     rpc_msg,
+    tcp_connection::WriteHalf,
 };
 
 #[derive(Debug)]
@@ -19,16 +21,14 @@ pub(crate) struct ClientState {
     pub(crate) pending_requests: HashMap<u32, CallbackHandle>,
     last_xid: u32,
     poisoned: bool,
-    shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
 impl ClientState {
-    pub fn new(shutdown_tx: oneshot::Sender<()>) -> Self {
+    pub fn new() -> Self {
         Self {
             pending_requests: HashMap::new(),
             last_xid: 0,
             poisoned: false,
-            shutdown_tx: Some(shutdown_tx),
         }
     }
 
@@ -60,9 +60,6 @@ impl ClientState {
             // if these error out, then receiver must be dropped
             let _ = callback.tx.send(Err(RpcError::SystemError));
         }
-        if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            let _ = shutdown_tx.send(());
-        }
     }
 }
 
@@ -78,32 +75,37 @@ impl Drop for ClientState {
 /// and graceful shutdown via poisoning.
 #[derive(Debug)]
 pub struct ClientHandle {
-    pub(crate) client_state: RwLock<ClientState>,
-    channel: mpsc::UnboundedSender<Vec<u8>>,
+    pub(crate) client_state: StdMutex<ClientState>,
+    write_half: Mutex<Option<WriteHalf>>,
+    pub(crate) log_timestamps: bool,
 }
 
 impl ClientHandle {
-    /// Create a new client handle with the given write channel.
-    ///
-    /// Returns the handle and a shutdown receiver for the write task.
-    pub fn new(channel: mpsc::UnboundedSender<Vec<u8>>) -> (Self, oneshot::Receiver<()>) {
-        let (shutdown_tx, shutdown_rx) = oneshot::channel();
-        (
-            Self {
-                client_state: RwLock::new(ClientState::new(shutdown_tx)),
-                channel,
-            },
-            shutdown_rx,
-        )
+    /// Create a new client handle wrapping the given TCP write half.
+    pub fn new(write_half: WriteHalf, log_timestamps: bool) -> Self {
+        Self {
+            client_state: StdMutex::new(ClientState::new()),
+            write_half: Mutex::new(Some(write_half)),
+            log_timestamps,
+        }
     }
 
-    /// Poison the connection, failing all pending requests and signaling shutdown.
+    /// Poison the connection, failing all pending requests and closing the write half.
     pub async fn poison(&self) {
-        self.client_state.write().await.poison();
+        // Drop the write half to send TCP FIN to the remote end.
+        *self.write_half.lock().await = None;
+        self.client_state.lock().unwrap().poison();
     }
 
-    pub(crate) fn send_msg(&self, msg: &[u8]) -> Result<(), mpsc::error::SendError<Vec<u8>>> {
-        self.channel.send(msg.to_vec())
+    /// Write bytes directly to the socket from the calling task — no channel hop.
+    pub(crate) async fn send_msg(&self, msg: &[u8]) -> Result<(), std::io::Error> {
+        match self.write_half.lock().await.as_mut() {
+            Some(wh) => wh.write_data(msg).await,
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "connection poisoned",
+            )),
+        }
     }
 
     fn make_call_msg(
@@ -113,8 +115,6 @@ impl ClientHandle {
         proc: u32,
         data: &[u8],
     ) -> Result<Vec<u8>, RpcError> {
-        let mut msg_bytes = Vec::new();
-
         let msg = rpc_msg::rpc_msg {
             xid,
             body: rpc_msg::rpc_msg_body::CALL {
@@ -147,6 +147,7 @@ impl ClientHandle {
             })?;
 
         let len = total_len | 0x8000_0000;
+        let mut msg_bytes = Vec::with_capacity(4 + header.len() + data.len());
         msg_bytes.extend_from_slice(&len.to_be_bytes());
         msg_bytes.extend_from_slice(&header);
         msg_bytes.extend_from_slice(data);
@@ -165,29 +166,48 @@ impl ClientHandle {
         let (tx, rx) = oneshot::channel();
         let xid = self
             .client_state
-            .write()
-            .await
+            .lock()
+            .unwrap()
             .add_callback(CallbackHandle { tx })?;
         let msg = self.make_call_msg(xid, progvers, proc, data)?;
-        self.send_msg(&msg).map_err(|_| RpcError::SystemError)?;
+        if self.log_timestamps {
+            log_rpc_timestamp(xid, "client_send");
+        }
+        self.send_msg(&msg)
+            .await
+            .map_err(|_| RpcError::SystemError)?;
         rx.await.map_err(|_| RpcError::SystemError)?
     }
 
     /// Returns the number of pending (in-flight) requests.
-    pub async fn num_pending_requests(&self) -> usize {
-        self.client_state.read().await.pending_requests.len()
+    pub fn num_pending_requests(&self) -> usize {
+        self.client_state.lock().unwrap().pending_requests.len()
     }
+}
+
+/// Log an RPC timestamp event to stderr.
+///
+/// Output format: `[rpc] xid=<xid> event=<event> ts=<secs>.<micros>`
+pub(crate) fn log_rpc_timestamp(xid: u32, event: &str) {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    eprintln!(
+        "[rpc] xid={} event={} ts={}.{:06}",
+        xid,
+        event,
+        ts.as_secs(),
+        ts.subsec_micros()
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::oneshot;
 
     #[tokio::test]
     async fn test_callback_roundtrip() {
-        let (shutdown_tx, _shutdown_rx) = oneshot::channel();
-        let mut state = ClientState::new(shutdown_tx);
+        let mut state = ClientState::new();
 
         let (tx, rx) = oneshot::channel();
 

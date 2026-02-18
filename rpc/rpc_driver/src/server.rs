@@ -2,12 +2,10 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::net::TcpListener;
 
 use crate::{
-    ClientHandle, ConnectionConfig, ServiceMap,
-    tasks::{launch_read_task, launch_write_task},
-    tcp_connection::accept,
+    ClientHandle, ConnectionConfig, ServiceMap, tasks::launch_read_task, tcp_connection::accept,
 };
 
 /// TCP-based RPC server that dispatches calls to registered services.
@@ -49,28 +47,18 @@ impl RpcServer {
                 }
             };
 
-            let (tx, rx) = mpsc::unbounded_channel();
-
-            let (client_handle, shutdown_rx) = ClientHandle::new(tx);
-
-            let client_handle = Arc::new(client_handle);
-            let client_handle_read = client_handle.clone();
-            tokio::spawn(async move {
-                match launch_write_task(rx, write, shutdown_rx).await {
-                    Ok(_) => (),
-                    Err(e) => eprintln!("Error from server write task: {}", e),
-                }
-                client_handle.poison().await;
-            });
-
+            let client_handle = Arc::new(ClientHandle::new(write, self.config.log_timestamps));
             let service_map = self.config.services.clone();
-            // server read task
-            tokio::spawn(async move {
-                match launch_read_task(service_map, client_handle_read.clone(), read).await {
-                    Ok(_) => (),
-                    Err(e) => {
-                        eprintln!("Error from server read task: {}", e);
-                        client_handle_read.poison().await;
+
+            tokio::spawn({
+                let client_handle = client_handle.clone();
+                async move {
+                    match launch_read_task(service_map, client_handle.clone(), read).await {
+                        Ok(_) => (),
+                        Err(e) => {
+                            eprintln!("Error from server read task: {}", e);
+                            client_handle.poison().await;
+                        }
                     }
                 }
             });

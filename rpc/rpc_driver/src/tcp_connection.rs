@@ -4,6 +4,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
 /// Write half of a TCP connection.
+#[derive(Debug)]
 pub struct WriteHalf {
     write_half: tokio::net::tcp::OwnedWriteHalf,
 }
@@ -20,6 +21,9 @@ pub async fn connect<A: ToSocketAddrs>(
     max_message_size: u32,
 ) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let stream = TcpStream::connect(addr).await?;
+    // This doesn't noticeably affect performance on local loopback tests
+    // TODO(geoff): test on real network
+    stream.set_nodelay(true)?;
     let (read_half, write_half) = stream.into_split();
     Ok((
         ReadHalf {
@@ -36,6 +40,9 @@ pub async fn accept(
     max_message_size: u32,
 ) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let (stream, _) = listener.accept().await?;
+    // This doesn't noticeably affect performance on local loopback tests
+    // TODO(geoff): test on real network
+    stream.set_nodelay(true)?;
     let (read_half, write_half) = stream.into_split();
     Ok((
         ReadHalf {

@@ -114,12 +114,11 @@ mod tests {
     use super::*;
     use rpc_driver::ProgramError;
     use rpc_driver::client_state::ClientHandle;
-    use rpc_driver::tasks::{launch_read_task, launch_write_task};
+    use rpc_driver::tasks::launch_read_task;
     use rpc_driver::tcp_connection::connect;
     use rpc_driver::{RpcServer, connect_client, server_state::ServiceMap, tcp_connection::accept};
     use std::sync::Arc;
     use tokio::net::TcpListener;
-    use tokio::sync::mpsc;
 
     struct EchoCallbackService {}
 
@@ -229,14 +228,6 @@ mod tests {
             inner: Box::new(EchoCallbackService {}),
         }));
 
-        // Set up write channel
-        let (client_write_tx, client_write_rx) = mpsc::unbounded_channel();
-        let (client_handle, client_shutdown_rx) = ClientHandle::new(client_write_tx);
-        let client_handle = Arc::new(client_handle);
-        let (server_write_tx, server_write_rx) = mpsc::unbounded_channel();
-        let (server_handle, server_shutdown_rx) = ClientHandle::new(server_write_tx);
-        let server_handle: Arc<ClientHandle> = Arc::new(server_handle);
-
         // Accept incoming connection in background task - we'll use this for the server side
         let listener_handle =
             tokio::spawn(async move { accept(&listener, 0x100_0000).await.unwrap() });
@@ -245,11 +236,9 @@ mod tests {
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
-        let client_write_task = tokio::spawn(async move {
-            launch_write_task(client_write_rx, client_write, client_shutdown_rx)
-                .await
-                .unwrap();
-        });
+        let client_handle = Arc::new(ClientHandle::new(client_write, false));
+        let server_handle: Arc<ClientHandle> = Arc::new(ClientHandle::new(server_write, false));
+
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
             async move {
@@ -257,12 +246,6 @@ mod tests {
                     .await
                     .unwrap();
             }
-        });
-
-        let server_write_task = tokio::spawn(async move {
-            launch_write_task(server_write_rx, server_write, server_shutdown_rx)
-                .await
-                .unwrap();
         });
 
         let server_read_task = tokio::spawn(async move {
@@ -285,21 +268,15 @@ mod tests {
         assert_eq!(res, 3);
 
         // Verify tasks are running by checking they haven't completed yet
-        assert!(!client_write_task.is_finished());
         assert!(!client_read_task.is_finished());
-        assert!(!server_write_task.is_finished());
         assert!(!server_read_task.is_finished());
 
         // Clean shutdown - abort the tasks since they run indefinitely
-        client_write_task.abort();
         client_read_task.abort();
-        server_write_task.abort();
         server_read_task.abort();
 
         // Verify the tasks were aborted (which means they were running)
-        assert!(client_write_task.await.unwrap_err().is_cancelled());
         assert!(client_read_task.await.unwrap_err().is_cancelled());
-        assert!(server_write_task.await.unwrap_err().is_cancelled());
         assert!(server_read_task.await.unwrap_err().is_cancelled());
     }
 

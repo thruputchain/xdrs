@@ -105,12 +105,17 @@ impl ServiceMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::mpsc;
+    use crate::tcp_connection::connect;
+    use tokio::net::TcpListener;
 
-    fn dummy_client() -> Arc<ClientHandle> {
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let (handle, _shutdown_rx) = ClientHandle::new(tx);
-        Arc::new(handle)
+    async fn dummy_client() -> Arc<ClientHandle> {
+        // Spin up a throwaway loopback listener just to get a connected WriteHalf.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accept_task = tokio::spawn(async move { listener.accept().await.unwrap() });
+        let (_read, write) = connect(addr, 0x100_0000).await.unwrap();
+        let _ = accept_task.await.unwrap(); // let the accept complete
+        Arc::new(ClientHandle::new(write, false))
     }
 
     /// Test service that echoes data back or returns the proc number as a u32.
@@ -141,7 +146,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rpc_version_mismatch() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
 
@@ -166,7 +171,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_exact_prog_vers_match() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
 
@@ -185,7 +190,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_program_unavailable() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
 
@@ -202,7 +207,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_service_map() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let map = ServiceMap::new();
 
         // Any request to empty map should return ProgUnavail
@@ -214,7 +219,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_version_mismatch_single_version() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 2 }));
 
@@ -233,7 +238,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_version_mismatch_multiple_versions() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
         map.add_service(Box::new(TestService { prog: 100, vers: 3 }));
@@ -280,7 +285,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_procedure() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
 
@@ -299,7 +304,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_multiple_programs() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
         map.add_service(Box::new(TestService { prog: 200, vers: 1 }));
@@ -344,7 +349,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_default_impl() {
-        let client = dummy_client();
+        let client = dummy_client().await;
         let map = ServiceMap::default();
         let result = map
             .dispatch(2, ProgVers::new(100, 1), 0, b"", &client)
