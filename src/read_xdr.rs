@@ -338,20 +338,16 @@ const _: () = {
 
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-            let vec: Vec<u8> = read_xdr(r)?;
-            if vec.len() > MAX as usize {
-                return Err(ReadError::MaxLengthExceeded);
-            }
+            let bytes = r.read_opaque_variable(MAX)?;
+            let vec = Vec::from(bytes);
             Ok(Self(vec))
         }
     }
 
     impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-            let vec: Vec<u8> = read_xdr(r)?;
-            if vec.len() > MAX as usize {
-                return Err(ReadError::MaxLengthExceeded);
-            }
+            let bytes = r.read_opaque_variable(MAX)?;
+            let vec = Vec::from(bytes);
             Ok(Self(vec))
         }
     }
@@ -361,10 +357,31 @@ const _: () = {
         T: ReadXDR<'r>,
     {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-            let vec: Vec<T> = read_xdr(r)?;
-            if vec.len() > MAX as usize {
+            let len = r.read_u32()? as usize;
+            if len > MAX as usize {
                 return Err(ReadError::MaxLengthExceeded);
             }
+
+            let mut vec: Vec<T> = Vec::with_capacity(len);
+            let slice = vec.spare_capacity_mut();
+
+            for (i, elt) in slice.iter_mut().enumerate() {
+                match read_xdr(r) {
+                    Ok(val) => {
+                        elt.write(val);
+                    }
+                    Err(e) => {
+                        slice.iter_mut().take(i).for_each(|elt| unsafe {
+                            elt.assume_init_drop();
+                        });
+                        return Err(e);
+                    }
+                }
+            }
+
+            // SAFETY: all elts up to `len` have been initialized
+            unsafe { vec.set_len(len) }
+
             Ok(Self(vec))
         }
     }
@@ -372,10 +389,8 @@ const _: () = {
     // make VecM<u8> work like BytesM;
     impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-            let vec: Vec<u8> = read_xdr(r)?;
-            if vec.len() > MAX as usize {
-                return Err(ReadError::MaxLengthExceeded);
-            }
+            let bytes = r.read_opaque_variable(MAX)?;
+            let vec = Vec::from(bytes);
             Ok(Self(vec))
         }
     }

@@ -60,6 +60,7 @@ impl<'a> BufReader<'a> {
         Ok(buf)
     }
 
+    #[inline]
     fn read_byte(&mut self) -> ReadResult<u8> {
         let byte = self.get_input(1)?;
 
@@ -185,6 +186,7 @@ impl<'a> BufReader<'a> {
 macro_rules! read_signed {
     { $( [$f:ident, $ty:ty] ),* $(,)? } => { $(
 
+        #[inline]
         fn $f(&mut self) -> ReadResult<$ty> {
             let n = self.read_signed()?;
             let n = n.try_into().map_err(|_| ReadError::IntegerOutOfRange)?;
@@ -197,6 +199,7 @@ macro_rules! read_signed {
 macro_rules! read_unsigned {
     { $( [$f:ident, $ty:ty] ),* $(,)? } => { $(
 
+        #[inline]
         fn $f(&mut self) -> ReadResult<$ty> {
             let n = self.read_unsigned()?;
             let n = n.try_into().map_err(|_| ReadError::IntegerOutOfRange)?;
