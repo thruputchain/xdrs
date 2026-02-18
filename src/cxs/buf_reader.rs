@@ -32,6 +32,16 @@ impl<'a> BufReader<'a> {
         self.pos
     }
 
+    /// Returns the number of bytes remaining to be read.
+    pub fn remaining(&self) -> usize {
+        self.data.len() - self.pos
+    }
+
+    /// Returns a slice of the remaining unread bytes.
+    pub fn remaining_slice(&self) -> &'a [u8] {
+        &self.data[self.pos..]
+    }
+
     fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
         let extent = self.pos + requested as usize;
         if extent > self.data.len() {

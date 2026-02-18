@@ -21,6 +21,32 @@ impl BufWriter {
     pub fn new() -> Self {
         Self(vec![])
     }
+
+    /// Clear the buffer, to later reuse the memory
+    /// for another encoding
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// Reserve space for the given number of bytes
+    pub fn reserve(&mut self, len: usize) {
+        self.0.reserve(len);
+    }
+
+    /// Returns the length of the buffer in bytes.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns `true` if the buffer contains no bytes.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Creates a new `BufWriter` with the specified capacity.
+    pub fn with_capacity(cap: usize) -> Self {
+        Self(Vec::with_capacity(cap))
+    }
 }
 
 impl Default for BufWriter {
