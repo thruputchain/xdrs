@@ -17,8 +17,11 @@ pub struct BufReader<'r> {
 
 macro_rules! read_int {
     [ $($read:ident($nbytes:expr): $ty:ty),* $(,)? ] => { $(
+        #[inline]
         fn $read(&mut self) -> ReadResult<$ty> {
-            let bytes: [u8; $nbytes] = self.get_input($nbytes)?.try_into().unwrap();
+            let input = self.get_input($nbytes)?;
+            let mut bytes = [0u8; $nbytes];
+            bytes.copy_from_slice(input);
             let n = <$ty>::from_be_bytes(bytes);
             Ok(n)
         }

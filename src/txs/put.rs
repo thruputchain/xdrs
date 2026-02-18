@@ -20,6 +20,7 @@ macro_rules! write_int {
     [ $($write:ident($nbytes:expr): $ty:ty),* $(,)? ] => {
 
     $(
+        #[inline]
         fn $write(&mut self, n: $ty) -> WriteResult<()> {
             let bytes: [u8; $nbytes] = n.to_be_bytes();
             self.put_bytes(&bytes)
