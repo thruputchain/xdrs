@@ -132,7 +132,7 @@ pub enum ReadError {
         requested,
         remaining
     )]
-    SourceEmpty { requested: u32, remaining: u64 },
+    SourceEmpty { requested: u32, remaining: u32 },
 
     #[error("input remaining after decoding: {} bytes", remaining)]
     SourceRemaining { remaining: u64 },

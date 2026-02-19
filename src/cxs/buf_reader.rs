@@ -48,7 +48,9 @@ impl<'a> BufReader<'a> {
             .checked_add(requested as usize)
             .filter(|&e| e <= self.data.len())
         else {
-            let remaining: u64 = (self.data.len() - self.pos).try_into().unwrap();
+            // requested <= u32::MAX, so if pos + requested > data.len()
+            // then data.len() - pos <= u32::MAX
+            let remaining: u32 = (self.data.len() - self.pos).try_into().unwrap();
             return Err(ReadError::SourceEmpty {
                 requested,
                 remaining,
