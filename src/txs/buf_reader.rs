@@ -53,8 +53,11 @@ impl<'a> BufReader<'a> {
     }
 
     fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
-        let Some(extent) = self.pos.checked_add(requested as usize)
-            .filter(|&e| e <= self.data.len()) else {
+        let Some(extent) = self
+            .pos
+            .checked_add(requested as usize)
+            .filter(|&e| e <= self.data.len())
+        else {
             let remaining: u64 = (self.data.len() - self.pos).try_into().unwrap();
             return Err(ReadError::SourceEmpty {
                 requested,
