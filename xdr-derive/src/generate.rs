@@ -238,7 +238,6 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     Ok(quote! {
         const _: () = {
             mod __xdrs {
-                pub use core::mem::MaybeUninit as MU;
                 pub use ::xdrs::discrim::XDRDiscriminant;
                 pub use ::xdrs::read_xdr::{ReadXDR, read_xdr};
                 pub use ::xdrs::serialize::reader::{Reader, ReadError, ReadResult};
@@ -377,32 +376,19 @@ fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput
     };
     let ty_ident = &input.ident;
     let var_ident = &variant.ident;
-    let declare_fields = token_reduce(&variant.fields, |i, field| {
+    let read_fields = token_reduce(&variant.fields, |i, field| {
         if is_default {
             return quote! {};
         }
 
         let bind = tmp_binding(i);
         let ty = &field.ty;
-
-        // TODO: remove this unnecessary MU stuff
-        quote! {
-            let mut #bind: __xdrs::MU<#ty> = __xdrs::MU::uninit();
-        }
-    });
-    let read_fields = token_reduce(&variant.fields, |i, _| {
-        if is_default {
-            return quote! {};
-        }
-
-        let bind = tmp_binding(i);
-        quote! { #bind.write(__xdrs::read_xdr(r)?); }
+        quote! { let #bind: #ty = __xdrs::read_xdr(r)?; }
     });
     let init_fields = init_fields(&variant.fields, is_default);
 
     quote! {
         #var_match => {
-            #declare_fields
             #read_fields
             let value = #ty_ident::#var_ident #init_fields;
 
@@ -419,8 +405,7 @@ fn init_fields(fields: &syn::Fields, is_default: bool) -> TokenStream {
             // The value is the discriminant
             quote! { d }
         } else {
-            // SAFETY: all bindings have been written in #read_fields
-            quote! { unsafe { #bind.assume_init() } }
+            quote! { #bind }
         };
 
         if let Some(ident) = field.ident.as_ref() {

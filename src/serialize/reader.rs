@@ -135,7 +135,7 @@ pub enum ReadError {
     SourceEmpty { requested: u32, remaining: u32 },
 
     #[error("input remaining after decoding: {} bytes", remaining)]
-    SourceRemaining { remaining: u32 },
+    SourceRemaining { remaining: u64 },
 
     #[error("invalid header byte: 0x{h:02x}")]
     InvalidHeaderByte { h: u8 },
