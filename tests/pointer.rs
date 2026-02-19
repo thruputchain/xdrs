@@ -265,3 +265,36 @@ fn vecm_generic_accepts_at_max() {
     let val: VecM<u32, 3> = xdrs::txs::decode(&buf).unwrap();
     assert_eq!(&*val.0, &[1u32, 2, 3]);
 }
+
+#[cfg(feature = "alloc")]
+#[test]
+fn bare_vec_rejects_huge_length_without_oom() {
+    use xdrs::*;
+
+    // Vec<u32> with a huge length prefix claiming 0x7FFF_FFFF elements,
+    // followed by nothing. Before fix: Vec::with_capacity(0x7FFF_FFFF) tries
+    // to allocate ~8GB. After fix: capacity is capped, and the read fails
+    // gracefully with SourceEmpty.
+    let buf = hex!("7FFFFFFF");
+    let err = xdrs::txs::decode::<Vec<u32>>(&buf).unwrap_err();
+    assert!(matches!(err, ReadError::SourceEmpty { .. }));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn vec_does_not_overconsume_from_wire() {
+    use xdrs::*;
+
+    // Encode: (Vec<u32> of [1, 2, 3], then a u32 = 99)
+    // When decoding, the Vec must consume exactly `len` elements and not eat
+    // into subsequent data.
+    //
+    // with_capacity() might or might not overallocate, so I do not have a reliable
+    // test case to trigger the prior bug.
+    let input: (Vec<u32>, u32) = (vec![1, 2, 3], 99);
+    let encoded = xdrs::txs::encode(&input).unwrap();
+    let decoded: (VecM<u32, 4>, u32) = xdrs::txs::decode(&encoded).unwrap();
+    let expected = VecM(vec![1u32, 2, 3]);
+    assert_eq!(decoded.0, expected);
+    assert_eq!(decoded.1, 99);
+}

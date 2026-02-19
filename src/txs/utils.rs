@@ -34,7 +34,7 @@ where
 
     let remaining = buf.len().checked_sub(reader.position()).unwrap();
     if remaining > 0 {
-        let remaining = remaining as u32;
+        let remaining = remaining as u64;
         return Err(ReadError::SourceRemaining { remaining });
     }
 

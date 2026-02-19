@@ -299,27 +299,10 @@ const _: () = {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
 
-            let mut vec: Vec<T> = Vec::with_capacity(len);
-            let slice = vec.spare_capacity_mut();
-
-            // Initialize elements one by one, dropping already-initialized elements on error
-            for (i, elt) in slice.iter_mut().enumerate() {
-                match read_xdr(r) {
-                    Ok(val) => {
-                        elt.write(val);
-                    }
-                    Err(e) => {
-                        // Drop all initialized elements to avoid memory leak
-                        slice.iter_mut().take(i).for_each(|elt| unsafe {
-                            elt.assume_init_drop();
-                        });
-                        return Err(e);
-                    }
-                }
+            let mut vec: Vec<T> = Vec::with_capacity(len.min(4096));
+            for _ in 0..len {
+                vec.push(read_xdr(r)?);
             }
-
-            // SAFETY: all elts up to `len` have been initialized
-            unsafe { vec.set_len(len) }
 
             Ok(vec)
         }
@@ -363,7 +346,7 @@ const _: () = {
             }
 
             let mut vec: Vec<T> = Vec::with_capacity(len);
-            let slice = vec.spare_capacity_mut();
+            let slice = &mut vec.spare_capacity_mut()[..len];
 
             for (i, elt) in slice.iter_mut().enumerate() {
                 match read_xdr(r) {
