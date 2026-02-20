@@ -81,7 +81,13 @@ impl<'a> BufReader<'a> {
     pub fn skip_input(&mut self, skip_bytes: u32) -> ReadResult<()> {
         debug_assert!(skip_bytes <= 3);
 
-        let _ = self.get_input(skip_bytes)?;
+        let bytes = self.get_input(skip_bytes)?;
+
+        #[cfg(not(feature = "permissive"))]
+        if bytes.iter().any(|&b| b != 0) {
+            return Err(ReadError::NonZeroPadding);
+        }
+
         Ok(())
     }
 }
@@ -109,13 +115,37 @@ impl<'r> Reader<'r> for BufReader<'r> {
         self.read_opaque_fixed(len)
     }
 
+    #[inline]
+    fn read_i16(&mut self) -> ReadResult<i16> {
+        // i16 is non-standard for XDR.
+        // We enforce here that the encoding matches the i32 encoding of n,
+        // unless we are in permissive mode.
+        let n = self.read_i32()?;
+        #[cfg(not(feature = "permissive"))]
+        if n < i16::MIN as i32 || n > i16::MAX as i32 {
+            return Err(ReadError::IntegerOutOfRange);
+        }
+        Ok(n as i16)
+    }
+
+    #[inline]
+    fn read_u16(&mut self) -> ReadResult<u16> {
+        // u16 is non-standard for XDR.
+        // We enforce here that the top-level bits are zeros,
+        // unless we are in permissive mode.
+        let n = self.read_u32()?;
+        #[cfg(not(feature = "permissive"))]
+        if n < u16::MIN as u32 || n > u16::MAX as u32 {
+            return Err(ReadError::IntegerOutOfRange);
+        }
+        Ok(n as u16)
+    }
+
     read_int! [
         read_u64(8): u64,
         read_u32(4): u32,
-        read_u16(2): u16,
 
         read_i64(8): i64,
         read_i32(4): i32,
-        read_i16(2): i16,
     ];
 }

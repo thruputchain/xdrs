@@ -55,17 +55,26 @@ where
         self.write_opaque_fixed(bytes)
     }
 
+    #[inline]
     fn write_bool(&mut self, v: bool) -> WriteResult<()> {
         self.write_i32(if v { 1 } else { 0 })
+    }
+
+    #[inline]
+    fn write_i16(&mut self, n: i16) -> WriteResult<()> {
+        self.write_i32(n as i32)
+    }
+
+    #[inline]
+    fn write_u16(&mut self, n: u16) -> WriteResult<()> {
+        self.write_u32(n as u32)
     }
 
     write_int! [
         write_i64(8): i64,
         write_i32(4): i32,
-        write_i16(2): i16,
 
         write_u64(8): u64,
         write_u32(4): u32,
-        write_u16(2): u16,
     ];
 }

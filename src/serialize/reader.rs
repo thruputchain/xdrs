@@ -152,6 +152,9 @@ pub enum ReadError {
     #[error("length exceeds array maximum")]
     MaxLengthExceeded,
 
+    #[error("non-zero XDR padding")]
+    NonZeroPadding,
+
     #[error("bad UTF8")]
     BadUTF8,
 

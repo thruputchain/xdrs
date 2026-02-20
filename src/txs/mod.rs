@@ -15,7 +15,9 @@
 //!
 //! - **Opaque Data**: Fixed-length opaque data is padded to 4-byte boundaries.
 //!   Variable-length opaque data is prefixed with a 32-bit unsigned integer length,
-//!   followed by the data padded to 4-byte boundaries.
+//!   followed by the data padded to 4-byte boundaries. By default, decoders
+//!   require padding bytes to be zero; with feature `permissive`, non-zero
+//!   padding is accepted.
 //!
 //! - **Arrays**: Variable-length arrays are prefixed with a 32-bit unsigned integer
 //!   length, followed by the array elements.
