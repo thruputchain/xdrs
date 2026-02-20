@@ -71,7 +71,7 @@ impl<'a> Put for IntoBufWriter<'a> {
         static PAD: [u8; 3] = [0; 3];
 
         let len = bytes.len() as u32;
-        let rem = if len % 4 == 0 { 0 } else { 4 - len % 4 };
+        let rem = if len.is_multiple_of(4) { 0 } else { 4 - len % 4 };
         let size = 4 + len + rem;
         debug_assert!(size % 4 == 0);
 
@@ -92,7 +92,7 @@ impl<'a> Put for IntoBufWriter<'a> {
         debug_assert!(bytes.len() <= u32::MAX as usize);
 
         let len = bytes.len();
-        let rem = if len % 4 == 0 { 0 } else { 4 - len % 4 };
+        let rem = if len.is_multiple_of(4) { 0 } else { 4 - len % 4 };
         let size = len + rem;
         debug_assert!(size % 4 == 0);
 

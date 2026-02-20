@@ -96,7 +96,7 @@ impl Put for BufWriter {
         debug_assert!(bytes.len() <= u32::MAX as usize);
 
         let len = bytes.len() as u32;
-        let rem = if len % 4 == 0 { 0 } else { 4 - len % 4 };
+        let rem = if len.is_multiple_of(4) { 0 } else { 4 - len % 4 };
         let size = 4 + len + rem;
 
         self.0.reserve(self.0.len() + size as usize);
@@ -114,10 +114,10 @@ impl Put for BufWriter {
         debug_assert!(bytes.len() <= u32::MAX as usize);
 
         let len = bytes.len();
-        let rem = if len % 4 == 0 { 0 } else { 4 - len % 4 };
+        let rem = if len.is_multiple_of(4) { 0 } else { 4 - len % 4 };
         let size = len + rem;
 
-        self.0.reserve(self.0.len() + size as usize);
+        self.0.reserve(self.0.len() + size);
 
         static PAD: [u8; 3] = [0; 3];
 
