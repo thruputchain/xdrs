@@ -27,10 +27,12 @@ impl<P> Writer<CXS> for P
 where
     P: Put,
 {
+    #[inline]
     fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
         self.put_bytes(bytes)
     }
 
+    // inline here slows down benchmarks
     fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
         if bytes.len() > u32::MAX as usize {
             return Err(WriteError::InvalidArrayLength);
