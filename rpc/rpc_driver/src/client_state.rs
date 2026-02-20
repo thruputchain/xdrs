@@ -169,13 +169,33 @@ impl ClientHandle {
             .lock()
             .unwrap()
             .add_callback(CallbackHandle { tx })?;
-        let msg = self.make_call_msg(xid, progvers, proc, data)?;
+
+        let msg = match self.make_call_msg(xid, progvers, proc, data) {
+            Ok(msg) => msg,
+            Err(e) => {
+                self.client_state
+                    .lock()
+                    .unwrap()
+                    .pending_requests
+                    .remove(&xid);
+                return Err(e);
+            }
+        };
+
         if self.log_timestamps {
             log_rpc_timestamp(xid, "client_send");
         }
-        self.send_msg(&msg)
-            .await
-            .map_err(|_| RpcError::SystemError)?;
+
+        let send_result = self.send_msg(&msg).await;
+        if send_result.is_err() {
+            self.client_state
+                .lock()
+                .unwrap()
+                .pending_requests
+                .remove(&xid);
+            return Err(RpcError::SystemError);
+        }
+
         rx.await.map_err(|_| RpcError::SystemError)?
     }
 

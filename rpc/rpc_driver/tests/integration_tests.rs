@@ -11,7 +11,7 @@ mod tests {
     use async_trait::async_trait;
     use rpc_driver::{
         ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client,
-        server_state::ServerDispatch, tcp_connection::accept,
+        connect_client_with_config, server_state::ServerDispatch, tcp_connection::accept,
     };
 
     use super::*;
@@ -199,6 +199,7 @@ mod tests {
         assert!(result.is_err());
         // The error should be SystemError (connection closed)
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(client_handle.num_pending_requests(), 0);
     }
 
     // Service that waits on a condition variable before responding
@@ -354,6 +355,7 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(client_handle.num_pending_requests(), 0);
     }
 
     #[tokio::test]
@@ -403,5 +405,51 @@ mod tests {
             .await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(client_handle.num_pending_requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_message_too_large_for_encode() {
+        // Set up RpcServer
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let mut service_map = ServiceMap::new();
+        service_map.add_service(Box::new(EchoCallbackService {}));
+
+        let server = RpcServer::new(listener, service_map);
+        let server_handle = server.clone();
+
+        // Start server in background
+        server_handle.start().await;
+
+        // Give server a moment to start
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Connect client using high-level API
+        let client_handle = connect_client_with_config(
+            &addr,
+            ConnectionConfig::new(Some(0x7FFF_FFFF), ServiceMap::new()),
+        )
+        .await
+        .unwrap();
+
+        // Give client tasks a moment to start up
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Create a message that exceeds the single-part message size limit (0x7FFF_FFFF = 2,147,483,647 bytes)
+        let large_data = vec![0u8; 0x7FFF_FFFF + 1];
+
+        // Try to send a call with data that's too large
+        let result = client_handle
+            .send_call(ProgVers::new(1, 1), 1, &large_data)
+            .await;
+
+        // The call should fail with SystemError because the call failed to encode
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+
+        // make sure the callback was cleaned up
+        assert_eq!(client_handle.num_pending_requests(), 0);
     }
 }
