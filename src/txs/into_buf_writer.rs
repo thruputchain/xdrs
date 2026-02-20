@@ -83,10 +83,7 @@ impl<'a> Put for IntoBufWriter<'a> {
 
         mu::write_copy_of_slice(&mut buf[0..4], &(len as u32).to_be_bytes());
         mu::write_copy_of_slice(&mut buf[4..4 + len], bytes);
-        mu::write_copy_of_slice(
-            &mut buf[4 + len..4 + len + rem],
-            &PAD[0..rem],
-        );
+        mu::write_copy_of_slice(&mut buf[4 + len..4 + len + rem], &PAD[0..rem]);
 
         Ok(())
     }
