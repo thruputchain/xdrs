@@ -104,7 +104,7 @@ impl Put for BufWriter {
         let size = 4 + len + rem;
         debug_assert!(size.is_multiple_of(4));
 
-        self.0.reserve(self.0.len() + size as usize);
+        self.0.reserve(size as usize);
 
         static PAD: [u8; 3] = [0; 3];
 
@@ -127,7 +127,7 @@ impl Put for BufWriter {
         let size = len + rem;
         debug_assert!(size.is_multiple_of(4));
 
-        self.0.reserve(self.0.len() + size);
+        self.0.reserve(size);
 
         static PAD: [u8; 3] = [0; 3];
 
