@@ -82,11 +82,13 @@ impl From<BufWriter> for Vec<u8> {
 // Implement the basic byte operations in order
 // to get a Writer implementation for free
 impl Put for BufWriter {
+    #[inline]
     fn put_byte(&mut self, b: u8) -> WriteResult<()> {
         self.0.push(b);
         Ok(())
     }
 
+    #[inline]
     fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()> {
         if bytes.len() > u32::MAX as usize {
             return Err(WriteError::InvalidArrayLength);

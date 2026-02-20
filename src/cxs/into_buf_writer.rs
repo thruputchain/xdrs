@@ -56,12 +56,14 @@ impl<'a> IntoBufWriter<'a> {
 }
 
 impl<'a> Put for IntoBufWriter<'a> {
+    #[inline]
     fn put_byte(&mut self, b: u8) -> WriteResult<()> {
         let p = self.reserve(1)?;
         p[0].write(b);
         Ok(())
     }
 
+    #[inline]
     fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()> {
         let len = bytes.len();
         let buf = self.reserve(len)?;

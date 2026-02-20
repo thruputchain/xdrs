@@ -42,6 +42,7 @@ impl<'a> BufReader<'a> {
         &self.data[self.pos..]
     }
 
+    #[inline]
     fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
         let Some(extent) = self
             .pos

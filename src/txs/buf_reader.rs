@@ -78,6 +78,7 @@ impl<'a> BufReader<'a> {
     ///
     /// This is used internally for padding. The number of bytes to skip
     /// must be at most 3 (for 4-byte alignment padding).
+    #[inline]
     pub fn skip_input(&mut self, skip_bytes: u32) -> ReadResult<()> {
         debug_assert!(skip_bytes <= 3);
 
