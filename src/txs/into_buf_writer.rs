@@ -70,7 +70,7 @@ impl<'a> Put for IntoBufWriter<'a> {
 
         static PAD: [u8; 3] = [0; 3];
 
-        let len = bytes.len() as u32;
+        let len = bytes.len();
         let rem = if len.is_multiple_of(4) {
             0
         } else {
@@ -79,13 +79,13 @@ impl<'a> Put for IntoBufWriter<'a> {
         let size = 4 + len + rem;
         debug_assert!(size.is_multiple_of(4));
 
-        let buf = self.reserve(size as usize)?;
+        let buf = self.reserve(size)?;
 
         mu::write_copy_of_slice(&mut buf[0..4], &len.to_be_bytes());
-        mu::write_copy_of_slice(&mut buf[4..4 + len as usize], bytes);
+        mu::write_copy_of_slice(&mut buf[4..4 + len], bytes);
         mu::write_copy_of_slice(
-            &mut buf[4 + len as usize..4 + len as usize + rem as usize],
-            &PAD[0..rem as usize],
+            &mut buf[4 + len..4 + len + rem],
+            &PAD[0..rem],
         );
 
         Ok(())
@@ -104,7 +104,7 @@ impl<'a> Put for IntoBufWriter<'a> {
         let size = len + rem;
         debug_assert!(size.is_multiple_of(4));
 
-        let buf = self.reserve(size as usize)?;
+        let buf = self.reserve(size)?;
 
         mu::write_copy_of_slice(&mut buf[0..len], bytes);
         mu::write_copy_of_slice(&mut buf[len..size], &PAD[0..rem]);
