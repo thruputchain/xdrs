@@ -37,6 +37,7 @@ impl<'a> IntoBufWriter<'a> {
         self.written
     }
 
+    #[inline]
     fn reserve<'s>(&'s mut self, len: usize) -> WriteResult<&'s mut [Mu8]>
     where
         'a: 's,
@@ -56,6 +57,7 @@ impl<'a> IntoBufWriter<'a> {
 }
 
 impl<'a> Put for IntoBufWriter<'a> {
+    #[inline]
     fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
@@ -65,6 +67,7 @@ impl<'a> Put for IntoBufWriter<'a> {
         Ok(())
     }
 
+    #[inline]
     fn put_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
         debug_assert!(bytes.len() <= u32::MAX as usize);
 
@@ -88,6 +91,7 @@ impl<'a> Put for IntoBufWriter<'a> {
         Ok(())
     }
 
+    #[inline]
     fn put_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
         static PAD: [u8; 3] = [0; 3];
         debug_assert!(bytes.len() <= u32::MAX as usize);

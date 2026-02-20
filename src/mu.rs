@@ -95,6 +95,7 @@ pub const unsafe fn array_assume_init<T, const N: usize>(array: [MU<T>; N]) -> [
 /// the unstable feature `maybe_uninit_write_slice`.)
 //
 // (Adapted from standard library.)
+#[inline(always)]
 pub const fn write_copy_of_slice<'a, T>(uninit_dst: &'a mut [MU<T>], src: &[T]) -> &'a mut [T]
 where
     T: Copy,
