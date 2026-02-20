@@ -48,6 +48,7 @@ pub trait WriteXDR {
 /// let written = cxs::encode_into(&value, &mut buf)?;
 /// # Ok::<(), xdrs::WriteError>(())
 /// ```
+#[inline]
 pub fn write_xdr<T, F, W>(this: &T, w: &mut W) -> WriteResult<()>
 where
     T: WriteXDR,
@@ -60,6 +61,7 @@ macro_rules! write_xdr_int_impls {
     { $( $write_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
         impl WriteXDR for $int_ty {
+            #[inline]
             fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
                 w.$write_method(*self)
             }
@@ -87,12 +89,14 @@ impl WriteXDR for [u8] {
 }
 
 impl WriteXDR for &[u8] {
+    #[inline]
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         w.write_opaque_variable(self)
     }
 }
 
 impl<const N: usize> WriteXDR for [u8; N] {
+    #[inline]
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         let () = ValidU32::<N>::OK;
 
@@ -127,6 +131,7 @@ impl<T: WriteXDR> WriteXDR for [T] {
 }
 
 impl<T: WriteXDR> WriteXDR for &T {
+    #[inline]
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         (*self).write_xdr(w)
     }
