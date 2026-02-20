@@ -52,6 +52,7 @@ impl<'a> BufReader<'a> {
         &self.data[self.pos..]
     }
 
+    #[inline]
     fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
         let Some(extent) = self
             .pos
@@ -78,6 +79,7 @@ impl<'a> BufReader<'a> {
     ///
     /// This is used internally for padding. The number of bytes to skip
     /// must be at most 3 (for 4-byte alignment padding).
+    #[inline]
     pub fn skip_input(&mut self, skip_bytes: u32) -> ReadResult<()> {
         debug_assert!(skip_bytes <= 3);
 
@@ -93,6 +95,7 @@ impl<'a> BufReader<'a> {
 }
 
 impl<'r> Reader<'r> for BufReader<'r> {
+    #[inline]
     fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
         let buf = self.get_input(len)?;
 
@@ -105,6 +108,7 @@ impl<'r> Reader<'r> for BufReader<'r> {
         Ok(buf)
     }
 
+    #[inline]
     fn read_opaque_variable(&mut self, max: u32) -> ReadResult<&'r [u8]> {
         let len = self.read_u32()?;
 

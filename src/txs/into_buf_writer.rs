@@ -37,6 +37,7 @@ impl<'a> IntoBufWriter<'a> {
         self.written
     }
 
+    #[inline]
     fn reserve<'s>(&'s mut self, len: usize) -> WriteResult<&'s mut [Mu8]>
     where
         'a: 's,
@@ -56,11 +57,58 @@ impl<'a> IntoBufWriter<'a> {
 }
 
 impl<'a> Put for IntoBufWriter<'a> {
+    #[inline]
     fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 
         mu::write_copy_of_slice(buf, bytes);
+
+        Ok(())
+    }
+
+    #[inline]
+    fn put_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+
+        static PAD: [u8; 3] = [0; 3];
+
+        let len = bytes.len();
+        let rem = if len.is_multiple_of(4) {
+            0
+        } else {
+            4 - len % 4
+        };
+        let size = 4 + len + rem;
+        debug_assert!(size.is_multiple_of(4));
+
+        let buf = self.reserve(size)?;
+
+        mu::write_copy_of_slice(&mut buf[0..4], &(len as u32).to_be_bytes());
+        mu::write_copy_of_slice(&mut buf[4..4 + len], bytes);
+        mu::write_copy_of_slice(&mut buf[4 + len..4 + len + rem], &PAD[0..rem]);
+
+        Ok(())
+    }
+
+    #[inline]
+    fn put_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        static PAD: [u8; 3] = [0; 3];
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+
+        let len = bytes.len();
+        let rem = if len.is_multiple_of(4) {
+            0
+        } else {
+            4 - len % 4
+        };
+        let size = len + rem;
+        debug_assert!(size.is_multiple_of(4));
+
+        let buf = self.reserve(size)?;
+
+        mu::write_copy_of_slice(&mut buf[0..len], bytes);
+        mu::write_copy_of_slice(&mut buf[len..size], &PAD[0..rem]);
 
         Ok(())
     }

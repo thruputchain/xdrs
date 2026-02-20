@@ -10,11 +10,18 @@ use crate::serialize::writer::*;
 pub(crate) trait Put {
     // fn put_byte(&mut self, b: u8) -> Result<()>;
     fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()>;
+
+    // Per benchmarks, putting an opaque vec using just put_bytes is quite expensiver
+    // (and somewhat surprisingly, much slower than the equivalent on CXS).
+    // As previously implemented with put_bytes(), it was 3 put_bytes calls
+    // (header, value, padding).
+    fn put_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()>;
+
+    // put_opaque_fixed is similarly expensive
+    fn put_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()>;
 }
 
 pub struct TXS;
-
-static PAD: [u8; 3] = [0; 3];
 
 macro_rules! write_int {
     [ $($write:ident($nbytes:expr): $ty:ty),* $(,)? ] => {
@@ -34,25 +41,18 @@ impl<P> Writer<TXS> for P
 where
     P: Put,
 {
+    #[inline]
     fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
-        self.put_bytes(bytes)?;
-
-        let rem = bytes.len() % 4;
-        if rem > 0 {
-            let padlen = 4 - rem;
-            self.put_bytes(&PAD[0..padlen])?;
-        }
-
-        Ok(())
+        self.put_opaque_fixed(bytes)
     }
 
+    #[inline]
     fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
         if bytes.len() > u32::MAX as usize {
             return Err(WriteError::InvalidArrayLength);
         }
 
-        self.write_u32(bytes.len() as u32)?;
-        self.write_opaque_fixed(bytes)
+        self.put_opaque_variable(bytes)
     }
 
     #[inline]

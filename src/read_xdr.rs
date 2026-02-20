@@ -25,6 +25,7 @@ use core::mem::MaybeUninit as MU;
 /// let _value: u32 = cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
+#[inline]
 pub fn read_xdr<'r, R, T>(r: &mut R) -> ReadResult<T>
 where
     R: Reader<'r>,
@@ -70,6 +71,7 @@ macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
         impl<'r> ReadXDR<'r> for $int_ty {
+            #[inline]
             fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<$int_ty> {
                 r.$read_method()
             }
@@ -123,12 +125,14 @@ where
 }
 
 impl<'r> ReadXDR<'r> for &'r [u8] {
+    #[inline]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         r.read_opaque_variable(u32::MAX)
     }
 }
 
 impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
+    #[inline]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
         let len = N as u32;

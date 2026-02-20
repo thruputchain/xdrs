@@ -6,6 +6,7 @@ const _: () = {
     use crate::serialize::reader::*;
 
     impl<'r> ReadXDR<'r> for i128 {
+        #[inline]
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let highbits: i64 = read_xdr(r)?;
             let lowbits: u64 = read_xdr(r)?;
@@ -16,6 +17,7 @@ const _: () = {
     }
 
     impl<'r> ReadXDR<'r> for u128 {
+        #[inline]
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let highbits: u64 = read_xdr(r)?;
             let lowbits: u64 = read_xdr(r)?;
@@ -31,6 +33,7 @@ const _: () = {
     use crate::write_xdr::*;
 
     impl WriteXDR for i128 {
+        #[inline]
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             let highbits = (*self >> 64) as i64;
             let lowbits = (*self & 0xffffffffffffffff) as u64;
@@ -41,6 +44,7 @@ const _: () = {
     }
 
     impl WriteXDR for u128 {
+        #[inline]
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
             let highbits = (*self >> 64) as u64;
             let lowbits = (*self & 0xffffffffffffffff) as u64;

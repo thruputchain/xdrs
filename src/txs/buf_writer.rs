@@ -82,12 +82,60 @@ impl From<BufWriter> for Vec<u8> {
 // Implement the basic byte operations in order
 // to get a Writer implementation for free
 impl Put for BufWriter {
+    #[inline]
     fn put_bytes(&mut self, bytes: &[u8]) -> WriteResult<()> {
         if bytes.len() > u32::MAX as usize {
             return Err(WriteError::InvalidArrayLength);
         }
 
         self.0.extend_from_slice(bytes);
+
+        Ok(())
+    }
+
+    #[inline]
+    fn put_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+
+        let len = bytes.len() as u32;
+        let rem = if len.is_multiple_of(4) {
+            0
+        } else {
+            4 - len % 4
+        };
+        let size = 4 + len + rem;
+        debug_assert!(size.is_multiple_of(4));
+
+        self.0.reserve(size as usize);
+
+        static PAD: [u8; 3] = [0; 3];
+
+        self.0.extend_from_slice(&len.to_be_bytes());
+        self.0.extend_from_slice(bytes);
+        self.0.extend_from_slice(&PAD[0..rem as usize]);
+
+        Ok(())
+    }
+
+    #[inline]
+    fn put_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+
+        let len = bytes.len();
+        let rem = if len.is_multiple_of(4) {
+            0
+        } else {
+            4 - len % 4
+        };
+        let size = len + rem;
+        debug_assert!(size.is_multiple_of(4));
+
+        self.0.reserve(size);
+
+        static PAD: [u8; 3] = [0; 3];
+
+        self.0.extend_from_slice(bytes);
+        self.0.extend_from_slice(&PAD[0..rem]);
 
         Ok(())
     }
