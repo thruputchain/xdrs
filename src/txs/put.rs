@@ -16,7 +16,7 @@ pub(crate) trait Put {
     // As previously implemented with put_bytes(), it was 3 put_bytes calls
     // (header, value, padding).
     fn put_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()>;
-    
+
     // put_opaque_fixed is similarly expensive
     fn put_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()>;
 }
