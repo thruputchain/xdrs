@@ -96,8 +96,13 @@ impl Put for BufWriter {
         debug_assert!(bytes.len() <= u32::MAX as usize);
 
         let len = bytes.len() as u32;
-        let rem = if len.is_multiple_of(4) { 0 } else { 4 - len % 4 };
+        let rem = if len.is_multiple_of(4) {
+            0
+        } else {
+            4 - len % 4
+        };
         let size = 4 + len + rem;
+        debug_assert!(size.is_multiple_of(4));
 
         self.0.reserve(self.0.len() + size as usize);
 
@@ -114,8 +119,13 @@ impl Put for BufWriter {
         debug_assert!(bytes.len() <= u32::MAX as usize);
 
         let len = bytes.len();
-        let rem = if len.is_multiple_of(4) { 0 } else { 4 - len % 4 };
+        let rem = if len.is_multiple_of(4) {
+            0
+        } else {
+            4 - len % 4
+        };
         let size = len + rem;
+        debug_assert!(size.is_multiple_of(4));
 
         self.0.reserve(self.0.len() + size);
 
