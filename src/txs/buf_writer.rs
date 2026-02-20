@@ -91,4 +91,39 @@ impl Put for BufWriter {
 
         Ok(())
     }
+
+    fn put_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+
+        let len = bytes.len() as u32;
+        let rem = if len % 4 == 0 { 0 } else { 4 - len % 4 };
+        let size = 4 + len + rem;
+
+        self.0.reserve(self.0.len() + size as usize);
+
+        static PAD: [u8; 3] = [0; 3];
+
+        self.0.extend_from_slice(&len.to_be_bytes());
+        self.0.extend_from_slice(bytes);
+        self.0.extend_from_slice(&PAD[0..rem as usize]);
+
+        Ok(())
+    }
+
+    fn put_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+
+        let len = bytes.len();
+        let rem = if len % 4 == 0 { 0 } else { 4 - len % 4 };
+        let size = len + rem;
+
+        self.0.reserve(self.0.len() + size as usize);
+
+        static PAD: [u8; 3] = [0; 3];
+
+        self.0.extend_from_slice(bytes);
+        self.0.extend_from_slice(&PAD[0..rem]);
+
+        Ok(())
+    }
 }

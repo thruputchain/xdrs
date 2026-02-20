@@ -2,40 +2,134 @@ mod uninit_buf;
 use uninit_buf::*;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-// use std::hint::black_box;
 
 const N_CODEC_ITERATIONS: usize = 100;
+const N_LARGE_DECODE_ITERATIONS: usize = 10;
 
-use xdrs::cxs;
+use xdrs::{VecM, cxs, txs};
 
 fn bench_codec(c: &mut Criterion) {
     let mut group = c.benchmark_group("Codec");
 
-    // Make input for decoding below
-    let input_vec = cxs::encode(&VALUES).unwrap();
-    let input: &[u8] = input_vec.as_ref();
-    let size = input.len();
-    group.throughput(Throughput::Bytes((N_CODEC_ITERATIONS * size) as u64));
+    // Make inputs for decoding below
+    let cxs_input_vec = cxs::encode(&VALUES).unwrap();
+    let cxs_input: &[u8] = cxs_input_vec.as_ref();
+    let cxs_size = cxs_input.len();
+    group.throughput(Throughput::Bytes((N_CODEC_ITERATIONS * cxs_size) as u64));
 
     let id = BenchmarkId::new(
-        "encode",
-        format!("Output {}B * {}", size, N_CODEC_ITERATIONS),
+        "encode_cxs",
+        format!("output {}B * {}", cxs_size, N_CODEC_ITERATIONS),
     );
-    group.bench_with_input(id, &VALUES, |b, values| b.iter(|| run_encode(values)));
+    group.bench_with_input(id, &VALUES, |b, values| b.iter(|| run_encode_cxs(values)));
 
     let id = BenchmarkId::new(
-        "decode",
-        format!("Input {}B * {}", size, N_CODEC_ITERATIONS),
+        "decode_cxs",
+        format!("input {}B * {}", cxs_size, N_CODEC_ITERATIONS),
     );
-    group.bench_with_input(id, input, |b, input| b.iter(|| run_decode(input)));
+    group.bench_with_input(id, cxs_input, |b, input| b.iter(|| run_decode_cxs(input)));
+
+    let txs_input_vec = txs::encode(&VALUES).unwrap();
+    let txs_input: &[u8] = txs_input_vec.as_ref();
+    let txs_size = txs_input.len();
+    group.throughput(Throughput::Bytes((N_CODEC_ITERATIONS * txs_size) as u64));
+
+    let id = BenchmarkId::new(
+        "encode_txs",
+        format!("output {}B * {}", txs_size, N_CODEC_ITERATIONS),
+    );
+    group.bench_with_input(id, &VALUES, |b, values| b.iter(|| run_encode_txs(values)));
+
+    let id = BenchmarkId::new(
+        "decode_txs",
+        format!("input {}B * {}", txs_size, N_CODEC_ITERATIONS),
+    );
+    group.bench_with_input(id, txs_input, |b, input| b.iter(|| run_decode_txs(input)));
 
     group.finish();
 }
 
-criterion_group!(benches, bench_codec);
+fn bench_variable_opaque_decode(c: &mut Criterion) {
+    let mut group = c.benchmark_group("VariableOpaqueDecode");
+
+    for &len in &[255usize, 256, 257] {
+        let payload = vec![0x5au8; len];
+
+        let cxs_input_vec = cxs::encode(payload.as_slice()).unwrap();
+        let cxs_input: &[u8] = cxs_input_vec.as_ref();
+        group.throughput(Throughput::Bytes(
+            (N_CODEC_ITERATIONS * cxs_input.len()) as u64,
+        ));
+
+        let id = BenchmarkId::new("decode_cxs", format!("len={len}"));
+        group.bench_with_input(id, cxs_input, |b, input| {
+            b.iter(|| run_decode_bytes_cxs(input, len))
+        });
+
+        let txs_input_vec = txs::encode(payload.as_slice()).unwrap();
+        let txs_input: &[u8] = txs_input_vec.as_ref();
+        group.throughput(Throughput::Bytes(
+            (N_CODEC_ITERATIONS * txs_input.len()) as u64,
+        ));
+
+        let id = BenchmarkId::new("decode_txs", format!("len={len}"));
+        group.bench_with_input(id, txs_input, |b, input| {
+            b.iter(|| run_decode_bytes_txs(input, len))
+        });
+    }
+
+    group.finish();
+}
+
+fn bench_large_vecm_decode(c: &mut Criterion) {
+    let mut group = c.benchmark_group("LargeVecMDecode");
+
+    let value = VecM::<u8, LARGE_VECM_MAX>(vec![0xa5; LARGE_VECM_LEN]);
+
+    let cxs_input_vec = cxs::encode(&value).unwrap();
+    let cxs_input: &[u8] = cxs_input_vec.as_ref();
+    group.throughput(Throughput::Bytes(
+        (N_LARGE_DECODE_ITERATIONS * cxs_input.len()) as u64,
+    ));
+    let id = BenchmarkId::new(
+        "decode_cxs",
+        format!(
+            "payload={}B * {}",
+            LARGE_VECM_LEN, N_LARGE_DECODE_ITERATIONS
+        ),
+    );
+    group.bench_with_input(id, cxs_input, |b, input| {
+        b.iter(|| run_decode_large_vecm_cxs(input))
+    });
+
+    let txs_input_vec = txs::encode(&value).unwrap();
+    let txs_input: &[u8] = txs_input_vec.as_ref();
+    group.throughput(Throughput::Bytes(
+        (N_LARGE_DECODE_ITERATIONS * txs_input.len()) as u64,
+    ));
+    let id = BenchmarkId::new(
+        "decode_txs",
+        format!(
+            "payload={}B * {}",
+            LARGE_VECM_LEN, N_LARGE_DECODE_ITERATIONS
+        ),
+    );
+    group.bench_with_input(id, txs_input, |b, input| {
+        b.iter(|| run_decode_large_vecm_txs(input))
+    });
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_codec,
+    bench_variable_opaque_decode,
+    bench_large_vecm_decode
+);
 criterion_main!(benches);
 
-fn run_encode(values: &[Value; N_VALUES]) {
+fn run_encode_cxs(values: &[Value; N_VALUES]) {
     // A buffer to receive the encoded value
     const BUFLEN: usize = 2500;
     let mut buf = UninitBuf::<BUFLEN>::new();
@@ -56,7 +150,28 @@ fn run_encode(values: &[Value; N_VALUES]) {
     }
 }
 
-fn run_decode<'a>(input: &[u8]) {
+fn run_encode_txs(values: &[Value; N_VALUES]) {
+    // A buffer to receive the encoded value
+    const BUFLEN: usize = 3000;
+    let mut buf = UninitBuf::<BUFLEN>::new();
+
+    // Encode the value many times
+    for _ in 0..N_CODEC_ITERATIONS {
+        buf.init(|buf| txs::encode_into(values, buf)).unwrap();
+    }
+
+    // run `cargo test --benches` to test with the asserts
+    #[cfg(test)]
+    {
+        // Extract the now-initialized portion of the buffer
+        let encoded = unsafe { buf.assume_init() };
+
+        let values2: [Value; N_VALUES] = txs::decode(encoded).unwrap();
+        debug_assert_eq!(&values2, &VALUES);
+    }
+}
+
+fn run_decode_cxs(input: &[u8]) {
     let mut output: [Value; N_VALUES];
 
     output = cxs::decode(input).unwrap();
@@ -66,6 +181,66 @@ fn run_decode<'a>(input: &[u8]) {
 
     // run `cargo test --benches` to test with the asserts
     debug_assert_eq!(output, VALUES);
+}
+
+fn run_decode_txs(input: &[u8]) {
+    let mut output: [Value; N_VALUES];
+
+    output = txs::decode(input).unwrap();
+    for _ in 1..N_CODEC_ITERATIONS {
+        output = txs::decode(input).unwrap();
+    }
+
+    // run `cargo test --benches` to test with the asserts
+    debug_assert_eq!(output, VALUES);
+}
+
+fn run_decode_bytes_cxs(input: &[u8], expected_len: usize) {
+    let mut output: &[u8];
+
+    output = cxs::decode(input).unwrap();
+    for _ in 1..N_CODEC_ITERATIONS {
+        output = cxs::decode(input).unwrap();
+    }
+
+    debug_assert_eq!(output.len(), expected_len);
+}
+
+fn run_decode_bytes_txs(input: &[u8], expected_len: usize) {
+    let mut output: &[u8];
+
+    output = txs::decode(input).unwrap();
+    for _ in 1..N_CODEC_ITERATIONS {
+        output = txs::decode(input).unwrap();
+    }
+
+    debug_assert_eq!(output.len(), expected_len);
+}
+
+fn run_decode_large_vecm_cxs(input: &[u8]) {
+    type LargeVecM = VecM<u8, LARGE_VECM_MAX>;
+
+    let mut output: LargeVecM;
+
+    output = cxs::decode(input).unwrap();
+    for _ in 1..N_LARGE_DECODE_ITERATIONS {
+        output = cxs::decode(input).unwrap();
+    }
+
+    debug_assert_eq!(output.0.len(), LARGE_VECM_LEN);
+}
+
+fn run_decode_large_vecm_txs(input: &[u8]) {
+    type LargeVecM = VecM<u8, LARGE_VECM_MAX>;
+
+    let mut output: LargeVecM;
+
+    output = txs::decode(input).unwrap();
+    for _ in 1..N_LARGE_DECODE_ITERATIONS {
+        output = txs::decode(input).unwrap();
+    }
+
+    debug_assert_eq!(output.0.len(), LARGE_VECM_LEN);
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
@@ -78,6 +253,8 @@ struct Value<'a> {
 }
 
 const N_VALUES: usize = 50;
+const LARGE_VECM_MAX: u32 = 1_048_576;
+const LARGE_VECM_LEN: usize = 262_144;
 
 const VALUES: [Value; N_VALUES] = [const {
     Value {

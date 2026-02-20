@@ -36,7 +36,7 @@ pub type WriteResult<T = ()> = core::result::Result<T, WriteError>;
 ///
 pub trait Writer<F> {
     /// Writes a byte array of fixed length.
-    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()>;
+    fn write_opaque_fixed (&mut self, bytes: &[u8]) -> WriteResult<()>;
 
     /// Writes a byte sequence of variable length.
     fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()>;
