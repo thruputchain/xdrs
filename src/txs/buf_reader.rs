@@ -81,10 +81,10 @@ impl<'a> BufReader<'a> {
     pub fn skip_input(&mut self, skip_bytes: u32) -> ReadResult<()> {
         debug_assert!(skip_bytes <= 3);
 
-        let bytes = self.get_input(skip_bytes)?;
+        let _bytes = self.get_input(skip_bytes)?;
 
         #[cfg(not(feature = "permissive"))]
-        if bytes.iter().any(|&b| b != 0) {
+        if _bytes.iter().any(|&b| b != 0) {
             return Err(ReadError::NonZeroPadding);
         }
 
