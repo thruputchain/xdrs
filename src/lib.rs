@@ -23,6 +23,7 @@
 //!
 //! - **`permissive`**: When reading CXS data, don't reject (as is the default)
 //!   integers using non-minimal-size encoding.
+//!   Also, when reading TXS data, do not reject non-zero padding bytes.
 //!
 //! ### Allocation
 //!

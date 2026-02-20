@@ -29,5 +29,8 @@ fn tuples() {
     let n: u16 = 7;
     let tup = (n, n, n, n, n, n);
     CXS::check_codec(&tup, &hex!("070707070707"));
-    TXS::check_codec(&tup, &hex!("000700070007000700070007"));
+    TXS::check_codec(
+        &tup,
+        &hex!("000000070000000700000007000000070000000700000007"),
+    );
 }

@@ -66,7 +66,7 @@ impl<'a> Put for IntoBufWriter<'a> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 
-        let _ = mu::write_copy_of_slice(buf, bytes);
+        mu::write_copy_of_slice(buf, bytes);
 
         Ok(())
     }
