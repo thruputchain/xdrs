@@ -48,7 +48,7 @@ cargo fmt --check --quiet || {
   exit 1
 }
 
-rg -i --glob '!/ci.sh' XXX || {
+rg -i --glob '!/ci.sh' XXX && {
   echo "XXX found!"
   exit 1
 }

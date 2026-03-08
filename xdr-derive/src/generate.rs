@@ -1,48 +1,57 @@
 use crate::util::*;
-use darling::{FromDeriveInput, FromField};
+use darling::*;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
 
-#[derive(Debug, FromField, FromDeriveInput)]
-#[darling(attributes(xdrs))]
+#[derive(Clone, Debug, Default, FromDeriveInput, FromField)]
+#[darling(attributes(xdrs), default)]
 struct Attrs {
     pub into_type: Option<syn::Type>,
     pub from_type: Option<syn::Type>,
+    pub via: Option<syn::Type>,
 
     // Deprecated
     pub as_type: Option<syn::Type>,
 }
 
-fn check_attrs(attrs: &Attrs) -> std::result::Result<(), &'static str> {
-    if let Some(_) = attrs.as_type.as_ref() {
-        return Err("Attribute `xdrs(as_ref = ...)` has been removed. \
-            Please consider `xdrs(from_type = ...)` or `xdrs(to_type = ...)`.");
+impl Attrs {
+    fn check<S: syn::spanned::Spanned>(&self, item: &S) -> Result<()> {
+        if self.via.is_some() {
+            if self.into_type.is_some() {
+                err(
+                    item,
+                    "Attributes `xdrs(via)` and `xdrs(into_type)` may not be combined, \
+                    as `via` implies both `from_type` and `into_type`.",
+                )?;
+            }
+
+            if self.from_type.is_some() {
+                err(
+                    item,
+                    "Attributes `xdrs(via)` and `xdrs(from_type)` may not be combined, \
+                    as `via` implies both `from_type` and `into_type`.",
+                )?;
+            }
+        }
+
+        if self.as_type.is_some() {
+            err(
+                item,
+                "Attribute `xdrs(as_ref = ...)` has been removed. \
+                Please consider `xdrs(from_type = ...)` or `xdrs(into_type = ...)`.",
+            )?;
+        }
+
+        Ok(())
     }
-
-    Ok(())
-}
-
-fn get_input_attrs(input: &syn::DeriveInput) -> Result<Attrs> {
-    let attrs = Attrs::from_derive_input(input)?;
-
-    check_attrs(&attrs).map_err(|s| error(input, s))?;
-
-    Ok(attrs)
-}
-
-fn get_field_attrs(input: &syn::Field) -> Result<Attrs> {
-    let attrs = Attrs::from_field(input)?;
-
-    check_attrs(&attrs).map_err(|s| error(input, s))?;
-
-    Ok(attrs)
 }
 
 // ---- derive WriteXDR ------------------------------------------------------
 
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
-    let attrs = get_input_attrs(input)?;
+    let attrs = Attrs::from_derive_input(input)?;
+    attrs.check(input)?;
     let impls = write_data(input, &attrs)?;
 
     Ok(quote! {
@@ -59,7 +68,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn write_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
-    if let Some(into_type) = attrs.into_type.as_ref() {
+    if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
         return Ok(write_into_type(input, into_type));
     }
 
@@ -108,9 +117,10 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Toke
 fn write_field(index: usize, field: &syn::Field) -> Result<TokenStream> {
     let ty = &field.ty;
     let fa = FieldAccess::new(index, field);
-    let attrs = get_field_attrs(field)?;
+    let attrs = Attrs::from_field(field)?;
+    attrs.check(field)?;
 
-    if let Some(into_type) = attrs.into_type {
+    if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
         // field type must impl Clone and Into<into_type>
         Ok(quote! {
             let v: #into_type = self.#fa.clone().into();
@@ -261,7 +271,8 @@ fn named_field_binding(index: usize, field: &syn::Field) -> TokenStream {
 // ---- derive ReadXDR ------------------------------------------------------
 
 pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
-    let attrs = get_input_attrs(input)?;
+    let attrs = Attrs::from_derive_input(input)?;
+    attrs.check(input)?;
     let impls = read_data(input, &attrs)?;
 
     Ok(quote! {
@@ -278,7 +289,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn read_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
-    if let Some(from_type) = attrs.from_type.as_ref() {
+    if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
         return read_from_type(input, from_type);
     }
 
@@ -339,7 +350,8 @@ fn read_fields(fields: &syn::Fields) -> Result<TokenStream> {
 }
 
 fn read_field(_index: usize, field: &syn::Field) -> Result<TokenStream> {
-    let attrs = get_field_attrs(field)?;
+    let attrs = Attrs::from_field(field)?;
+    attrs.check(field)?;
 
     let field_spec = if let Some(field_ident) = field.ident.as_ref() {
         quote! { #field_ident: }
@@ -347,7 +359,7 @@ fn read_field(_index: usize, field: &syn::Field) -> Result<TokenStream> {
         quote! {}
     };
 
-    let field_value = if let Some(from_type) = attrs.from_type {
+    let field_value = if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
         quote! { {
             let from_value: #from_type = __xdrs::read_xdr(r)?;
             from_value.into()

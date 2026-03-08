@@ -112,6 +112,35 @@ fn struct_into_from_type() {
 }
 
 #[test]
+fn struct_via_type() {
+    // Serialize a u8 as a u32
+
+    #[derive(Debug, Clone, PartialEq, Eq, ReadXDR, WriteXDR)]
+    #[xdrs(via = "u32")]
+    struct U32(u8);
+
+    impl Into<u32> for U32 {
+        fn into(self) -> u32 {
+            self.0.into()
+        }
+    }
+
+    impl From<u32> for U32 {
+        fn from(n: u32) -> Self {
+            Self(n.try_into().unwrap())
+        }
+    }
+
+    let val = U32(7);
+
+    let expected = &hex!("07");
+    CXS::check_codec(&val, expected);
+
+    let expected = &hex!("00000007");
+    TXS::check_codec(&val, expected);
+}
+
+#[test]
 fn field_into_from_type() {
     // Something that doesn't impl *XDR, perhaps a foreign type
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +161,39 @@ fn field_into_from_type() {
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct Container {
         #[xdrs(into_type = "u32", from_type = "u32")]
+        item: U32,
+    }
+
+    let val = Container { item: U32(7) };
+
+    let expected = &hex!("07");
+    CXS::check_codec(&val, expected);
+
+    let expected = &hex!("00000007");
+    TXS::check_codec(&val, expected);
+}
+
+#[test]
+fn field_via_type() {
+    // Something that doesn't impl *XDR, perhaps a foreign type
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct U32(u32);
+
+    impl From<u32> for U32 {
+        fn from(n: u32) -> Self {
+            Self(n)
+        }
+    }
+
+    impl Into<u32> for U32 {
+        fn into(self) -> u32 {
+            self.0
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct Container {
+        #[xdrs(via = "u32")]
         item: U32,
     }
 
