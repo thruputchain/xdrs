@@ -83,29 +83,26 @@ fn newtype() {
 }
 
 #[test]
-fn field_as_type() {
-    #[derive(Debug, PartialEq, Eq)]
-    struct Blob(u32);
+fn struct_into_from_type() {
+    // Serialize a u8 as a u32
 
-    impl core::ops::Deref for Blob {
-        type Target = u32;
+    #[derive(Debug, Clone, PartialEq, Eq, ReadXDR, WriteXDR)]
+    #[xdrs(into_type = "u32", from_type = "u32")]
+    struct U32(u8);
 
-        fn deref(&self) -> &u32 {
-            &self.0
+    impl Into<u32> for U32 {
+        fn into(self) -> u32 {
+            self.0.into()
         }
     }
 
-    impl From<u32> for Blob {
+    impl From<u32> for U32 {
         fn from(n: u32) -> Self {
-            Self(n)
+            Self(n.try_into().unwrap())
         }
     }
 
-    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
-    struct New(#[xdrs(as_type = "u32")] Blob);
-
-    let n: u32 = 7;
-    let val = New(Blob::from(n));
+    let val = U32(7);
 
     let expected = &hex!("07");
     CXS::check_codec(&val, expected);
@@ -115,33 +112,35 @@ fn field_as_type() {
 }
 
 #[test]
-fn struct_as_type() {
-    #[derive(ReadXDR, WriteXDR)]
-    struct Thing(u64);
-
-    // Wrap a u32 and serialize it like a Thing
-    #[derive(ReadXDR, WriteXDR, Debug, PartialEq, Eq, Clone)]
-    #[xdrs(as_type = "Thing")]
+fn field_into_from_type() {
+    // Something that doesn't impl *XDR, perhaps a foreign type
+    #[derive(Debug, Clone, PartialEq, Eq)]
     struct U32(u32);
 
-    impl From<Thing> for U32 {
-        fn from(t: Thing) -> Self {
-            U32(t.0 as u32)
+    impl From<u32> for U32 {
+        fn from(n: u32) -> Self {
+            Self(n)
         }
     }
 
-    impl From<U32> for Thing {
-        fn from(u: U32) -> Self {
-            Thing(u.0 as u64)
+    impl Into<u32> for U32 {
+        fn into(self) -> u32 {
+            self.0
         }
     }
 
-    let val = U32(7);
+    #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
+    struct Container {
+        #[xdrs(into_type = "u32", from_type = "u32")]
+        item: U32,
+    }
+
+    let val = Container { item: U32(7) };
 
     let expected = &hex!("07");
     CXS::check_codec(&val, expected);
 
-    let expected = &hex!("0000000000000007");
+    let expected = &hex!("00000007");
     TXS::check_codec(&val, expected);
 }
 

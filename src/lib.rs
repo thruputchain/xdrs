@@ -19,7 +19,7 @@
 //!
 //! This crate supports several optional features:
 //!
-//! ### CXS options
+//! ### Deserialization options
 //!
 //! - **`permissive`**: When reading CXS data, don't reject (as is the default)
 //!   integers using non-minimal-size encoding.

@@ -90,16 +90,23 @@
 //!
 //! ## Attributes
 //!
-//! The derive macros support various attributes for customization:
+//! The derive macros support various attributes for customization.  When
+//! deriving `XDR`:
 //!
-//! - **`#[xdrs(as_type = "Type")]`**: Serialize/deserialize as a different
-//!   type
 //! - **`#[xdr(name = "XdrName")]`**: Use a different name in the XDR
 //!   specification
 //! - **`#[xdr(discrim_type = "TypeName")]`**: Specify a custom discriminant
 //!   type for enums
 //! - **`#[xdr(discrim_var = "field_name")]`**: Specify a custom discriminant
 //!   field name
+//!
+//! When deriving `ReadXDR`:
+//! - `#[xdrs(from_type = "Type")]` - Deserialize to the intermediate type
+//! "Type" before converting into the target type via `Into`.
+//!
+//! When deriving `WriteXDR`:
+//! - `#[xdrs(into_type = "Type")]` - Convert (via `Into`) a different type before
+//! serializing.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
@@ -116,7 +123,9 @@ use proc_macro::TokenStream;
 ///
 /// # Attributes
 ///
-/// - `#[xdrs(as_type = "Type")]` - Serialize as a different type
+/// - `#[xdrs(into_type = "Type")]` - Convert (via `Into`) a different type before
+/// serializing.
+///
 #[proc_macro_derive(WriteXDR, attributes(xdrs))]
 pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -133,7 +142,8 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///
 /// # Attributes
 ///
-/// - `#[xdrs(as_type = "Type")]` - Deserialize as a different type
+/// - `#[xdrs(from_type = "Type")]` - Deserialize to the intermediate type
+/// "Type" before converting into the target type via `Into`.
 ///
 #[proc_macro_derive(ReadXDR, attributes(xdrs))]
 pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
