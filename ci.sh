@@ -41,10 +41,16 @@ RUSTDOCFLAGS="--cfg docsrs" \
 cargo test --doc -p xdr-repr --features "derive,ns,int128"
 cargo test --doc --features "alloc,derive,repr,ns,int128"
 
-cargo fmt --check || {
+set +x
+
+cargo fmt --check --quiet || {
   echo "Needs formatting!"
   exit 1
 }
 
-set +x
+rg -i --glob '!/ci.sh' XXX || {
+  echo "XXX found!"
+  exit 1
+}
+
 echo "CI-CLEAN!"

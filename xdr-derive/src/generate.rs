@@ -7,13 +7,42 @@ use syn::Result;
 #[derive(Debug, FromField, FromDeriveInput)]
 #[darling(attributes(xdrs))]
 struct Attrs {
+    pub into_type: Option<syn::Type>,
+    pub from_type: Option<syn::Type>,
+
+    // Deprecated
     pub as_type: Option<syn::Type>,
+}
+
+fn check_attrs(attrs: &Attrs) -> std::result::Result<(), &'static str> {
+    if let Some(_) = attrs.as_type.as_ref() {
+        return Err("Attribute `xdrs(as_ref = ...)` has been removed. \
+            Please consider `xdrs(from_type = ...)` or `xdrs(to_type = ...)`.");
+    }
+
+    Ok(())
+}
+
+fn get_input_attrs(input: &syn::DeriveInput) -> Result<Attrs> {
+    let attrs = Attrs::from_derive_input(input)?;
+
+    check_attrs(&attrs).map_err(|s| error(input, s))?;
+
+    Ok(attrs)
+}
+
+fn get_field_attrs(input: &syn::Field) -> Result<Attrs> {
+    let attrs = Attrs::from_field(input)?;
+
+    check_attrs(&attrs).map_err(|s| error(input, s))?;
+
+    Ok(attrs)
 }
 
 // ---- derive WriteXDR ------------------------------------------------------
 
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
-    let attrs = Attrs::from_derive_input(input)?;
+    let attrs = get_input_attrs(input)?;
     let impls = write_data(input, &attrs)?;
 
     Ok(quote! {
@@ -30,20 +59,18 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn write_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
-    if let Some(as_type) = attrs.as_type.as_ref() {
-        return Ok(write_as_type(input, as_type));
+    if let Some(into_type) = attrs.into_type.as_ref() {
+        return Ok(write_into_type(input, into_type));
     }
 
     match &input.data {
-        syn::Data::Struct(item) => Ok(write_struct(input, item)),
+        syn::Data::Struct(item) => write_struct(input, item),
         syn::Data::Enum(item) => write_enum(input, item),
         _ => err(input, "Can't derive for this item"),
     }
 }
 
-// TODO: for better error messages, assert that the type for which WriteXDR is being derived (i.e.,
-// #ty_ident) implements Copy
-fn write_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> TokenStream {
+fn write_into_type(input: &syn::DeriveInput, into_type: &syn::Type) -> TokenStream {
     let ty_ident = &input.ident;
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -51,47 +78,49 @@ fn write_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> TokenStream {
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
-                let as_val: #as_type = self.clone().into();
-                as_val.write_xdr(w)
+                let into_val: #into_type = self.clone().into();
+                into_val.write_xdr(w)
             }
         }
     }
 }
 
-fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
+fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let write_fields = item
         .fields
         .iter()
         .enumerate()
-        .map(|(i, f)| write_field(i, f));
+        .map(|(i, f)| write_field(i, f))
+        .collect::<Result<Vec<_>>>()?;
 
-    quote! {
+    Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
                 #(#write_fields)*
                 Ok(())
             }
         }
-    }
+    })
 }
 
-fn write_field(index: usize, field: &syn::Field) -> TokenStream {
+fn write_field(index: usize, field: &syn::Field) -> Result<TokenStream> {
     let ty = &field.ty;
     let fa = FieldAccess::new(index, field);
-    let attrs = Attrs::from_field(field).unwrap();
+    let attrs = get_field_attrs(field)?;
 
-    if let Some(as_ty) = attrs.as_type {
-        quote! {
-            let v: &#as_ty = ::core::ops::Deref::deref(&self.#fa);
-            <#as_ty as __xdrs::WriteXDR>::write_xdr(v, w)?;
-        }
+    if let Some(into_type) = attrs.into_type {
+        // field type must impl Clone and Into<into_type>
+        Ok(quote! {
+            let v: #into_type = self.#fa.clone().into();
+            <#into_type as __xdrs::WriteXDR>::write_xdr(&v, w)?;
+        })
     } else {
-        quote! {
+        Ok(quote! {
             let v: &#ty = &(self.#fa);
             <#ty as __xdrs::WriteXDR>::write_xdr(v, w)?;
-        }
+        })
     }
 }
 
@@ -232,7 +261,7 @@ fn named_field_binding(index: usize, field: &syn::Field) -> TokenStream {
 // ---- derive ReadXDR ------------------------------------------------------
 
 pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
-    let attrs = Attrs::from_derive_input(input)?;
+    let attrs = get_input_attrs(input)?;
     let impls = read_data(input, &attrs)?;
 
     Ok(quote! {
@@ -249,18 +278,19 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn read_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
-    if let Some(as_type) = attrs.as_type.as_ref() {
-        return read_as_type(input, as_type);
+    if let Some(from_type) = attrs.from_type.as_ref() {
+        return read_from_type(input, from_type);
     }
 
     match &input.data {
-        syn::Data::Struct(item) => Ok(read_struct(input, item)),
+        syn::Data::Struct(item) => read_struct(input, item),
         syn::Data::Enum(item) => read_enum(input, item),
         _ => err(input, "Can't derive for this item"),
     }
 }
 
-fn read_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> Result<TokenStream> {
+// Target type must impl From<from_type>
+fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
     let generics = modify_for_reader_impl(input.generics.clone());
@@ -269,42 +299,47 @@ fn read_as_type(input: &syn::DeriveInput, as_type: &syn::Type) -> Result<TokenSt
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
-                let as_val: #as_type = __xdrs::read_xdr(r)?;
-                Ok(as_val.into())
+                let from_val: #from_type = __xdrs::read_xdr(r)?;
+                Ok(from_val.into())
             }
         }
     })
 }
 
-fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> TokenStream {
+fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
     let ty_ident = &input.ident;
 
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
     let generics = modify_for_reader_impl(input.generics.clone());
     let (impl_generics, _, _) = generics.split_for_impl();
 
-    let read_fields = read_fields(&item.fields);
+    let read_fields = read_fields(&item.fields)?;
 
-    quote! {
+    Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 Ok(#ty_ident #read_fields)
             }
         }
-    }
+    })
 }
 
-fn read_fields(fields: &syn::Fields) -> TokenStream {
-    let read_fields = token_reduce(fields, read_field);
+fn read_fields(fields: &syn::Fields) -> Result<TokenStream> {
+    let read_fields = fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| read_field(i, f))
+        .collect::<Result<Vec<_>>>()?;
+
     match fields {
-        syn::Fields::Named(_) => quote! { { #read_fields } },
-        syn::Fields::Unnamed(_) => quote! { ( #read_fields ) },
-        syn::Fields::Unit => quote! {},
+        syn::Fields::Named(_) => Ok(quote! { { #(#read_fields),* } }),
+        syn::Fields::Unnamed(_) => Ok(quote! { ( #(#read_fields),* ) }),
+        syn::Fields::Unit => Ok(quote! {}),
     }
 }
 
-fn read_field(_index: usize, field: &syn::Field) -> TokenStream {
-    let attrs = Attrs::from_field(field).unwrap();
+fn read_field(_index: usize, field: &syn::Field) -> Result<TokenStream> {
+    let attrs = get_field_attrs(field)?;
 
     let field_spec = if let Some(field_ident) = field.ident.as_ref() {
         quote! { #field_ident: }
@@ -312,10 +347,10 @@ fn read_field(_index: usize, field: &syn::Field) -> TokenStream {
         quote! {}
     };
 
-    let field_value = if let Some(as_ty) = attrs.as_type {
+    let field_value = if let Some(from_type) = attrs.from_type {
         quote! { {
-            let as_value: #as_ty = __xdrs::read_xdr(r)?;
-            as_value.into()
+            let from_value: #from_type = __xdrs::read_xdr(r)?;
+            from_value.into()
         } }
     } else {
         quote! {
@@ -323,7 +358,7 @@ fn read_field(_index: usize, field: &syn::Field) -> TokenStream {
         }
     };
 
-    quote! { #field_spec #field_value, }
+    Ok(quote! { #field_spec #field_value })
 }
 
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
