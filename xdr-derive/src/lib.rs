@@ -103,10 +103,12 @@
 //! When deriving `ReadXDR`:
 //! - `#[xdrs(from_type = "Type")]` - Deserialize to the intermediate type
 //! "Type" before converting into the target type via `Into`.
+//! - `#[xdrs(via = "Type")]` - Same as above.
 //!
 //! When deriving `WriteXDR`:
 //! - `#[xdrs(into_type = "Type")]` - Convert (via `Into`) a different type before
 //! serializing.
+//! - `#[xdrs(via = "Type")]` - Same as above.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
@@ -125,6 +127,7 @@ use proc_macro::TokenStream;
 ///
 /// - `#[xdrs(into_type = "Type")]` - Convert (via `Into`) a different type before
 /// serializing.
+/// - `#[xdrs(via = "Type")]` - Same as above (also implies `from_type`).
 ///
 #[proc_macro_derive(WriteXDR, attributes(xdrs))]
 pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
@@ -144,6 +147,7 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///
 /// - `#[xdrs(from_type = "Type")]` - Deserialize to the intermediate type
 /// "Type" before converting into the target type via `Into`.
+/// - `#[xdrs(via = "Type")]` - Same as above (also implies `into_type`).
 ///
 #[proc_macro_derive(ReadXDR, attributes(xdrs))]
 pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
