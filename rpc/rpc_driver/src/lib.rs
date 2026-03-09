@@ -63,7 +63,7 @@ pub struct ProgVers {
 
 impl ProgVers {
     /// Create a new program/version pair.
-    pub fn new(prog: u32, vers: u32) -> Self {
+    pub const fn new(prog: u32, vers: u32) -> Self {
         Self { prog, vers }
     }
 
