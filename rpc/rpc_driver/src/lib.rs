@@ -33,6 +33,9 @@ pub use server::RpcServer;
 mod client;
 pub use client::{connect_client, connect_client_with_config};
 
+pub mod pool;
+pub use pool::FixedPool;
+
 pub mod tcp_connection;
 
 // This module is generated, with the following modifications
