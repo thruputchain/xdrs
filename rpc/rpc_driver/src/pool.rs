@@ -1,15 +1,25 @@
-//! Fixed-size connection pool with FIFO request dispatch.
+//! Connection pools for RPC clients.
 //!
-//! Each connection has a dedicated worker task that processes requests
-//! sequentially. Incoming requests are distributed across workers via
-//! a shared mpsc channel — the next idle worker picks up the next request.
+//! Two pool implementations:
+//!
+//! - [`FixedPool`] — Fixed-size pool with FIFO request dispatch. Each
+//!   connection has a dedicated worker task that processes requests
+//!   sequentially. Suited for the scheduler connection pattern.
+//!
+//! - [`DynamicPool`] — Lazy pool with min-pending load balancing. Opens
+//!   connections on demand up to a maximum, routes each call to the
+//!   connection with the fewest in-flight requests, and evicts idle
+//!   connections after a configurable TTL. Suited for per-peer Dogwood
+//!   connections.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot};
+use tokio::time::Instant;
 
-use crate::{ProgVers, connect_client, rpc_error::RpcError};
+use crate::{ClientHandle, ProgVers, connect_client, rpc_error::RpcError};
 
 /// A request dispatched through the pool to a worker.
 struct PoolRequest {
@@ -116,6 +126,189 @@ impl FixedPool {
     /// Returns the number of connections in the pool.
     pub fn size(&self) -> usize {
         self.size
+    }
+}
+
+/// A connection tracked by the dynamic pool.
+struct PooledConnection {
+    handle: Arc<ClientHandle>,
+    last_used: Instant,
+}
+
+/// Dynamic connection pool with min-pending load balancing.
+///
+/// Opens connections lazily up to `max_connections`. Each call is routed
+/// to the connection with the fewest pending requests. Idle connections
+/// are evicted after `idle_ttl`.
+///
+/// Use [`DynamicPool::start_evictor`] to spawn the background eviction
+/// task. Without it, idle connections are never reaped.
+pub struct DynamicPool {
+    addr: SocketAddr,
+    max_connections: usize,
+    idle_ttl: Duration,
+    connections: tokio::sync::Mutex<Vec<PooledConnection>>,
+}
+
+// Manual Debug impl because PooledConnection contains ClientHandle (which
+// is Debug) but we want to show pool-level stats, not connection internals.
+impl std::fmt::Debug for DynamicPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DynamicPool")
+            .field("addr", &self.addr)
+            .field("max_connections", &self.max_connections)
+            .field("idle_ttl", &self.idle_ttl)
+            .finish_non_exhaustive()
+    }
+}
+
+impl DynamicPool {
+    /// Create a new dynamic pool targeting `addr`.
+    ///
+    /// No connections are opened until the first call. At most
+    /// `max_connections` connections will be open simultaneously.
+    /// Connections idle longer than `idle_ttl` are eligible for eviction.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `max_connections` is 0.
+    pub fn new(addr: SocketAddr, max_connections: usize, idle_ttl: Duration) -> Self {
+        assert!(max_connections > 0, "max_connections must be at least 1");
+        Self {
+            addr,
+            max_connections,
+            idle_ttl,
+            connections: tokio::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Send an RPC call through the pool.
+    ///
+    /// The request is routed to the connection with the fewest pending
+    /// requests. If all connections are busy and the pool has capacity,
+    /// a new connection is opened.
+    pub async fn send_call(
+        &self,
+        progvers: ProgVers,
+        proc_num: u32,
+        data: &[u8],
+    ) -> Result<Vec<u8>, RpcError> {
+        let conn = self.lease_connection().await?;
+        let result = conn.send_call(progvers, proc_num, data).await;
+        self.touch_connection(&conn);
+        result
+    }
+
+    /// Select or create a connection with the fewest pending requests.
+    async fn lease_connection(&self) -> Result<Arc<ClientHandle>, RpcError> {
+        let mut conns = self.connections.lock().await;
+
+        if conns.is_empty() {
+            // No connections yet — open the first one.
+            let handle = connect_client(&self.addr).await.map_err(|e| {
+                eprintln!("dynamic pool: failed to connect to {}: {e}", self.addr);
+                RpcError::SystemError
+            })?;
+            conns.push(PooledConnection {
+                handle: handle.clone(),
+                last_used: Instant::now(),
+            });
+            return Ok(handle);
+        }
+
+        // Find the connection with the fewest pending requests.
+        let (min_idx, min_pending) = conns
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (i, c.handle.num_pending_requests()))
+            .min_by_key(|&(_, p)| p)
+            .expect("bug: conns is non-empty but min_by_key returned None");
+
+        // If the best connection is idle, use it immediately.
+        if min_pending == 0 {
+            conns[min_idx].last_used = Instant::now();
+            return Ok(conns[min_idx].handle.clone());
+        }
+
+        // All connections are busy. If we have room, open a new one.
+        if conns.len() < self.max_connections {
+            // Drop the lock before connecting? No — we need to hold it to
+            // prevent racing with other lease_connection calls that would
+            // also see "all busy" and open connections past the limit.
+            let handle = connect_client(&self.addr).await.map_err(|e| {
+                eprintln!("dynamic pool: failed to connect to {}: {e}", self.addr);
+                RpcError::SystemError
+            })?;
+            conns.push(PooledConnection {
+                handle: handle.clone(),
+                last_used: Instant::now(),
+            });
+            return Ok(handle);
+        }
+
+        // At max capacity — return the least-loaded connection.
+        conns[min_idx].last_used = Instant::now();
+        Ok(conns[min_idx].handle.clone())
+    }
+
+    /// Update the `last_used` timestamp for a connection after a call completes.
+    fn touch_connection(&self, handle: &Arc<ClientHandle>) {
+        // Try to acquire the lock without blocking. If contended, skip the
+        // touch — the timestamp will be close enough from the lease.
+        if let Ok(mut conns) = self.connections.try_lock()
+            && let Some(entry) = conns.iter_mut().find(|c| Arc::ptr_eq(&c.handle, handle))
+        {
+            entry.last_used = Instant::now();
+        }
+    }
+
+    /// Returns the total number of pending (in-flight) requests across all connections.
+    pub async fn pending_count(&self) -> usize {
+        let conns = self.connections.lock().await;
+        conns.iter().map(|c| c.handle.num_pending_requests()).sum()
+    }
+
+    /// Returns the number of active (non-evicted) connections.
+    pub async fn active_connections(&self) -> usize {
+        self.connections.lock().await.len()
+    }
+
+    /// Remove connections that have been idle longer than `idle_ttl`.
+    ///
+    /// Poisoned connections are cleaned up so the remote end sees a FIN.
+    async fn evict_idle(&self) {
+        let mut conns = self.connections.lock().await;
+        let mut i = 0;
+        while i < conns.len() {
+            let idle_duration = conns[i].last_used.elapsed();
+            let pending = conns[i].handle.num_pending_requests();
+            if pending == 0 && idle_duration > self.idle_ttl {
+                let removed = conns.swap_remove(i);
+                // Poison in background to avoid holding the lock during async poison.
+                tokio::spawn(async move {
+                    removed.handle.poison().await;
+                });
+                // Don't increment i — swap_remove moved the last element here.
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    /// Spawn a background task that periodically evicts idle connections.
+    ///
+    /// The task runs until the returned [`tokio::task::JoinHandle`] is
+    /// aborted or the pool is dropped. The check interval is half the
+    /// `idle_ttl` to keep eviction reasonably prompt without busy-looping.
+    pub fn start_evictor(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
+        let pool = Arc::clone(self);
+        let interval = pool.idle_ttl / 2;
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(interval).await;
+                pool.evict_idle().await;
+            }
+        })
     }
 }
 
@@ -299,5 +492,264 @@ mod tests {
         let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
         let result = FixedPool::connect(&addr, 3).await;
         assert!(result.is_err());
+    }
+
+    // --- DynamicPool tests ---
+
+    #[tokio::test]
+    async fn dynamic_pool_opens_connections_lazily() {
+        let addr = start_echo_server().await;
+
+        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60));
+        assert_eq!(pool.active_connections().await, 0);
+
+        // First call opens a connection.
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, b"hello")
+            .await
+            .unwrap();
+        assert_eq!(result, b"hello");
+        assert_eq!(pool.active_connections().await, 1);
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_sequential_reuses_connection() {
+        let addr = start_echo_server().await;
+
+        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60));
+
+        // Sequential calls should reuse the same (idle) connection.
+        for i in 0..5u32 {
+            let data = format!("seq-{}", i);
+            let result = pool
+                .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                .await
+                .unwrap();
+            assert_eq!(result, data.as_bytes());
+        }
+
+        // Only one connection needed for sequential calls.
+        assert_eq!(pool.active_connections().await, 1);
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_balances_by_pending() {
+        let delay = std::time::Duration::from_millis(100);
+        let addr = start_slow_server(delay).await;
+
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60)));
+
+        // Send 6 concurrent calls through a pool with max_connections=3.
+        let mut handles = Vec::new();
+        for i in 0..6u32 {
+            let pool = pool.clone();
+            handles.push(tokio::spawn(async move {
+                let data = format!("bal-{}", i);
+                pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                    .await
+                    .unwrap()
+            }));
+        }
+
+        // Give time for connections to be opened.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        // Pool should have opened up to 3 connections for concurrent load.
+        let active = pool.active_connections().await;
+        assert!(
+            active >= 2 && active <= 3,
+            "Expected 2-3 active connections under load, got {active}"
+        );
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // After all calls complete, pending should be 0.
+        assert_eq!(pool.pending_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_respects_max_connections() {
+        let delay = std::time::Duration::from_millis(100);
+        let addr = start_slow_server(delay).await;
+
+        let pool = Arc::new(DynamicPool::new(addr, 2, Duration::from_secs(60)));
+
+        // Send 4 concurrent calls but only allow 2 connections.
+        let mut handles = Vec::new();
+        for i in 0..4u32 {
+            let pool = pool.clone();
+            handles.push(tokio::spawn(async move {
+                let data = format!("max-{}", i);
+                pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                    .await
+                    .unwrap()
+            }));
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        // Should never exceed 2 connections.
+        assert!(pool.active_connections().await <= 2);
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_evicts_idle_connections() {
+        let addr = start_echo_server().await;
+
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(200)));
+
+        // Make a call to open a connection.
+        pool.send_call(ProgVers::new(1, 1), 1, b"open")
+            .await
+            .unwrap();
+        assert_eq!(pool.active_connections().await, 1);
+
+        // Start the evictor.
+        let evictor = pool.start_evictor();
+
+        // Wait for the idle TTL + evictor interval to pass.
+        tokio::time::sleep(Duration::from_millis(400)).await;
+
+        // Connection should have been evicted.
+        assert_eq!(
+            pool.active_connections().await,
+            0,
+            "Idle connection should have been evicted"
+        );
+
+        evictor.abort();
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_does_not_evict_busy_connections() {
+        let delay = std::time::Duration::from_millis(500);
+        let addr = start_slow_server(delay).await;
+
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(100)));
+
+        // Start a slow call.
+        let pool2 = pool.clone();
+        let call_handle = tokio::spawn(async move {
+            pool2
+                .send_call(ProgVers::new(1, 1), 1, b"busy")
+                .await
+                .unwrap()
+        });
+
+        // Give the call time to start.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+        // Start the evictor with a very short TTL.
+        let evictor = pool.start_evictor();
+
+        // Wait past the idle TTL.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Connection should NOT be evicted because it has pending requests.
+        assert_eq!(
+            pool.active_connections().await,
+            1,
+            "Busy connection should not be evicted"
+        );
+
+        evictor.abort();
+        call_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_reports_pending_count() {
+        let delay = std::time::Duration::from_millis(200);
+        let addr = start_slow_server(delay).await;
+
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60)));
+
+        // Before any calls, pending should be 0.
+        assert_eq!(pool.pending_count().await, 0);
+
+        // Send 3 concurrent slow calls.
+        let mut handles = Vec::new();
+        for i in 0..3u32 {
+            let pool = pool.clone();
+            handles.push(tokio::spawn(async move {
+                let data = format!("pend-{}", i);
+                pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                    .await
+                    .unwrap()
+            }));
+        }
+
+        // Let the calls start.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Should have some pending calls.
+        let pending = pool.pending_count().await;
+        assert!(
+            pending >= 1,
+            "Expected at least 1 pending request, got {pending}"
+        );
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // After completion, pending should be 0.
+        assert_eq!(pool.pending_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_error_propagation() {
+        let addr = start_echo_server().await;
+
+        let pool = DynamicPool::new(addr, 2, Duration::from_secs(60));
+
+        // Invalid procedure should propagate the error.
+        let result = pool.send_call(ProgVers::new(1, 1), 99, b"bad").await;
+        assert_eq!(result, Err(RpcError::InvalidProcedure));
+
+        // Pool should still work after an error.
+        let result = pool.send_call(ProgVers::new(1, 1), 1, b"ok").await.unwrap();
+        assert_eq!(result, b"ok");
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_connect_failure() {
+        let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60));
+        let result = pool.send_call(ProgVers::new(1, 1), 1, b"fail").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_reopens_after_eviction() {
+        let addr = start_echo_server().await;
+
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(100)));
+
+        // Open a connection.
+        pool.send_call(ProgVers::new(1, 1), 1, b"first")
+            .await
+            .unwrap();
+        assert_eq!(pool.active_connections().await, 1);
+
+        // Start evictor and wait for eviction.
+        let evictor = pool.start_evictor();
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert_eq!(pool.active_connections().await, 0);
+
+        // New call should open a fresh connection.
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, b"second")
+            .await
+            .unwrap();
+        assert_eq!(result, b"second");
+        assert_eq!(pool.active_connections().await, 1);
+
+        evictor.abort();
     }
 }

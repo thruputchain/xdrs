@@ -34,7 +34,7 @@ mod client;
 pub use client::{connect_client, connect_client_with_config};
 
 pub mod pool;
-pub use pool::FixedPool;
+pub use pool::{DynamicPool, FixedPool};
 
 pub mod tcp_connection;
 
