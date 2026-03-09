@@ -41,6 +41,8 @@ RUSTDOCFLAGS="--cfg docsrs" \
 cargo test --doc -p xdr-repr --features "derive,ns,int128"
 cargo test --doc --features "alloc,derive,repr,ns,int128"
 
+cargo clippy --workspace --all-features
+
 set +x
 
 cargo fmt --check --quiet || {
