@@ -33,6 +33,9 @@ pub use server::RpcServer;
 mod client;
 pub use client::{connect_client, connect_client_with_config};
 
+pub mod pool;
+pub use pool::{DynamicPool, FixedPool};
+
 pub mod tcp_connection;
 
 // This module is generated, with the following modifications
@@ -60,7 +63,7 @@ pub struct ProgVers {
 
 impl ProgVers {
     /// Create a new program/version pair.
-    pub fn new(prog: u32, vers: u32) -> Self {
+    pub const fn new(prog: u32, vers: u32) -> Self {
         Self { prog, vers }
     }
 
