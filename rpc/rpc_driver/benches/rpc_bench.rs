@@ -70,7 +70,9 @@ struct LatencyStats {
 
 fn percentile(sorted: &[Duration], pct: f64) -> Duration {
     assert!(!sorted.is_empty());
-    let idx = ((sorted.len() as f64 * pct / 100.0) as usize).min(sorted.len() - 1);
+    let idx = ((sorted.len() as f64 * pct / 100.0).ceil() as usize)
+        .saturating_sub(1)
+        .min(sorted.len() - 1);
     sorted[idx]
 }
 
@@ -272,6 +274,10 @@ fn parse_args() -> CliArgs {
         match args[i].as_str() {
             "--scenario" => {
                 i += 1;
+                if i >= args.len() {
+                    eprintln!("--scenario requires a value");
+                    std::process::exit(1);
+                }
                 filter = Some(args[i].clone());
             }
             "--quick" => {

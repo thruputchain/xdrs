@@ -133,7 +133,11 @@ fn print_comparison(b: &ScenarioResult, c: &ScenarioResult) -> bool {
 
     let b_p99 = b.latency_us.as_ref().unwrap().p99;
     let c_p99 = c.latency_us.as_ref().unwrap().p99;
-    let p99_delta = (c_p99 - b_p99) / b_p99 * 100.0;
+    let p99_delta = if b_p99 > 0.0 {
+        (c_p99 - b_p99) / b_p99 * 100.0
+    } else {
+        0.0
+    };
     if p99_delta > 15.0 {
         regression = true;
     }
@@ -143,7 +147,11 @@ fn print_comparison(b: &ScenarioResult, c: &ScenarioResult) -> bool {
     );
 
     if let (Some(b_tp), Some(c_tp)) = (b.throughput_calls_per_sec, c.throughput_calls_per_sec) {
-        let tp_delta = (c_tp - b_tp) / b_tp * 100.0;
+        let tp_delta = if b_tp > 0.0 {
+            (c_tp - b_tp) / b_tp * 100.0
+        } else {
+            0.0
+        };
         if tp_delta < -10.0 {
             regression = true;
         }
