@@ -10,7 +10,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: bencherdev/bencher@main
+      - uses: bencherdev/bencher@v0.5.10
       - name: Archive PR branch
         run: |
           bencher archive \

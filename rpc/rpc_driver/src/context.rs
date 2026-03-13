@@ -13,15 +13,20 @@ tokio::task_local! {
 /// Only valid inside an [`RpcHandler::dispatch`](crate::handler::RpcHandler::dispatch) call.
 /// Panics if called outside a dispatch context.
 ///
-/// # Important
+/// # Callbacks to the peer
 ///
-/// Task-locals do **not** propagate into `tokio::spawn`. If you call `peer()`
-/// from inside a spawned task it will panic. Either capture the `Arc<dyn RpcSender>`
-/// before spawning or pass it explicitly.
+/// Calling back within `dispatch` will deadlock because the read loop awaits
+/// `dispatch` inline. Instead, capture the sender and spawn a separate task:
 ///
-/// To make callbacks to the peer, clone the returned handle and spawn a
-/// separate task — calling back within `dispatch` will deadlock because the
-/// read loop awaits `dispatch` inline.
+/// ```ignore
+/// let peer = rpc_driver::peer();  // capture inside dispatch
+/// tokio::spawn(async move {
+///     peer.send_call(prog, 1, &data).await.unwrap();
+/// });
+/// ```
+///
+/// You **must** call `peer()` before `tokio::spawn` — task-locals do not
+/// propagate into spawned tasks, so calling `peer()` inside one will panic.
 pub fn peer() -> Arc<dyn RpcSender> {
     RPC_PEER.with(|s| s.clone())
 }

@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: bencherdev/bencher@main
+      - uses: bencherdev/bencher@v0.5.10
       - name: Run PR benchmarks
         run: |
           bencher run \
