@@ -15,10 +15,8 @@ jobs:
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
       - uses: bencherdev/bencher@main
       - name: Run benchmarks
         run: |
