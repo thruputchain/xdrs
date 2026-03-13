@@ -5,7 +5,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 
 use crate::{
-    ClientHandle, ConnectionConfig, ServiceMap, tasks::launch_read_task, tcp_connection::accept,
+    ConnectionConfig, ConnectionHandle, ServiceMap, tasks::launch_read_task, tcp_connection::accept,
 };
 
 /// TCP-based RPC server that dispatches calls to registered services.
@@ -47,7 +47,7 @@ impl RpcServer {
                 }
             };
 
-            let client_handle = Arc::new(ClientHandle::new(write, self.config.log_timestamps));
+            let client_handle = Arc::new(ConnectionHandle::new(write, self.config.log_timestamps));
             let service_map = self.config.services.clone();
 
             tokio::spawn({

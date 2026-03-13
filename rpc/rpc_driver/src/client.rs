@@ -2,12 +2,12 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use crate::{ClientHandle, ConnectionConfig, tasks::launch_read_task, tcp_connection::connect};
+use crate::{ConnectionConfig, ConnectionHandle, tasks::launch_read_task, tcp_connection::connect};
 
 /// Connect to an RPC server and return a handle for making calls.
 ///
 /// Spawns a background read task for the connection.
-pub async fn connect_client(addr: &SocketAddr) -> Result<Arc<ClientHandle>, std::io::Error> {
+pub async fn connect_client(addr: &SocketAddr) -> Result<Arc<ConnectionHandle>, std::io::Error> {
     connect_client_with_config(addr, ConnectionConfig::default()).await
 }
 
@@ -17,11 +17,11 @@ pub async fn connect_client(addr: &SocketAddr) -> Result<Arc<ClientHandle>, std:
 pub async fn connect_client_with_config(
     addr: &SocketAddr,
     config: ConnectionConfig,
-) -> Result<Arc<ClientHandle>, std::io::Error> {
+) -> Result<Arc<ConnectionHandle>, std::io::Error> {
     let (client_read, client_write) = connect(addr, config.max_message_size).await?;
     let service_map = config.services.clone();
 
-    let client_handle = Arc::new(ClientHandle::new(client_write, config.log_timestamps));
+    let client_handle = Arc::new(ConnectionHandle::new(client_write, config.log_timestamps));
 
     tokio::spawn({
         let client_handle = client_handle.clone();

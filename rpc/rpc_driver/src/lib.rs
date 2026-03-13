@@ -13,16 +13,80 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## Implementing a Service
+//!
+//! Implement [`RpcHandler`] to handle incoming RPC calls. Register handlers
+//! with a [`ServiceMap`] and pass it to [`RpcServer`]:
+//!
+//! ```no_run
+//! use rpc_driver::{ProgVers, RpcError, RpcServer, ServiceMap, handler::RpcHandler};
+//! use async_trait::async_trait;
+//!
+//! struct MyService;
+//!
+//! #[async_trait]
+//! impl RpcHandler for MyService {
+//!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+//!         match proc {
+//!             0 => Ok(vec![]),           // null
+//!             1 => Ok(data.to_vec()),    // echo
+//!             _ => Err(RpcError::InvalidProcedure),
+//!         }
+//!     }
+//!     fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
+//! }
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut services = ServiceMap::new();
+//! services.add_service(Box::new(MyService));
+//! let listener = tokio::net::TcpListener::bind("0.0.0.0:111").await?;
+//! let server = RpcServer::new(listener, services);
+//! server.start().await;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Bidirectional RPC
+//!
+//! Inside a handler, use [`peer()`] to get the per-connection
+//! [`RpcSender`]. This is stored in task-local context and set
+//! automatically by the dispatch loop.
+//!
+//! **Important:** The read loop awaits `dispatch` inline, so calling back
+//! to the peer directly will deadlock. Spawn a separate task instead:
+//!
+//! ```no_run
+//! # use rpc_driver::{ProgVers, RpcError, handler::RpcHandler};
+//! # use async_trait::async_trait;
+//! # struct MyService;
+//! # #[async_trait]
+//! # impl RpcHandler for MyService {
+//! #   fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
+//!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+//!         let peer = rpc_driver::peer();
+//!         tokio::spawn(async move {
+//!             // safe — runs after dispatch returns
+//!             let _ = peer.send_call(ProgVers::new(200, 1), 0, b"").await;
+//!         });
+//!         Ok(vec![])
+//!     }
+//! # }
+//! ```
+//!
+//! [`try_peer()`] returns `Option` and is safe to call outside a handler.
 
 // Lints on the generate rpc_msg.rs file
 #![allow(clippy::upper_case_acronyms)]
 #![allow(clippy::match_single_binding)]
 
-pub mod client_state;
-pub use client_state::*;
+pub mod connection;
+pub use connection::*;
 
-pub mod server_state;
-pub use server_state::*;
+mod context;
+pub use context::{peer, try_peer};
+
+pub mod handler;
+pub use handler::*;
 
 mod config;
 pub use config::ConnectionConfig;

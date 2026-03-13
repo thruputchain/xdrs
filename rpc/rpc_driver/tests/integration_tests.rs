@@ -1,5 +1,5 @@
 use rpc_driver::{
-    client_state::ClientHandle, server_state::ServiceMap, tasks::launch_read_task,
+    connection::ConnectionHandle, handler::ServiceMap, tasks::launch_read_task,
     tcp_connection::connect,
 };
 use tokio::net::TcpListener;
@@ -11,20 +11,15 @@ mod tests {
     use async_trait::async_trait;
     use rpc_driver::{
         ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client,
-        connect_client_with_config, server_state::ServerDispatch, tcp_connection::accept,
+        connect_client_with_config, handler::RpcHandler, tcp_connection::accept,
     };
 
     use super::*;
     struct EchoCallbackService {}
 
     #[async_trait]
-    impl ServerDispatch for EchoCallbackService {
-        async fn dispatch(
-            &self,
-            proc: u32,
-            data: &[u8],
-            _client: &Arc<ClientHandle>,
-        ) -> Result<Vec<u8>, RpcError> {
+    impl RpcHandler for EchoCallbackService {
+        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
@@ -58,8 +53,8 @@ mod tests {
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
-        let client_handle = Arc::new(ClientHandle::new(client_write, false));
-        let server_handle = Arc::new(ClientHandle::new(server_write, false));
+        let client_handle = Arc::new(ConnectionHandle::new(client_write, false));
+        let server_handle = Arc::new(ConnectionHandle::new(server_write, false));
 
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
@@ -140,7 +135,7 @@ mod tests {
 
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
 
-        let client_handle = Arc::new(ClientHandle::new(client_write, false));
+        let client_handle = Arc::new(ConnectionHandle::new(client_write, false));
 
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
@@ -208,13 +203,8 @@ mod tests {
     }
 
     #[async_trait]
-    impl ServerDispatch for BlockingEchoService {
-        async fn dispatch(
-            &self,
-            proc: u32,
-            data: &[u8],
-            _client: &Arc<ClientHandle>,
-        ) -> Result<Vec<u8>, RpcError> {
+    impl RpcHandler for BlockingEchoService {
+        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }

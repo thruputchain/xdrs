@@ -1,8 +1,10 @@
-//! Client connection state and RPC call handling.
+//! Connection state and RPC call handling.
 
 use std::collections::HashMap;
 use std::sync::Mutex as StdMutex;
 use tokio::sync::{Mutex, oneshot};
+
+use async_trait::async_trait;
 
 use crate::{
     ProgVers,
@@ -11,19 +13,52 @@ use crate::{
     tcp_connection::WriteHalf,
 };
 
+/// Trait for making outgoing RPC calls.
+///
+/// Implemented by [`ConnectionHandle`] for real TCP connections,
+/// and by [`FixedPool`](crate::FixedPool) and [`DynamicPool`](crate::DynamicPool)
+/// for pooled connections.
+///
+/// Inside an [`RpcHandler`](crate::handler::RpcHandler) dispatch, the
+/// per-connection sender is available via [`peer()`](crate::peer).
+///
+/// Implement on a mock struct for unit testing without TCP.
+#[async_trait]
+pub trait RpcSender: Send + Sync {
+    /// Send an RPC call and return the response data.
+    async fn send_call(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<Vec<u8>, RpcError>;
+}
+
+#[async_trait]
+impl RpcSender for ConnectionHandle {
+    async fn send_call(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<Vec<u8>, RpcError> {
+        ConnectionHandle::send_call(self, progvers, proc, data).await
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct CallbackHandle {
     tx: oneshot::Sender<Result<Vec<u8>, RpcError>>,
 }
 
 #[derive(Debug)]
-pub(crate) struct ClientState {
+pub(crate) struct ConnectionState {
     pub(crate) pending_requests: HashMap<u32, CallbackHandle>,
     last_xid: u32,
     poisoned: bool,
 }
 
-impl ClientState {
+impl ConnectionState {
     pub fn new() -> Self {
         Self {
             pending_requests: HashMap::new(),
@@ -63,7 +98,7 @@ impl ClientState {
     }
 }
 
-impl Drop for ClientState {
+impl Drop for ConnectionState {
     fn drop(&mut self) {
         self.poison();
     }
@@ -74,17 +109,17 @@ impl Drop for ClientState {
 /// Manages pending requests and provides methods for sending calls
 /// and graceful shutdown via poisoning.
 #[derive(Debug)]
-pub struct ClientHandle {
-    pub(crate) client_state: StdMutex<ClientState>,
+pub struct ConnectionHandle {
+    pub(crate) connection_state: StdMutex<ConnectionState>,
     write_half: Mutex<Option<WriteHalf>>,
     pub(crate) log_timestamps: bool,
 }
 
-impl ClientHandle {
-    /// Create a new client handle wrapping the given TCP write half.
+impl ConnectionHandle {
+    /// Create a new connection handle wrapping the given TCP write half.
     pub fn new(write_half: WriteHalf, log_timestamps: bool) -> Self {
         Self {
-            client_state: StdMutex::new(ClientState::new()),
+            connection_state: StdMutex::new(ConnectionState::new()),
             write_half: Mutex::new(Some(write_half)),
             log_timestamps,
         }
@@ -94,7 +129,7 @@ impl ClientHandle {
     pub async fn poison(&self) {
         // Drop the write half to send TCP FIN to the remote end.
         *self.write_half.lock().await = None;
-        self.client_state.lock().unwrap().poison();
+        self.connection_state.lock().unwrap().poison();
     }
 
     /// Write bytes directly to the socket from the calling task — no channel hop.
@@ -165,7 +200,7 @@ impl ClientHandle {
     ) -> Result<Vec<u8>, RpcError> {
         let (tx, rx) = oneshot::channel();
         let xid = self
-            .client_state
+            .connection_state
             .lock()
             .unwrap()
             .add_callback(CallbackHandle { tx })?;
@@ -173,7 +208,7 @@ impl ClientHandle {
         let msg = match self.make_call_msg(xid, progvers, proc, data) {
             Ok(msg) => msg,
             Err(e) => {
-                self.client_state
+                self.connection_state
                     .lock()
                     .unwrap()
                     .pending_requests
@@ -188,7 +223,7 @@ impl ClientHandle {
 
         let send_result = self.send_msg(&msg).await;
         if send_result.is_err() {
-            self.client_state
+            self.connection_state
                 .lock()
                 .unwrap()
                 .pending_requests
@@ -201,7 +236,7 @@ impl ClientHandle {
 
     /// Returns the number of pending (in-flight) requests.
     pub fn num_pending_requests(&self) -> usize {
-        self.client_state.lock().unwrap().pending_requests.len()
+        self.connection_state.lock().unwrap().pending_requests.len()
     }
 }
 
@@ -227,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_callback_roundtrip() {
-        let mut state = ClientState::new();
+        let mut state = ConnectionState::new();
 
         let (tx, rx) = oneshot::channel();
 

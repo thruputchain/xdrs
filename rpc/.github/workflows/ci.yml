@@ -12,12 +12,8 @@ jobs:
     env:
       CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
-      - uses: webfactory/ssh-agent@v0.9.1
-        with:
-          ssh-private-key: |
-            ${{ secrets.XDR_RPC_TO_XDR_COMMON_ACCESS_KEY }}
-            ${{ secrets.XDR_RPC_TO_XDRS_ACCESS_KEY }}
       - uses: actions/checkout@v4
       - name: Set up Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -25,8 +21,10 @@ jobs:
           toolchain: stable
         #  override: true
       - name: Test (No Features)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace
+        run: cargo test --workspace
       - name: Test (All Features)
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo test --workspace --all-features
+        run: cargo test --workspace --all-features
       - name: Check format
-        run: CARGO_NET_GIT_FETCH_WITH_CLI=true cargo fmt --check
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings

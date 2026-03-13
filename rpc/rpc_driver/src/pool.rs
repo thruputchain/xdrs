@@ -16,10 +16,11 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 
-use crate::{ClientHandle, ProgVers, connect_client, rpc_error::RpcError};
+use crate::{ConnectionHandle, ProgVers, RpcSender, connect_client, rpc_error::RpcError};
 
 /// A request dispatched through the pool to a worker.
 struct PoolRequest {
@@ -31,7 +32,7 @@ struct PoolRequest {
 
 /// Fixed-size connection pool with FIFO request dispatch.
 ///
-/// Wraps N [`ClientHandle`] connections to a single address. A shared
+/// Wraps N [`ConnectionHandle`] connections to a single address. A shared
 /// `tokio::sync::mpsc` channel distributes requests to connection workers
 /// in FIFO order — one call at a time per connection.
 ///
@@ -98,21 +99,27 @@ impl FixedPool {
         })
     }
 
+    /// Returns the number of connections in the pool.
+    pub fn size(&self) -> usize {
+        self.size
+    }
+}
+
+#[async_trait]
+impl RpcSender for FixedPool {
     /// Send an RPC call through the pool.
     ///
     /// The request is dispatched to the next idle worker via FIFO ordering.
-    /// Returns the response data on success, or an error if the call fails
-    /// or the pool has been dropped.
-    pub async fn send_call(
+    async fn send_call(
         &self,
         progvers: ProgVers,
-        proc_num: u32,
+        proc: u32,
         data: &[u8],
     ) -> Result<Vec<u8>, RpcError> {
         let (tx, rx) = oneshot::channel();
         let request = PoolRequest {
             progvers,
-            proc_num,
+            proc_num: proc,
             data: data.to_vec(),
             reply: tx,
         };
@@ -122,16 +129,11 @@ impl FixedPool {
             .map_err(|_| RpcError::SystemError)?;
         rx.await.map_err(|_| RpcError::SystemError)?
     }
-
-    /// Returns the number of connections in the pool.
-    pub fn size(&self) -> usize {
-        self.size
-    }
 }
 
 /// A connection tracked by the dynamic pool.
 struct PooledConnection {
-    handle: Arc<ClientHandle>,
+    handle: Arc<ConnectionHandle>,
     last_used: Instant,
 }
 
@@ -150,7 +152,7 @@ pub struct DynamicPool {
     connections: tokio::sync::Mutex<Vec<PooledConnection>>,
 }
 
-// Manual Debug impl because PooledConnection contains ClientHandle (which
+// Manual Debug impl because PooledConnection contains ConnectionHandle (which
 // is Debug) but we want to show pool-level stats, not connection internals.
 impl std::fmt::Debug for DynamicPool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -182,25 +184,8 @@ impl DynamicPool {
         }
     }
 
-    /// Send an RPC call through the pool.
-    ///
-    /// The request is routed to the connection with the fewest pending
-    /// requests. If all connections are busy and the pool has capacity,
-    /// a new connection is opened.
-    pub async fn send_call(
-        &self,
-        progvers: ProgVers,
-        proc_num: u32,
-        data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
-        let conn = self.lease_connection().await?;
-        let result = conn.send_call(progvers, proc_num, data).await;
-        self.touch_connection(&conn);
-        result
-    }
-
     /// Select or create a connection with the fewest pending requests.
-    async fn lease_connection(&self) -> Result<Arc<ClientHandle>, RpcError> {
+    async fn lease_connection(&self) -> Result<Arc<ConnectionHandle>, RpcError> {
         let mut conns = self.connections.lock().await;
 
         if conns.is_empty() {
@@ -252,7 +237,7 @@ impl DynamicPool {
     }
 
     /// Update the `last_used` timestamp for a connection after a call completes.
-    fn touch_connection(&self, handle: &Arc<ClientHandle>) {
+    fn touch_connection(&self, handle: &Arc<ConnectionHandle>) {
         // Try to acquire the lock without blocking. If contended, skip the
         // touch — the timestamp will be close enough from the lease.
         if let Ok(mut conns) = self.connections.try_lock()
@@ -312,26 +297,38 @@ impl DynamicPool {
     }
 }
 
+#[async_trait]
+impl RpcSender for DynamicPool {
+    /// Send an RPC call through the pool.
+    ///
+    /// Routed to the connection with the fewest pending requests.
+    async fn send_call(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<Vec<u8>, RpcError> {
+        let conn = self.lease_connection().await?;
+        let result = conn.send_call(progvers, proc, data).await;
+        self.touch_connection(&conn);
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server_state::{ServerDispatch, ServiceMap};
-    use crate::{ClientHandle, RpcServer};
+    use crate::RpcServer;
+    use crate::handler::{RpcHandler, ServiceMap};
     use async_trait::async_trait;
-    use std::sync::Arc;
     use tokio::net::TcpListener;
 
     /// Echo service that returns the input data unchanged.
     struct EchoService;
 
     #[async_trait]
-    impl ServerDispatch for EchoService {
-        async fn dispatch(
-            &self,
-            proc: u32,
-            data: &[u8],
-            _client: &Arc<ClientHandle>,
-        ) -> Result<Vec<u8>, RpcError> {
+    impl RpcHandler for EchoService {
+        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
@@ -349,13 +346,8 @@ mod tests {
     }
 
     #[async_trait]
-    impl ServerDispatch for SlowEchoService {
-        async fn dispatch(
-            &self,
-            proc: u32,
-            data: &[u8],
-            _client: &Arc<ClientHandle>,
-        ) -> Result<Vec<u8>, RpcError> {
+    impl RpcHandler for SlowEchoService {
+        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
@@ -751,5 +743,33 @@ mod tests {
         assert_eq!(pool.active_connections().await, 1);
 
         evictor.abort();
+    }
+
+    #[tokio::test]
+    async fn fixed_pool_as_rpc_sender() {
+        let addr = start_echo_server().await;
+        let pool = Arc::new(FixedPool::connect(&addr, 2).await.unwrap());
+
+        // Use pool through the RpcSender trait object
+        let sender: Arc<dyn RpcSender> = pool;
+        let result = sender
+            .send_call(ProgVers::new(1, 1), 1, b"via-trait")
+            .await
+            .unwrap();
+        assert_eq!(result, b"via-trait");
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_as_rpc_sender() {
+        let addr = start_echo_server().await;
+        let pool = Arc::new(DynamicPool::new(addr, 2, Duration::from_secs(60)));
+
+        // Use pool through the RpcSender trait object
+        let sender: Arc<dyn RpcSender> = pool;
+        let result = sender
+            .send_call(ProgVers::new(1, 1), 1, b"via-trait")
+            .await
+            .unwrap();
+        assert_eq!(result, b"via-trait");
     }
 }

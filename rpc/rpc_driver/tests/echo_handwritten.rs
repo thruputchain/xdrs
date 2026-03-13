@@ -1,19 +1,14 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rpc_driver::{ProgVers, ProgramError, RpcError, client_state::ClientHandle};
+use rpc_driver::{ProgVers, ProgramError, RpcError, RpcSender};
 
 #[allow(non_camel_case_types)]
 #[async_trait]
 pub trait TestProgram_TestVersion: Send + Sync {
-    async fn null(&self, client: &Arc<ClientHandle>) -> Result<(), ProgramError>;
-    async fn takes_int(&self, client: &Arc<ClientHandle>, i: i32) -> Result<i32, ProgramError>;
-    async fn takes_two_ints(
-        &self,
-        client: &Arc<ClientHandle>,
-        i1: i32,
-        i2: i32,
-    ) -> Result<i32, ProgramError>;
+    async fn null(&self) -> Result<(), ProgramError>;
+    async fn takes_int(&self, i: i32) -> Result<i32, ProgramError>;
+    async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgramError>;
 
     fn prog_vers(&self) -> ProgVers {
         ProgVers::new(3123123, 1)
@@ -32,21 +27,12 @@ impl TestProgram_TestVersion_Dispatcher {
 }
 
 #[async_trait]
-impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersion_Dispatcher {
-    async fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        client: &Arc<ClientHandle>,
-    ) -> Result<Vec<u8>, RpcError> {
+impl rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatcher {
+    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
         match proc {
             0 => {
                 let _args: () = xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                let res = self
-                    .inner
-                    .null(client)
-                    .await
-                    .map_err(|_| RpcError::SystemError)?;
+                let res = self.inner.null().await.map_err(|_| RpcError::SystemError)?;
                 xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
             }
             1 => {
@@ -54,7 +40,7 @@ impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersion_Dispat
                     xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
                 let res = self
                     .inner
-                    .takes_int(client, args.0)
+                    .takes_int(args.0)
                     .await
                     .map_err(|_| RpcError::SystemError)?;
                 xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
@@ -64,7 +50,7 @@ impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersion_Dispat
                     xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
                 let res = self
                     .inner
-                    .takes_two_ints(client, args.0, args.1)
+                    .takes_two_ints(args.0, args.1)
                     .await
                     .map_err(|_| RpcError::SystemError)?;
                 xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
@@ -80,11 +66,11 @@ impl rpc_driver::server_state::ServerDispatch for TestProgram_TestVersion_Dispat
 
 #[allow(non_camel_case_types)]
 pub struct TestProgram_TestVersion_Client {
-    handle: Arc<ClientHandle>,
+    handle: Arc<dyn RpcSender>,
 }
 
 impl TestProgram_TestVersion_Client {
-    pub fn new(handle: Arc<ClientHandle>) -> Self {
+    pub fn new(handle: Arc<dyn RpcSender>) -> Self {
         Self { handle }
     }
 
@@ -113,10 +99,10 @@ impl TestProgram_TestVersion_Client {
 mod tests {
     use super::*;
     use rpc_driver::ProgramError;
-    use rpc_driver::client_state::ClientHandle;
+    use rpc_driver::connection::ConnectionHandle;
     use rpc_driver::tasks::launch_read_task;
     use rpc_driver::tcp_connection::connect;
-    use rpc_driver::{RpcServer, connect_client, server_state::ServiceMap, tcp_connection::accept};
+    use rpc_driver::{RpcServer, connect_client, handler::ServiceMap, tcp_connection::accept};
     use std::sync::Arc;
     use tokio::net::TcpListener;
 
@@ -124,23 +110,14 @@ mod tests {
 
     #[async_trait]
     impl TestProgram_TestVersion for EchoCallbackService {
-        async fn null(&self, _client: &Arc<ClientHandle>) -> Result<(), ProgramError> {
+        async fn null(&self) -> Result<(), ProgramError> {
             Ok(())
         }
-        async fn takes_int(
-            &self,
-            _client: &Arc<ClientHandle>,
-            i: i32,
-        ) -> Result<i32, ProgramError> {
+        async fn takes_int(&self, i: i32) -> Result<i32, ProgramError> {
             println!("EchoCallbackService: takes_int: i={}", i);
             Ok(i)
         }
-        async fn takes_two_ints(
-            &self,
-            _client: &Arc<ClientHandle>,
-            i1: i32,
-            i2: i32,
-        ) -> Result<i32, ProgramError> {
+        async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgramError> {
             println!("EchoCallbackService: takes_two_ints: i1={}, i2={}", i1, i2);
             Ok(i1 + i2)
         }
@@ -151,28 +128,16 @@ mod tests {
 
     #[async_trait]
     impl TestProgram_TestVersion for FailingService {
-        async fn null(&self, _client: &Arc<ClientHandle>) -> Result<(), ProgramError> {
-            // Using ProgramError::msg() for simple string errors
+        async fn null(&self) -> Result<(), ProgramError> {
             Err(ProgramError::msg("null always fails"))
         }
 
-        async fn takes_int(
-            &self,
-            _client: &Arc<ClientHandle>,
-            _i: i32,
-        ) -> Result<i32, ProgramError> {
-            // Using From<std::io::Error> impl - the ? operator works with io::Error
+        async fn takes_int(&self, _i: i32) -> Result<i32, ProgramError> {
             let _file = std::fs::File::open("/nonexistent/path/that/doesnt/exist")?;
             Ok(0)
         }
 
-        async fn takes_two_ints(
-            &self,
-            _client: &Arc<ClientHandle>,
-            _i1: i32,
-            _i2: i32,
-        ) -> Result<i32, ProgramError> {
-            // Using ProgramError::new() explicitly for other error types
+        async fn takes_two_ints(&self, _i1: i32, _i2: i32) -> Result<i32, ProgramError> {
             Err(ProgramError::new(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "takes_two_ints always fails",
@@ -236,8 +201,9 @@ mod tests {
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
-        let client_handle = Arc::new(ClientHandle::new(client_write, false));
-        let server_handle: Arc<ClientHandle> = Arc::new(ClientHandle::new(server_write, false));
+        let client_handle = Arc::new(ConnectionHandle::new(client_write, false));
+        let server_handle: Arc<ConnectionHandle> =
+            Arc::new(ConnectionHandle::new(server_write, false));
 
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
@@ -320,12 +286,12 @@ mod tests {
 
     #[async_trait]
     impl TestProgram_TestVersion for CallbackEchoService {
-        async fn null(&self, _client: &Arc<ClientHandle>) -> Result<(), ProgramError> {
+        async fn null(&self) -> Result<(), ProgramError> {
             Ok(())
         }
-        async fn takes_int(&self, client: &Arc<ClientHandle>, i: i32) -> Result<i32, ProgramError> {
-            // Use the typed client wrapper to call back to the client's service
-            let cb_client = TestProgram_TestVersion_Client::new(client.clone());
+        async fn takes_int(&self, i: i32) -> Result<i32, ProgramError> {
+            // Use rpc_driver::peer() to get the per-connection sender
+            let cb_client = TestProgram_TestVersion_Client::new(rpc_driver::peer());
             let notify = self.callback_result.clone();
             tokio::spawn(async move {
                 let result = cb_client.takes_int(i).await.unwrap();
@@ -335,12 +301,7 @@ mod tests {
             // Return immediately — the callback runs after the read loop is unblocked
             Ok(i)
         }
-        async fn takes_two_ints(
-            &self,
-            _client: &Arc<ClientHandle>,
-            i1: i32,
-            i2: i32,
-        ) -> Result<i32, ProgramError> {
+        async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgramError> {
             Ok(i1 + i2)
         }
     }
@@ -389,5 +350,49 @@ mod tests {
         )
         .await
         .expect("callback was not received within timeout");
+    }
+
+    // -- Mock-sender tests (no TCP needed) --
+
+    #[tokio::test]
+    async fn test_service_without_sender() {
+        let svc = EchoCallbackService {};
+
+        svc.null().await.unwrap();
+        assert_eq!(svc.takes_int(42).await.unwrap(), 42);
+        assert_eq!(svc.takes_two_ints(10, 20).await.unwrap(), 30);
+    }
+
+    #[tokio::test]
+    async fn test_typed_client_with_mock_sender() {
+        /// Mock that returns a fixed XDR-encoded i32 response.
+        struct FixedResponseSender {
+            response: Vec<u8>,
+        }
+
+        #[async_trait]
+        impl RpcSender for FixedResponseSender {
+            async fn send_call(&self, _: ProgVers, _: u32, _: &[u8]) -> Result<Vec<u8>, RpcError> {
+                Ok(self.response.clone())
+            }
+        }
+
+        let sender = Arc::new(FixedResponseSender {
+            response: xdrs::txs::encode(&99i32).unwrap(),
+        }) as Arc<dyn RpcSender>;
+
+        let client = TestProgram_TestVersion_Client::new(sender);
+
+        // The client encodes args, sends via mock, decodes the fixed response
+        assert_eq!(client.takes_int(42).await.unwrap(), 99);
+    }
+
+    #[tokio::test]
+    async fn test_failing_service_without_sender() {
+        let svc = FailingService {};
+
+        assert!(svc.null().await.is_err());
+        assert!(svc.takes_int(1).await.is_err());
+        assert!(svc.takes_two_ints(1, 2).await.is_err());
     }
 }

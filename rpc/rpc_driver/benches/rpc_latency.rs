@@ -20,15 +20,12 @@
 //!     mean   19.8 µs
 //!     throughput  50505 calls/s
 
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use rpc_driver::{
-    ConnectionConfig, ProgVers, RpcError, RpcServer,
-    client_state::ClientHandle,
-    connect_client_with_config,
-    server_state::{ServerDispatch, ServiceMap},
+    ConnectionConfig, ConnectionHandle, ProgVers, RpcError, RpcServer, connect_client_with_config,
+    handler::{RpcHandler, ServiceMap},
 };
 use tokio::net::TcpListener;
 
@@ -39,13 +36,8 @@ use tokio::net::TcpListener;
 struct EchoService;
 
 #[async_trait]
-impl ServerDispatch for EchoService {
-    async fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        _client: &Arc<ClientHandle>,
-    ) -> Result<Vec<u8>, RpcError> {
+impl RpcHandler for EchoService {
+    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
         if proc != 1 {
             return Err(RpcError::InvalidProcedure);
         }
@@ -76,7 +68,7 @@ fn as_us(d: Duration) -> f64 {
 // Benchmark runner
 // ---------------------------------------------------------------------------
 
-async fn run(label: &str, client: &ClientHandle, warmup: usize, iters: usize, payload: &[u8]) {
+async fn run(label: &str, client: &ConnectionHandle, warmup: usize, iters: usize, payload: &[u8]) {
     let prog = ProgVers::new(1, 1);
 
     // Warm-up: let the tokio scheduler, TCP buffers, and branch predictors settle.

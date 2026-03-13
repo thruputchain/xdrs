@@ -2,10 +2,11 @@ use std::sync::Arc;
 
 use crate::{
     ProgVers,
-    client_state::{ClientHandle, log_rpc_timestamp},
+    connection::{ConnectionHandle, RpcSender, log_rpc_timestamp},
+    context::with_peer,
+    handler::ServiceMap,
     rpc_error::DEFAULT_OPAQUE_AUTH,
     rpc_msg,
-    server_state::ServiceMap,
     tcp_connection::ReadHalf,
 };
 
@@ -22,7 +23,7 @@ pub enum ReadTaskError {
 // Never returns (), just error when the connection is closed
 pub async fn launch_read_task(
     service_map: Arc<ServiceMap>,
-    client_cbs: Arc<ClientHandle>,
+    client_cbs: Arc<ConnectionHandle>,
     mut read_half: ReadHalf,
 ) -> Result<(), ReadTaskError> {
     let mut write_buffer = xdrs::txs::buf_writer::BufWriter::default();
@@ -57,15 +58,13 @@ pub async fn launch_read_task(
                     prog: cbody.prog,
                     vers: cbody.vers,
                 };
-                let res = service_map
-                    .dispatch(
-                        cbody.rpcvers,
-                        vers,
-                        cbody.proc,
-                        remaining_bytes,
-                        &client_cbs,
-                    )
-                    .await;
+                let sender: Arc<dyn RpcSender> = client_cbs.clone();
+                let res = with_peer(sender, async {
+                    service_map
+                        .dispatch(cbody.rpcvers, vers, cbody.proc, remaining_bytes)
+                        .await
+                })
+                .await;
                 match res {
                     Ok(response) => {
                         prepare_success_response(msg.xid, &response, &mut write_buffer)?;
@@ -100,13 +99,13 @@ pub async fn launch_read_task(
                         areply.reply_data
                     {
                         client_cbs
-                            .client_state
+                            .connection_state
                             .lock()
                             .unwrap()
                             .handle_reply(msg.xid, Ok(remaining_bytes.to_vec()));
                     } else {
                         client_cbs
-                            .client_state
+                            .connection_state
                             .lock()
                             .unwrap()
                             .handle_reply(msg.xid, Err(areply.reply_data.into()));
@@ -117,7 +116,7 @@ pub async fn launch_read_task(
                         log_rpc_timestamp(msg.xid, "client_recv");
                     }
                     client_cbs
-                        .client_state
+                        .connection_state
                         .lock()
                         .unwrap()
                         .handle_reply(msg.xid, Err(rreply.into()));
