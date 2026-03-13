@@ -9,6 +9,7 @@ jobs:
     name: Track benchmarks with Bencher
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       checks: write
     env:
       CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
