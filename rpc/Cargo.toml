@@ -1,4 +1,4 @@
 [workspace]
-members = ["rpc_driver"]
+members = ["rpc_driver", "bench-compare"]
 
 resolver = "2"

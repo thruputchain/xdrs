@@ -14,12 +14,8 @@ jobs:
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-        #  override: true
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
       - name: Test (No Features)
         run: cargo test --workspace
       - name: Test (All Features)

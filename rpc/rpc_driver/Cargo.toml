@@ -12,12 +12,19 @@ readme = "../README.md"
 keywords = ["xdr", "rpc"]
 categories = ["rpc"]
 
+[features]
+concurrent-dispatch = []
+
 [dependencies]
 async-trait = "0.1.89"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
 xdrs = { registry = "groundhog", version = "0.5.0", features = ["derive", "alloc"] }
 
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 [[bench]]
-name = "rpc_latency"
+name = "rpc_bench"
 harness = false
