@@ -1,14 +1,21 @@
 //! rpc_driver benchmark suite.
 //!
 //! Measures serial and concurrent dispatch performance across multiple
-//! scenarios. Outputs human-readable stats to stdout and JSON to target/bench/.
+//! scenarios. Outputs human-readable stats to stdout.
 //!
-//! Run with:
-//!   cargo bench --bench rpc_bench
-//!   cargo bench --bench rpc_bench --features concurrent-dispatch
-//!   cargo bench --bench rpc_bench -- --scenario sequential_latency
-//!   cargo bench --bench rpc_bench -- --quick
-//!   cargo bench --bench rpc_bench -- --bencher  # BMF output for bencher.dev
+//! # Usage
+//!
+//! ```sh
+//! cargo bench --bench rpc_bench
+//! cargo bench --bench rpc_bench --features concurrent-dispatch
+//! ```
+//!
+//! # Flags (after `--`)
+//!
+//! - `--scenario <name>` — run only scenarios whose name contains `<name>`
+//! - `--quick`           — 10x fewer iterations for fast smoke runs
+//! - `--json`            — write detailed JSON to `target/bench/` (for bench-compare)
+//! - `--bencher`         — emit Bencher Metric Format JSON to stdout (for CI)
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -173,6 +180,35 @@ async fn start_server(service: Box<dyn RpcHandler>) -> SocketAddr {
     addr
 }
 
+async fn run_concurrent(
+    sender: Arc<dyn RpcSender>,
+    payload: &[u8],
+    concurrency: usize,
+    iters: usize,
+) -> (Vec<Duration>, Duration) {
+    let payload: Arc<[u8]> = Arc::from(payload);
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
+    let wall_start = Instant::now();
+    let mut handles = Vec::new();
+    for _ in 0..iters {
+        let sender = sender.clone();
+        let payload = payload.clone();
+        let sem = semaphore.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
+            let t0 = Instant::now();
+            sender.send_call(ECHO_PROG, 1, &payload).await.unwrap();
+            t0.elapsed()
+        }));
+    }
+    let mut samples = Vec::with_capacity(iters);
+    for h in handles {
+        samples.push(h.await.unwrap());
+    }
+    let wall = wall_start.elapsed();
+    (samples, wall)
+}
+
 // ---------------------------------------------------------------------------
 // Output helpers
 // ---------------------------------------------------------------------------
@@ -261,6 +297,7 @@ fn unix_timestamp() -> String {
 struct CliArgs {
     scenario_filter: Option<String>,
     quick: bool,
+    json: bool,
     bencher: bool,
 }
 
@@ -268,6 +305,7 @@ fn parse_args() -> CliArgs {
     let args: Vec<String> = std::env::args().collect();
     let mut filter = None;
     let mut quick = false;
+    let mut json = false;
     let mut bencher = false;
     let mut i = 1;
     while i < args.len() {
@@ -283,6 +321,9 @@ fn parse_args() -> CliArgs {
             "--quick" => {
                 quick = true;
             }
+            "--json" => {
+                json = true;
+            }
             "--bencher" => {
                 bencher = true;
             }
@@ -296,6 +337,7 @@ fn parse_args() -> CliArgs {
     CliArgs {
         scenario_filter: filter,
         quick,
+        json,
         bencher,
     }
 }
@@ -386,25 +428,13 @@ async fn scenario_concurrent_throughput(quick: bool) -> Vec<ScenarioResult> {
             client.send_call(ECHO_PROG, 1, payload).await.unwrap();
         }
 
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
-        let wall_start = Instant::now();
-        let mut handles = Vec::new();
-        for _ in 0..iters {
-            let client = client.clone();
-            let sem = semaphore.clone();
-            handles.push(tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                let t0 = Instant::now();
-                client.send_call(ECHO_PROG, 1, payload).await.unwrap();
-                t0.elapsed()
-            }));
-        }
-
-        let mut samples = Vec::with_capacity(iters);
-        for handle in handles {
-            samples.push(handle.await.unwrap());
-        }
-        let wall = wall_start.elapsed();
+        let (mut samples, wall) = run_concurrent(
+            client.clone() as Arc<dyn RpcSender>,
+            payload,
+            concurrency,
+            iters,
+        )
+        .await;
 
         let throughput = iters as f64 / wall.as_secs_f64();
         let stats = compute_latency_stats(&mut samples);
@@ -444,7 +474,7 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let payload = &[0u8; 64];
-    let (_warmup, iters) = if quick { (5, 50) } else { (20, 200) };
+    let (warmup, iters) = if quick { (5, 50) } else { (20, 200) };
     let timeout_duration = Duration::from_secs(2);
 
     // Check if bidirectional even works (serial dispatch will deadlock)
@@ -481,7 +511,6 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
         .unwrap();
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    let (warmup, _) = if quick { (5, 50) } else { (20, 200) };
     for _ in 0..warmup {
         client.send_call(ECHO_PROG, 1, payload).await.unwrap();
     }
@@ -541,24 +570,13 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
             client.send_call(ECHO_PROG, 1, payload).await.unwrap();
         }
 
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
-        let wall_start = Instant::now();
-        let mut handles = Vec::new();
-        for _ in 0..iters {
-            let client = client.clone();
-            let sem = semaphore.clone();
-            handles.push(tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                let t0 = Instant::now();
-                client.send_call(ECHO_PROG, 1, payload).await.unwrap();
-                t0.elapsed()
-            }));
-        }
-        let mut samples = Vec::with_capacity(iters);
-        for h in handles {
-            samples.push(h.await.unwrap());
-        }
-        let wall = wall_start.elapsed();
+        let (mut samples, wall) = run_concurrent(
+            client.clone() as Arc<dyn RpcSender>,
+            payload,
+            concurrency,
+            iters,
+        )
+        .await;
 
         let mut params = BTreeMap::new();
         params.insert("payload_bytes".into(), serde_json::json!(64));
@@ -585,24 +603,13 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
             pool.send_call(ECHO_PROG, 1, payload).await.unwrap();
         }
 
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
-        let wall_start = Instant::now();
-        let mut handles = Vec::new();
-        for _ in 0..iters {
-            let pool = pool.clone();
-            let sem = semaphore.clone();
-            handles.push(tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                let t0 = Instant::now();
-                pool.send_call(ECHO_PROG, 1, payload).await.unwrap();
-                t0.elapsed()
-            }));
-        }
-        let mut samples = Vec::with_capacity(iters);
-        for h in handles {
-            samples.push(h.await.unwrap());
-        }
-        let wall = wall_start.elapsed();
+        let (mut samples, wall) = run_concurrent(
+            pool.clone() as Arc<dyn RpcSender>,
+            payload,
+            concurrency,
+            iters,
+        )
+        .await;
 
         let mut params = BTreeMap::new();
         params.insert("payload_bytes".into(), serde_json::json!(64));
@@ -640,31 +647,17 @@ async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
 
     let mut results = Vec::new();
     for (label, payload) in payloads {
-        let payload = payload.to_vec();
-
         for _ in 0..warmup {
-            client.send_call(ECHO_PROG, 1, &payload).await.unwrap();
+            client.send_call(ECHO_PROG, 1, payload).await.unwrap();
         }
 
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency));
-        let wall_start = Instant::now();
-        let mut handles = Vec::new();
-        for _ in 0..iters {
-            let client = client.clone();
-            let payload = payload.clone();
-            let sem = semaphore.clone();
-            handles.push(tokio::spawn(async move {
-                let _permit = sem.acquire().await.unwrap();
-                let t0 = Instant::now();
-                client.send_call(ECHO_PROG, 1, &payload).await.unwrap();
-                t0.elapsed()
-            }));
-        }
-        let mut samples = Vec::with_capacity(iters);
-        for h in handles {
-            samples.push(h.await.unwrap());
-        }
-        let wall = wall_start.elapsed();
+        let (mut samples, wall) = run_concurrent(
+            client.clone() as Arc<dyn RpcSender>,
+            payload,
+            concurrency,
+            iters,
+        )
+        .await;
 
         let mut params = BTreeMap::new();
         params.insert("payload_bytes".into(), serde_json::json!(payload.len()));
@@ -798,7 +791,7 @@ async fn main() {
         // BMF JSON to stdout — bencher reads this via --adapter json
         let bmf = to_bmf(&all_results);
         println!("{}", serde_json::to_string_pretty(&bmf).unwrap());
-    } else {
+    } else if cli.json {
         let bench_result = BenchResult {
             metadata: build_metadata(),
             scenarios: all_results,
