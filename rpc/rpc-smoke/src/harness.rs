@@ -399,8 +399,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let pool = args.pool.clone();
                 eprintln!("[harness] testing {count} connections...");
                 async move {
-                    let result =
-                        run_client(server_addr, "echo", Some(count), duration, None, pool.as_deref()).await?;
+                    let result = run_client(
+                        server_addr,
+                        "echo",
+                        Some(count),
+                        duration,
+                        None,
+                        pool.as_deref(),
+                    )
+                    .await?;
                     Ok(vec![result])
                 }
             })
