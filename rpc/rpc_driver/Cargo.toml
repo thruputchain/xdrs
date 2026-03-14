@@ -1,6 +1,6 @@
 [package]
 name = "rpc_driver"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"  
@@ -21,9 +21,13 @@ tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
 xdrs = { registry = "groundhog", version = "0.5.0", features = ["derive", "alloc"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1.47.1", features = ["full", "test-util"] }
 
 [[bench]]
 name = "rpc_bench"

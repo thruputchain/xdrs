@@ -21,7 +21,7 @@ pub async fn connect_client_with_config(
     let (client_read, client_write) = connect(addr, config.max_message_size).await?;
     let service_map = config.services.clone();
 
-    let client_handle = Arc::new(ConnectionHandle::new(client_write, config.log_timestamps));
+    let client_handle = Arc::new(ConnectionHandle::new(client_write, &config));
 
     tokio::spawn({
         let client_handle = client_handle.clone();

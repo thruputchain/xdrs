@@ -16,8 +16,8 @@ use crate::{
 /// Trait for making outgoing RPC calls.
 ///
 /// Implemented by [`ConnectionHandle`] for real TCP connections,
-/// and by [`FixedPool`](crate::FixedPool) and [`DynamicPool`](crate::DynamicPool)
-/// for pooled connections.
+/// and by [`FixedSerialPool`](crate::FixedSerialPool), [`DynamicPool`](crate::DynamicPool),
+/// and [`CpuSetPool`](crate::CpuSetPool) for pooled connections.
 ///
 /// Inside an [`RpcHandler`](crate::handler::RpcHandler) dispatch, the
 /// per-connection sender is available via [`peer()`](crate::peer).
@@ -113,15 +113,18 @@ pub struct ConnectionHandle {
     pub(crate) connection_state: StdMutex<ConnectionState>,
     write_half: Mutex<Option<WriteHalf>>,
     pub(crate) log_timestamps: bool,
+    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
+    pub(crate) max_concurrent_dispatches: usize,
 }
 
 impl ConnectionHandle {
     /// Create a new connection handle wrapping the given TCP write half.
-    pub fn new(write_half: WriteHalf, log_timestamps: bool) -> Self {
+    pub fn new(write_half: WriteHalf, config: &crate::ConnectionConfig) -> Self {
         Self {
             connection_state: StdMutex::new(ConnectionState::new()),
             write_half: Mutex::new(Some(write_half)),
-            log_timestamps,
+            log_timestamps: config.log_timestamps,
+            max_concurrent_dispatches: config.max_concurrent_dispatches,
         }
     }
 

@@ -138,8 +138,7 @@ mod tests {
         }
 
         async fn takes_two_ints(&self, _i1: i32, _i2: i32) -> Result<i32, ProgramError> {
-            Err(ProgramError::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            Err(ProgramError::new(std::io::Error::other(
                 "takes_two_ints always fails",
             )))
         }
@@ -170,8 +169,7 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         println!("client null");
-        let res = client.null().await.unwrap();
-        assert_eq!(res, ());
+        client.null().await.unwrap();
         println!("client null done");
 
         let res = client.takes_int(1).await.unwrap();
@@ -201,9 +199,9 @@ mod tests {
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
-        let client_handle = Arc::new(ConnectionHandle::new(client_write, false));
+        let client_handle = Arc::new(ConnectionHandle::new(client_write, &Default::default()));
         let server_handle: Arc<ConnectionHandle> =
-            Arc::new(ConnectionHandle::new(server_write, false));
+            Arc::new(ConnectionHandle::new(server_write, &Default::default()));
 
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
@@ -224,8 +222,7 @@ mod tests {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         let client = TestProgram_TestVersion_Client::new(client_handle.clone());
-        let res = client.null().await.unwrap();
-        assert_eq!(res, ());
+        client.null().await.unwrap();
 
         let res = client.takes_int(1).await.unwrap();
         assert_eq!(res, 1);

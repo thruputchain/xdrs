@@ -9,9 +9,11 @@ use std::collections::BTreeMap;
 /// Implement this trait to define how your service handles incoming RPC calls.
 ///
 /// For bidirectional RPC (calling back to the peer from within a handler),
-/// use [`peer()`](crate::peer) to obtain the per-connection sender. Clone
-/// the returned handle and spawn a separate task — calling back within
-/// `dispatch` will deadlock because the read loop awaits `dispatch` inline.
+/// use [`peer()`](crate::peer) to obtain the per-connection sender.
+///
+/// With the default serial dispatch, calling back to the peer inline will
+/// deadlock — spawn a separate task instead. With the `concurrent-dispatch`
+/// feature enabled, inline callbacks work without deadlocking.
 #[async_trait]
 pub trait RpcHandler: Send + Sync {
     /// Handle an incoming RPC call for the given procedure number.
@@ -56,8 +58,8 @@ impl ServiceMap {
         if rpc_vers != 2 {
             return Err(RpcError::RpcMismatch);
         }
-        if let Some(srv) = self.services.get(&srv) {
-            return srv.dispatch(proc, data).await;
+        if let Some(handler) = self.services.get(&srv) {
+            return handler.dispatch(proc, data).await;
         }
 
         // Find the first service with matching program number

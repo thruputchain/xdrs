@@ -53,8 +53,8 @@ mod tests {
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
-        let client_handle = Arc::new(ConnectionHandle::new(client_write, false));
-        let server_handle = Arc::new(ConnectionHandle::new(server_write, false));
+        let client_handle = Arc::new(ConnectionHandle::new(client_write, &Default::default()));
+        let server_handle = Arc::new(ConnectionHandle::new(server_write, &Default::default()));
 
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
@@ -135,7 +135,7 @@ mod tests {
 
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
 
-        let client_handle = Arc::new(ConnectionHandle::new(client_write, false));
+        let client_handle = Arc::new(ConnectionHandle::new(client_write, &Default::default()));
 
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
