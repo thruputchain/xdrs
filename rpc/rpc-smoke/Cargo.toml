@@ -1,0 +1,25 @@
+[package]
+name = "rpc-smoke"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rpc_driver = { path = "../rpc_driver", features = ["concurrent-dispatch"] }
+tokio = { version = "1.47.1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1.89"
+
+[[bin]]
+name = "rpc-smoke-server"
+path = "src/server.rs"
+
+[[bin]]
+name = "rpc-smoke-client"
+path = "src/client.rs"
+
+[[bin]]
+name = "rpc-smoke"
+path = "src/harness.rs"
