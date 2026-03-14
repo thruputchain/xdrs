@@ -11,11 +11,23 @@ pub struct ConnectionConfig {
     /// When `true`, log send/receive timestamps for each RPC message to stderr.
     ///
     /// Each log line is in the format:
-    /// `[rpc] xid=<xid> event=<send|server_recv|client_recv> ts=<unix_secs>.<micros>`
+    /// `[rpc] xid=<xid> event=<event> ts=<unix_secs>.<micros>`
+    ///
+    /// Events: `client_send`, `client_recv`, `server_recv`, `server_send`.
     ///
     /// The `xid` (transaction ID) can be used to correlate client send with
     /// client receive, and server receive with server send.
     pub(crate) log_timestamps: bool,
+    /// Maximum number of handler dispatches that may run concurrently per
+    /// connection. Only used when the `concurrent-dispatch` feature is enabled.
+    ///
+    /// When the limit is reached, incoming CALLs are spawned but wait for a
+    /// semaphore permit before executing their handler. If the total number
+    /// of in-flight + waiting tasks exceeds 5× this limit, excess calls are
+    /// rejected with `SystemError`.
+    ///
+    /// Default: 64. Set via [`ConnectionConfig::with_max_concurrent_dispatches`].
+    pub(crate) max_concurrent_dispatches: usize,
 }
 
 impl Default for ConnectionConfig {
@@ -24,6 +36,7 @@ impl Default for ConnectionConfig {
             max_message_size: 0x100_0000,
             services: Arc::new(ServiceMap::default()),
             log_timestamps: false,
+            max_concurrent_dispatches: 64,
         }
     }
 }
@@ -34,12 +47,26 @@ impl ConnectionConfig {
             max_message_size: max_message_size.unwrap_or(0x100_0000),
             services: Arc::new(services),
             log_timestamps: false,
+            max_concurrent_dispatches: 64,
         }
     }
 
     /// Enable logging of RPC send/receive timestamps to stderr.
     pub fn with_log_timestamps(mut self, enabled: bool) -> Self {
         self.log_timestamps = enabled;
+        self
+    }
+
+    /// Set maximum concurrent handler dispatches per connection.
+    ///
+    /// Only effective with the `concurrent-dispatch` feature. Default: 64.
+    #[cfg_attr(
+        not(feature = "concurrent-dispatch"),
+        deprecated(note = "has no effect without the `concurrent-dispatch` feature")
+    )]
+    pub fn with_max_concurrent_dispatches(mut self, max: usize) -> Self {
+        assert!(max > 0, "max_concurrent_dispatches must be at least 1");
+        self.max_concurrent_dispatches = max;
         self
     }
 }

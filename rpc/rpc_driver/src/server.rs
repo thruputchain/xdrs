@@ -47,7 +47,7 @@ impl RpcServer {
                 }
             };
 
-            let client_handle = Arc::new(ConnectionHandle::new(write, self.config.log_timestamps));
+            let client_handle = Arc::new(ConnectionHandle::new(write, &self.config));
             let service_map = self.config.services.clone();
 
             tokio::spawn({

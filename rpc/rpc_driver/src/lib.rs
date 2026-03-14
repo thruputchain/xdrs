@@ -46,14 +46,54 @@
 //! # }
 //! ```
 //!
+//! ## Concurrent Dispatch
+//!
+//! By default, each connection processes one RPC at a time (serial dispatch).
+//! Enable the `concurrent-dispatch` feature to run handlers concurrently on
+//! a single connection:
+//!
+//! ```toml
+//! [dependencies]
+//! rpc_driver = { version = "0.5", features = ["concurrent-dispatch"] }
+//! ```
+//!
+//! With this feature:
+//! - Multiple handlers execute concurrently per connection (default limit: 64)
+//! - Handlers can call back to the peer inline without deadlocking
+//! - Handler panics are caught and returned as [`RpcError::SystemError`] —
+//!   the connection stays alive for subsequent requests
+//! - Load shedding engages when pending tasks exceed 5× the concurrency
+//!   limit — excess calls receive `SystemError`
+//!
+//! Tune the concurrency limit via [`ConnectionConfig::with_max_concurrent_dispatches`].
+//!
 //! ## Bidirectional RPC
 //!
 //! Inside a handler, use [`peer()`] to get the per-connection
 //! [`RpcSender`]. This is stored in task-local context and set
 //! automatically by the dispatch loop.
 //!
-//! **Important:** The read loop awaits `dispatch` inline, so calling back
-//! to the peer directly will deadlock. Spawn a separate task instead:
+//! With the `concurrent-dispatch` feature enabled, handlers run
+//! concurrently and can call back to the peer inline:
+//!
+//! ```no_run
+//! # use rpc_driver::{ProgVers, RpcError, handler::RpcHandler};
+//! # use async_trait::async_trait;
+//! # struct MyService;
+//! # #[async_trait]
+//! # impl RpcHandler for MyService {
+//! #   fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
+//!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+//!         let peer = rpc_driver::peer();
+//!         // With concurrent-dispatch: works inline
+//!         let resp = peer.send_call(ProgVers::new(200, 1), 0, b"").await?;
+//!         Ok(resp)
+//!     }
+//! # }
+//! ```
+//!
+//! Without the feature (default serial dispatch), calling back inline
+//! deadlocks. Spawn a separate task instead:
 //!
 //! ```no_run
 //! # use rpc_driver::{ProgVers, RpcError, handler::RpcHandler};
@@ -75,7 +115,7 @@
 //!
 //! [`try_peer()`] returns `Option` and is safe to call outside a handler.
 
-// Lints on the generate rpc_msg.rs file
+// Lints on the generated rpc_msg.rs file
 #![allow(clippy::upper_case_acronyms)]
 #![allow(clippy::match_single_binding)]
 
@@ -98,7 +138,7 @@ mod client;
 pub use client::{connect_client, connect_client_with_config};
 
 pub mod pool;
-pub use pool::{DynamicPool, FixedPool};
+pub use pool::{CpuSetPool, DynamicPool, FixedSerialPool};
 
 pub mod tcp_connection;
 

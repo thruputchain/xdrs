@@ -1,16 +1,21 @@
 //! Connection pools for RPC clients.
 //!
-//! Two pool implementations:
+//! Three pool implementations, modeling different x23/hogd connection patterns:
 //!
-//! - [`FixedPool`] — Fixed-size pool with FIFO request dispatch. Each
+//! - [`FixedSerialPool`] — Fixed-size pool with FIFO request dispatch. Each
 //!   connection has a dedicated worker task that processes requests
-//!   sequentially. Suited for the scheduler connection pattern.
+//!   sequentially (1 in-flight per connection). Models x23 sync RPC
+//!   (executor→DB).
 //!
 //! - [`DynamicPool`] — Lazy pool with min-pending load balancing. Opens
 //!   connections on demand up to a maximum, routes each call to the
 //!   connection with the fewest in-flight requests, and evicts idle
-//!   connections after a configurable TTL. Suited for per-peer Dogwood
-//!   connections.
+//!   connections after a configurable TTL. Many in-flight per connection.
+//!   Models x23 async RPC (coordinator→mempool).
+//!
+//! - [`CpuSetPool`] — LLC-topology-aware pool. Creates one connection per
+//!   L3 cache group, routes by the caller's current CPU via `sched_getcpu`.
+//!   Models x23 `RpcMulticlient` / `PerCpuSet`.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -39,17 +44,12 @@ struct PoolRequest {
 /// This matches the Go `ConnectPoolToScheduler` pattern: a fixed number
 /// of connections with sequential dispatch per connection.
 #[derive(Debug)]
-pub struct FixedPool {
+pub struct FixedSerialPool {
     request_tx: mpsc::Sender<PoolRequest>,
     size: usize,
 }
 
-// PoolRequest contains a oneshot::Sender which is not Debug, so we need
-// a manual impl for FixedPool only (request_tx is Sender<PoolRequest>).
-// The Debug derive on FixedPool works because mpsc::Sender<T> implements
-// Debug regardless of T.
-
-impl FixedPool {
+impl FixedSerialPool {
     /// Connect `pool_size` clients to `addr`, each with a dedicated worker task.
     ///
     /// All connections are established eagerly. If any connection fails, the
@@ -106,7 +106,7 @@ impl FixedPool {
 }
 
 #[async_trait]
-impl RpcSender for FixedPool {
+impl RpcSender for FixedSerialPool {
     /// Send an RPC call through the pool.
     ///
     /// The request is dispatched to the next idle worker via FIFO ordering.
@@ -315,6 +315,190 @@ impl RpcSender for DynamicPool {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CpuSetPool — LLC-topology-aware connection pool
+// ---------------------------------------------------------------------------
+
+/// LLC-topology-aware connection pool.
+///
+/// Creates one connection per Last-Level Cache (L3) group, then routes each
+/// RPC to the connection matching the caller's current CPU. This keeps RPC
+/// request/response data in the same L3 cache, avoiding cross-CCX traffic
+/// on multi-socket or chiplet architectures (AMD EPYC, Zen desktop).
+///
+/// Mirrors the x23 `RpcMulticlient` / `PerCpuSet` pattern.
+///
+/// Falls back to `cpu_id % num_connections` if LLC topology cannot be read
+/// (non-Linux, container restrictions, etc.).
+///
+/// # Example
+///
+/// ```no_run
+/// # async fn example() -> Result<(), rpc_driver::RpcError> {
+/// use rpc_driver::{CpuSetPool, ProgVers, RpcSender};
+///
+/// let pool = CpuSetPool::connect(&"127.0.0.1:9876".parse().unwrap()).await?;
+/// println!("opened {} connections (one per LLC)", pool.size());
+/// let resp = pool.send_call(ProgVers::new(100, 1), 0, b"hello").await?;
+/// # Ok(())
+/// # }
+/// ```
+pub struct CpuSetPool {
+    /// One connection per LLC bucket.
+    connections: Vec<Arc<ConnectionHandle>>,
+    /// Maps logical CPU id → index into `connections`.
+    cpu_map: Vec<usize>,
+}
+
+impl std::fmt::Debug for CpuSetPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CpuSetPool")
+            .field("connections", &self.connections.len())
+            .field("cpus_mapped", &self.cpu_map.len())
+            .finish()
+    }
+}
+
+impl CpuSetPool {
+    /// Connect to `addr` with one connection per LLC group, auto-detected
+    /// from sysfs. Falls back to a single connection if topology is
+    /// unavailable (non-Linux, container restrictions).
+    pub async fn connect(addr: &SocketAddr) -> Result<Self, RpcError> {
+        let (num_buckets, cpu_map) = detect_llc_topology();
+        Self::connect_with_map(addr, num_buckets, cpu_map).await
+    }
+
+    /// Connect with an explicit number of connections and CPU→connection mapping.
+    ///
+    /// Useful for testing or when you want to override the auto-detected topology
+    /// (e.g., one connection per physical core instead of per LLC).
+    pub async fn connect_with_map(
+        addr: &SocketAddr,
+        num_connections: usize,
+        cpu_map: Vec<usize>,
+    ) -> Result<Self, RpcError> {
+        if num_connections == 0 {
+            return Err(RpcError::SystemError);
+        }
+
+        let mut connections = Vec::with_capacity(num_connections);
+        for _ in 0..num_connections {
+            let handle = connect_client(addr).await.map_err(|e| {
+                eprintln!("CpuSetPool: failed to connect to {addr}: {e}");
+                RpcError::SystemError
+            })?;
+            connections.push(handle);
+        }
+
+        Ok(Self {
+            connections,
+            cpu_map,
+        })
+    }
+
+    /// Returns the number of connections (one per LLC bucket).
+    pub fn size(&self) -> usize {
+        self.connections.len()
+    }
+
+    /// Get the connection for the current CPU.
+    #[inline]
+    fn connection_for_current_cpu(&self) -> &Arc<ConnectionHandle> {
+        let cpu_id = current_cpu();
+        let bucket = if (cpu_id as usize) < self.cpu_map.len() {
+            self.cpu_map[cpu_id as usize]
+        } else {
+            // CPU id out of range (hot-plugged?), fall back to modular mapping
+            cpu_id as usize % self.connections.len()
+        };
+        &self.connections[bucket]
+    }
+}
+
+#[async_trait]
+impl RpcSender for CpuSetPool {
+    async fn send_call(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<Vec<u8>, RpcError> {
+        self.connection_for_current_cpu()
+            .send_call(progvers, proc, data)
+            .await
+    }
+}
+
+/// Get the current CPU id. Returns 0 on non-Linux platforms.
+#[inline]
+fn current_cpu() -> u32 {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: sched_getcpu() is always safe to call, returns -1 on error.
+        let cpu = unsafe { libc::sched_getcpu() };
+        if cpu < 0 { 0 } else { cpu as u32 }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        0
+    }
+}
+
+/// Detect LLC (L3) topology from sysfs.
+///
+/// Returns `(num_buckets, cpu_map)` where `cpu_map[cpu_id] = bucket_index`.
+/// Falls back to a single bucket (one connection) if sysfs is unavailable.
+fn detect_llc_topology() -> (usize, Vec<usize>) {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(result) = detect_llc_topology_linux() {
+            return result;
+        }
+    }
+    // Fallback: one connection total (no topology info)
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let cpu_map = vec![0; num_cpus];
+    (1, cpu_map)
+}
+
+/// Linux-specific LLC topology detection from sysfs.
+#[cfg(target_os = "linux")]
+fn detect_llc_topology_linux() -> Option<(usize, Vec<usize>)> {
+    use std::collections::BTreeMap;
+    use std::fs;
+
+    let num_cpus = std::thread::available_parallelism().map(|n| n.get()).ok()?;
+
+    // Read each CPU's L3 shared_cpu_list to determine LLC groups.
+    // CPUs sharing the same list string belong to the same LLC.
+    let mut llc_groups: BTreeMap<String, usize> = BTreeMap::new();
+    let mut cpu_map = vec![0usize; num_cpus];
+    let mut next_bucket = 0;
+
+    for (cpu_id, slot) in cpu_map.iter_mut().enumerate() {
+        let path = format!("/sys/devices/system/cpu/cpu{cpu_id}/cache/index3/shared_cpu_list");
+        let shared = match fs::read_to_string(&path) {
+            Ok(s) => s.trim().to_string(),
+            Err(_) => continue,
+        };
+
+        *slot = *llc_groups.entry(shared).or_insert_with(|| {
+            let b = next_bucket;
+            next_bucket += 1;
+            b
+        });
+    }
+
+    if next_bucket == 0 {
+        return None;
+    }
+
+    eprintln!("[CpuSetPool] detected {next_bucket} LLC group(s) across {num_cpus} logical CPUs");
+    Some((next_bucket, cpu_map))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,7 +570,7 @@ mod tests {
     async fn fixed_pool_distributes_calls() {
         let addr = start_echo_server().await;
 
-        let pool = FixedPool::connect(&addr, 3).await.unwrap();
+        let pool = FixedSerialPool::connect(&addr, 3).await.unwrap();
         assert_eq!(pool.size(), 3);
 
         // Send 9 calls sequentially and verify all succeed with correct data.
@@ -405,7 +589,7 @@ mod tests {
         let delay = std::time::Duration::from_millis(100);
         let addr = start_slow_server(delay).await;
 
-        let pool = Arc::new(FixedPool::connect(&addr, 3).await.unwrap());
+        let pool = Arc::new(FixedSerialPool::connect(&addr, 3).await.unwrap());
 
         let start = tokio::time::Instant::now();
 
@@ -442,7 +626,7 @@ mod tests {
     async fn fixed_pool_error_propagation() {
         let addr = start_echo_server().await;
 
-        let pool = FixedPool::connect(&addr, 2).await.unwrap();
+        let pool = FixedSerialPool::connect(&addr, 2).await.unwrap();
 
         // Call an invalid procedure — error should propagate through the pool.
         let result = pool.send_call(ProgVers::new(1, 1), 99, b"bad").await;
@@ -456,7 +640,7 @@ mod tests {
     #[tokio::test]
     async fn fixed_pool_zero_size_rejected() {
         let addr = start_echo_server().await;
-        let result = FixedPool::connect(&addr, 0).await;
+        let result = FixedSerialPool::connect(&addr, 0).await;
         assert!(result.is_err());
     }
 
@@ -464,7 +648,7 @@ mod tests {
     async fn fixed_pool_single_connection() {
         let addr = start_echo_server().await;
 
-        let pool = FixedPool::connect(&addr, 1).await.unwrap();
+        let pool = FixedSerialPool::connect(&addr, 1).await.unwrap();
         assert_eq!(pool.size(), 1);
 
         // Even with one connection, sequential calls should work.
@@ -482,7 +666,7 @@ mod tests {
     async fn fixed_pool_connect_failure() {
         // Try to connect to an address that's not listening.
         let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
-        let result = FixedPool::connect(&addr, 3).await;
+        let result = FixedSerialPool::connect(&addr, 3).await;
         assert!(result.is_err());
     }
 
@@ -549,7 +733,7 @@ mod tests {
         // Pool should have opened up to 3 connections for concurrent load.
         let active = pool.active_connections().await;
         assert!(
-            active >= 2 && active <= 3,
+            (2..=3).contains(&active),
             "Expected 2-3 active connections under load, got {active}"
         );
 
@@ -748,7 +932,7 @@ mod tests {
     #[tokio::test]
     async fn fixed_pool_as_rpc_sender() {
         let addr = start_echo_server().await;
-        let pool = Arc::new(FixedPool::connect(&addr, 2).await.unwrap());
+        let pool = Arc::new(FixedSerialPool::connect(&addr, 2).await.unwrap());
 
         // Use pool through the RpcSender trait object
         let sender: Arc<dyn RpcSender> = pool;
@@ -765,6 +949,55 @@ mod tests {
         let pool = Arc::new(DynamicPool::new(addr, 2, Duration::from_secs(60)));
 
         // Use pool through the RpcSender trait object
+        let sender: Arc<dyn RpcSender> = pool;
+        let result = sender
+            .send_call(ProgVers::new(1, 1), 1, b"via-trait")
+            .await
+            .unwrap();
+        assert_eq!(result, b"via-trait");
+    }
+
+    // -- CpuSetPool tests -------------------------------------------------------
+
+    #[tokio::test]
+    async fn cpu_pool_auto_detect() {
+        let addr = start_echo_server().await;
+        let pool = CpuSetPool::connect(&addr).await.unwrap();
+        assert!(pool.size() >= 1);
+
+        // Basic echo
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, b"cpu-pool")
+            .await
+            .unwrap();
+        assert_eq!(result, b"cpu-pool");
+    }
+
+    #[tokio::test]
+    async fn cpu_pool_explicit_map() {
+        let addr = start_echo_server().await;
+        // 2 connections, CPUs 0-3 → bucket 0, CPUs 4-7 → bucket 1
+        let cpu_map = vec![0, 0, 0, 0, 1, 1, 1, 1];
+        let pool = CpuSetPool::connect_with_map(&addr, 2, cpu_map)
+            .await
+            .unwrap();
+        assert_eq!(pool.size(), 2);
+
+        for i in 0..10u32 {
+            let data = format!("call-{i}");
+            let result = pool
+                .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                .await
+                .unwrap();
+            assert_eq!(result, data.as_bytes());
+        }
+    }
+
+    #[tokio::test]
+    async fn cpu_pool_as_rpc_sender() {
+        let addr = start_echo_server().await;
+        let pool = Arc::new(CpuSetPool::connect(&addr).await.unwrap());
+
         let sender: Arc<dyn RpcSender> = pool;
         let result = sender
             .send_call(ProgVers::new(1, 1), 1, b"via-trait")

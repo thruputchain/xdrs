@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use rpc_driver::{
-    ConnectionConfig, FixedPool, ProgVers, RpcError, RpcSender, RpcServer,
+    ConnectionConfig, FixedSerialPool, ProgVers, RpcError, RpcSender, RpcServer,
     connect_client_with_config,
     handler::{RpcHandler, ServiceMap},
 };
@@ -87,7 +87,7 @@ fn as_us(d: Duration) -> f64 {
     d.as_secs_f64() * 1_000_000.0
 }
 
-fn compute_latency_stats(samples: &mut Vec<Duration>) -> LatencyStats {
+fn compute_latency_stats(samples: &mut [Duration]) -> LatencyStats {
     samples.sort_unstable();
     let total: Duration = samples.iter().sum();
     let mean = total / samples.len() as u32;
@@ -148,6 +148,8 @@ impl RpcHandler for DelayEchoService {
 /// Service that calls back to the peer inline (no spawn).
 struct InlineCallbackService;
 
+const CALLBACK_PROG: ProgVers = ProgVers::new(2, 1);
+
 #[async_trait]
 impl RpcHandler for InlineCallbackService {
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
@@ -161,6 +163,64 @@ impl RpcHandler for InlineCallbackService {
             }
             _ => Err(RpcError::InvalidProcedure),
         }
+    }
+    fn prog_vers(&self) -> ProgVers {
+        CALLBACK_PROG
+    }
+}
+
+/// Simulates hogd scheduler: handler fans out N sub-RPCs to "executors" via
+/// the peer connection, collects results, then returns.  Models the
+/// `schedulercoord_nominate` flow where the mempool calls executors in
+/// parallel before replying.
+struct FanoutService {
+    fanout: usize,
+}
+
+#[async_trait]
+impl RpcHandler for FanoutService {
+    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        match proc {
+            0 => Ok(vec![]),
+            1 => {
+                let peer = rpc_driver::peer();
+                let mut handles = Vec::with_capacity(self.fanout);
+                for _ in 0..self.fanout {
+                    let peer = peer.clone();
+                    let payload = data.to_vec();
+                    handles.push(tokio::spawn(async move {
+                        peer.send_call(ECHO_PROG, 1, &payload).await
+                    }));
+                }
+                let mut total_len: u32 = 0;
+                for h in handles {
+                    let resp = h.await.map_err(|_| RpcError::SystemError)??;
+                    total_len += resp.len() as u32;
+                }
+                Ok(total_len.to_be_bytes().to_vec())
+            }
+            _ => Err(RpcError::InvalidProcedure),
+        }
+    }
+    fn prog_vers(&self) -> ProgVers {
+        CALLBACK_PROG
+    }
+}
+
+/// Simulates handler contention: all handlers acquire a shared lock
+/// (like hogd's `commit_lock_`) before doing work, then release.
+/// Models serialized critical sections within concurrent dispatch.
+struct ContentionService {
+    lock: Arc<tokio::sync::Mutex<()>>,
+    work_duration: Duration,
+}
+
+#[async_trait]
+impl RpcHandler for ContentionService {
+    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        let _guard = self.lock.lock().await;
+        tokio::time::sleep(self.work_duration).await;
+        Ok(data.to_vec())
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -180,8 +240,21 @@ async fn start_server(service: Box<dyn RpcHandler>) -> SocketAddr {
     addr
 }
 
+async fn start_server_multi(services_list: Vec<Box<dyn RpcHandler>>) -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut services = ServiceMap::new();
+    for svc in services_list {
+        services.add_service(svc);
+    }
+    RpcServer::new(listener, services).start().await;
+    addr
+}
+
 async fn run_concurrent(
     sender: Arc<dyn RpcSender>,
+    progvers: ProgVers,
+    proc: u32,
     payload: &[u8],
     concurrency: usize,
     iters: usize,
@@ -197,7 +270,7 @@ async fn run_concurrent(
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
             let t0 = Instant::now();
-            sender.send_call(ECHO_PROG, 1, &payload).await.unwrap();
+            sender.send_call(progvers, proc, &payload).await.unwrap();
             t0.elapsed()
         }));
     }
@@ -430,6 +503,8 @@ async fn scenario_concurrent_throughput(quick: bool) -> Vec<ScenarioResult> {
 
         let (mut samples, wall) = run_concurrent(
             client.clone() as Arc<dyn RpcSender>,
+            ECHO_PROG,
+            1,
             payload,
             concurrency,
             iters,
@@ -478,8 +553,11 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
     let timeout_duration = Duration::from_secs(2);
 
     // Check if bidirectional even works (serial dispatch will deadlock)
-    let probe =
-        tokio::time::timeout(timeout_duration, client.send_call(ECHO_PROG, 1, payload)).await;
+    let probe = tokio::time::timeout(
+        timeout_duration,
+        client.send_call(CALLBACK_PROG, 1, payload),
+    )
+    .await;
 
     if probe.is_err() {
         let mut params = BTreeMap::new();
@@ -512,14 +590,14 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     for _ in 0..warmup {
-        client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+        client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
     }
 
     let wall_start = Instant::now();
     let mut samples = Vec::with_capacity(iters);
     for _ in 0..iters {
         let t0 = Instant::now();
-        client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+        client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
         samples.push(t0.elapsed());
     }
     let wall = wall_start.elapsed();
@@ -548,6 +626,17 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
     }]
 }
 
+/// Compares a single multiplexed connection against a pool of connections.
+///
+/// **Caveat:** On loopback with near-zero handler latency, a single concurrent
+/// connection consistently outperforms the 10-connection pool (~5x in testing).
+/// This is because XID multiplexing over one socket avoids the overhead of 10
+/// reader tasks, 10 write mutexes, and FIFO channel dispatch. However, pools
+/// are expected to win in production where: handlers do real work (hiding
+/// connection overhead), network latency is non-trivial, write mutex contention
+/// matters under heavy bidirectional traffic, and fault isolation is required.
+/// This benchmark does NOT test those conditions — take the comparison with a
+/// grain of salt.
 async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
     let delay = Duration::from_millis(1);
     let addr = start_server(Box::new(DelayEchoService { delay })).await;
@@ -572,6 +661,8 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
 
         let (mut samples, wall) = run_concurrent(
             client.clone() as Arc<dyn RpcSender>,
+            ECHO_PROG,
+            1,
             payload,
             concurrency,
             iters,
@@ -596,7 +687,7 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
 
     // Path B: pool of 10 connections (works in both modes)
     {
-        let pool = Arc::new(FixedPool::connect(&addr, 10).await.unwrap());
+        let pool = Arc::new(FixedSerialPool::connect(&addr, 10).await.unwrap());
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         for _ in 0..warmup {
@@ -605,6 +696,8 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
 
         let (mut samples, wall) = run_concurrent(
             pool.clone() as Arc<dyn RpcSender>,
+            ECHO_PROG,
+            1,
             payload,
             concurrency,
             iters,
@@ -653,6 +746,8 @@ async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
 
         let (mut samples, wall) = run_concurrent(
             client.clone() as Arc<dyn RpcSender>,
+            ECHO_PROG,
+            1,
             payload,
             concurrency,
             iters,
@@ -677,6 +772,212 @@ async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Production-pattern scenarios
+// ---------------------------------------------------------------------------
+
+/// Simulates hogd's nominate flow: client calls server, server handler fans
+/// out N sub-RPCs back to the client (like executor calls), collects results,
+/// then replies.  Requires bidirectional + concurrent dispatch.
+async fn scenario_handler_fanout(quick: bool) -> Vec<ScenarioResult> {
+    let fanout_levels: &[usize] = &[2, 5, 10];
+    let payload = &[0u8; 64];
+    let timeout_duration = Duration::from_secs(5);
+    let (warmup, iters) = if quick { (5, 50) } else { (10, 200) };
+
+    let mut results = Vec::new();
+    for &fanout in fanout_levels {
+        let addr = start_server_multi(vec![
+            Box::new(FanoutService { fanout }),
+            Box::new(EchoService),
+        ])
+        .await;
+
+        // Client needs EchoService so server's fanout sub-RPCs have a target
+        let mut client_services = ServiceMap::new();
+        client_services.add_service(Box::new(EchoService));
+        let config = ConnectionConfig::new(None, client_services);
+        let client = connect_client_with_config(&addr, config).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        // Probe — if bidirectional doesn't work, skip
+        let probe = tokio::time::timeout(
+            timeout_duration,
+            client.send_call(CALLBACK_PROG, 1, payload),
+        )
+        .await;
+
+        if probe.is_err() {
+            let mut params = BTreeMap::new();
+            params.insert("fanout".into(), serde_json::json!(fanout));
+            results.push(ScenarioResult {
+                name: format!("handler_fanout/{fanout}"),
+                params,
+                samples: 0,
+                timed_out: true,
+                latency_us: None,
+                wall_time_ms: None,
+                throughput_calls_per_sec: None,
+            });
+            continue;
+        }
+
+        for _ in 0..warmup {
+            client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
+        }
+
+        let wall_start = Instant::now();
+        let mut samples = Vec::with_capacity(iters);
+        for _ in 0..iters {
+            let t0 = Instant::now();
+            client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
+            samples.push(t0.elapsed());
+        }
+        let wall = wall_start.elapsed();
+
+        let mut params = BTreeMap::new();
+        params.insert("fanout".into(), serde_json::json!(fanout));
+
+        results.push(ScenarioResult {
+            name: format!("handler_fanout/{fanout}"),
+            params,
+            samples: iters,
+            timed_out: false,
+            latency_us: Some(compute_latency_stats(&mut samples)),
+            wall_time_ms: Some(wall.as_secs_f64() * 1000.0),
+            throughput_calls_per_sec: Some(iters as f64 / wall.as_secs_f64()),
+        });
+    }
+    results
+}
+
+/// Simulates bidirectional load: client sends concurrent requests while the
+/// server is also calling back.  Models coordinator sending submit_unvetted
+/// while scheduler pushes notify_vetted on the same connection.
+async fn scenario_bidirectional_load(quick: bool) -> Vec<ScenarioResult> {
+    let addr =
+        start_server_multi(vec![Box::new(InlineCallbackService), Box::new(EchoService)]).await;
+
+    let mut client_services = ServiceMap::new();
+    client_services.add_service(Box::new(EchoService));
+    let config = ConnectionConfig::new(None, client_services);
+    let client = connect_client_with_config(&addr, config).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let payload = &[0u8; 64];
+    let timeout_duration = Duration::from_secs(2);
+
+    // Probe
+    let probe = tokio::time::timeout(
+        timeout_duration,
+        client.send_call(CALLBACK_PROG, 1, payload),
+    )
+    .await;
+
+    if probe.is_err() {
+        let mut params = BTreeMap::new();
+        params.insert("concurrency".into(), serde_json::json!(10));
+        return vec![ScenarioResult {
+            name: "bidirectional_load".to_string(),
+            params,
+            samples: 0,
+            timed_out: true,
+            latency_us: None,
+            wall_time_ms: None,
+            throughput_calls_per_sec: None,
+        }];
+    }
+
+    // Fresh connection for measurement
+    let mut client_services = ServiceMap::new();
+    client_services.add_service(Box::new(EchoService));
+    let config = ConnectionConfig::new(None, client_services);
+    let client = connect_client_with_config(&addr, config).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let concurrency = 10;
+    let (warmup, iters) = if quick { (5, 50) } else { (10, 200) };
+
+    for _ in 0..warmup {
+        client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
+    }
+
+    let (mut samples, wall) = run_concurrent(
+        client.clone() as Arc<dyn RpcSender>,
+        CALLBACK_PROG,
+        1,
+        payload,
+        concurrency,
+        iters,
+    )
+    .await;
+
+    let mut params = BTreeMap::new();
+    params.insert("concurrency".into(), serde_json::json!(concurrency));
+
+    vec![ScenarioResult {
+        name: "bidirectional_load".to_string(),
+        params,
+        samples: iters,
+        timed_out: false,
+        latency_us: Some(compute_latency_stats(&mut samples)),
+        wall_time_ms: Some(wall.as_secs_f64() * 1000.0),
+        throughput_calls_per_sec: Some(iters as f64 / wall.as_secs_f64()),
+    }]
+}
+
+/// Simulates handler contention: concurrent dispatches compete for a shared
+/// lock inside the handler.  Models hogd's `commit_lock_` pattern where some
+/// operations serialize through a mutex even under concurrent dispatch.
+/// Shows whether concurrent dispatch still helps when the lock is a bottleneck.
+async fn scenario_handler_contention(quick: bool) -> Vec<ScenarioResult> {
+    let lock = Arc::new(tokio::sync::Mutex::new(()));
+    let work_duration = Duration::from_millis(1);
+    let addr = start_server(Box::new(ContentionService {
+        lock: lock.clone(),
+        work_duration,
+    }))
+    .await;
+
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let payload = &[0u8; 64];
+    let concurrency = 10;
+    let (warmup, iters) = if quick { (5, 50) } else { (20, 200) };
+
+    // Warmup
+    for _ in 0..warmup {
+        client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+    }
+
+    let (mut samples, wall) = run_concurrent(
+        client.clone() as Arc<dyn RpcSender>,
+        ECHO_PROG,
+        1,
+        payload,
+        concurrency,
+        iters,
+    )
+    .await;
+
+    let mut params = BTreeMap::new();
+    params.insert("concurrency".into(), serde_json::json!(concurrency));
+    params.insert("lock_hold_ms".into(), serde_json::json!(1));
+
+    vec![ScenarioResult {
+        name: "handler_contention".to_string(),
+        params,
+        samples: iters,
+        timed_out: false,
+        latency_us: Some(compute_latency_stats(&mut samples)),
+        wall_time_ms: Some(wall.as_secs_f64() * 1000.0),
+        throughput_calls_per_sec: Some(iters as f64 / wall.as_secs_f64()),
+    }]
+}
+
+// ---------------------------------------------------------------------------
 // Bencher Metric Format (BMF) output
 // ---------------------------------------------------------------------------
 
@@ -686,6 +987,7 @@ async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
 /// We emit two measures per scenario:
 ///   - `latency` (µs): value=p50, lower_value=min, upper_value=p99
 ///   - `throughput` (calls/s): value=throughput (no bounds)
+///
 /// Timed-out scenarios are omitted (no metrics to report).
 fn to_bmf(results: &[ScenarioResult]) -> serde_json::Value {
     let mut bmf = serde_json::Map::new();
@@ -728,7 +1030,7 @@ async fn main() {
     if !cli.bencher {
         println!("=== rpc_driver benchmark (loopback TCP) ===");
         if cfg!(feature = "concurrent-dispatch") {
-            println!("    dispatch: concurrent (FuturesUnordered)");
+            println!("    dispatch: concurrent (spawn + Semaphore)");
         } else {
             println!("    dispatch: serial (inline await)");
         }
@@ -779,6 +1081,36 @@ async fn main() {
 
     if should_run("payload_concurrency", &cli.scenario_filter) {
         let results = scenario_payload_concurrency(cli.quick).await;
+        if !cli.bencher {
+            for r in &results {
+                print_scenario(r);
+            }
+        }
+        all_results.extend(results);
+    }
+
+    if should_run("handler_fanout", &cli.scenario_filter) {
+        let results = scenario_handler_fanout(cli.quick).await;
+        if !cli.bencher {
+            for r in &results {
+                print_scenario(r);
+            }
+        }
+        all_results.extend(results);
+    }
+
+    if should_run("bidirectional_load", &cli.scenario_filter) {
+        let results = scenario_bidirectional_load(cli.quick).await;
+        if !cli.bencher {
+            for r in &results {
+                print_scenario(r);
+            }
+        }
+        all_results.extend(results);
+    }
+
+    if should_run("handler_contention", &cli.scenario_filter) {
+        let results = scenario_handler_contention(cli.quick).await;
         if !cli.bencher {
             for r in &results {
                 print_scenario(r);
