@@ -378,8 +378,13 @@ mod tests {
 
         #[async_trait]
         impl RpcSender for FixedResponseSender {
-            async fn send_call(&self, _: ProgVers, _: u32, _: &[u8]) -> Result<Vec<u8>, RpcError> {
-                Ok(self.response.clone())
+            async fn send_call(
+                &self,
+                _: ProgVers,
+                _: u32,
+                _: &[u8],
+            ) -> Result<rpc_driver::RpcResponse, RpcError> {
+                Ok(rpc_driver::RpcResponse::from_payload(self.response.clone()))
             }
         }
 

@@ -27,12 +27,15 @@ pub enum ReadTaskError {
 // ---------------------------------------------------------------------------
 
 /// Route an inbound REPLY message to the pending-call map.
+#[inline(always)]
 fn route_reply(
     client_cbs: &ConnectionHandle,
     xid: u32,
     rbody: rpc_msg::reply_body,
-    payload: Vec<u8>,
+    record: Vec<u8>,
+    payload_offset: usize,
 ) {
+    use crate::connection::ReplyResult;
     match rbody {
         rpc_msg::reply_body::MSG_ACCEPTED { areply } => {
             if let rpc_msg::accepted_reply_reply_data::SUCCESS { results: _results } =
@@ -42,13 +45,13 @@ fn route_reply(
                     .connection_state
                     .lock()
                     .unwrap()
-                    .handle_reply(xid, Ok(payload));
+                    .handle_reply(xid, ReplyResult::Ok(record, payload_offset));
             } else {
                 client_cbs
                     .connection_state
                     .lock()
                     .unwrap()
-                    .handle_reply(xid, Err(areply.reply_data.into()));
+                    .handle_reply(xid, ReplyResult::Err(areply.reply_data.into()));
             }
         }
         rpc_msg::reply_body::MSG_DENIED { rreply } => {
@@ -56,12 +59,13 @@ fn route_reply(
                 .connection_state
                 .lock()
                 .unwrap()
-                .handle_reply(xid, Err(rreply.into()));
+                .handle_reply(xid, ReplyResult::Err(rreply.into()));
         }
     }
 }
 
 /// Send a dispatch result (success or error) back to the client.
+#[inline]
 async fn send_response(
     client_cbs: &ConnectionHandle,
     xid: u32,
@@ -200,7 +204,7 @@ pub async fn launch_read_task(
                 .await?;
             }
             rpc_msg::rpc_msg_body::REPLY { rbody } => {
-                route_reply(&client_cbs, msg.xid, rbody, remaining.to_vec());
+                route_reply(&client_cbs, msg.xid, rbody, remaining.to_vec(), 0);
             }
         }
     }
@@ -373,7 +377,9 @@ mod concurrent {
                     record,
                     payload_offset,
                 } => {
-                    route_reply(client_cbs, xid, rbody, record[payload_offset..].to_vec());
+                    // Pass the raw record + offset — no drain/memmove.
+                    // The consumer slices when reading the result.
+                    route_reply(client_cbs, xid, rbody, record, payload_offset);
                 }
             }
         }
@@ -387,10 +393,10 @@ pub async fn launch_read_task(
     mut read_half: ReadHalf,
 ) -> Result<(), ReadTaskError> {
     // Spawn a dedicated reader task that owns the ReadHalf and forwards
-    // complete records over a channel.  This decouples TCP framing from
-    // dispatch: the reader can be independently aborted on shutdown, and
-    // the dispatch loop receives pre-framed records without needing to
-    // manage partial reads.
+    // CALL records over a channel to the dispatch loop. REPLY records are
+    // routed directly in the reader task — no channel hop — since they
+    // just write a result into the pending-call HashMap and wake the
+    // caller. This cuts one async task wakeup per reply.
     //
     // Channel capacity 8: the reader task may stay up to 8 records ahead of
     // the dispatch loop, smoothing latency spikes while still providing
@@ -398,6 +404,7 @@ pub async fn launch_read_task(
     let (record_tx, mut record_rx) =
         tokio::sync::mpsc::channel::<Result<Vec<u8>, ReadTaskError>>(8);
 
+    let cbs_for_reader = client_cbs.clone();
     let reader_handle = tokio::spawn(async move {
         loop {
             match read_half.read_record().await {
@@ -410,11 +417,38 @@ pub async fn launch_read_task(
                     break;
                 }
                 Ok(Some(data)) => {
-                    // Allocates: ReadHalf reuses its internal buffer across reads,
-                    // so we must copy here to send over the channel. The
-                    // offset-based parse downstream avoids a second copy.
-                    if record_tx.send(Ok(data.to_vec())).await.is_err() {
-                        // Main task dropped the receiver — connection is done.
+                    let record = data.to_vec();
+
+                    // Peek at msg_type (bytes 4..8): CALL=0, REPLY=1.
+                    // Route REPLYs directly in the reader task — skips
+                    // the dispatch channel + dispatch loop wakeup.
+                    let is_reply = record.len() >= 8
+                        && u32::from_be_bytes(record[4..8].try_into().unwrap()) == 1;
+
+                    if is_reply {
+                        match parse_record(record) {
+                            Ok(ParsedRecord::Reply {
+                                xid,
+                                rbody,
+                                record,
+                                payload_offset,
+                            }) => {
+                                route_reply(&cbs_for_reader, xid, rbody, record, payload_offset);
+                            }
+                            Ok(ParsedRecord::Call { record, .. }) => {
+                                if record_tx.send(Ok(record)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                let _ = record_tx.send(Err(e)).await;
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+
+                    if record_tx.send(Ok(record)).await.is_err() {
                         break;
                     }
                 }
@@ -438,6 +472,7 @@ pub async fn launch_read_task(
 // Response serialization helpers
 // ---------------------------------------------------------------------------
 
+#[inline(always)]
 fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
     rpc_msg::rpc_msg {
         xid,
@@ -452,6 +487,7 @@ fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
     }
 }
 
+#[inline]
 fn prepare_success_response(
     buf: Vec<u8>,
     xid: u32,

@@ -44,7 +44,7 @@ impl RpcHandler for InlineCallbackService {
                 // This requires the read loop to process the REPLY while this
                 // handler is still running — only possible with concurrent dispatch.
                 let response = peer.send_call(ECHO_PROG, 1, data).await?;
-                Ok(response)
+                Ok(response.to_vec())
             }
             _ => Err(RpcError::InvalidProcedure),
         }

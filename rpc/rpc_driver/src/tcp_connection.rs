@@ -72,7 +72,22 @@ impl WriteHalf {
         &mut self,
         bufs: &'a [std::io::IoSlice<'a>],
     ) -> Result<usize, std::io::Error> {
-        self.write_half.write_vectored(bufs).await
+        // Try non-blocking first to skip the async poll machinery when the
+        // socket is already writable (common for small batches on loopback).
+        match self.write_half.try_write_vectored(bufs) {
+            Ok(n) => return Ok(n),
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(e) => return Err(e),
+        }
+        self.write_half.writable().await?;
+        match self.write_half.try_write_vectored(bufs) {
+            Ok(n) => Ok(n),
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // Spurious readiness — fall back to async write.
+                self.write_half.write_vectored(bufs).await
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 

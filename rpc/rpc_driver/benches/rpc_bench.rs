@@ -168,7 +168,7 @@ impl RpcHandler for InlineCallbackService {
                 // Call back to the peer on the same connection, inline.
                 let peer = rpc_driver::peer();
                 let response = peer.send_call(ECHO_PROG, 1, data).await?;
-                Ok(response)
+                Ok(response.to_vec())
             }
             _ => Err(RpcError::InvalidProcedure),
         }
@@ -834,6 +834,54 @@ async fn scenario_dynamic_pool(quick: bool) -> Vec<ScenarioResult> {
     }]
 }
 
+async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
+    let addr = start_server(Box::new(EchoService)).await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let concurrency = 10;
+    let payloads: &[(&str, &[u8])] = &[
+        ("64B", &[0u8; 64]),
+        ("1KB", &[0u8; 1024]),
+        ("64KB", &[0u8; 65536]),
+    ];
+    let (warmup, iters) = if quick { (10, 100) } else { (50, 500) };
+
+    let mut results = Vec::new();
+    for (label, payload) in payloads {
+        for _ in 0..warmup {
+            client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+        }
+
+        let (mut samples, wall) = run_concurrent(
+            client.clone() as Arc<dyn RpcSender>,
+            ECHO_PROG,
+            1,
+            payload,
+            concurrency,
+            iters,
+        )
+        .await;
+
+        let mut params = BTreeMap::new();
+        params.insert("payload_bytes".into(), serde_json::json!(payload.len()));
+        params.insert("concurrency".into(), serde_json::json!(concurrency));
+
+        results.push(ScenarioResult {
+            name: format!("payload_concurrency/{label}"),
+            params,
+            samples: iters,
+            timed_out: false,
+            latency_us: Some(compute_latency_stats(&mut samples)),
+            wall_time_ms: Some(wall.as_secs_f64() * 1000.0),
+            throughput_calls_per_sec: Some(iters as f64 / wall.as_secs_f64()),
+        });
+    }
+    results
+}
+
 // ---------------------------------------------------------------------------
 // Production-pattern scenarios
 // ---------------------------------------------------------------------------
@@ -1051,6 +1099,14 @@ async fn main() {
     #[cfg(feature = "concurrent-dispatch")]
     if should_run("dynamic_pool", &cli.scenario_filter) {
         let results = scenario_dynamic_pool(cli.quick).await;
+        for r in &results {
+            print_scenario(r, cli.gh_bench);
+        }
+        all_results.extend(results);
+    }
+
+    if should_run("payload_concurrency", &cli.scenario_filter) {
+        let results = scenario_payload_concurrency(cli.quick).await;
         for r in &results {
             print_scenario(r, cli.gh_bench);
         }

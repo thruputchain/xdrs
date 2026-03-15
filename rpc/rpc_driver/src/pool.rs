@@ -25,14 +25,16 @@ use async_trait::async_trait;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 
-use crate::{ConnectionHandle, ProgVers, RpcSender, connect_client, rpc_error::RpcError};
+use crate::{
+    ConnectionHandle, ProgVers, RpcResponse, RpcSender, connect_client, rpc_error::RpcError,
+};
 
 /// A request dispatched through the pool to a worker.
 struct PoolRequest {
     progvers: ProgVers,
     proc_num: u32,
     data: Vec<u8>,
-    reply: oneshot::Sender<Result<Vec<u8>, RpcError>>,
+    reply: oneshot::Sender<Result<RpcResponse, RpcError>>,
 }
 
 /// Fixed-size connection pool with FIFO request dispatch.
@@ -86,7 +88,7 @@ impl FixedSerialPool {
                     };
 
                     let result = client
-                        .send_call(req.progvers, req.proc_num, &req.data)
+                        .send_call_owned(req.progvers, req.proc_num, req.data)
                         .await;
                     let _ = req.reply.send(result);
                 }
@@ -115,7 +117,7 @@ impl RpcSender for FixedSerialPool {
         progvers: ProgVers,
         proc: u32,
         data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<RpcResponse, RpcError> {
         let (tx, rx) = oneshot::channel();
         let request = PoolRequest {
             progvers,
@@ -307,7 +309,7 @@ impl RpcSender for DynamicPool {
         progvers: ProgVers,
         proc: u32,
         data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<RpcResponse, RpcError> {
         let conn = self.lease_connection().await?;
         let result = conn.send_call(progvers, proc, data).await;
         self.touch_connection(&conn);
@@ -434,7 +436,7 @@ impl RpcSender for CpuSetPool {
         progvers: ProgVers,
         proc: u32,
         data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<RpcResponse, RpcError> {
         self.connection_for_current_cpu()
             .send_call(progvers, proc, data)
             .await

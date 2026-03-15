@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::task::Waker;
 use tokio::sync::mpsc;
@@ -92,9 +93,14 @@ async fn writer_task(
 
 /// write_all_vectored: flush all messages in one (or few) syscalls.
 async fn write_batch(wh: &mut WriteHalf, msgs: &[Vec<u8>]) -> Result<(), io::Error> {
-    let mut slices: Vec<io::IoSlice<'_>> = msgs.iter().map(|m| io::IoSlice::new(m)).collect();
-    let mut remaining: &mut [io::IoSlice<'_>] = &mut slices;
-    let mut total: usize = msgs.iter().map(|m| m.len()).sum();
+    debug_assert!(msgs.len() <= MAX_BATCH);
+    let mut slices_arr = [io::IoSlice::new(&[]); MAX_BATCH];
+    let mut total: usize = 0;
+    for (i, m) in msgs.iter().enumerate() {
+        slices_arr[i] = io::IoSlice::new(m);
+        total += m.len();
+    }
+    let mut remaining: &mut [io::IoSlice<'_>] = &mut slices_arr[..msgs.len()];
 
     while total > 0 {
         let n = wh.write_vectored(remaining).await?;
@@ -115,6 +121,7 @@ async fn write_batch(wh: &mut WriteHalf, msgs: &[Vec<u8>]) -> Result<(), io::Err
 /// allocation after warmup when fed from a [`BufPool`]).
 ///
 /// Used by both the client call path and the server response path.
+#[inline]
 pub(crate) fn frame_rpc_record(
     buf: Vec<u8>,
     header: &rpc_msg::rpc_msg,
@@ -144,6 +151,129 @@ pub(crate) fn frame_rpc_record(
     Ok(Vec::from(writer))
 }
 
+/// Like [`frame_rpc_record`], but takes ownership of the payload Vec and
+/// reuses its allocation for the output. Shifts the payload right to make
+/// room for the record-length + XDR header prefix.
+///
+/// Saves one allocation vs. the borrowed path when the caller already owns
+/// the data (e.g., pool workers that received it over a channel).
+#[inline]
+pub(crate) fn frame_rpc_record_owned(
+    header: &rpc_msg::rpc_msg,
+    mut data: Vec<u8>,
+) -> Result<Vec<u8>, ()> {
+    // Serialize the XDR header into a small temp buffer.
+    let mut hdr_writer = xdrs::txs::buf_writer::BufWriter::with_capacity(XDR_HEADER_ESTIMATE);
+    xdrs::write_xdr(&0u32, &mut hdr_writer).map_err(drop)?;
+    xdrs::write_xdr(header, &mut hdr_writer).map_err(drop)?;
+
+    let hdr_bytes: &[u8] = hdr_writer.as_ref();
+    let hdr_xdr_len = hdr_bytes.len() - 4; // minus the placeholder
+    let total_len = hdr_xdr_len
+        .checked_add(data.len())
+        .and_then(|sum| u32::try_from(sum).ok())
+        .filter(|&len| len <= 0x7FFF_FFFF)
+        .ok_or(())?;
+
+    let msg_len: u32 = total_len | 0x8000_0000;
+    let hdr_size = hdr_bytes.len();
+    let data_len = data.len();
+
+    // Shift payload right to make room for header.
+    data.reserve(hdr_size);
+    data.resize(data_len + hdr_size, 0);
+    data.copy_within(..data_len, hdr_size);
+
+    // Write record-length + XDR header at the front.
+    data[..4].copy_from_slice(&msg_len.to_be_bytes());
+    data[4..hdr_size].copy_from_slice(&hdr_bytes[4..]);
+
+    Ok(data)
+}
+
+/// Response from an RPC call. Wraps the raw record buffer and payload
+/// offset, providing zero-copy access to the payload via `Deref<Target = [u8]>`.
+///
+/// The caller deserializes directly from `&*response` without any copy.
+#[derive(Clone)]
+pub struct RpcResponse {
+    buf: Vec<u8>,
+    offset: usize,
+}
+
+impl RpcResponse {
+    /// Create a response from a payload Vec with no header (offset 0).
+    pub fn from_payload(payload: Vec<u8>) -> Self {
+        Self {
+            buf: payload,
+            offset: 0,
+        }
+    }
+
+    pub(crate) fn from_record(buf: Vec<u8>, offset: usize) -> Self {
+        Self { buf, offset }
+    }
+}
+
+impl std::ops::Deref for RpcResponse {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        &self.buf[self.offset..]
+    }
+}
+
+impl AsRef<[u8]> for RpcResponse {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
+impl PartialEq<[u8]> for RpcResponse {
+    fn eq(&self, other: &[u8]) -> bool {
+        &**self == other
+    }
+}
+
+impl<const N: usize> PartialEq<[u8; N]> for RpcResponse {
+    fn eq(&self, other: &[u8; N]) -> bool {
+        &**self == other
+    }
+}
+
+impl<const N: usize> PartialEq<&[u8; N]> for RpcResponse {
+    fn eq(&self, other: &&[u8; N]) -> bool {
+        &**self == *other
+    }
+}
+
+impl PartialEq<&[u8]> for RpcResponse {
+    fn eq(&self, other: &&[u8]) -> bool {
+        &**self == *other
+    }
+}
+
+impl PartialEq<Vec<u8>> for RpcResponse {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        &**self == other.as_slice()
+    }
+}
+
+impl PartialEq for RpcResponse {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl Eq for RpcResponse {}
+
+impl std::fmt::Debug for RpcResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RpcResponse")
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
 /// Trait for making outgoing RPC calls.
 ///
 /// Implemented by [`ConnectionHandle`] for real TCP connections,
@@ -156,13 +286,17 @@ pub(crate) fn frame_rpc_record(
 /// Implement on a mock struct for unit testing without TCP.
 #[async_trait]
 pub trait RpcSender: Send + Sync {
-    /// Send an RPC call and return the response data.
+    /// Send an RPC call and return the response.
+    ///
+    /// The returned [`RpcResponse`] derefs to `&[u8]` for zero-copy
+    /// deserialization, or can be copied to an owned `Vec<u8>` via
+    /// `.to_vec()`.
     async fn send_call(
         &self,
         progvers: ProgVers,
         proc: u32,
         data: &[u8],
-    ) -> Result<Vec<u8>, RpcError>;
+    ) -> Result<RpcResponse, RpcError>;
 }
 
 #[async_trait]
@@ -172,9 +306,21 @@ impl RpcSender for ConnectionHandle {
         progvers: ProgVers,
         proc: u32,
         data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<RpcResponse, RpcError> {
         ConnectionHandle::send_call(self, progvers, proc, data).await
     }
+}
+
+/// Result delivered to a pending RPC call.
+///
+/// Success carries `(record_buf, payload_offset)` — the raw record Vec and
+/// the byte offset where the payload begins. The consumer slices at read
+/// time, avoiding an O(n) `drain()` or `to_vec()` in the reader task.
+pub(crate) enum ReplyResult {
+    /// Success: record buffer + offset to payload start.
+    Ok(Vec<u8>, usize),
+    /// Error from the remote peer.
+    Err(RpcError),
 }
 
 /// State of a pending RPC call slot, stored directly in the HashMap.
@@ -187,7 +333,7 @@ pub(crate) enum CallbackSlot {
     /// Caller is parked, waker registered.
     Waiting(Waker),
     /// Reader has delivered the result.
-    Ready(Result<Vec<u8>, RpcError>),
+    Ready(ReplyResult),
 }
 
 impl std::fmt::Debug for CallbackSlot {
@@ -195,7 +341,7 @@ impl std::fmt::Debug for CallbackSlot {
         match self {
             Self::Registered => write!(f, "Registered"),
             Self::Waiting(_) => write!(f, "Waiting(..)"),
-            Self::Ready(r) => write!(f, "Ready({r:?})"),
+            Self::Ready(_) => write!(f, "Ready(..)"),
         }
     }
 }
@@ -216,6 +362,7 @@ impl ConnectionState {
         }
     }
 
+    #[inline(always)]
     pub(crate) fn register_call(&mut self) -> Result<u32, RpcError> {
         if self.poisoned {
             return Err(RpcError::SystemError);
@@ -232,7 +379,8 @@ impl ConnectionState {
         }
     }
 
-    pub(crate) fn handle_reply(&mut self, xid: u32, reply: Result<Vec<u8>, RpcError>) {
+    #[inline(always)]
+    pub(crate) fn handle_reply(&mut self, xid: u32, reply: ReplyResult) {
         if let Some(slot) = self.pending_requests.get_mut(&xid) {
             let prev = std::mem::replace(slot, CallbackSlot::Ready(reply));
             if let CallbackSlot::Waiting(waker) = prev {
@@ -265,13 +413,18 @@ impl Drop for ConnectionState {
 /// and graceful shutdown via poisoning.
 #[derive(Debug)]
 pub struct ConnectionHandle {
+    // Hot — accessed on every RPC:
     pub(crate) connection_state: StdMutex<ConnectionState>,
     write_tx: mpsc::Sender<Vec<u8>>,
-    writer_handle: StdMutex<Option<JoinHandle<()>>>,
     pub(crate) buf_pool: Arc<BufPool>,
+    /// Atomic pending-request counter — avoids locking `connection_state`
+    /// for load-balancing queries in DynamicPool.
+    pending_count: AtomicUsize,
+    // Cold — accessed rarely:
     pub(crate) connection_span: tracing::Span,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) max_concurrent_dispatches: usize,
+    writer_handle: StdMutex<Option<JoinHandle<()>>>,
 }
 
 impl ConnectionHandle {
@@ -288,9 +441,10 @@ impl ConnectionHandle {
         Self {
             connection_state: StdMutex::new(ConnectionState::new()),
             write_tx: tx,
-            writer_handle: StdMutex::new(Some(handle)),
             buf_pool: pool,
+            pending_count: AtomicUsize::new(0),
             connection_span: span,
+            writer_handle: StdMutex::new(Some(handle)),
             max_concurrent_dispatches: config.max_concurrent_dispatches,
         }
     }
@@ -313,6 +467,7 @@ impl ConnectionHandle {
     }
 
     /// Send a pre-serialized message through the write channel.
+    #[inline(always)]
     pub(crate) async fn send_msg(&self, msg: Vec<u8>) -> Result<(), io::Error> {
         self.write_tx
             .send(msg)
@@ -354,8 +509,9 @@ impl ConnectionHandle {
         progvers: ProgVers,
         proc: u32,
         data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<RpcResponse, RpcError> {
         let xid = self.connection_state.lock().unwrap().register_call()?;
+        self.pending_count.fetch_add(1, Ordering::Relaxed);
 
         let span = tracing::debug_span!(
             parent: &self.connection_span,
@@ -369,6 +525,7 @@ impl ConnectionHandle {
         // Guard removes the pending entry on drop (cancellation safety).
         let guard = CallGuard {
             state: &self.connection_state,
+            pending_count: &self.pending_count,
             xid,
             done: false,
         };
@@ -386,27 +543,7 @@ impl ConnectionHandle {
                 return Err(RpcError::SystemError);
             }
 
-            // Wait for the reader task to deliver the result into our slot.
-            std::future::poll_fn(|cx| {
-                let mut state = self.connection_state.lock().unwrap();
-                match state.pending_requests.get_mut(&xid) {
-                    Some(CallbackSlot::Ready(_)) => match state.pending_requests.remove(&xid) {
-                        Some(CallbackSlot::Ready(result)) => std::task::Poll::Ready(result),
-                        _ => unreachable!(),
-                    },
-                    Some(slot) => {
-                        // Avoid cloning the waker if unchanged since last poll.
-                        match slot {
-                            CallbackSlot::Waiting(w) if w.will_wake(cx.waker()) => {}
-                            _ => *slot = CallbackSlot::Waiting(cx.waker().clone()),
-                        }
-                        std::task::Poll::Pending
-                    }
-                    // Entry gone — connection was poisoned.
-                    None => std::task::Poll::Ready(Err(RpcError::SystemError)),
-                }
-            })
-            .await
+            self.await_reply(xid).await
         }
         .instrument(span)
         .await;
@@ -415,9 +552,104 @@ impl ConnectionHandle {
         result
     }
 
+    /// Like [`send_call`](Self::send_call), but takes ownership of the data
+    /// Vec. Reuses its allocation for the framed message by shifting the
+    /// payload and prepending the header. Saves one copy when the caller
+    /// already owns the data (e.g., pool workers).
+    pub async fn send_call_owned(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: Vec<u8>,
+    ) -> Result<RpcResponse, RpcError> {
+        let xid = self.connection_state.lock().unwrap().register_call()?;
+        self.pending_count.fetch_add(1, Ordering::Relaxed);
+
+        let span = tracing::debug_span!(
+            parent: &self.connection_span,
+            "rpc_call",
+            xid,
+            prog = progvers.prog,
+            vers = progvers.vers,
+            proc = proc,
+        );
+
+        let guard = CallGuard {
+            state: &self.connection_state,
+            pending_count: &self.pending_count,
+            xid,
+            done: false,
+        };
+
+        let header = rpc_msg::rpc_msg {
+            xid,
+            body: rpc_msg::rpc_msg_body::CALL {
+                cbody: rpc_msg::call_body {
+                    rpcvers: 2,
+                    prog: progvers.prog,
+                    vers: progvers.vers,
+                    proc,
+                    cred: DEFAULT_OPAQUE_AUTH,
+                    verf: DEFAULT_OPAQUE_AUTH,
+                },
+            },
+        };
+
+        let msg = match frame_rpc_record_owned(&header, data) {
+            Ok(msg) => msg,
+            Err(()) => {
+                tracing::warn!("message too large: exceeds max (0x7FFF_FFFF)");
+                return Err(RpcError::SystemError);
+            }
+        };
+
+        let result = async {
+            if self.write_tx.send(msg).await.is_err() {
+                return Err(RpcError::SystemError);
+            }
+
+            self.await_reply(xid).await
+        }
+        .instrument(span)
+        .await;
+
+        guard.disarm();
+        result
+    }
+
+    /// Wait for the reader task to deliver a result for the given XID.
+    async fn await_reply(&self, xid: u32) -> Result<RpcResponse, RpcError> {
+        std::future::poll_fn(|cx| {
+            let mut state = self.connection_state.lock().unwrap();
+            match state.pending_requests.get_mut(&xid) {
+                Some(CallbackSlot::Ready(_)) => match state.pending_requests.remove(&xid) {
+                    Some(CallbackSlot::Ready(reply)) => std::task::Poll::Ready(match reply {
+                        ReplyResult::Ok(buf, offset) => Ok(RpcResponse::from_record(buf, offset)),
+                        ReplyResult::Err(e) => Err(e),
+                    }),
+                    _ => unreachable!(),
+                },
+                Some(slot) => {
+                    // Avoid cloning the waker if unchanged since last poll.
+                    match slot {
+                        CallbackSlot::Waiting(w) if w.will_wake(cx.waker()) => {}
+                        _ => *slot = CallbackSlot::Waiting(cx.waker().clone()),
+                    }
+                    std::task::Poll::Pending
+                }
+                // Entry gone — connection was poisoned.
+                None => std::task::Poll::Ready(Err(RpcError::SystemError)),
+            }
+        })
+        .await
+    }
+
     /// Returns the number of pending (in-flight) requests.
+    ///
+    /// Lock-free — reads an atomic counter instead of acquiring the
+    /// connection state mutex. Used by DynamicPool for load balancing.
     pub fn num_pending_requests(&self) -> usize {
-        self.connection_state.lock().unwrap().pending_requests.len()
+        self.pending_count.load(Ordering::Relaxed)
     }
 }
 
@@ -427,6 +659,7 @@ impl ConnectionHandle {
 /// the pending entry from the HashMap so it doesn't leak.
 struct CallGuard<'a> {
     state: &'a StdMutex<ConnectionState>,
+    pending_count: &'a AtomicUsize,
     xid: u32,
     done: bool,
 }
@@ -434,12 +667,14 @@ struct CallGuard<'a> {
 impl CallGuard<'_> {
     fn disarm(mut self) {
         self.done = true;
+        self.pending_count.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
 impl Drop for CallGuard<'_> {
     fn drop(&mut self) {
         if !self.done {
+            self.pending_count.fetch_sub(1, Ordering::Relaxed);
             self.state
                 .lock()
                 .unwrap()
@@ -461,19 +696,21 @@ mod tests {
         assert_eq!(xid, 1);
 
         // Reply for unknown xid — should be ignored.
-        state.handle_reply(0, Ok(b"world".to_vec()));
+        state.handle_reply(0, ReplyResult::Ok(b"world".to_vec(), 0));
 
         // Reply for our xid.
-        state.handle_reply(xid, Ok(b"hello".to_vec()));
+        state.handle_reply(xid, ReplyResult::Ok(b"hello".to_vec(), 0));
 
         // Slot should now be Ready.
         match state.pending_requests.remove(&xid) {
-            Some(CallbackSlot::Ready(Ok(data))) => assert_eq!(data, b"hello"),
+            Some(CallbackSlot::Ready(ReplyResult::Ok(data, offset))) => {
+                assert_eq!(&data[offset..], b"hello");
+            }
             other => panic!("expected Ready(Ok), got {other:?}"),
         }
 
         // Duplicate reply — entry already removed, should be ignored.
-        state.handle_reply(xid, Ok(b"foo".to_vec()));
+        state.handle_reply(xid, ReplyResult::Ok(b"foo".to_vec(), 0));
     }
 
     #[test]

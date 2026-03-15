@@ -87,7 +87,7 @@
 //!         let peer = rpc_driver::peer();
 //!         // With concurrent-dispatch: works inline
 //!         let resp = peer.send_call(ProgVers::new(200, 1), 0, b"").await?;
-//!         Ok(resp)
+//!         Ok(resp.to_vec())
 //!     }
 //! # }
 //! ```
