@@ -23,6 +23,7 @@ pub enum RpcError {
     AuthenticationError,
 }
 
+#[allow(unreachable_pub)]
 pub const DEFAULT_OPAQUE_AUTH: rpc_msg::opaque_auth = rpc_msg::opaque_auth {
     flavor: rpc_msg::auth_flavor::AUTH_NONE,
     body: BytesM::<400>(vec![]),

@@ -1,3 +1,4 @@
+#![allow(unreachable_pub)]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

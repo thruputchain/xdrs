@@ -28,6 +28,10 @@ struct Args {
     /// Pool type: "fixed" (FixedSerialPool), "dynamic" (DynamicPool), "cpu" (CpuSetPool)
     #[arg(long, global = true)]
     pool: Option<String>,
+
+    /// Enable tracing subscriber on server and client (info, debug)
+    #[arg(long, global = true)]
+    tracing: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -140,6 +144,7 @@ impl ServerHandle {
 async fn get_server(
     remote_addr: &Option<String>,
     max_concurrent: usize,
+    tracing_level: &Option<String>,
 ) -> Result<ServerHandle, Box<dyn std::error::Error + Send + Sync>> {
     if let Some(addr_str) = remote_addr {
         let addr: std::net::SocketAddr = addr_str
@@ -148,20 +153,25 @@ async fn get_server(
         eprintln!("[harness] using remote server at {addr}");
         return Ok(ServerHandle::Remote { addr });
     }
-    start_local_server(max_concurrent).await
+    start_local_server(max_concurrent, tracing_level).await
 }
 
 async fn start_local_server(
     max_concurrent: usize,
+    tracing_level: &Option<String>,
 ) -> Result<ServerHandle, Box<dyn std::error::Error + Send + Sync>> {
     let bin = find_binary("rpc-smoke-server");
-    let mut child = tokio::process::Command::new(bin)
-        .args([
-            "--port",
-            "0",
-            "--max-concurrent",
-            &max_concurrent.to_string(),
-        ])
+    let mut cmd = tokio::process::Command::new(bin);
+    cmd.args([
+        "--port",
+        "0",
+        "--max-concurrent",
+        &max_concurrent.to_string(),
+    ]);
+    if let Some(level) = tracing_level {
+        cmd.args(["--tracing", level]);
+    }
+    let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()?;
@@ -203,6 +213,7 @@ async fn run_client(
     duration: u64,
     max_inflight: Option<usize>,
     pool_type: Option<&str>,
+    tracing_level: Option<&str>,
 ) -> Result<ClientMetrics, Box<dyn std::error::Error + Send + Sync>> {
     let bin = find_binary("rpc-smoke-client");
     let mut cmd = tokio::process::Command::new(bin);
@@ -222,6 +233,9 @@ async fn run_client(
     }
     if let Some(p) = pool_type {
         cmd.args(["--pool", p]);
+    }
+    if let Some(t) = tracing_level {
+        cmd.args(["--tracing", t]);
     }
 
     let output = cmd.output().await?;
@@ -251,7 +265,7 @@ where
 {
     let remote = args.server_addr.is_some();
     let shared_server = if remote {
-        Some(get_server(&args.server_addr, args.server_max_concurrent).await?)
+        Some(get_server(&args.server_addr, args.server_max_concurrent, &args.tracing).await?)
     } else {
         None
     };
@@ -260,7 +274,7 @@ where
 
     for tier in 0..num_tiers {
         let mut local_server = if shared_server.is_none() {
-            Some(get_server(&args.server_addr, args.server_max_concurrent).await?)
+            Some(get_server(&args.server_addr, args.server_max_concurrent, &args.tracing).await?)
         } else {
             None
         };
@@ -328,9 +342,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Build binaries in release mode for meaningful performance numbers
     eprintln!("[harness] building binaries (release)...");
-    let status = std::process::Command::new("cargo")
+    let status = tokio::process::Command::new("cargo")
         .args(["build", "--release", "-p", "rpc-smoke"])
-        .status()?;
+        .status()
+        .await?;
     if !status.success() {
         return Err("cargo build failed".into());
     }
@@ -345,7 +360,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             eprintln!(
                 "[harness] scenario: realistic (coordinator + {gateways} gateways + 4 executors + 4 db-shards + auth)"
             );
-            let mut server = get_server(&args.server_addr, args.server_max_concurrent).await?;
+            let mut server =
+                get_server(&args.server_addr, args.server_max_concurrent, &args.tracing).await?;
             let addr = server.addr();
 
             // Build list of (profile, connections_override) for all clients
@@ -367,8 +383,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             for (profile, conns) in clients {
                 let duration = args.duration;
                 let pool = args.pool.clone();
+                let tracing_level = args.tracing.clone();
                 tasks.spawn(async move {
-                    run_client(addr, profile, conns, duration, None, pool.as_deref()).await
+                    run_client(
+                        addr,
+                        profile,
+                        conns,
+                        duration,
+                        None,
+                        pool.as_deref(),
+                        tracing_level.as_deref(),
+                    )
+                    .await
                 });
             }
 
@@ -397,6 +423,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let count = counts[tier];
                 let duration = args.duration;
                 let pool = args.pool.clone();
+                let tracing_level = args.tracing.clone();
                 eprintln!("[harness] testing {count} connections...");
                 async move {
                     let result = run_client(
@@ -406,6 +433,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         duration,
                         None,
                         pool.as_deref(),
+                        tracing_level.as_deref(),
                     )
                     .await?;
                     Ok(vec![result])
@@ -424,7 +452,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             connections,
         } => {
             eprintln!("[harness] scenario: single profile '{profile}'");
-            let mut server = get_server(&args.server_addr, args.server_max_concurrent).await?;
+            let mut server =
+                get_server(&args.server_addr, args.server_max_concurrent, &args.tracing).await?;
 
             let result = run_client(
                 server.addr(),
@@ -433,6 +462,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 args.duration,
                 None,
                 args.pool.as_deref(),
+                args.tracing.as_deref(),
             )
             .await?;
             let has_errors = result.total_errors > 0;
@@ -466,12 +496,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let conns = connections_per_client;
                 let inflight = max_inflight;
                 let pool = args.pool.clone();
+                let tracing_level = args.tracing.clone();
                 eprintln!("[harness] testing {num_clients} client processes...");
                 async move {
                     let mut tasks = tokio::task::JoinSet::new();
                     for i in 0..num_clients {
                         let label = format!("echo-{num_clients}x{conns}#{i}");
                         let pool = pool.clone();
+                        let tracing_level = tracing_level.clone();
                         tasks.spawn(async move {
                             run_client(
                                 server_addr,
@@ -480,6 +512,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 duration,
                                 Some(inflight),
                                 pool.as_deref(),
+                                tracing_level.as_deref(),
                             )
                             .await
                         });

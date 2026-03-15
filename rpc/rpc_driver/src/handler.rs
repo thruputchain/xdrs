@@ -28,6 +28,17 @@ pub struct ServiceMap {
     services: BTreeMap<ProgVers, Box<dyn RpcHandler>>,
 }
 
+impl std::fmt::Debug for ServiceMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServiceMap")
+            .field(
+                "services",
+                &format_args!("{} registered", self.services.len()),
+            )
+            .finish()
+    }
+}
+
 impl Default for ServiceMap {
     fn default() -> Self {
         Self::new()

@@ -43,7 +43,7 @@ impl std::error::Error for ProgramError {
 }
 
 impl fmt::Display for ProgramError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "rpc program error: {}", self.0)
     }
 }

@@ -3,12 +3,14 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use tokio::net::TcpListener;
+use tracing::Instrument;
 
 use crate::{
     ConnectionConfig, ConnectionHandle, ServiceMap, tasks::launch_read_task, tcp_connection::accept,
 };
 
 /// TCP-based RPC server that dispatches calls to registered services.
+#[derive(Debug)]
 pub struct RpcServer {
     listener: TcpListener,
     config: ConnectionConfig,
@@ -39,29 +41,34 @@ impl RpcServer {
     /// Run the server, accepting connections and handling requests.
     async fn run(&self) -> Result<(), std::io::Error> {
         loop {
-            let (read, write) = match accept(&self.listener, self.config.max_message_size).await {
-                Ok((read, write)) => (read, write),
-                Err(e) => {
-                    eprintln!("Error server accepting connection: {}", e);
-                    continue;
-                }
-            };
+            let (read, write, addr) =
+                match accept(&self.listener, self.config.max_message_size).await {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        tracing::error!(error = %e, "error accepting connection");
+                        continue;
+                    }
+                };
 
-            let client_handle = Arc::new(ConnectionHandle::new(write, &self.config));
+            let span = tracing::info_span!("rpc_connection", peer = %addr, role = "server");
+            let client_handle = Arc::new(ConnectionHandle::new(write, &self.config, span.clone()));
             let service_map = self.config.services.clone();
 
-            tokio::spawn({
-                let client_handle = client_handle.clone();
-                async move {
-                    match launch_read_task(service_map, client_handle.clone(), read).await {
-                        Ok(_) => (),
-                        Err(e) => {
-                            eprintln!("Error from server read task: {}", e);
-                            client_handle.poison().await;
+            tokio::spawn(
+                {
+                    let client_handle = client_handle.clone();
+                    async move {
+                        match launch_read_task(service_map, client_handle.clone(), read).await {
+                            Ok(_) => (),
+                            Err(e) => {
+                                tracing::error!(error = %e, "read task failed");
+                                client_handle.poison().await;
+                            }
                         }
                     }
                 }
-            });
+                .instrument(span),
+            );
         }
     }
 }

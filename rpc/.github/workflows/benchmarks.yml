@@ -1,16 +1,18 @@
 name: Benchmarks
 
+# Disabled: requires GitHub Pages (GitHub Enterprise or public repo).
+# To enable, uncomment the trigger and ensure gh-pages branch exists.
+# on:
+#   push:
+#     branches: [main]
 on:
-  push:
-    branches: [main]
+  workflow_dispatch: # manual trigger only
 
 jobs:
   benchmark:
-    name: Track benchmarks with Bencher
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      checks: write
+      contents: write
     env:
       CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
@@ -18,24 +20,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: bencherdev/bencher@v0.5.10
       - name: Run benchmarks
-        run: |
-          bencher run \
-            --project rpc-driver-tbtqvgmx \
-            --token '${{ secrets.BENCHER_API_TOKEN }}' \
-            --branch main \
-            --testbed ubuntu-latest \
-            --threshold-measure latency \
-            --threshold-test t_test \
-            --threshold-max-sample-size 64 \
-            --threshold-upper-boundary 0.99 \
-            --threshold-measure throughput \
-            --threshold-test t_test \
-            --threshold-max-sample-size 64 \
-            --threshold-lower-boundary 0.99 \
-            --thresholds-reset \
-            --err \
-            --adapter json \
-            --github-actions '${{ secrets.GITHUB_TOKEN }}' \
-            "cargo bench --bench rpc_bench -- --bencher"
+        run: cargo bench --bench rpc_bench --features concurrent-dispatch -- --gh-bench > bench-output.json
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          tool: customSmallerIsBetter
+          output-file-path: bench-output.json
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+          auto-push: true
+          alert-threshold: "150%"
+          comment-on-alert: false
+          fail-on-alert: false
