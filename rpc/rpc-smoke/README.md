@@ -63,6 +63,23 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 
 Server RSS is reported after each run for leak detection.
 
+## Tracing
+
+Pass `--tracing info` or `--tracing debug` to enable structured tracing output on server and client processes. The subscriber setup in `src/server.rs` serves as a reference example for consumers of `rpc_driver`.
+
+Key subscriber decisions (see `src/server.rs` inline docs):
+- `FmtSpan::CLOSE` — emits `time.busy` (handler execution) and `time.idle` (scheduling gap) on span close, which is the most useful output for performance analysis
+- Writes to stderr so it doesn't interfere with JSON metrics on stdout
+- Level filter: `info` shows connection lifecycle only; `debug` adds per-RPC spans
+
+Example output at DEBUG level:
+
+```
+rpc_connection{peer=10.0.0.1:4567 role="server"}:rpc_call{xid=42 prog=100 vers=1 proc=1}: close time.busy=4.2us time.idle=515us
+```
+
+Performance impact: INFO adds <1% overhead; DEBUG adds ~5% on realistic workloads.
+
 ## EPYC Cluster Benchmark Playbook
 
 All tests below assume server on machine A, client(s) on machine B.
