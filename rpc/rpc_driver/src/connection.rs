@@ -283,7 +283,8 @@ impl ConnectionHandle {
     ) -> Self {
         let pool = Arc::new(BufPool::new());
         let (tx, rx) = mpsc::channel(config.write_channel_capacity);
-        let handle = tokio::spawn(writer_task(rx, write_half, pool.clone()));
+        let handle =
+            tokio::spawn(writer_task(rx, write_half, pool.clone()).instrument(span.clone()));
         Self {
             connection_state: StdMutex::new(ConnectionState::new()),
             write_tx: tx,

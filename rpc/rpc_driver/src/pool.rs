@@ -380,7 +380,10 @@ impl CpuSetPool {
         if num_connections == 0 {
             return Err(RpcError::SystemError);
         }
-        if cpu_map.iter().any(|&b| b >= num_connections) {
+        if cpu_map
+            .iter()
+            .any(|&b| b != usize::MAX && b >= num_connections)
+        {
             return Err(RpcError::SystemError);
         }
 
