@@ -114,10 +114,78 @@
 //! ```
 //!
 //! [`try_peer()`] returns `Option` and is safe to call outside a handler.
+//!
+//! ## Tracing
+//!
+//! All diagnostic output uses the [`tracing`](https://docs.rs/tracing) crate.
+//! `rpc_driver` emits spans and events — your binary crate chooses the
+//! subscriber (console logging, OpenTelemetry, JSON, etc.).
+//!
+//! **Without a subscriber**, tracing is a no-op (~1-2ns per callsite).
+//!
+//! ### Span Hierarchy
+//!
+//! ```text
+//! rpc_connection{peer=10.0.0.1:4567 role="server"}     [INFO]  — per TCP connection
+//!   rpc_call{xid=42 prog=100 vers=1 proc=3}            [DEBUG] — per RPC call
+//! ```
+//!
+//! - **`rpc_connection`** (INFO) — created on accept (server) or connect (client).
+//!   Lives for the connection's lifetime. Fields: `peer` (socket address), `role`
+//!   (`"server"` or `"client"`).
+//!
+//! - **`rpc_call`** (DEBUG) — created per CALL message. On the server, the span
+//!   measures handler dispatch time. On the client, it measures round-trip time
+//!   (send to receive). Fields: `xid`, `prog`, `vers`, `proc`.
+//!
+//! ### Subscriber Setup
+//!
+//! Add `tracing-subscriber` to your binary crate:
+//!
+//! ```toml
+//! [dependencies]
+//! tracing = "0.1"
+//! tracing-subscriber = { version = "0.3", features = ["fmt"] }
+//! ```
+//!
+//! Then initialize before starting the server or connecting clients:
+//!
+//! ```no_run
+//! use tracing_subscriber::fmt::format::FmtSpan;
+//!
+//! // INFO: connection lifecycle only (< 1% overhead)
+//! // DEBUG: per-RPC waterfall tracing (~5% overhead in realistic workloads)
+//! tracing_subscriber::fmt()
+//!     .with_max_level(tracing::Level::DEBUG)
+//!     .with_span_events(FmtSpan::CLOSE)
+//!     .init();
+//! ```
+//!
+//! **`FmtSpan::CLOSE` is important** — without it, the `fmt` subscriber only
+//! shows error/warn events. `CLOSE` adds a line when each span ends, showing
+//! `time.busy` (execution time) and `time.idle` (scheduling gaps):
+//!
+//! ```text
+//! rpc_connection{peer=127.0.0.1:4567 role="server"}:rpc_call{xid=1 prog=100 vers=1 proc=1}: close time.busy=6.2µs time.idle=0.4µs
+//! ```
+//!
+//! For OpenTelemetry export, use `tracing-opentelemetry` instead — it captures
+//! span start/end natively and does not need `FmtSpan`.
+//!
+//! ### Performance
+//!
+//! | Subscriber | Per-RPC overhead | Use case |
+//! |---|---|---|
+//! | None | ~1-2ns (atomic check) | Production default |
+//! | INFO | < 1% | Connection monitoring |
+//! | DEBUG | ~5% (realistic workloads) | Performance waterfall |
+//!
+//! See `rpc-smoke/src/server.rs` for a complete reference example of
+//! subscriber setup in a production-like server.
 
-// Lints on the generated rpc_msg.rs file
-#![allow(clippy::upper_case_acronyms)]
-#![allow(clippy::match_single_binding)]
+// Lint configuration is in workspace Cargo.toml [workspace.lints].
+// upper_case_acronyms and match_single_binding are allowed workspace-wide
+// for the generated rpc_msg.rs file.
 
 pub mod connection;
 pub use connection::*;
@@ -147,6 +215,7 @@ pub mod tcp_connection;
 // - remove unneeded features (serde, spec)
 // - force enable xdrs feature
 #[rustfmt::skip]
+#[allow(unreachable_pub)]
 mod rpc_msg;
 
 mod rpc_error;

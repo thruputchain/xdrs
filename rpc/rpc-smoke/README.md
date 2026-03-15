@@ -32,6 +32,7 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 | `--duration` | 5 | Test duration in seconds |
 | `--max-inflight` | 100 | Max concurrent in-flight RPCs |
 | `--pool` | fixed | Pool type: `fixed`, `dynamic`, or `cpu` |
+| `--tracing` | (none) | Enable tracing subscriber at given level (info, debug) |
 
 ## Pool Types
 
@@ -49,6 +50,7 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 | `--server-max-concurrent` | 64 | Server concurrency limit (ignored with `--server-addr`) |
 | `--server-addr` | (spawn local) | Remote server address (host:port) |
 | `--pool` | (none = fixed) | Pool type for all clients: `fixed`, `dynamic`, or `cpu` |
+| `--tracing` | (none) | Enable tracing subscriber on server and client (info, debug) |
 
 ## Harness Scenarios
 

@@ -1,5 +1,7 @@
 //! TCP connection handling for RPC record streams.
 
+use std::net::SocketAddr;
+
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
@@ -16,6 +18,7 @@ const READ_BUF_SIZE: usize = 65536;
 /// Uses an internal read buffer to amortize syscalls: a single `read()`
 /// may return multiple records, which are then parsed without further
 /// syscalls until the buffer is depleted.
+#[derive(Debug)]
 pub struct ReadHalf {
     read_half: tokio::net::tcp::OwnedReadHalf,
     /// Read buffer. Data lives in `buf[pos..len]`.
@@ -47,8 +50,8 @@ pub async fn connect<A: ToSocketAddrs>(
 pub async fn accept(
     listener: &TcpListener,
     max_message_size: u32,
-) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
-    let (stream, _) = listener.accept().await?;
+) -> Result<(ReadHalf, WriteHalf, SocketAddr), std::io::Error> {
+    let (stream, addr) = listener.accept().await?;
     // This doesn't noticeably affect performance on local loopback tests
     // TODO(geoff): test on real network
     stream.set_nodelay(true)?;
@@ -56,6 +59,7 @@ pub async fn accept(
     Ok((
         ReadHalf::new(read_half, max_message_size),
         WriteHalf { write_half },
+        addr,
     ))
 }
 
@@ -131,12 +135,12 @@ impl ReadHalf {
         let last_fragment = header & 0x8000_0000 != 0;
 
         if !last_fragment {
-            eprintln!("Multi-part messages unsupported: n={header:X}");
+            tracing::warn!(header, "multi-part messages unsupported");
             return Ok(None);
         }
 
         if size as u32 > self.max_message_size {
-            eprintln!("Message size too large: n={header:X}");
+            tracing::warn!(header, "message size too large");
             return Ok(None);
         }
 

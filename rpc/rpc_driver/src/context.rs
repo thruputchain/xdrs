@@ -44,7 +44,8 @@ pub fn try_peer() -> Option<Arc<dyn RpcSender>> {
 ///
 /// This is used by the framework's dispatch loop — you should not need to call
 /// this directly unless you are writing custom dispatch infrastructure.
-pub(crate) async fn with_peer<F, R>(sender: Arc<dyn RpcSender>, f: F) -> R
+#[allow(unreachable_pub)]
+pub async fn with_peer<F, R>(sender: Arc<dyn RpcSender>, f: F) -> R
 where
     F: std::future::Future<Output = R>,
 {

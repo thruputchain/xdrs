@@ -38,11 +38,27 @@ struct Args {
     /// Pool type: "fixed" (default), "cpu" (LLC-aware), or "dynamic" (min-pending)
     #[arg(long, default_value = "fixed")]
     pool: String,
+
+    /// Enable tracing subscriber at the given level (info, debug)
+    #[arg(long)]
+    tracing: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    if let Some(ref level) = args.tracing {
+        use tracing_subscriber::fmt::format::FmtSpan;
+        let level: tracing::Level = level.parse().map_err(|_| {
+            format!("unknown tracing level: {level} (use trace, debug, info, warn, error)")
+        })?;
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_writer(std::io::stderr)
+            .with_span_events(FmtSpan::CLOSE)
+            .init();
+    }
 
     let profiles = builtin_profiles();
     let mut prof = profiles

@@ -46,15 +46,25 @@ mod tests {
         service_map.add_service(Box::new(EchoCallbackService {}));
 
         // Accept incoming connection in background task - we'll use this for the server side
-        let listener_handle =
-            tokio::spawn(async move { accept(&listener, 0x100_0000).await.unwrap() });
+        let listener_handle = tokio::spawn(async move {
+            let (r, w, _addr) = accept(&listener, 0x100_0000).await.unwrap();
+            (r, w)
+        });
 
         // Connect from client side
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
-        let client_handle = Arc::new(ConnectionHandle::new(client_write, &Default::default()));
-        let server_handle = Arc::new(ConnectionHandle::new(server_write, &Default::default()));
+        let client_handle = Arc::new(ConnectionHandle::new(
+            client_write,
+            &Default::default(),
+            tracing::Span::none(),
+        ));
+        let server_handle = Arc::new(ConnectionHandle::new(
+            server_write,
+            &Default::default(),
+            tracing::Span::none(),
+        ));
 
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();
@@ -135,7 +145,11 @@ mod tests {
 
         let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
 
-        let client_handle = Arc::new(ConnectionHandle::new(client_write, &Default::default()));
+        let client_handle = Arc::new(ConnectionHandle::new(
+            client_write,
+            &Default::default(),
+            tracing::Span::none(),
+        ));
 
         let client_read_task = tokio::spawn({
             let client_handle = client_handle.clone();

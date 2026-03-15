@@ -11,6 +11,7 @@ An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [
 - **Connection pools** — `FixedSerialPool` (serial per-conn), `DynamicPool` (min-pending), `CpuSetPool` (LLC-affine)
 - **Bidirectional RPC** — handlers can call back to the peer via `peer()`
 - Panic isolation, load shedding, connection poisoning for clean shutdown
+- **Structured tracing** — `tracing` spans and events for logging, OpenTelemetry, and e2e waterfalls
 - Max message size limit (16MB default)
 
 ## Usage
@@ -42,13 +43,56 @@ rpc_driver = { version = "0.5", features = ["concurrent-dispatch"] }
 
 Tune concurrency via `ConnectionConfig::with_max_concurrent_dispatches`.
 
+## Tracing
+
+All diagnostic output uses the [`tracing`](https://docs.rs/tracing) crate. No subscriber is required — without one, overhead is ~1-2ns per callsite.
+
+### Span hierarchy
+
+```text
+rpc_connection{peer=10.0.0.1:4567 role="server"}     INFO  — per TCP connection
+  rpc_call{xid=42 prog=100 vers=1 proc=3}            DEBUG — per RPC call
+```
+
+### Subscriber setup
+
+Add `tracing-subscriber` to your binary crate and initialize before starting the server:
+
+```rust
+use tracing_subscriber::fmt::format::FmtSpan;
+
+tracing_subscriber::fmt()
+    .with_max_level(tracing::Level::DEBUG)
+    .with_span_events(FmtSpan::CLOSE)
+    .init();
+```
+
+`FmtSpan::CLOSE` is important — without it, only error/warn events appear. With it, each span logs its duration on close:
+
+```text
+rpc_connection{peer=127.0.0.1:4567 role="server"}:rpc_call{xid=1 prog=100 vers=1 proc=1}: close time.busy=6.2µs time.idle=0.4µs
+rpc_connection{peer=127.0.0.1:4567 role="server"}: close time.busy=49ms time.idle=954ms
+```
+
+For OpenTelemetry export, use [`tracing-opentelemetry`](https://docs.rs/tracing-opentelemetry) — it captures span start/end natively without `FmtSpan`.
+
+### Performance overhead
+
+| Subscriber | Overhead | Use case |
+|---|---|---|
+| None | ~1-2ns per callsite | Production default |
+| INFO | < 1% | Connection monitoring |
+| DEBUG | ~5% (realistic workloads) | Performance waterfall |
+
+See `rpc-smoke/src/server.rs` for a complete reference example.
+
 ## Workspace
 
 | Crate | Purpose |
 |---|---|
 | `rpc_driver` | Core RPC library |
 | `rpc-smoke` | Multi-connection smoke test suite |
-| `bench-compare` | Benchmark comparison tooling |
+| `bench-compare` | Local benchmark comparison tooling |
 
 ## Documentation
 
@@ -59,7 +103,6 @@ cargo doc --open
 ## Known Issues
 
 - **Multi-part messages unsupported** — fragmented records cause connection shutdown
-- **No structured logging** — errors go to stderr (tracking issue: #18)
 
 ## License
 

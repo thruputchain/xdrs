@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::task::Waker;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tracing::Instrument;
 
 use async_trait::async_trait;
 
@@ -81,7 +82,7 @@ async fn writer_task(
         }
 
         if let Some(e) = err {
-            eprintln!("[rpc] writer task error: {e}");
+            tracing::error!(error = %e, "writer task error");
             break;
         }
     }
@@ -207,7 +208,7 @@ pub(crate) struct ConnectionState {
 }
 
 impl ConnectionState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pending_requests: HashMap::new(),
             last_xid: 0,
@@ -231,7 +232,7 @@ impl ConnectionState {
         }
     }
 
-    pub fn handle_reply(&mut self, xid: u32, reply: Result<Vec<u8>, RpcError>) {
+    pub(crate) fn handle_reply(&mut self, xid: u32, reply: Result<Vec<u8>, RpcError>) {
         if let Some(slot) = self.pending_requests.get_mut(&xid) {
             let prev = std::mem::replace(slot, CallbackSlot::Ready(reply));
             if let CallbackSlot::Waiting(waker) = prev {
@@ -239,10 +240,10 @@ impl ConnectionState {
             }
             return;
         }
-        eprintln!("Received reply for unknown xid: {}", xid);
+        tracing::warn!(xid, "received reply for unknown xid");
     }
 
-    pub fn poison(&mut self) {
+    pub(crate) fn poison(&mut self) {
         self.poisoned = true;
         for (_xid, slot) in self.pending_requests.drain() {
             if let CallbackSlot::Waiting(waker) = slot {
@@ -268,23 +269,28 @@ pub struct ConnectionHandle {
     write_tx: mpsc::Sender<Vec<u8>>,
     writer_handle: StdMutex<Option<JoinHandle<()>>>,
     pub(crate) buf_pool: Arc<BufPool>,
-    pub(crate) log_timestamps: bool,
+    pub(crate) connection_span: tracing::Span,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) max_concurrent_dispatches: usize,
 }
 
 impl ConnectionHandle {
     /// Create a new connection handle wrapping the given TCP write half.
-    pub fn new(write_half: WriteHalf, config: &crate::ConnectionConfig) -> Self {
+    pub fn new(
+        write_half: WriteHalf,
+        config: &crate::ConnectionConfig,
+        span: tracing::Span,
+    ) -> Self {
         let pool = Arc::new(BufPool::new());
         let (tx, rx) = mpsc::channel(config.write_channel_capacity);
-        let handle = tokio::spawn(writer_task(rx, write_half, pool.clone()));
+        let handle =
+            tokio::spawn(writer_task(rx, write_half, pool.clone()).instrument(span.clone()));
         Self {
             connection_state: StdMutex::new(ConnectionState::new()),
             write_tx: tx,
             writer_handle: StdMutex::new(Some(handle)),
             buf_pool: pool,
-            log_timestamps: config.log_timestamps,
+            connection_span: span,
             max_concurrent_dispatches: config.max_concurrent_dispatches,
         }
     }
@@ -335,10 +341,7 @@ impl ConnectionHandle {
             },
         };
         frame_rpc_record(buf, &header, data).map_err(|()| {
-            eprintln!(
-                "Message too large: data={} exceeds max (0x7FFF_FFFF)",
-                data.len()
-            );
+            tracing::warn!(data_len = data.len(), "message too large");
             RpcError::SystemError
         })
     }
@@ -353,6 +356,15 @@ impl ConnectionHandle {
         data: &[u8],
     ) -> Result<Vec<u8>, RpcError> {
         let xid = self.connection_state.lock().unwrap().register_call()?;
+
+        let span = tracing::debug_span!(
+            parent: &self.connection_span,
+            "rpc_call",
+            xid,
+            prog = progvers.prog,
+            vers = progvers.vers,
+            proc = proc,
+        );
 
         // Guard removes the pending entry on drop (cancellation safety).
         let guard = CallGuard {
@@ -369,34 +381,34 @@ impl ConnectionHandle {
             }
         };
 
-        if self.log_timestamps {
-            log_rpc_timestamp(xid, "client_send");
-        }
-
-        if self.write_tx.send(msg).await.is_err() {
-            return Err(RpcError::SystemError);
-        }
-
-        // Wait for the reader task to deliver the result into our slot.
-        let result = std::future::poll_fn(|cx| {
-            let mut state = self.connection_state.lock().unwrap();
-            match state.pending_requests.get_mut(&xid) {
-                Some(CallbackSlot::Ready(_)) => match state.pending_requests.remove(&xid) {
-                    Some(CallbackSlot::Ready(result)) => std::task::Poll::Ready(result),
-                    _ => unreachable!(),
-                },
-                Some(slot) => {
-                    // Avoid cloning the waker if unchanged since last poll.
-                    match slot {
-                        CallbackSlot::Waiting(w) if w.will_wake(cx.waker()) => {}
-                        _ => *slot = CallbackSlot::Waiting(cx.waker().clone()),
-                    }
-                    std::task::Poll::Pending
-                }
-                // Entry gone — connection was poisoned.
-                None => std::task::Poll::Ready(Err(RpcError::SystemError)),
+        let result = async {
+            if self.write_tx.send(msg).await.is_err() {
+                return Err(RpcError::SystemError);
             }
-        })
+
+            // Wait for the reader task to deliver the result into our slot.
+            std::future::poll_fn(|cx| {
+                let mut state = self.connection_state.lock().unwrap();
+                match state.pending_requests.get_mut(&xid) {
+                    Some(CallbackSlot::Ready(_)) => match state.pending_requests.remove(&xid) {
+                        Some(CallbackSlot::Ready(result)) => std::task::Poll::Ready(result),
+                        _ => unreachable!(),
+                    },
+                    Some(slot) => {
+                        // Avoid cloning the waker if unchanged since last poll.
+                        match slot {
+                            CallbackSlot::Waiting(w) if w.will_wake(cx.waker()) => {}
+                            _ => *slot = CallbackSlot::Waiting(cx.waker().clone()),
+                        }
+                        std::task::Poll::Pending
+                    }
+                    // Entry gone — connection was poisoned.
+                    None => std::task::Poll::Ready(Err(RpcError::SystemError)),
+                }
+            })
+            .await
+        }
+        .instrument(span)
         .await;
 
         guard.disarm();
@@ -435,22 +447,6 @@ impl Drop for CallGuard<'_> {
                 .remove(&self.xid);
         }
     }
-}
-
-/// Log an RPC timestamp event to stderr.
-///
-/// Output format: `[rpc] xid=<xid> event=<event> ts=<secs>.<micros>`
-pub(crate) fn log_rpc_timestamp(xid: u32, event: &str) {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    eprintln!(
-        "[rpc] xid={} event={} ts={}.{:06}",
-        xid,
-        event,
-        ts.as_secs(),
-        ts.subsec_micros()
-    );
 }
 
 #[cfg(test)]

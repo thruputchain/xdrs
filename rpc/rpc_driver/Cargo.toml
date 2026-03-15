@@ -1,9 +1,9 @@
 [package]
 name = "rpc_driver"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 authors = ["Groundhog Team"]
-license = "Apache-2.0"  
+license = "Apache-2.0"
 publish = ["groundhog"]
 description = "Async ONC-RPC (RFC 5531) client/server library built on tokio."
 repository = "https://github.com/groundhogchain/rpc_rs"
@@ -19,6 +19,7 @@ concurrent-dispatch = []
 async-trait = "0.1.89"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
+tracing = "0.1"
 xdrs = { registry = "groundhog", version = "0.5.0", features = ["derive", "alloc"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -28,6 +29,10 @@ libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1.47.1", features = ["full", "test-util"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "json"] }
+
+[lints]
+workspace = true
 
 [[bench]]
 name = "rpc_bench"

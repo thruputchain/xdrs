@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
+use tracing::Instrument;
+
 use crate::{
     ProgVers,
-    connection::{ConnectionHandle, RpcSender, log_rpc_timestamp},
+    connection::{ConnectionHandle, RpcSender},
     context::with_peer,
     handler::ServiceMap,
     rpc_error::DEFAULT_OPAQUE_AUTH,
@@ -31,9 +33,6 @@ fn route_reply(
     rbody: rpc_msg::reply_body,
     payload: Vec<u8>,
 ) {
-    if client_cbs.log_timestamps {
-        log_rpc_timestamp(xid, "client_recv");
-    }
     match rbody {
         rpc_msg::reply_body::MSG_ACCEPTED { areply } => {
             if let rpc_msg::accepted_reply_reply_data::SUCCESS { results: _results } =
@@ -72,18 +71,12 @@ async fn send_response(
         Ok(response) => {
             let buf = client_cbs.buf_pool.take();
             let msg = prepare_success_response(buf, xid, &response)?;
-            if client_cbs.log_timestamps {
-                log_rpc_timestamp(xid, "server_send");
-            }
             client_cbs
                 .send_msg(msg)
                 .await
                 .map_err(ReadTaskError::WriteError)?;
         }
         Err(e) => {
-            if client_cbs.log_timestamps {
-                log_rpc_timestamp(xid, "server_send");
-            }
             let out_bytes = e.to_error_record(xid);
             client_cbs
                 .send_msg(out_bytes)
@@ -123,7 +116,7 @@ fn parse_record(record: Vec<u8>) -> Result<ParsedRecord, ReadTaskError> {
     let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
         Ok(msg) => msg,
         Err(e) => {
-            eprintln!("[rpc] failed to parse XDR record: {e}");
+            tracing::error!(error = %e, "failed to parse XDR record");
             return Err(ReadTaskError::Shutdown);
         }
     };
@@ -173,7 +166,7 @@ pub async fn launch_read_task(
         let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
             Ok(msg) => msg,
             Err(e) => {
-                eprintln!("[rpc] failed to parse XDR record: {e}");
+                tracing::error!(error = %e, "failed to parse XDR record");
                 return Err(ReadTaskError::Shutdown);
             }
         };
@@ -182,21 +175,29 @@ pub async fn launch_read_task(
         match msg.body {
             rpc_msg::rpc_msg_body::CALL { cbody } => {
                 let xid = msg.xid;
-                if client_cbs.log_timestamps {
-                    log_rpc_timestamp(xid, "server_recv");
-                }
                 let vers = ProgVers {
                     prog: cbody.prog,
                     vers: cbody.vers,
                 };
+                let span = tracing::debug_span!(
+                    "rpc_call",
+                    xid,
+                    prog = vers.prog,
+                    vers = vers.vers,
+                    proc = cbody.proc,
+                );
                 let sender: Arc<dyn RpcSender> = client_cbs.clone();
-                let res = with_peer(sender, async {
-                    service_map
-                        .dispatch(cbody.rpcvers, vers, cbody.proc, remaining)
-                        .await
-                })
-                .await;
-                send_response(&client_cbs, xid, res).await?;
+                async {
+                    let res = with_peer(sender, async {
+                        service_map
+                            .dispatch(cbody.rpcvers, vers, cbody.proc, remaining)
+                            .await
+                    })
+                    .await;
+                    send_response(&client_cbs, xid, res).await
+                }
+                .instrument(span)
+                .await?;
             }
             rpc_msg::rpc_msg_body::REPLY { rbody } => {
                 route_reply(&client_cbs, msg.xid, rbody, remaining.to_vec());
@@ -276,7 +277,7 @@ mod concurrent {
         // the counter is a soft heuristic, not a synchronization mechanism.
         let pending = Arc::new(AtomicUsize::new(0));
         // Total spawned tasks (executing + waiting for a permit) before load
-        // shedding.  E.g. max=1 → cap=5, max=64 → cap=320.
+        // shedding.  E.g. max=1 -> cap=5, max=64 -> cap=320.
         let pending_cap = max_concurrent.saturating_mul(5);
         let mut tasks = tokio::task::JoinSet::new();
 
@@ -299,16 +300,12 @@ mod concurrent {
                     rpcvers,
                     proc,
                 } => {
-                    if client_cbs.log_timestamps {
-                        log_rpc_timestamp(xid, "server_recv");
-                    }
-
                     // Load shedding: reject if too many tasks are
                     // in-flight + waiting for a concurrency permit.
                     let count = pending.fetch_add(1, Ordering::Relaxed);
                     if count >= pending_cap {
                         pending.fetch_sub(1, Ordering::Relaxed);
-                        eprintln!("[rpc] xid={xid} rejecting CALL: pending queue full ({count})",);
+                        tracing::warn!(xid, pending = count, "rejecting CALL: pending queue full");
                         let error_bytes =
                             crate::rpc_error::RpcError::SystemError.to_error_record(xid);
                         client_cbs
@@ -322,6 +319,7 @@ mod concurrent {
                     let svc = service_map.clone();
                     let cbs = client_cbs.clone();
                     let ctr = pending.clone();
+                    let conn_span = client_cbs.connection_span.clone();
 
                     tasks.spawn(async move {
                         let _pending = PendingGuard(ctr);
@@ -332,25 +330,41 @@ mod concurrent {
                             Err(_) => return, // semaphore closed — shutting down
                         };
 
-                        // Dispatch with panic isolation via CatchUnwind.
-                        let sender: Arc<dyn RpcSender> = cbs.clone();
-                        let result = CatchUnwind(with_peer(sender, async {
-                            svc.dispatch(rpcvers, vers, proc, &record[payload_offset..])
-                                .await
-                        }))
-                        .await;
+                        // rpc_call span starts after permit — measures handler time only.
+                        // Explicit parent: required because JoinSet::spawn doesn't
+                        // propagate tracing context.
+                        let span = tracing::debug_span!(
+                            parent: &conn_span,
+                            "rpc_call",
+                            xid,
+                            prog = vers.prog,
+                            vers = vers.vers,
+                            proc = proc,
+                        );
 
-                        let result = match result {
-                            Ok(r) => r,
-                            Err(_panic) => {
-                                eprintln!("[rpc] xid={xid} handler panicked");
-                                Err(crate::rpc_error::RpcError::SystemError)
+                        async {
+                            // Dispatch with panic isolation via CatchUnwind.
+                            let sender: Arc<dyn RpcSender> = cbs.clone();
+                            let result = CatchUnwind(with_peer(sender, async {
+                                svc.dispatch(rpcvers, vers, proc, &record[payload_offset..])
+                                    .await
+                            }))
+                            .await;
+
+                            let result = match result {
+                                Ok(r) => r,
+                                Err(_panic) => {
+                                    tracing::error!(xid, "handler panicked");
+                                    Err(crate::rpc_error::RpcError::SystemError)
+                                }
+                            };
+
+                            if let Err(e) = send_response(&cbs, xid, result).await {
+                                tracing::error!(xid, error = %e, "response write failed");
                             }
-                        };
-
-                        if let Err(e) = send_response(&cbs, xid, result).await {
-                            eprintln!("[rpc] xid={xid} response write failed: {e}");
                         }
+                        .instrument(span)
+                        .await;
                     });
                 }
                 ParsedRecord::Reply {
@@ -445,10 +459,7 @@ fn prepare_success_response(
 ) -> Result<Vec<u8>, ReadTaskError> {
     let header = get_success_header(xid);
     crate::connection::frame_rpc_record(buf, &header, results).map_err(|()| {
-        eprintln!(
-            "Message too large: results={} exceeds max (0x7FFF_FFFF)",
-            results.len()
-        );
+        tracing::warn!(results_len = results.len(), "message too large");
         ReadTaskError::Shutdown
     })
 }

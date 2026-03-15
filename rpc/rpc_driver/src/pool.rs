@@ -65,7 +65,7 @@ impl FixedSerialPool {
 
         for _ in 0..pool_size {
             let client = connect_client(addr).await.map_err(|e| {
-                eprintln!("pool: failed to connect to {addr}: {e}");
+                tracing::error!(%addr, error = %e, pool_type = "fixed_serial", "pool connection failed");
                 RpcError::SystemError
             })?;
             let worker_rx = rx.clone();
@@ -191,7 +191,7 @@ impl DynamicPool {
         if conns.is_empty() {
             // No connections yet — open the first one.
             let handle = connect_client(&self.addr).await.map_err(|e| {
-                eprintln!("dynamic pool: failed to connect to {}: {e}", self.addr);
+                tracing::error!(addr = %self.addr, error = %e, pool_type = "dynamic", "pool connection failed");
                 RpcError::SystemError
             })?;
             conns.push(PooledConnection {
@@ -221,7 +221,7 @@ impl DynamicPool {
             // prevent racing with other lease_connection calls that would
             // also see "all busy" and open connections past the limit.
             let handle = connect_client(&self.addr).await.map_err(|e| {
-                eprintln!("dynamic pool: failed to connect to {}: {e}", self.addr);
+                tracing::error!(addr = %self.addr, error = %e, pool_type = "dynamic", "pool connection failed");
                 RpcError::SystemError
             })?;
             conns.push(PooledConnection {
@@ -380,11 +380,17 @@ impl CpuSetPool {
         if num_connections == 0 {
             return Err(RpcError::SystemError);
         }
+        if cpu_map
+            .iter()
+            .any(|&b| b != usize::MAX && b >= num_connections)
+        {
+            return Err(RpcError::SystemError);
+        }
 
         let mut connections = Vec::with_capacity(num_connections);
         for _ in 0..num_connections {
             let handle = connect_client(addr).await.map_err(|e| {
-                eprintln!("CpuSetPool: failed to connect to {addr}: {e}");
+                tracing::error!(%addr, error = %e, pool_type = "cpu_set", "pool connection failed");
                 RpcError::SystemError
             })?;
             connections.push(handle);
@@ -404,12 +410,18 @@ impl CpuSetPool {
     /// Get the connection for the current CPU.
     #[inline]
     fn connection_for_current_cpu(&self) -> &Arc<ConnectionHandle> {
-        let cpu_id = current_cpu();
-        let bucket = if (cpu_id as usize) < self.cpu_map.len() {
-            self.cpu_map[cpu_id as usize]
+        let cpu_id = current_cpu() as usize;
+        let bucket = if cpu_id < self.cpu_map.len() {
+            let b = self.cpu_map[cpu_id];
+            if b < self.connections.len() {
+                b
+            } else {
+                // Unmapped CPU (offline/no L3) — modular fallback
+                cpu_id % self.connections.len()
+            }
         } else {
-            // CPU id out of range (hot-plugged?), fall back to modular mapping
-            cpu_id as usize % self.connections.len()
+            // CPU id out of range (hot-plugged?) — modular fallback
+            cpu_id % self.connections.len()
         };
         &self.connections[bucket]
     }
@@ -474,14 +486,14 @@ fn detect_llc_topology_linux() -> Option<(usize, Vec<usize>)> {
     // Read each CPU's L3 shared_cpu_list to determine LLC groups.
     // CPUs sharing the same list string belong to the same LLC.
     let mut llc_groups: BTreeMap<String, usize> = BTreeMap::new();
-    let mut cpu_map = vec![0usize; num_cpus];
+    let mut cpu_map = vec![usize::MAX; num_cpus];
     let mut next_bucket = 0;
 
     for (cpu_id, slot) in cpu_map.iter_mut().enumerate() {
         let path = format!("/sys/devices/system/cpu/cpu{cpu_id}/cache/index3/shared_cpu_list");
         let shared = match fs::read_to_string(&path) {
             Ok(s) => s.trim().to_string(),
-            Err(_) => continue,
+            Err(_) => continue, // offline or no L3 — left as sentinel
         };
 
         *slot = *llc_groups.entry(shared).or_insert_with(|| {
@@ -495,7 +507,7 @@ fn detect_llc_topology_linux() -> Option<(usize, Vec<usize>)> {
         return None;
     }
 
-    eprintln!("[CpuSetPool] detected {next_bucket} LLC group(s) across {num_cpus} logical CPUs");
+    tracing::info!(groups = next_bucket, cpus = num_cpus, "detected LLC groups");
     Some((next_bucket, cpu_map))
 }
 

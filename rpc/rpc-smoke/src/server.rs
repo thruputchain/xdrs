@@ -1,3 +1,23 @@
+//! Reference example: RPC server with tracing subscriber setup.
+//!
+//! This server demonstrates the recommended pattern for consuming
+//! `rpc_driver`'s tracing instrumentation. Key points:
+//!
+//! 1. **Add `tracing-subscriber` to your binary crate** (not the library).
+//!    `rpc_driver` emits spans/events via `tracing`; you choose the subscriber.
+//!
+//! 2. **Initialize the subscriber before `RpcServer::start()`** so that
+//!    connection spans are captured from the first accept.
+//!
+//! 3. **Use `FmtSpan::CLOSE`** to see per-span timing (`time.busy` /
+//!    `time.idle`). Without it, only error/warn events appear.
+//!
+//! 4. **Choose your level:**
+//!    - `INFO` — connection lifecycle only, < 1% overhead
+//!    - `DEBUG` — per-RPC call spans with xid/prog/vers/proc, ~5% overhead
+//!
+//! Run with: `rpc-smoke-server --port 9876 --tracing debug`
+
 mod metrics;
 mod profile;
 
@@ -89,11 +109,40 @@ struct Args {
     /// Max concurrent dispatches per connection
     #[arg(long, default_value = "64")]
     max_concurrent: usize,
+
+    /// Enable tracing subscriber at the given level (info, debug)
+    #[arg(long)]
+    tracing: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    // -- Tracing subscriber setup (reference example) --
+    //
+    // rpc_driver emits:
+    //   - rpc_connection spans (INFO) with peer address and role
+    //   - rpc_call spans (DEBUG) with xid, prog, vers, proc
+    //   - error/warn events for connection failures, parse errors, etc.
+    //
+    // FmtSpan::CLOSE logs each span's duration on close, giving you
+    // per-RPC time.busy (handler execution) and time.idle (scheduling).
+    // Without CLOSE, only error/warn events produce output.
+    //
+    // For OpenTelemetry, replace this with tracing-opentelemetry —
+    // it captures span start/end natively for Jaeger/Tempo export.
+    if let Some(ref level) = args.tracing {
+        use tracing_subscriber::fmt::format::FmtSpan;
+        let level: tracing::Level = level.parse().map_err(|_| {
+            format!("unknown tracing level: {level} (use trace, debug, info, warn, error)")
+        })?;
+        tracing_subscriber::fmt()
+            .with_max_level(level)
+            .with_writer(std::io::stderr)
+            .with_span_events(FmtSpan::CLOSE)
+            .init();
+    }
 
     let shared = Arc::new(SharedState {
         lock: tokio::sync::Mutex::new(0),
