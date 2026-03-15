@@ -43,6 +43,23 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CaptureBuffer {
     }
 }
 
+/// Poll the capture buffer until `needle` appears, with a timeout.
+/// Avoids flaky sleep-based assertions on slow CI runners.
+async fn wait_for(buf: &CaptureBuffer, needle: &str) {
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+    loop {
+        if buf.contents().contains(needle) {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for {needle:?} in output:\n{}",
+            buf.contents()
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 struct EchoService;
 
 #[async_trait]
@@ -97,24 +114,23 @@ async fn test_tracing_connection_and_call_spans() {
         .unwrap();
     assert_eq!(response, b"");
 
-    // Poison the client to close the connection — this drops the connection span
+    // Poison the client to close the connection — this drops the connection span.
     client.poison().await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Wait for the server-side span to close (server detects EOF and drops its span).
+    wait_for(&buf, r#"role="server""#).await;
 
     let output = buf.contents();
 
     // -- Connection spans --
-    // Server-side connection span
     assert!(
         output.contains("rpc_connection") && output.contains(r#"role="server""#),
         "expected server connection span in output:\n{output}"
     );
-    // Client-side connection span
     assert!(
         output.contains("rpc_connection") && output.contains(r#"role="client""#),
         "expected client connection span in output:\n{output}"
     );
-    // Peer address should appear
     assert!(
         output.contains(&format!("peer={addr}")),
         "expected peer address {addr} in output:\n{output}"
@@ -302,7 +318,9 @@ async fn test_info_level_filters_rpc_calls() {
 
     // Close the connection to flush CLOSE span events deterministically.
     client.poison().await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Wait for the server-side connection span to close.
+    wait_for(&buf, "rpc_connection").await;
 
     let output = buf.contents();
 

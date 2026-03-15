@@ -355,18 +355,16 @@ impl ConnectionHandle {
         proc: u32,
         data: &[u8],
     ) -> Result<Vec<u8>, RpcError> {
+        let xid = self.connection_state.lock().unwrap().register_call()?;
+
         let span = tracing::debug_span!(
             parent: &self.connection_span,
             "rpc_call",
-            xid = tracing::field::Empty,
+            xid,
             prog = progvers.prog,
             vers = progvers.vers,
             proc = proc,
         );
-
-        let xid = self.connection_state.lock().unwrap().register_call()?;
-
-        span.record("xid", xid);
 
         // Guard removes the pending entry on drop (cancellation safety).
         let guard = CallGuard {
