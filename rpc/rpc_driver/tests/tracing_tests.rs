@@ -281,7 +281,7 @@ async fn test_info_level_filters_rpc_calls() {
         .with_max_level(tracing::Level::INFO)
         .with_writer(buf.clone())
         .with_ansi(false)
-        .with_span_events(FmtSpan::NEW)
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
@@ -300,7 +300,9 @@ async fn test_info_level_filters_rpc_calls() {
         .await
         .unwrap();
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Close the connection to flush CLOSE span events deterministically.
+    client.poison().await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
 
     let output = buf.contents();
 
