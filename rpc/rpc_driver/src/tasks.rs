@@ -67,16 +67,16 @@ async fn send_response(
     client_cbs: &ConnectionHandle,
     xid: u32,
     result: Result<Vec<u8>, crate::rpc_error::RpcError>,
-    write_buffer: &mut xdrs::txs::buf_writer::BufWriter,
 ) -> Result<(), ReadTaskError> {
     match result {
         Ok(response) => {
-            prepare_success_response(xid, &response, write_buffer)?;
+            let buf = client_cbs.buf_pool.take();
+            let msg = prepare_success_response(buf, xid, &response)?;
             if client_cbs.log_timestamps {
                 log_rpc_timestamp(xid, "server_send");
             }
             client_cbs
-                .send_msg(write_buffer.as_ref())
+                .send_msg(msg)
                 .await
                 .map_err(ReadTaskError::WriteError)?;
         }
@@ -86,7 +86,7 @@ async fn send_response(
             }
             let out_bytes = e.to_error_record(xid);
             client_cbs
-                .send_msg(&out_bytes)
+                .send_msg(out_bytes)
                 .await
                 .map_err(ReadTaskError::WriteError)?;
         }
@@ -161,7 +161,6 @@ pub async fn launch_read_task(
     client_cbs: Arc<ConnectionHandle>,
     mut read_half: ReadHalf,
 ) -> Result<(), ReadTaskError> {
-    let mut write_buffer = xdrs::txs::buf_writer::BufWriter::default();
     loop {
         let record = match read_half.read_record().await? {
             Some(data) => data,
@@ -197,7 +196,7 @@ pub async fn launch_read_task(
                         .await
                 })
                 .await;
-                send_response(&client_cbs, xid, res, &mut write_buffer).await?;
+                send_response(&client_cbs, xid, res).await?;
             }
             rpc_msg::rpc_msg_body::REPLY { rbody } => {
                 route_reply(&client_cbs, msg.xid, rbody, remaining.to_vec());
@@ -313,7 +312,7 @@ mod concurrent {
                         let error_bytes =
                             crate::rpc_error::RpcError::SystemError.to_error_record(xid);
                         client_cbs
-                            .send_msg(&error_bytes)
+                            .send_msg(error_bytes)
                             .await
                             .map_err(ReadTaskError::WriteError)?;
                         continue;
@@ -349,8 +348,7 @@ mod concurrent {
                             }
                         };
 
-                        let mut write_buffer = xdrs::txs::buf_writer::BufWriter::default();
-                        if let Err(e) = send_response(&cbs, xid, result, &mut write_buffer).await {
+                        if let Err(e) = send_response(&cbs, xid, result).await {
                             eprintln!("[rpc] xid={xid} response write failed: {e}");
                         }
                     });
@@ -441,43 +439,16 @@ fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
 }
 
 fn prepare_success_response(
+    buf: Vec<u8>,
     xid: u32,
     results: &[u8],
-    writer: &mut xdrs::txs::buf_writer::BufWriter,
-) -> Result<(), ReadTaskError> {
-    writer.clear();
+) -> Result<Vec<u8>, ReadTaskError> {
     let header = get_success_header(xid);
-
-    // placeholder for message length
-    xdrs::write_xdr(&0u32, writer).unwrap();
-    // write the header
-    xdrs::write_xdr(&header, writer).unwrap();
-
-    let header_len = writer.len() - 4;
-
-    // Check for integer overflow when calculating message length
-    // Total length must fit in u32 AND have top bit clear (for ORing with 0x8000_0000)
-    let total_len = header_len
-        .checked_add(results.len())
-        .and_then(|sum| u32::try_from(sum).ok())
-        .filter(|&len| len <= 0x7FFF_FFFF)
-        .ok_or_else(|| {
-            eprintln!(
-                "Message too large: header={} + results={} exceeds max (0x7FFF_FFFF)",
-                writer.len(),
-                results.len()
-            );
-            ReadTaskError::Shutdown
-        })?;
-
-    let msg_len: u32 = total_len | 0x8000_0000;
-
-    {
-        let bytes: &mut [u8] = writer.as_mut();
-        bytes[..4].copy_from_slice(&msg_len.to_be_bytes());
-    }
-
-    writer.as_mut().extend_from_slice(results);
-
-    Ok(())
+    crate::connection::frame_rpc_record(buf, &header, results).map_err(|()| {
+        eprintln!(
+            "Message too large: results={} exceeds max (0x7FFF_FFFF)",
+            results.len()
+        );
+        ReadTaskError::Shutdown
+    })
 }

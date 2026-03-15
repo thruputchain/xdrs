@@ -341,7 +341,7 @@ async fn test_panic_recovery() {
 /// With max_concurrent=1, the pending cap is 5 (1 * 5). We fill the server
 /// with slow handlers beyond the cap and verify that excess calls receive
 /// SystemError.
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn test_load_shedding() {
     let delay = Duration::from_secs(10); // intentionally long — we don't wait for completion
     let mut services = ServiceMap::new();

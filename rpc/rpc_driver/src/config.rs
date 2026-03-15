@@ -28,6 +28,11 @@ pub struct ConnectionConfig {
     ///
     /// Default: 64. Set via [`ConnectionConfig::with_max_concurrent_dispatches`].
     pub(crate) max_concurrent_dispatches: usize,
+    /// Capacity of the per-connection write channel. Callers sending RPC
+    /// messages will apply backpressure (await) when the channel is full.
+    ///
+    /// Default: 256. Set via [`ConnectionConfig::with_write_channel_capacity`].
+    pub(crate) write_channel_capacity: usize,
 }
 
 impl Default for ConnectionConfig {
@@ -37,6 +42,7 @@ impl Default for ConnectionConfig {
             services: Arc::new(ServiceMap::default()),
             log_timestamps: false,
             max_concurrent_dispatches: 64,
+            write_channel_capacity: 256,
         }
     }
 }
@@ -48,6 +54,7 @@ impl ConnectionConfig {
             services: Arc::new(services),
             log_timestamps: false,
             max_concurrent_dispatches: 64,
+            write_channel_capacity: 256,
         }
     }
 
@@ -67,6 +74,16 @@ impl ConnectionConfig {
     pub fn with_max_concurrent_dispatches(mut self, max: usize) -> Self {
         assert!(max > 0, "max_concurrent_dispatches must be at least 1");
         self.max_concurrent_dispatches = max;
+        self
+    }
+
+    /// Set the capacity of the per-connection write channel.
+    ///
+    /// Higher values allow more messages to buffer before backpressure
+    /// kicks in. Default: 256.
+    pub fn with_write_channel_capacity(mut self, capacity: usize) -> Self {
+        assert!(capacity > 0, "write_channel_capacity must be at least 1");
+        self.write_channel_capacity = capacity;
         self
     }
 }

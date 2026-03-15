@@ -1,8 +1,10 @@
 //! Connection state and RPC call handling.
 
 use std::collections::HashMap;
-use std::sync::Mutex as StdMutex;
-use tokio::sync::{Mutex, oneshot};
+use std::io;
+use std::sync::{Arc, Mutex as StdMutex};
+use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 use async_trait::async_trait;
 
@@ -13,18 +15,131 @@ use crate::{
     tcp_connection::WriteHalf,
 };
 
-/// Bundles the TCP write half with a reusable serialization buffer.
-/// The buffer grows to fit the largest message and is reused across calls,
-/// eliminating per-RPC heap allocations on the client send path.
-pub(crate) struct WriteState {
-    pub(crate) half: WriteHalf,
-    pub(crate) buf: xdrs::txs::buf_writer::BufWriter,
+const MAX_BATCH: usize = 64;
+
+/// XDR header is ~40 bytes (xid + msg_type + rpcvers + prog + vers + proc + 2x opaque_auth).
+const XDR_HEADER_ESTIMATE: usize = 48;
+
+// ---------------------------------------------------------------------------
+// Buffer pool — recycles Vec<u8> allocations across RPC messages
+// ---------------------------------------------------------------------------
+
+/// Pool of reusable `Vec<u8>` buffers shared between callers and the writer
+/// task. After warmup, steady-state operation allocates nothing.
+pub(crate) struct BufPool(StdMutex<Vec<Vec<u8>>>);
+
+impl std::fmt::Debug for BufPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let len = self.0.lock().map(|v| v.len()).unwrap_or(0);
+        f.debug_tuple("BufPool").field(&len).finish()
+    }
 }
 
-impl std::fmt::Debug for WriteState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WriteState").finish_non_exhaustive()
+impl BufPool {
+    fn new() -> Self {
+        Self(StdMutex::new(Vec::new()))
     }
+
+    /// Take a cleared buffer from the pool, or allocate a new one.
+    pub(crate) fn take(&self) -> Vec<u8> {
+        self.0.lock().unwrap().pop().unwrap_or_default()
+    }
+
+    /// Return a spent buffer to the pool for reuse.
+    pub(crate) fn put(&self, mut buf: Vec<u8>) {
+        buf.clear();
+        self.0.lock().unwrap().push(buf);
+    }
+}
+
+/// Dedicated writer task: owns the WriteHalf, drains the channel, and
+/// flushes batches via write_vectored. Spent buffers are returned to the pool.
+async fn writer_task(
+    mut rx: mpsc::Receiver<Vec<u8>>,
+    mut write_half: WriteHalf,
+    pool: Arc<BufPool>,
+) {
+    let mut batch: Vec<Vec<u8>> = Vec::with_capacity(MAX_BATCH);
+
+    while let Some(first) = rx.recv().await {
+        batch.push(first);
+
+        // Opportunistic drain — cap to avoid unbounded iovec arrays.
+        while batch.len() < MAX_BATCH {
+            match rx.try_recv() {
+                Ok(msg) => batch.push(msg),
+                Err(_) => break,
+            }
+        }
+
+        let err = write_batch(&mut write_half, &batch).await.err();
+
+        // Recycle all buffers back to the pool regardless of write outcome.
+        for buf in batch.drain(..) {
+            pool.put(buf);
+        }
+
+        if let Some(e) = err {
+            eprintln!("[rpc] writer task error: {e}");
+            break;
+        }
+    }
+    // rx.recv() returned None — all senders dropped.
+    // WriteHalf drops here → TCP FIN.
+}
+
+/// write_all_vectored: flush all messages in one (or few) syscalls.
+async fn write_batch(wh: &mut WriteHalf, msgs: &[Vec<u8>]) -> Result<(), io::Error> {
+    let mut slices: Vec<io::IoSlice<'_>> = msgs.iter().map(|m| io::IoSlice::new(m)).collect();
+    let mut remaining: &mut [io::IoSlice<'_>] = &mut slices;
+    let mut total: usize = msgs.iter().map(|m| m.len()).sum();
+
+    while total > 0 {
+        let n = wh.write_vectored(remaining).await?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::WriteZero, "write returned 0"));
+        }
+        total -= n;
+        io::IoSlice::advance_slices(&mut remaining, n);
+    }
+    Ok(())
+}
+
+/// Frame an XDR-encoded RPC header + payload into a single-part record.
+///
+/// Layout: `[4-byte length with high bit set | XDR header | payload]`
+///
+/// The provided `buf` is reused if it has sufficient capacity (avoids
+/// allocation after warmup when fed from a [`BufPool`]).
+///
+/// Used by both the client call path and the server response path.
+pub(crate) fn frame_rpc_record(
+    buf: Vec<u8>,
+    header: &rpc_msg::rpc_msg,
+    payload: &[u8],
+) -> Result<Vec<u8>, ()> {
+    let mut writer = xdrs::txs::buf_writer::BufWriter::from(buf);
+    writer.clear();
+    writer.reserve(XDR_HEADER_ESTIMATE + payload.len());
+
+    // Placeholder for record length (patched below).
+    xdrs::write_xdr(&0u32, &mut writer).map_err(drop)?;
+    xdrs::write_xdr(header, &mut writer).map_err(drop)?;
+
+    let header_len = writer.len() - 4;
+    let total_len = header_len
+        .checked_add(payload.len())
+        .and_then(|sum| u32::try_from(sum).ok())
+        .filter(|&len| len <= 0x7FFF_FFFF)
+        .ok_or(())?;
+
+    let msg_len: u32 = total_len | 0x8000_0000;
+    {
+        let bytes: &mut Vec<u8> = writer.as_mut();
+        bytes[..4].copy_from_slice(&msg_len.to_be_bytes());
+        bytes.extend_from_slice(payload);
+    }
+    Ok(Vec::from(writer))
 }
 
 /// Trait for making outgoing RPC calls.
@@ -125,7 +240,9 @@ impl Drop for ConnectionState {
 #[derive(Debug)]
 pub struct ConnectionHandle {
     pub(crate) connection_state: StdMutex<ConnectionState>,
-    write_half: Mutex<Option<WriteState>>,
+    write_tx: mpsc::Sender<Vec<u8>>,
+    writer_handle: StdMutex<Option<JoinHandle<()>>>,
+    pub(crate) buf_pool: Arc<BufPool>,
     pub(crate) log_timestamps: bool,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) max_concurrent_dispatches: usize,
@@ -134,12 +251,14 @@ pub struct ConnectionHandle {
 impl ConnectionHandle {
     /// Create a new connection handle wrapping the given TCP write half.
     pub fn new(write_half: WriteHalf, config: &crate::ConnectionConfig) -> Self {
+        let pool = Arc::new(BufPool::new());
+        let (tx, rx) = mpsc::channel(config.write_channel_capacity);
+        let handle = tokio::spawn(writer_task(rx, write_half, pool.clone()));
         Self {
             connection_state: StdMutex::new(ConnectionState::new()),
-            write_half: Mutex::new(Some(WriteState {
-                half: write_half,
-                buf: xdrs::txs::buf_writer::BufWriter::default(),
-            })),
+            write_tx: tx,
+            writer_handle: StdMutex::new(Some(handle)),
+            buf_pool: pool,
             log_timestamps: config.log_timestamps,
             max_concurrent_dispatches: config.max_concurrent_dispatches,
         }
@@ -147,31 +266,37 @@ impl ConnectionHandle {
 
     /// Poison the connection, failing all pending requests and closing the write half.
     pub async fn poison(&self) {
-        // Drop the write half to send TCP FIN to the remote end.
-        *self.write_half.lock().await = None;
+        // Fail all pending requests. This resolves oneshot receivers held by
+        // in-flight send_call tasks with Err(SystemError).
         self.connection_state.lock().unwrap().poison();
-    }
 
-    /// Write bytes directly to the socket from the calling task — no channel hop.
-    pub(crate) async fn send_msg(&self, msg: &[u8]) -> Result<(), std::io::Error> {
-        match self.write_half.lock().await.as_mut() {
-            Some(ws) => ws.half.write_data(msg).await,
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::BrokenPipe,
-                "connection poisoned",
-            )),
+        // Abort the writer task and wait for it to finish. This drops the
+        // WriteHalf (TCP FIN) and the channel Receiver. Any messages still
+        // in the channel are discarded — their waiters were already resolved
+        // above.
+        let handle = self.writer_handle.lock().unwrap().take();
+        if let Some(h) = handle {
+            h.abort();
+            let _ = h.await;
         }
     }
 
+    /// Send a pre-serialized message through the write channel.
+    pub(crate) async fn send_msg(&self, msg: Vec<u8>) -> Result<(), io::Error> {
+        self.write_tx
+            .send(msg)
+            .await
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "writer closed"))
+    }
+
     fn prepare_call_msg(
+        buf: Vec<u8>,
         xid: u32,
         progvers: ProgVers,
         proc: u32,
         data: &[u8],
-        writer: &mut xdrs::txs::buf_writer::BufWriter,
-    ) -> Result<(), RpcError> {
-        writer.clear();
-        let msg = rpc_msg::rpc_msg {
+    ) -> Result<Vec<u8>, RpcError> {
+        let header = rpc_msg::rpc_msg {
             xid,
             body: rpc_msg::rpc_msg_body::CALL {
                 cbody: rpc_msg::call_body {
@@ -184,35 +309,13 @@ impl ConnectionHandle {
                 },
             },
         };
-
-        // Write placeholder for record length (patched below).
-        xdrs::write_xdr(&0u32, writer).map_err(|_| RpcError::SystemError)?;
-        // Write RPC header directly — no intermediate Vec.
-        xdrs::write_xdr(&msg, writer).map_err(|_| RpcError::SystemError)?;
-
-        let header_len = writer.len().checked_sub(4).ok_or(RpcError::SystemError)?;
-        // Check for integer overflow when calculating message length
-        // Total length must fit in u32 AND have top bit clear (for ORing with 0x8000_0000)
-        let total_len = header_len
-            .checked_add(data.len())
-            .and_then(|sum| u32::try_from(sum).ok())
-            .filter(|&len| len <= 0x7FFF_FFFF)
-            .ok_or_else(|| {
-                eprintln!(
-                    "Message too large: header={} + data={} exceeds max (0x7FFF_FFFF)",
-                    header_len,
-                    data.len()
-                );
-                RpcError::SystemError
-            })?;
-
-        let msg_len: u32 = total_len | 0x8000_0000;
-        {
-            let bytes: &mut Vec<u8> = writer.as_mut();
-            bytes[..4].copy_from_slice(&msg_len.to_be_bytes());
-            bytes.extend_from_slice(data);
-        }
-        Ok(())
+        frame_rpc_record(buf, &header, data).map_err(|()| {
+            eprintln!(
+                "Message too large: data={} exceeds max (0x7FFF_FFFF)",
+                data.len()
+            );
+            RpcError::SystemError
+        })
     }
 
     /// Send an RPC call and wait for the response.
@@ -225,42 +328,30 @@ impl ConnectionHandle {
         data: &[u8],
     ) -> Result<Vec<u8>, RpcError> {
         let (tx, rx) = oneshot::channel();
+
         let xid = self
             .connection_state
             .lock()
             .unwrap()
             .add_callback(CallbackHandle { tx })?;
 
-        // Lock write state once: build message into reusable buffer, then flush.
-        // Message construction is fast (XDR encode + memcpy), so this doesn't
-        // significantly extend lock hold time vs. the write_all that follows.
-        let send_result = {
-            let mut guard = self.write_half.lock().await;
-            match guard.as_mut() {
-                Some(ws) => match Self::prepare_call_msg(xid, progvers, proc, data, &mut ws.buf) {
-                    Ok(()) => {
-                        if self.log_timestamps {
-                            log_rpc_timestamp(xid, "client_send");
-                        }
-                        ws.half.write_data(ws.buf.as_ref()).await
-                    }
-                    Err(e) => {
-                        self.connection_state
-                            .lock()
-                            .unwrap()
-                            .pending_requests
-                            .remove(&xid);
-                        return Err(e);
-                    }
-                },
-                None => Err(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "connection poisoned",
-                )),
+        let msg = match Self::prepare_call_msg(self.buf_pool.take(), xid, progvers, proc, data) {
+            Ok(msg) => msg,
+            Err(e) => {
+                self.connection_state
+                    .lock()
+                    .unwrap()
+                    .pending_requests
+                    .remove(&xid);
+                return Err(e);
             }
         };
 
-        if send_result.is_err() {
+        if self.log_timestamps {
+            log_rpc_timestamp(xid, "client_send");
+        }
+
+        if self.write_tx.send(msg).await.is_err() {
             self.connection_state
                 .lock()
                 .unwrap()
