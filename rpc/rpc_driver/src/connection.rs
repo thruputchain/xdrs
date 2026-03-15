@@ -13,6 +13,20 @@ use crate::{
     tcp_connection::WriteHalf,
 };
 
+/// Bundles the TCP write half with a reusable serialization buffer.
+/// The buffer grows to fit the largest message and is reused across calls,
+/// eliminating per-RPC heap allocations on the client send path.
+pub(crate) struct WriteState {
+    pub(crate) half: WriteHalf,
+    pub(crate) buf: xdrs::txs::buf_writer::BufWriter,
+}
+
+impl std::fmt::Debug for WriteState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WriteState").finish_non_exhaustive()
+    }
+}
+
 /// Trait for making outgoing RPC calls.
 ///
 /// Implemented by [`ConnectionHandle`] for real TCP connections,
@@ -111,7 +125,7 @@ impl Drop for ConnectionState {
 #[derive(Debug)]
 pub struct ConnectionHandle {
     pub(crate) connection_state: StdMutex<ConnectionState>,
-    write_half: Mutex<Option<WriteHalf>>,
+    write_half: Mutex<Option<WriteState>>,
     pub(crate) log_timestamps: bool,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) max_concurrent_dispatches: usize,
@@ -122,7 +136,10 @@ impl ConnectionHandle {
     pub fn new(write_half: WriteHalf, config: &crate::ConnectionConfig) -> Self {
         Self {
             connection_state: StdMutex::new(ConnectionState::new()),
-            write_half: Mutex::new(Some(write_half)),
+            write_half: Mutex::new(Some(WriteState {
+                half: write_half,
+                buf: xdrs::txs::buf_writer::BufWriter::default(),
+            })),
             log_timestamps: config.log_timestamps,
             max_concurrent_dispatches: config.max_concurrent_dispatches,
         }
@@ -138,7 +155,7 @@ impl ConnectionHandle {
     /// Write bytes directly to the socket from the calling task — no channel hop.
     pub(crate) async fn send_msg(&self, msg: &[u8]) -> Result<(), std::io::Error> {
         match self.write_half.lock().await.as_mut() {
-            Some(wh) => wh.write_data(msg).await,
+            Some(ws) => ws.half.write_data(msg).await,
             None => Err(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,
                 "connection poisoned",
@@ -146,13 +163,14 @@ impl ConnectionHandle {
         }
     }
 
-    fn make_call_msg(
-        &self,
+    fn prepare_call_msg(
         xid: u32,
         progvers: ProgVers,
         proc: u32,
         data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+        writer: &mut xdrs::txs::buf_writer::BufWriter,
+    ) -> Result<(), RpcError> {
+        writer.clear();
         let msg = rpc_msg::rpc_msg {
             xid,
             body: rpc_msg::rpc_msg_body::CALL {
@@ -166,30 +184,35 @@ impl ConnectionHandle {
                 },
             },
         };
-        let header = xdrs::txs::encode(&msg).unwrap();
 
+        // Write placeholder for record length (patched below).
+        xdrs::write_xdr(&0u32, writer).map_err(|_| RpcError::SystemError)?;
+        // Write RPC header directly — no intermediate Vec.
+        xdrs::write_xdr(&msg, writer).map_err(|_| RpcError::SystemError)?;
+
+        let header_len = writer.len().checked_sub(4).ok_or(RpcError::SystemError)?;
         // Check for integer overflow when calculating message length
         // Total length must fit in u32 AND have top bit clear (for ORing with 0x8000_0000)
-        let total_len = header
-            .len()
+        let total_len = header_len
             .checked_add(data.len())
             .and_then(|sum| u32::try_from(sum).ok())
             .filter(|&len| len <= 0x7FFF_FFFF)
             .ok_or_else(|| {
                 eprintln!(
                     "Message too large: header={} + data={} exceeds max (0x7FFF_FFFF)",
-                    header.len(),
+                    header_len,
                     data.len()
                 );
                 RpcError::SystemError
             })?;
 
-        let len = total_len | 0x8000_0000;
-        let mut msg_bytes = Vec::with_capacity(4 + header.len() + data.len());
-        msg_bytes.extend_from_slice(&len.to_be_bytes());
-        msg_bytes.extend_from_slice(&header);
-        msg_bytes.extend_from_slice(data);
-        Ok(msg_bytes)
+        let msg_len: u32 = total_len | 0x8000_0000;
+        {
+            let bytes: &mut Vec<u8> = writer.as_mut();
+            bytes[..4].copy_from_slice(&msg_len.to_be_bytes());
+            bytes.extend_from_slice(data);
+        }
+        Ok(())
     }
 
     /// Send an RPC call and wait for the response.
@@ -208,23 +231,35 @@ impl ConnectionHandle {
             .unwrap()
             .add_callback(CallbackHandle { tx })?;
 
-        let msg = match self.make_call_msg(xid, progvers, proc, data) {
-            Ok(msg) => msg,
-            Err(e) => {
-                self.connection_state
-                    .lock()
-                    .unwrap()
-                    .pending_requests
-                    .remove(&xid);
-                return Err(e);
+        // Lock write state once: build message into reusable buffer, then flush.
+        // Message construction is fast (XDR encode + memcpy), so this doesn't
+        // significantly extend lock hold time vs. the write_all that follows.
+        let send_result = {
+            let mut guard = self.write_half.lock().await;
+            match guard.as_mut() {
+                Some(ws) => match Self::prepare_call_msg(xid, progvers, proc, data, &mut ws.buf) {
+                    Ok(()) => {
+                        if self.log_timestamps {
+                            log_rpc_timestamp(xid, "client_send");
+                        }
+                        ws.half.write_data(ws.buf.as_ref()).await
+                    }
+                    Err(e) => {
+                        self.connection_state
+                            .lock()
+                            .unwrap()
+                            .pending_requests
+                            .remove(&xid);
+                        return Err(e);
+                    }
+                },
+                None => Err(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "connection poisoned",
+                )),
             }
         };
 
-        if self.log_timestamps {
-            log_rpc_timestamp(xid, "client_send");
-        }
-
-        let send_result = self.send_msg(&msg).await;
         if send_result.is_err() {
             self.connection_state
                 .lock()
