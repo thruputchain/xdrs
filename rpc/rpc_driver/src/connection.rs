@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 use std::io;
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::sync::{mpsc, oneshot};
+use std::task::Waker;
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use async_trait::async_trait;
@@ -175,14 +176,32 @@ impl RpcSender for ConnectionHandle {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct CallbackHandle {
-    tx: oneshot::Sender<Result<Vec<u8>, RpcError>>,
+/// State of a pending RPC call slot, stored directly in the HashMap.
+///
+/// Replaces `oneshot::channel()` — the HashMap entry IS the rendezvous
+/// point, eliminating one heap allocation per RPC call.
+pub(crate) enum CallbackSlot {
+    /// Entry registered, caller hasn't polled yet.
+    Registered,
+    /// Caller is parked, waker registered.
+    Waiting(Waker),
+    /// Reader has delivered the result.
+    Ready(Result<Vec<u8>, RpcError>),
+}
+
+impl std::fmt::Debug for CallbackSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Registered => write!(f, "Registered"),
+            Self::Waiting(_) => write!(f, "Waiting(..)"),
+            Self::Ready(r) => write!(f, "Ready({r:?})"),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub(crate) struct ConnectionState {
-    pub(crate) pending_requests: HashMap<u32, CallbackHandle>,
+    pub(crate) pending_requests: HashMap<u32, CallbackSlot>,
     last_xid: u32,
     poisoned: bool,
 }
@@ -196,23 +215,28 @@ impl ConnectionState {
         }
     }
 
-    pub(crate) fn add_callback(&mut self, callback: CallbackHandle) -> Result<u32, RpcError> {
+    pub(crate) fn register_call(&mut self) -> Result<u32, RpcError> {
         if self.poisoned {
             return Err(RpcError::SystemError);
         }
 
         loop {
             self.last_xid = self.last_xid.wrapping_add(1);
-            if !self.pending_requests.contains_key(&self.last_xid) {
-                self.pending_requests.insert(self.last_xid, callback);
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.pending_requests.entry(self.last_xid)
+            {
+                e.insert(CallbackSlot::Registered);
                 return Ok(self.last_xid);
             }
         }
     }
 
     pub fn handle_reply(&mut self, xid: u32, reply: Result<Vec<u8>, RpcError>) {
-        if let Some(callback) = self.pending_requests.remove(&xid) {
-            let _ = callback.tx.send(reply);
+        if let Some(slot) = self.pending_requests.get_mut(&xid) {
+            let prev = std::mem::replace(slot, CallbackSlot::Ready(reply));
+            if let CallbackSlot::Waiting(waker) = prev {
+                waker.wake();
+            }
             return;
         }
         eprintln!("Received reply for unknown xid: {}", xid);
@@ -220,9 +244,10 @@ impl ConnectionState {
 
     pub fn poison(&mut self) {
         self.poisoned = true;
-        for (_xid, callback) in self.pending_requests.drain() {
-            // if these error out, then receiver must be dropped
-            let _ = callback.tx.send(Err(RpcError::SystemError));
+        for (_xid, slot) in self.pending_requests.drain() {
+            if let CallbackSlot::Waiting(waker) = slot {
+                waker.wake();
+            }
         }
     }
 }
@@ -266,8 +291,8 @@ impl ConnectionHandle {
 
     /// Poison the connection, failing all pending requests and closing the write half.
     pub async fn poison(&self) {
-        // Fail all pending requests. This resolves oneshot receivers held by
-        // in-flight send_call tasks with Err(SystemError).
+        // Fail all pending requests. Wakes callers parked in poll_fn,
+        // which will see the entry removed and return Err(SystemError).
         self.connection_state.lock().unwrap().poison();
 
         // Abort the writer task and wait for it to finish. This drops the
@@ -327,22 +352,19 @@ impl ConnectionHandle {
         proc: u32,
         data: &[u8],
     ) -> Result<Vec<u8>, RpcError> {
-        let (tx, rx) = oneshot::channel();
+        let xid = self.connection_state.lock().unwrap().register_call()?;
 
-        let xid = self
-            .connection_state
-            .lock()
-            .unwrap()
-            .add_callback(CallbackHandle { tx })?;
+        // Guard removes the pending entry on drop (cancellation safety).
+        let guard = CallGuard {
+            state: &self.connection_state,
+            xid,
+            done: false,
+        };
 
         let msg = match Self::prepare_call_msg(self.buf_pool.take(), xid, progvers, proc, data) {
             Ok(msg) => msg,
             Err(e) => {
-                self.connection_state
-                    .lock()
-                    .unwrap()
-                    .pending_requests
-                    .remove(&xid);
+                // guard.drop() will clean up pending_requests
                 return Err(e);
             }
         };
@@ -352,20 +374,66 @@ impl ConnectionHandle {
         }
 
         if self.write_tx.send(msg).await.is_err() {
-            self.connection_state
-                .lock()
-                .unwrap()
-                .pending_requests
-                .remove(&xid);
             return Err(RpcError::SystemError);
         }
 
-        rx.await.map_err(|_| RpcError::SystemError)?
+        // Wait for the reader task to deliver the result into our slot.
+        let result = std::future::poll_fn(|cx| {
+            let mut state = self.connection_state.lock().unwrap();
+            match state.pending_requests.get_mut(&xid) {
+                Some(CallbackSlot::Ready(_)) => match state.pending_requests.remove(&xid) {
+                    Some(CallbackSlot::Ready(result)) => std::task::Poll::Ready(result),
+                    _ => unreachable!(),
+                },
+                Some(slot) => {
+                    // Avoid cloning the waker if unchanged since last poll.
+                    match slot {
+                        CallbackSlot::Waiting(w) if w.will_wake(cx.waker()) => {}
+                        _ => *slot = CallbackSlot::Waiting(cx.waker().clone()),
+                    }
+                    std::task::Poll::Pending
+                }
+                // Entry gone — connection was poisoned.
+                None => std::task::Poll::Ready(Err(RpcError::SystemError)),
+            }
+        })
+        .await;
+
+        guard.disarm();
+        result
     }
 
     /// Returns the number of pending (in-flight) requests.
     pub fn num_pending_requests(&self) -> usize {
         self.connection_state.lock().unwrap().pending_requests.len()
+    }
+}
+
+/// Drop guard for cancellation safety in `send_call`.
+///
+/// If the future is dropped before the response arrives, this removes
+/// the pending entry from the HashMap so it doesn't leak.
+struct CallGuard<'a> {
+    state: &'a StdMutex<ConnectionState>,
+    xid: u32,
+    done: bool,
+}
+
+impl CallGuard<'_> {
+    fn disarm(mut self) {
+        self.done = true;
+    }
+}
+
+impl Drop for CallGuard<'_> {
+    fn drop(&mut self) {
+        if !self.done {
+            self.state
+                .lock()
+                .unwrap()
+                .pending_requests
+                .remove(&self.xid);
+        }
     }
 }
 
@@ -389,20 +457,43 @@ pub(crate) fn log_rpc_timestamp(xid: u32, event: &str) {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_callback_roundtrip() {
+    #[test]
+    fn test_callback_roundtrip() {
         let mut state = ConnectionState::new();
 
-        let (tx, rx) = oneshot::channel();
+        let xid = state.register_call().unwrap();
+        assert_eq!(xid, 1);
 
-        state.add_callback(CallbackHandle { tx }).unwrap();
+        // Reply for unknown xid — should be ignored.
         state.handle_reply(0, Ok(b"world".to_vec()));
 
-        state.handle_reply(1, Ok(b"hello".to_vec()));
+        // Reply for our xid.
+        state.handle_reply(xid, Ok(b"hello".to_vec()));
 
-        assert_eq!(rx.await.unwrap().unwrap(), b"hello".to_vec());
+        // Slot should now be Ready.
+        match state.pending_requests.remove(&xid) {
+            Some(CallbackSlot::Ready(Ok(data))) => assert_eq!(data, b"hello"),
+            other => panic!("expected Ready(Ok), got {other:?}"),
+        }
 
-        // the rpc callback should have been removed
-        state.handle_reply(1, Ok(b"foo".to_vec()));
+        // Duplicate reply — entry already removed, should be ignored.
+        state.handle_reply(xid, Ok(b"foo".to_vec()));
+    }
+
+    #[test]
+    fn test_poison_wakes_waiters() {
+        let mut state = ConnectionState::new();
+        let xid = state.register_call().unwrap();
+
+        // Simulate a waiting caller by inserting a waker.
+        let waker = std::task::Waker::noop().clone();
+        *state.pending_requests.get_mut(&xid).unwrap() = CallbackSlot::Waiting(waker);
+
+        state.poison();
+        assert!(state.pending_requests.is_empty());
+        assert!(state.poisoned);
+
+        // New registrations should fail.
+        assert!(state.register_call().is_err());
     }
 }
