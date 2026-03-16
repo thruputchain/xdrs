@@ -34,7 +34,8 @@ struct PoolRequest {
     progvers: ProgVers,
     proc_num: u32,
     data: Vec<u8>,
-    reply: oneshot::Sender<Result<RpcResponse, RpcError>>,
+    /// `Some` for normal calls, `None` for fire-and-forget.
+    reply: Option<oneshot::Sender<Result<RpcResponse, RpcError>>>,
 }
 
 /// Fixed-size connection pool with FIFO request dispatch.
@@ -87,10 +88,22 @@ impl FixedSerialPool {
                         None => break, // Channel closed, pool is shutting down.
                     };
 
-                    let result = client
-                        .send_call_owned(req.progvers, req.proc_num, req.data)
-                        .await;
-                    let _ = req.reply.send(result);
+                    match req.reply {
+                        Some(reply_tx) => {
+                            let result = client
+                                .send_call_owned(req.progvers, req.proc_num, req.data)
+                                .await;
+                            let _ = reply_tx.send(result);
+                        }
+                        None => {
+                            if let Err(e) = client
+                                .send_fire_and_forget_owned(req.progvers, req.proc_num, req.data)
+                                .await
+                            {
+                                tracing::warn!(error = %e, "fire-and-forget send failed");
+                            }
+                        }
+                    }
                 }
             });
         }
@@ -123,13 +136,32 @@ impl RpcSender for FixedSerialPool {
             progvers,
             proc_num: proc,
             data: data.to_vec(),
-            reply: tx,
+            reply: Some(tx),
         };
         self.request_tx
             .send(request)
             .await
             .map_err(|_| RpcError::SystemError)?;
         rx.await.map_err(|_| RpcError::SystemError)?
+    }
+
+    async fn send_fire_and_forget(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<(), RpcError> {
+        let request = PoolRequest {
+            progvers,
+            proc_num: proc,
+            data: data.to_vec(),
+            reply: None,
+        };
+        self.request_tx
+            .send(request)
+            .await
+            .map_err(|_| RpcError::SystemError)?;
+        Ok(())
     }
 }
 
@@ -315,6 +347,18 @@ impl RpcSender for DynamicPool {
         self.touch_connection(&conn);
         result
     }
+
+    async fn send_fire_and_forget(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<(), RpcError> {
+        let conn = self.lease_connection().await?;
+        let result = conn.send_fire_and_forget(progvers, proc, data).await;
+        self.touch_connection(&conn);
+        result
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -439,6 +483,17 @@ impl RpcSender for CpuSetPool {
     ) -> Result<RpcResponse, RpcError> {
         self.connection_for_current_cpu()
             .send_call(progvers, proc, data)
+            .await
+    }
+
+    async fn send_fire_and_forget(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<(), RpcError> {
+        self.connection_for_current_cpu()
+            .send_fire_and_forget(progvers, proc, data)
             .await
     }
 }
@@ -1018,5 +1073,75 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result, b"via-trait");
+    }
+
+    // -- fire-and-forget tests ---------------------------------------------------
+
+    #[tokio::test]
+    async fn fixed_pool_fire_and_forget() {
+        let addr = start_echo_server().await;
+        let pool = FixedSerialPool::connect(&addr, 2).await.unwrap();
+
+        // Fire-and-forget should return Ok immediately.
+        pool.send_fire_and_forget(ProgVers::new(1, 1), 1, b"faf-data")
+            .await
+            .unwrap();
+
+        // No sleep needed: FixedSerialPool uses a FIFO channel, so send_call
+        // is guaranteed to execute after the FAF request.
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, b"after-faf")
+            .await
+            .unwrap();
+        assert_eq!(result, b"after-faf");
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_fire_and_forget() {
+        let addr = start_echo_server().await;
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60)));
+
+        // Fire-and-forget should return Ok immediately.
+        pool.send_fire_and_forget(ProgVers::new(1, 1), 1, b"faf-data")
+            .await
+            .unwrap();
+
+        // Poll until the reply arrives and pending count drops to 0.
+        for _ in 0..20 {
+            if pool.pending_count().await == 0 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(pool.pending_count().await, 0);
+
+        // Normal send_call should still work afterwards.
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, b"after-faf")
+            .await
+            .unwrap();
+        assert_eq!(result, b"after-faf");
+    }
+
+    #[tokio::test]
+    async fn fire_and_forget_via_trait_object() {
+        let addr = start_echo_server().await;
+        let pool = Arc::new(FixedSerialPool::connect(&addr, 2).await.unwrap());
+
+        // Cast to trait object.
+        let sender: Arc<dyn RpcSender> = pool;
+
+        // Fire-and-forget through trait object.
+        sender
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"trait-faf")
+            .await
+            .unwrap();
+
+        // Normal send_call should still work through the trait object.
+        let result = sender
+            .send_call(ProgVers::new(1, 1), 1, b"trait-call")
+            .await
+            .unwrap();
+        assert_eq!(result, b"trait-call");
     }
 }

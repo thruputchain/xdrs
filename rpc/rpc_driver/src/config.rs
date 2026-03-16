@@ -23,6 +23,19 @@ pub struct ConnectionConfig {
     ///
     /// Default: 256. Set via [`ConnectionConfig::with_write_channel_capacity`].
     pub(crate) write_channel_capacity: usize,
+    /// Capacity of the per-connection read channel (concurrent-dispatch only).
+    /// The reader task forwards CALL records over this channel to the dispatch
+    /// loop. Higher values let the reader stay further ahead of dispatch.
+    ///
+    /// Default: 256. Set via [`ConnectionConfig::with_read_channel_capacity`].
+    pub(crate) read_channel_capacity: usize,
+    /// Size of the per-connection TCP read buffer in bytes.
+    /// Larger buffers reduce syscalls for large RPC payloads by keeping
+    /// more data in the fast path. Records that fit in the buffer are
+    /// parsed zero-copy without additional reads.
+    ///
+    /// Default: 65536 (64KB). Set via [`ConnectionConfig::with_read_buffer_size`].
+    pub(crate) read_buffer_size: usize,
 }
 
 impl Default for ConnectionConfig {
@@ -32,6 +45,8 @@ impl Default for ConnectionConfig {
             services: Arc::new(ServiceMap::default()),
             max_concurrent_dispatches: 64,
             write_channel_capacity: 256,
+            read_channel_capacity: 256,
+            read_buffer_size: 65536,
         }
     }
 }
@@ -43,6 +58,8 @@ impl ConnectionConfig {
             services: Arc::new(services),
             max_concurrent_dispatches: 64,
             write_channel_capacity: 256,
+            read_channel_capacity: 256,
+            read_buffer_size: 65536,
         }
     }
 
@@ -66,6 +83,32 @@ impl ConnectionConfig {
     pub fn with_write_channel_capacity(mut self, capacity: usize) -> Self {
         assert!(capacity > 0, "write_channel_capacity must be at least 1");
         self.write_channel_capacity = capacity;
+        self
+    }
+
+    /// Set the capacity of the per-connection read channel.
+    ///
+    /// Only effective with the `concurrent-dispatch` feature. Higher values
+    /// let the reader task stay further ahead of the dispatch loop, smoothing
+    /// latency spikes at the cost of memory. Default: 256.
+    #[cfg_attr(
+        not(feature = "concurrent-dispatch"),
+        deprecated(note = "has no effect without the `concurrent-dispatch` feature")
+    )]
+    pub fn with_read_channel_capacity(mut self, capacity: usize) -> Self {
+        assert!(capacity > 0, "read_channel_capacity must be at least 1");
+        self.read_channel_capacity = capacity;
+        self
+    }
+
+    /// Set the per-connection TCP read buffer size in bytes.
+    ///
+    /// Larger values reduce syscalls for large RPCs. For workloads with
+    /// payloads up to N bytes, set this to at least N + 64 (header overhead).
+    /// Default: 65536 (64KB).
+    pub fn with_read_buffer_size(mut self, size: usize) -> Self {
+        assert!(size >= 1024, "read_buffer_size must be at least 1024");
+        self.read_buffer_size = size;
         self
     }
 }

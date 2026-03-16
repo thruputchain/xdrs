@@ -297,6 +297,19 @@ pub trait RpcSender: Send + Sync {
         proc: u32,
         data: &[u8],
     ) -> Result<RpcResponse, RpcError>;
+
+    /// Send an RPC call without waiting for the response.
+    ///
+    /// Default implementation calls [`send_call`](Self::send_call) and
+    /// discards the response. Override for optimal performance.
+    async fn send_fire_and_forget(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<(), RpcError> {
+        self.send_call(progvers, proc, data).await.map(|_| ())
+    }
 }
 
 #[async_trait]
@@ -308,6 +321,15 @@ impl RpcSender for ConnectionHandle {
         data: &[u8],
     ) -> Result<RpcResponse, RpcError> {
         ConnectionHandle::send_call(self, progvers, proc, data).await
+    }
+
+    async fn send_fire_and_forget(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<(), RpcError> {
+        ConnectionHandle::send_fire_and_forget(self, progvers, proc, data).await
     }
 }
 
@@ -334,6 +356,8 @@ pub(crate) enum CallbackSlot {
     Waiting(Waker),
     /// Reader has delivered the result.
     Ready(ReplyResult),
+    /// Fire-and-forget: no caller waiting. Reader cleans up on reply.
+    FireAndForget,
 }
 
 impl std::fmt::Debug for CallbackSlot {
@@ -342,6 +366,7 @@ impl std::fmt::Debug for CallbackSlot {
             Self::Registered => write!(f, "Registered"),
             Self::Waiting(_) => write!(f, "Waiting(..)"),
             Self::Ready(_) => write!(f, "Ready(..)"),
+            Self::FireAndForget => write!(f, "FireAndForget"),
         }
     }
 }
@@ -380,24 +405,50 @@ impl ConnectionState {
     }
 
     #[inline(always)]
-    pub(crate) fn handle_reply(&mut self, xid: u32, reply: ReplyResult) {
+    pub(crate) fn register_fire_and_forget(&mut self) -> Result<u32, RpcError> {
+        if self.poisoned {
+            return Err(RpcError::SystemError);
+        }
+
+        loop {
+            self.last_xid = self.last_xid.wrapping_add(1);
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.pending_requests.entry(self.last_xid)
+            {
+                e.insert(CallbackSlot::FireAndForget);
+                return Ok(self.last_xid);
+            }
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn handle_reply(&mut self, xid: u32, reply: ReplyResult) -> bool {
         if let Some(slot) = self.pending_requests.get_mut(&xid) {
+            if matches!(slot, CallbackSlot::FireAndForget) {
+                self.pending_requests.remove(&xid);
+                return true;
+            }
             let prev = std::mem::replace(slot, CallbackSlot::Ready(reply));
             if let CallbackSlot::Waiting(waker) = prev {
                 waker.wake();
             }
-            return;
+            return false;
         }
         tracing::warn!(xid, "received reply for unknown xid");
+        false
     }
 
-    pub(crate) fn poison(&mut self) {
+    pub(crate) fn poison(&mut self) -> usize {
         self.poisoned = true;
+        let mut faf_count = 0usize;
         for (_xid, slot) in self.pending_requests.drain() {
-            if let CallbackSlot::Waiting(waker) = slot {
-                waker.wake();
+            match slot {
+                CallbackSlot::FireAndForget => faf_count += 1,
+                CallbackSlot::Waiting(waker) => waker.wake(),
+                _ => {}
             }
         }
+        faf_count
     }
 }
 
@@ -424,6 +475,8 @@ pub struct ConnectionHandle {
     pub(crate) connection_span: tracing::Span,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) max_concurrent_dispatches: usize,
+    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
+    pub(crate) read_channel_capacity: usize,
     writer_handle: StdMutex<Option<JoinHandle<()>>>,
 }
 
@@ -446,6 +499,7 @@ impl ConnectionHandle {
             connection_span: span,
             writer_handle: StdMutex::new(Some(handle)),
             max_concurrent_dispatches: config.max_concurrent_dispatches,
+            read_channel_capacity: config.read_channel_capacity,
         }
     }
 
@@ -453,7 +507,14 @@ impl ConnectionHandle {
     pub async fn poison(&self) {
         // Fail all pending requests. Wakes callers parked in poll_fn,
         // which will see the entry removed and return Err(SystemError).
-        self.connection_state.lock().unwrap().poison();
+        let faf_count = self.connection_state.lock().unwrap().poison();
+        if faf_count > 0 {
+            let _ = self
+                .pending_count
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                    Some(cur.saturating_sub(faf_count))
+                });
+        }
 
         // Abort the writer task and wait for it to finish. This drops the
         // WriteHalf (TCP FIN) and the channel Receiver. Any messages still
@@ -550,6 +611,123 @@ impl ConnectionHandle {
 
         guard.disarm();
         result
+    }
+
+    /// Send an RPC call without waiting for the response.
+    ///
+    /// Registers an XID for tracing, sends the message, and returns
+    /// immediately. The reader task will silently discard the reply when
+    /// it arrives.
+    pub async fn send_fire_and_forget(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<(), RpcError> {
+        let xid = self
+            .connection_state
+            .lock()
+            .unwrap()
+            .register_fire_and_forget()?;
+        self.pending_count.fetch_add(1, Ordering::Relaxed);
+
+        let span = tracing::debug_span!(
+            parent: &self.connection_span,
+            "rpc_call",
+            xid,
+            prog = progvers.prog,
+            vers = progvers.vers,
+            proc = proc,
+            fire_and_forget = true,
+        );
+
+        // Guard ensures cleanup if the future is cancelled (e.g. timeout)
+        // while awaiting channel send.
+        let mut guard = FireAndForgetGuard {
+            state: &self.connection_state,
+            pending_count: &self.pending_count,
+            xid,
+            sent: false,
+        };
+
+        let msg = Self::prepare_call_msg(self.buf_pool.take(), xid, progvers, proc, data)?;
+
+        // Use .instrument(span) instead of span.enter() — enter() is
+        // thread-local and incorrect across .await points in multi-thread
+        // runtimes (the future may resume on a different thread).
+        async {
+            if self.write_tx.send(msg).await.is_err() {
+                return Err(RpcError::SystemError); // guard drops and cleans up
+            }
+            guard.sent = true;
+            Ok(())
+        }
+        .instrument(span)
+        .await
+    }
+
+    /// Like [`send_fire_and_forget`](Self::send_fire_and_forget), but takes
+    /// ownership of the data Vec. Reuses its allocation for the framed
+    /// message, saving one copy when the caller already owns the data
+    /// (e.g., pool workers).
+    pub async fn send_fire_and_forget_owned(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: Vec<u8>,
+    ) -> Result<(), RpcError> {
+        let xid = self
+            .connection_state
+            .lock()
+            .unwrap()
+            .register_fire_and_forget()?;
+        self.pending_count.fetch_add(1, Ordering::Relaxed);
+
+        let span = tracing::debug_span!(
+            parent: &self.connection_span,
+            "rpc_call",
+            xid,
+            prog = progvers.prog,
+            vers = progvers.vers,
+            proc = proc,
+            fire_and_forget = true,
+        );
+
+        let mut guard = FireAndForgetGuard {
+            state: &self.connection_state,
+            pending_count: &self.pending_count,
+            xid,
+            sent: false,
+        };
+
+        let header = rpc_msg::rpc_msg {
+            xid,
+            body: rpc_msg::rpc_msg_body::CALL {
+                cbody: rpc_msg::call_body {
+                    rpcvers: 2,
+                    prog: progvers.prog,
+                    vers: progvers.vers,
+                    proc,
+                    cred: DEFAULT_OPAQUE_AUTH,
+                    verf: DEFAULT_OPAQUE_AUTH,
+                },
+            },
+        };
+
+        let msg = frame_rpc_record_owned(&header, data).map_err(|()| {
+            tracing::warn!("message too large: exceeds max (0x7FFF_FFFF)");
+            RpcError::SystemError
+        })?;
+
+        async {
+            if self.write_tx.send(msg).await.is_err() {
+                return Err(RpcError::SystemError); // guard drops and cleans up
+            }
+            guard.sent = true;
+            Ok(())
+        }
+        .instrument(span)
+        .await
     }
 
     /// Like [`send_call`](Self::send_call), but takes ownership of the data
@@ -651,6 +829,12 @@ impl ConnectionHandle {
     pub fn num_pending_requests(&self) -> usize {
         self.pending_count.load(Ordering::Relaxed)
     }
+
+    /// Decrement the pending-request counter by one (fire-and-forget cleanup).
+    #[inline(always)]
+    pub(crate) fn decrement_pending(&self) {
+        self.pending_count.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 /// Drop guard for cancellation safety in `send_call`.
@@ -680,6 +864,38 @@ impl Drop for CallGuard<'_> {
                 .unwrap()
                 .pending_requests
                 .remove(&self.xid);
+        }
+    }
+}
+
+/// Drop guard for cancellation safety in `send_fire_and_forget`.
+///
+/// If the future is dropped before the message is sent (e.g. due to a
+/// timeout), this removes the pending entry and decrements the counter.
+/// Unlike `CallGuard`, this only guards the send phase — once sent, the
+/// reader task handles cleanup via `route_reply`.
+struct FireAndForgetGuard<'a> {
+    state: &'a StdMutex<ConnectionState>,
+    pending_count: &'a AtomicUsize,
+    xid: u32,
+    sent: bool,
+}
+
+impl Drop for FireAndForgetGuard<'_> {
+    fn drop(&mut self) {
+        if !self.sent {
+            // Only decrement pending_count if we actually removed the entry.
+            // poison() may have already drained it — without this check, both
+            // paths would decrement, wrapping pending_count to usize::MAX.
+            let removed = self
+                .state
+                .lock()
+                .unwrap()
+                .pending_requests
+                .remove(&self.xid);
+            if removed.is_some() {
+                self.pending_count.fetch_sub(1, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -728,5 +944,68 @@ mod tests {
 
         // New registrations should fail.
         assert!(state.register_call().is_err());
+    }
+
+    #[test]
+    fn test_register_fire_and_forget() {
+        let mut state = ConnectionState::new();
+
+        let xid = state.register_fire_and_forget().unwrap();
+        assert_eq!(xid, 1);
+
+        // Slot should be FireAndForget.
+        match state.pending_requests.get(&xid) {
+            Some(CallbackSlot::FireAndForget) => {}
+            other => panic!("expected FireAndForget, got {other:?}"),
+        }
+
+        // Poisoned state should reject registration.
+        state.poisoned = true;
+        assert!(state.register_fire_and_forget().is_err());
+    }
+
+    #[test]
+    fn test_handle_reply_fire_and_forget() {
+        let mut state = ConnectionState::new();
+
+        // Fire-and-forget call: handle_reply should remove the entry and return true.
+        let faf_xid = state.register_fire_and_forget().unwrap();
+        let was_faf = state.handle_reply(faf_xid, ReplyResult::Ok(b"ignored".to_vec(), 0));
+        assert!(was_faf, "expected true for fire-and-forget reply");
+        assert!(
+            state.pending_requests.get(&faf_xid).is_none(),
+            "fire-and-forget entry should be removed"
+        );
+
+        // Normal call: handle_reply should keep the entry as Ready and return false.
+        let normal_xid = state.register_call().unwrap();
+        let was_faf = state.handle_reply(normal_xid, ReplyResult::Ok(b"hello".to_vec(), 0));
+        assert!(!was_faf, "expected false for normal reply");
+        match state.pending_requests.get(&normal_xid) {
+            Some(CallbackSlot::Ready(_)) => {}
+            other => panic!("expected Ready, got {other:?}"),
+        }
+
+        // Unknown xid: should return false.
+        let was_faf = state.handle_reply(9999, ReplyResult::Ok(b"unknown".to_vec(), 0));
+        assert!(!was_faf, "expected false for unknown xid");
+    }
+
+    #[test]
+    fn test_poison_counts_fire_and_forget() {
+        let mut state = ConnectionState::new();
+
+        // Register a mix of normal and fire-and-forget calls.
+        let _normal_xid = state.register_call().unwrap();
+        let _faf_xid1 = state.register_fire_and_forget().unwrap();
+        let _faf_xid2 = state.register_fire_and_forget().unwrap();
+
+        // Add a Waiting entry (simulating a polled normal call).
+        let waker = std::task::Waker::noop().clone();
+        *state.pending_requests.get_mut(&_normal_xid).unwrap() = CallbackSlot::Waiting(waker);
+
+        let faf_count = state.poison();
+        assert_eq!(faf_count, 2, "expected 2 fire-and-forget entries");
+        assert!(state.pending_requests.is_empty());
     }
 }

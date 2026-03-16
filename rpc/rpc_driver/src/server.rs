@@ -41,14 +41,19 @@ impl RpcServer {
     /// Run the server, accepting connections and handling requests.
     async fn run(&self) -> Result<(), std::io::Error> {
         loop {
-            let (read, write, addr) =
-                match accept(&self.listener, self.config.max_message_size).await {
-                    Ok(conn) => conn,
-                    Err(e) => {
-                        tracing::error!(error = %e, "error accepting connection");
-                        continue;
-                    }
-                };
+            let (read, write, addr) = match accept(
+                &self.listener,
+                self.config.max_message_size,
+                self.config.read_buffer_size,
+            )
+            .await
+            {
+                Ok(conn) => conn,
+                Err(e) => {
+                    tracing::error!(error = %e, "error accepting connection");
+                    continue;
+                }
+            };
 
             let span = tracing::info_span!("rpc_connection", peer = %addr, role = "server");
             let client_handle = Arc::new(ConnectionHandle::new(write, &self.config, span.clone()));

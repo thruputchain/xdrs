@@ -11,8 +11,6 @@ pub struct WriteHalf {
     write_half: tokio::net::tcp::OwnedWriteHalf,
 }
 
-const READ_BUF_SIZE: usize = 65536;
-
 /// Read half of a TCP connection with record framing.
 ///
 /// Uses an internal read buffer to amortize syscalls: a single `read()`
@@ -35,6 +33,7 @@ pub struct ReadHalf {
 pub async fn connect<A: ToSocketAddrs>(
     addr: A,
     max_message_size: u32,
+    read_buffer_size: usize,
 ) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let stream = TcpStream::connect(addr).await?;
     // This doesn't noticeably affect performance on local loopback tests
@@ -42,7 +41,7 @@ pub async fn connect<A: ToSocketAddrs>(
     stream.set_nodelay(true)?;
     let (read_half, write_half) = stream.into_split();
     Ok((
-        ReadHalf::new(read_half, max_message_size),
+        ReadHalf::new(read_half, max_message_size, read_buffer_size),
         WriteHalf { write_half },
     ))
 }
@@ -50,6 +49,7 @@ pub async fn connect<A: ToSocketAddrs>(
 pub async fn accept(
     listener: &TcpListener,
     max_message_size: u32,
+    read_buffer_size: usize,
 ) -> Result<(ReadHalf, WriteHalf, SocketAddr), std::io::Error> {
     let (stream, addr) = listener.accept().await?;
     // This doesn't noticeably affect performance on local loopback tests
@@ -57,7 +57,7 @@ pub async fn accept(
     stream.set_nodelay(true)?;
     let (read_half, write_half) = stream.into_split();
     Ok((
-        ReadHalf::new(read_half, max_message_size),
+        ReadHalf::new(read_half, max_message_size, read_buffer_size),
         WriteHalf { write_half },
         addr,
     ))
@@ -92,10 +92,14 @@ impl WriteHalf {
 }
 
 impl ReadHalf {
-    fn new(read_half: tokio::net::tcp::OwnedReadHalf, max_message_size: u32) -> Self {
+    fn new(
+        read_half: tokio::net::tcp::OwnedReadHalf,
+        max_message_size: u32,
+        read_buffer_size: usize,
+    ) -> Self {
         Self {
             read_half,
-            buf: vec![0u8; READ_BUF_SIZE],
+            buf: vec![0u8; read_buffer_size],
             pos: 0,
             len: 0,
             record: Vec::with_capacity(8192),
@@ -213,7 +217,7 @@ mod tests {
         });
 
         // Connect and test
-        let (mut read, mut write) = connect(addr, 1024).await.unwrap();
+        let (mut read, mut write) = connect(addr, 1024, 65536).await.unwrap();
 
         write.write_data(b"test message").await.unwrap();
         let mut buf = vec![0u8; (b"test message").len()];

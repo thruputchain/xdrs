@@ -47,12 +47,12 @@ mod tests {
 
         // Accept incoming connection in background task - we'll use this for the server side
         let listener_handle = tokio::spawn(async move {
-            let (r, w, _addr) = accept(&listener, 0x100_0000).await.unwrap();
+            let (r, w, _addr) = accept(&listener, 0x100_0000, 65536).await.unwrap();
             (r, w)
         });
 
         // Connect from client side
-        let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
+        let (client_read, client_write) = connect(addr, 0x100_0000, 65536).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
         let client_handle = Arc::new(ConnectionHandle::new(
@@ -143,7 +143,7 @@ mod tests {
 
         server.start().await;
 
-        let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
+        let (client_read, client_write) = connect(addr, 0x100_0000, 65536).await.unwrap();
 
         let client_handle = Arc::new(ConnectionHandle::new(
             client_write,
@@ -455,5 +455,62 @@ mod tests {
 
         // make sure the callback was cleaned up
         assert_eq!(client_handle.num_pending_requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_fire_and_forget_basic() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let dispatch_count = Arc::new(AtomicU32::new(0));
+        let notify = Arc::new(tokio::sync::Notify::new());
+
+        struct CountingService {
+            count: Arc<AtomicU32>,
+            notify: Arc<tokio::sync::Notify>,
+        }
+
+        #[async_trait]
+        impl RpcHandler for CountingService {
+            async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
+                self.count.fetch_add(1, Ordering::SeqCst);
+                self.notify.notify_one();
+                Ok(vec![])
+            }
+            fn prog_vers(&self) -> ProgVers {
+                ProgVers::new(1, 1)
+            }
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(CountingService {
+            count: dispatch_count.clone(),
+            notify: notify.clone(),
+        }));
+        let server = RpcServer::new(listener, services);
+        server.start().await;
+
+        let client = connect_client(&addr).await.unwrap();
+
+        // Fire and forget should return immediately.
+        client
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"hello")
+            .await
+            .unwrap();
+
+        // Wait for the server to process (reply will be silently discarded).
+        tokio::time::timeout(std::time::Duration::from_secs(2), notify.notified())
+            .await
+            .expect("server should have dispatched the call");
+
+        assert_eq!(dispatch_count.load(Ordering::SeqCst), 1);
+
+        // Regular send_call should still work after fire-and-forget.
+        let resp = client
+            .send_call(ProgVers::new(1, 1), 1, b"echo")
+            .await
+            .unwrap();
+        assert_eq!(&*resp, b""); // CountingService returns empty vec
     }
 }

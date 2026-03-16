@@ -36,7 +36,7 @@ fn route_reply(
     payload_offset: usize,
 ) {
     use crate::connection::ReplyResult;
-    match rbody {
+    let was_fire_and_forget = match rbody {
         rpc_msg::reply_body::MSG_ACCEPTED { areply } => {
             if let rpc_msg::accepted_reply_reply_data::SUCCESS { results: _results } =
                 areply.reply_data
@@ -45,22 +45,23 @@ fn route_reply(
                     .connection_state
                     .lock()
                     .unwrap()
-                    .handle_reply(xid, ReplyResult::Ok(record, payload_offset));
+                    .handle_reply(xid, ReplyResult::Ok(record, payload_offset))
             } else {
                 client_cbs
                     .connection_state
                     .lock()
                     .unwrap()
-                    .handle_reply(xid, ReplyResult::Err(areply.reply_data.into()));
+                    .handle_reply(xid, ReplyResult::Err(areply.reply_data.into()))
             }
         }
-        rpc_msg::reply_body::MSG_DENIED { rreply } => {
-            client_cbs
-                .connection_state
-                .lock()
-                .unwrap()
-                .handle_reply(xid, ReplyResult::Err(rreply.into()));
-        }
+        rpc_msg::reply_body::MSG_DENIED { rreply } => client_cbs
+            .connection_state
+            .lock()
+            .unwrap()
+            .handle_reply(xid, ReplyResult::Err(rreply.into())),
+    };
+    if was_fire_and_forget {
+        client_cbs.decrement_pending();
     }
 }
 
@@ -398,11 +399,12 @@ pub async fn launch_read_task(
     // just write a result into the pending-call HashMap and wake the
     // caller. This cuts one async task wakeup per reply.
     //
-    // Channel capacity 8: the reader task may stay up to 8 records ahead of
-    // the dispatch loop, smoothing latency spikes while still providing
-    // backpressure when tasks are at capacity.
-    let (record_tx, mut record_rx) =
-        tokio::sync::mpsc::channel::<Result<Vec<u8>, ReadTaskError>>(8);
+    // Channel capacity is configurable via ConnectionConfig::read_channel_capacity
+    // (default 256). The reader task may stay this many records ahead of the
+    // dispatch loop, smoothing latency spikes while still providing backpressure.
+    let (record_tx, mut record_rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, ReadTaskError>>(
+        client_cbs.read_channel_capacity,
+    );
 
     let cbs_for_reader = client_cbs.clone();
     let reader_handle = tokio::spawn(async move {

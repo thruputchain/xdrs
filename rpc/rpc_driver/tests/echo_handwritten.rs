@@ -193,12 +193,12 @@ mod tests {
 
         // Accept incoming connection in background task - we'll use this for the server side
         let listener_handle = tokio::spawn(async move {
-            let (r, w, _addr) = accept(&listener, 0x100_0000).await.unwrap();
+            let (r, w, _addr) = accept(&listener, 0x100_0000, 65536).await.unwrap();
             (r, w)
         });
 
         // Connect from client side
-        let (client_read, client_write) = connect(addr, 0x100_0000).await.unwrap();
+        let (client_read, client_write) = connect(addr, 0x100_0000, 65536).await.unwrap();
         let (server_read, server_write) = listener_handle.await.unwrap();
 
         let client_handle = Arc::new(ConnectionHandle::new(

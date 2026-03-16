@@ -20,7 +20,8 @@ pub async fn connect_client_with_config(
     addr: &SocketAddr,
     config: ConnectionConfig,
 ) -> Result<Arc<ConnectionHandle>, std::io::Error> {
-    let (client_read, client_write) = connect(addr, config.max_message_size).await?;
+    let (client_read, client_write) =
+        connect(addr, config.max_message_size, config.read_buffer_size).await?;
     let service_map = config.services.clone();
 
     let span = tracing::info_span!("rpc_connection", peer = %addr, role = "client");
