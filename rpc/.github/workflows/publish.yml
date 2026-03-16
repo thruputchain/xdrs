@@ -46,6 +46,8 @@ jobs:
       - name: tag commit with version
         id: publish-tag
         uses: ./actions/cargo-version-tag
+        with:
+          packages: rpc_driver
       
       - name: push tag
         run: |
