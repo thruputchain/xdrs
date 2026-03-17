@@ -1,11 +1,11 @@
 [package]
 name = "rpc-smoke"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2024"
 publish = false
 
 [dependencies]
-rpc_driver = { path = "../rpc_driver", version = "0.7.1", features = ["concurrent-dispatch"] }
+rpc_driver = { path = "../rpc_driver", version = "0.7.2", features = ["concurrent-dispatch"] }
 tokio = { version = "1.47.1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

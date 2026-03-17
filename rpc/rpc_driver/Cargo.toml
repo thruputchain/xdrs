@@ -1,6 +1,6 @@
 [package]
 name = "rpc_driver"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2024"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"
@@ -17,7 +17,6 @@ concurrent-dispatch = []
 
 [dependencies]
 async-trait = "0.1.89"
-bytes = "1"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
 tracing = "0.1"

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use bytes::Bytes;
 use tracing::Instrument;
 
 use crate::{
@@ -33,7 +32,8 @@ fn route_reply(
     client_cbs: &ConnectionHandle,
     xid: u32,
     rbody: rpc_msg::reply_body,
-    payload: Bytes,
+    record: Vec<u8>,
+    payload_offset: usize,
 ) {
     use crate::connection::ReplyResult;
     let was_fire_and_forget = match rbody {
@@ -45,7 +45,7 @@ fn route_reply(
                     .connection_state
                     .lock()
                     .unwrap()
-                    .handle_reply(xid, ReplyResult::Ok(payload))
+                    .handle_reply(xid, ReplyResult::Ok(record, payload_offset))
             } else {
                 client_cbs
                     .connection_state
@@ -93,12 +93,14 @@ async fn send_response(
 }
 
 /// Parsed inbound record — either a CALL to dispatch or a REPLY to route.
+/// The `record` Vec is carried alongside a `payload_offset` to avoid an
+/// O(n) memmove that `drain(..pos)` would require.
 #[cfg(feature = "concurrent-dispatch")]
 enum ParsedRecord {
     Call {
         xid: u32,
-        /// Payload bytes, pre-sliced past the XDR header.
-        payload: Bytes,
+        record: Vec<u8>,
+        payload_offset: usize,
         vers: ProgVers,
         rpcvers: u32,
         proc: u32,
@@ -106,15 +108,16 @@ enum ParsedRecord {
     Reply {
         xid: u32,
         rbody: rpc_msg::reply_body,
-        /// Payload bytes, pre-sliced past the XDR header.
-        payload: Bytes,
+        record: Vec<u8>,
+        payload_offset: usize,
     },
 }
 
-/// Parse an XDR record into a CALL or REPLY.
+/// Parse an XDR record into a CALL or REPLY.  Carries the offset into the
+/// record where the payload begins, avoiding the O(n) memmove from `drain`.
 #[cfg(feature = "concurrent-dispatch")]
-fn parse_record(record: &Bytes) -> Result<ParsedRecord, ReadTaskError> {
-    let mut reader = xdrs::txs::buf_reader::BufReader::new(record);
+fn parse_record(record: Vec<u8>) -> Result<ParsedRecord, ReadTaskError> {
+    let mut reader = xdrs::txs::buf_reader::BufReader::new(&record);
     let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
         Ok(msg) => msg,
         Err(e) => {
@@ -127,7 +130,8 @@ fn parse_record(record: &Bytes) -> Result<ParsedRecord, ReadTaskError> {
     match msg.body {
         rpc_msg::rpc_msg_body::CALL { cbody } => Ok(ParsedRecord::Call {
             xid: msg.xid,
-            payload: record.slice(payload_offset..),
+            record,
+            payload_offset,
             vers: ProgVers {
                 prog: cbody.prog,
                 vers: cbody.vers,
@@ -138,7 +142,8 @@ fn parse_record(record: &Bytes) -> Result<ParsedRecord, ReadTaskError> {
         rpc_msg::rpc_msg_body::REPLY { rbody } => Ok(ParsedRecord::Reply {
             xid: msg.xid,
             rbody,
-            payload: record.slice(payload_offset..),
+            record,
+            payload_offset,
         }),
     }
 }
@@ -160,7 +165,9 @@ pub async fn launch_read_task(
             None => return Err(ReadTaskError::Shutdown),
         };
 
-        let mut reader = xdrs::txs::buf_reader::BufReader::new(&record);
+        // Parse inline from the borrowed slice — zero-copy for CALLs since
+        // the record lives in ReadHalf's buffer until dispatch completes.
+        let mut reader = xdrs::txs::buf_reader::BufReader::new(record);
         let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
             Ok(msg) => msg,
             Err(e) => {
@@ -168,7 +175,7 @@ pub async fn launch_read_task(
                 return Err(ReadTaskError::Shutdown);
             }
         };
-        let payload = record.slice(reader.position()..);
+        let remaining = &record[reader.position()..];
 
         match msg.body {
             rpc_msg::rpc_msg_body::CALL { cbody } => {
@@ -188,7 +195,7 @@ pub async fn launch_read_task(
                 async {
                     let res = with_peer(sender, async {
                         service_map
-                            .dispatch(cbody.rpcvers, vers, cbody.proc, &payload)
+                            .dispatch(cbody.rpcvers, vers, cbody.proc, remaining)
                             .await
                     })
                     .await;
@@ -198,7 +205,7 @@ pub async fn launch_read_task(
                 .await?;
             }
             rpc_msg::rpc_msg_body::REPLY { rbody } => {
-                route_reply(&client_cbs, msg.xid, rbody, payload);
+                route_reply(&client_cbs, msg.xid, rbody, remaining.to_vec(), 0);
             }
         }
     }
@@ -267,7 +274,7 @@ mod concurrent {
     pub(super) async fn dispatch_loop(
         service_map: &Arc<ServiceMap>,
         client_cbs: &Arc<ConnectionHandle>,
-        record_rx: &mut tokio::sync::mpsc::Receiver<Result<ParsedRecord, ReadTaskError>>,
+        record_rx: &mut tokio::sync::mpsc::Receiver<Result<Vec<u8>, ReadTaskError>>,
         max_concurrent: usize,
     ) -> Result<(), ReadTaskError> {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
@@ -283,16 +290,17 @@ mod concurrent {
             // Reap completed tasks to free memory in the JoinSet.
             while tasks.try_join_next().is_some() {}
 
-            let parsed = match record_rx.recv().await {
+            let record = match record_rx.recv().await {
                 Some(Ok(data)) => data,
                 Some(Err(e)) => return Err(e),
                 None => return Err(ReadTaskError::Shutdown),
             };
 
-            match parsed {
+            match parse_record(record)? {
                 ParsedRecord::Call {
                     xid,
-                    payload,
+                    record,
+                    payload_offset,
                     vers,
                     rpcvers,
                     proc,
@@ -343,7 +351,8 @@ mod concurrent {
                             // Dispatch with panic isolation via CatchUnwind.
                             let sender: Arc<dyn RpcSender> = cbs.clone();
                             let result = CatchUnwind(with_peer(sender, async {
-                                svc.dispatch(rpcvers, vers, proc, &payload).await
+                                svc.dispatch(rpcvers, vers, proc, &record[payload_offset..])
+                                    .await
                             }))
                             .await;
 
@@ -366,9 +375,12 @@ mod concurrent {
                 ParsedRecord::Reply {
                     xid,
                     rbody,
-                    payload,
+                    record,
+                    payload_offset,
                 } => {
-                    route_reply(client_cbs, xid, rbody, payload);
+                    // Pass the raw record + offset — no drain/memmove.
+                    // The consumer slices when reading the result.
+                    route_reply(client_cbs, xid, rbody, record, payload_offset);
                 }
             }
         }
@@ -390,9 +402,9 @@ pub async fn launch_read_task(
     // Channel capacity is configurable via ConnectionConfig::read_channel_capacity
     // (default 256). The reader task may stay this many records ahead of the
     // dispatch loop, smoothing latency spikes while still providing backpressure.
-    let (record_tx, mut record_rx) = tokio::sync::mpsc::channel::<
-        Result<ParsedRecord, ReadTaskError>,
-    >(client_cbs.read_channel_capacity);
+    let (record_tx, mut record_rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, ReadTaskError>>(
+        client_cbs.read_channel_capacity,
+    );
 
     let cbs_for_reader = client_cbs.clone();
     let reader_handle = tokio::spawn(async move {
@@ -406,30 +418,40 @@ pub async fn launch_read_task(
                     let _ = record_tx.send(Err(ReadTaskError::Shutdown)).await;
                     break;
                 }
-                Ok(Some(record)) => {
-                    // Parse the XDR record up front so the dispatch loop
-                    // receives pre-parsed, pre-sliced records.
-                    match parse_record(&record) {
-                        Ok(ParsedRecord::Reply {
-                            xid,
-                            rbody,
-                            payload,
-                        }) => {
-                            // Route REPLYs directly in the reader task —
-                            // skips the dispatch channel + dispatch loop
-                            // wakeup. This cuts one async task wakeup per
-                            // reply.
-                            route_reply(&cbs_for_reader, xid, rbody, payload);
-                        }
-                        Ok(call @ ParsedRecord::Call { .. }) => {
-                            if record_tx.send(Ok(call)).await.is_err() {
+                Ok(Some(data)) => {
+                    let record = data.to_vec();
+
+                    // Peek at msg_type (bytes 4..8): CALL=0, REPLY=1.
+                    // Route REPLYs directly in the reader task — skips
+                    // the dispatch channel + dispatch loop wakeup.
+                    let is_reply = record.len() >= 8
+                        && u32::from_be_bytes(record[4..8].try_into().unwrap()) == 1;
+
+                    if is_reply {
+                        match parse_record(record) {
+                            Ok(ParsedRecord::Reply {
+                                xid,
+                                rbody,
+                                record,
+                                payload_offset,
+                            }) => {
+                                route_reply(&cbs_for_reader, xid, rbody, record, payload_offset);
+                            }
+                            Ok(ParsedRecord::Call { record, .. }) => {
+                                if record_tx.send(Ok(record)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                let _ = record_tx.send(Err(e)).await;
                                 break;
                             }
                         }
-                        Err(e) => {
-                            let _ = record_tx.send(Err(e)).await;
-                            break;
-                        }
+                        continue;
+                    }
+
+                    if record_tx.send(Ok(record)).await.is_err() {
+                        break;
                     }
                 }
             }

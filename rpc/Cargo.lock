@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "bench-compare"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-smoke"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "clap",
@@ -359,10 +359,9 @@ dependencies = [
 
 [[package]]
 name = "rpc_driver"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "async-trait",
- "bytes",
  "libc",
  "serde",
  "serde_json",

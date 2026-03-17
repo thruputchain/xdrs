@@ -2,7 +2,6 @@
 
 use std::net::SocketAddr;
 
-use bytes::{Buf, Bytes, BytesMut};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 
@@ -14,13 +13,20 @@ pub struct WriteHalf {
 
 /// Read half of a TCP connection with record framing.
 ///
-/// Uses a [`BytesMut`] read buffer to amortize syscalls: a single `read()`
-/// may return multiple records, which are then extracted via
-/// [`split_to`](BytesMut::split_to) with zero copy.
+/// Uses an internal read buffer to amortize syscalls: a single `read()`
+/// may return multiple records, which are then parsed without further
+/// syscalls until the buffer is depleted.
 #[derive(Debug)]
 pub struct ReadHalf {
     read_half: tokio::net::tcp::OwnedReadHalf,
-    buf: BytesMut,
+    /// Read buffer. Data lives in `buf[pos..len]`.
+    buf: Vec<u8>,
+    /// Start of unconsumed data.
+    pos: usize,
+    /// End of valid data.
+    len: usize,
+    /// Scratch space for records that span two reads.
+    record: Vec<u8>,
     max_message_size: u32,
 }
 
@@ -93,52 +99,59 @@ impl ReadHalf {
     ) -> Self {
         Self {
             read_half,
-            buf: BytesMut::with_capacity(read_buffer_size),
+            buf: vec![0u8; read_buffer_size],
+            pos: 0,
+            len: 0,
+            record: Vec::with_capacity(8192),
             max_message_size,
         }
     }
 
-    /// Ensure at least `need` bytes are available in the buffer.
-    ///
-    /// **Note on allocation:** After `split_to().freeze()` in `read_record`,
-    /// the returned `Bytes` and this `BytesMut` share the same backing
-    /// allocation.  The next `reserve` call here will detect the shared
-    /// refcount and copy remaining bytes into a fresh allocation.  This is
-    /// the standard `bytes`-crate trade-off: zero-copy on the read side in
-    /// exchange for a possible realloc on the next fill.  Callers that drop
-    /// their `Bytes` handles promptly allow the `BytesMut` to reclaim the
-    /// buffer and grow in-place.
+    /// Number of unconsumed bytes in the read buffer.
+    #[inline]
+    fn buffered(&self) -> usize {
+        self.len - self.pos
+    }
+
+    /// Ensure at least `need` bytes are available in `buf[pos..]`.
+    /// Compacts the buffer first if necessary to make room, then reads
+    /// from the socket until we have enough.
     async fn fill(&mut self, need: usize) -> Result<(), std::io::Error> {
-        while self.buf.len() < need {
-            self.buf.reserve(need - self.buf.len());
-            let n = self.read_half.read_buf(&mut self.buf).await?;
+        // Compact: move unconsumed data to the front if we can't fit
+        // `need` more bytes at the end of the buffer.
+        if self.pos > 0 && self.buf.len() - self.len < need.saturating_sub(self.buffered()) {
+            self.buf.copy_within(self.pos..self.len, 0);
+            self.len -= self.pos;
+            self.pos = 0;
+        }
+
+        // Grow if even the full buffer can't hold `need` bytes.
+        if need > self.buf.len() {
+            self.buf.resize(need, 0);
+        }
+
+        while self.buffered() < need {
+            let n = self.read_half.read(&mut self.buf[self.len..]).await?;
             if n == 0 {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::UnexpectedEof,
                     "connection closed",
                 ));
             }
+            self.len += n;
         }
         Ok(())
     }
 
     /// Read a single RPC record from the connection.
     ///
-    /// Returns an owned, reference-counted [`Bytes`] handle — zero-copy
-    /// from the internal read buffer.
-    ///
     /// Returns `None` if the record is too large or requests a multi-part message.
-    pub async fn read_record(&mut self) -> Result<Option<Bytes>, std::io::Error> {
+    pub async fn read_record(&mut self) -> Result<Option<&[u8]>, std::io::Error> {
         // Read the 4-byte record header.
         self.fill(4).await?;
-        let header = u32::from_be_bytes(self.buf[..4].try_into().unwrap());
+        let header = u32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
         let size = (header & 0x7FFF_FFFF) as usize;
         let last_fragment = header & 0x8000_0000 != 0;
-
-        // Discard the 4-byte record-length header unconditionally so the
-        // buffer is always positioned past the header on return (whether
-        // we return data, None, or an error from fill).
-        self.buf.advance(4);
 
         if !last_fragment {
             tracing::warn!(header, "multi-part messages unsupported");
@@ -150,11 +163,32 @@ impl ReadHalf {
             return Ok(None);
         }
 
-        // Ensure the full record body is available.
-        self.fill(size).await?;
+        // Consume header.
+        self.pos += 4;
 
-        // Split the record out of the buffer — O(1), zero-copy.
-        Ok(Some(self.buf.split_to(size).freeze()))
+        // Fast path: entire record already in the read buffer.
+        if self.buffered() >= size {
+            let start = self.pos;
+            self.pos += size;
+            return Ok(Some(&self.buf[start..start + size]));
+        }
+
+        // Slow path: record spans a buffer boundary. Copy what we have
+        // into `self.record`, then read the rest directly into it.
+        self.record.clear();
+        self.record.reserve(size);
+        let available = self.buffered();
+        self.record.extend_from_slice(&self.buf[self.pos..self.len]);
+        self.pos = 0;
+        self.len = 0;
+
+        // Extend the length so read_exact can fill the rest.
+        self.record.resize(size, 0);
+        self.read_half
+            .read_exact(&mut self.record[available..])
+            .await?;
+
+        Ok(Some(&self.record[..size]))
     }
 }
 

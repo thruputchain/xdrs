@@ -5,12 +5,11 @@ use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::task::Waker;
-
-use async_trait::async_trait;
-use bytes::Bytes;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing::Instrument;
+
+use async_trait::async_trait;
 
 use crate::{
     ProgVers,
@@ -192,33 +191,34 @@ pub(crate) fn frame_rpc_record_owned(
     Ok(data)
 }
 
-/// Response from an RPC call. Wraps a [`Bytes`] handle providing zero-copy
-/// access to the payload via `Deref<Target = [u8]>`.
+/// Response from an RPC call. Wraps the raw record buffer and payload
+/// offset, providing zero-copy access to the payload via `Deref<Target = [u8]>`.
 ///
 /// The caller deserializes directly from `&*response` without any copy.
-/// `Clone` is O(1) (refcount bump).
 #[derive(Clone)]
 pub struct RpcResponse {
-    buf: Bytes,
+    buf: Vec<u8>,
+    offset: usize,
 }
 
 impl RpcResponse {
-    /// Create a response from a payload Vec with no header.
+    /// Create a response from a payload Vec with no header (offset 0).
     pub fn from_payload(payload: Vec<u8>) -> Self {
         Self {
-            buf: Bytes::from(payload),
+            buf: payload,
+            offset: 0,
         }
     }
 
-    pub(crate) fn from_bytes(payload: Bytes) -> Self {
-        Self { buf: payload }
+    pub(crate) fn from_record(buf: Vec<u8>, offset: usize) -> Self {
+        Self { buf, offset }
     }
 }
 
 impl std::ops::Deref for RpcResponse {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        &self.buf
+        &self.buf[self.offset..]
     }
 }
 
@@ -335,11 +335,12 @@ impl RpcSender for ConnectionHandle {
 
 /// Result delivered to a pending RPC call.
 ///
-/// Success carries a [`Bytes`] handle containing only the payload (pre-sliced
-/// past the XDR header). Zero-copy from the read buffer.
+/// Success carries `(record_buf, payload_offset)` — the raw record Vec and
+/// the byte offset where the payload begins. The consumer slices at read
+/// time, avoiding an O(n) `drain()` or `to_vec()` in the reader task.
 pub(crate) enum ReplyResult {
-    /// Success: payload bytes (pre-sliced, no offset needed).
-    Ok(Bytes),
+    /// Success: record buffer + offset to payload start.
+    Ok(Vec<u8>, usize),
     /// Error from the remote peer.
     Err(RpcError),
 }
@@ -801,7 +802,7 @@ impl ConnectionHandle {
             match state.pending_requests.get_mut(&xid) {
                 Some(CallbackSlot::Ready(_)) => match state.pending_requests.remove(&xid) {
                     Some(CallbackSlot::Ready(reply)) => std::task::Poll::Ready(match reply {
-                        ReplyResult::Ok(payload) => Ok(RpcResponse::from_bytes(payload)),
+                        ReplyResult::Ok(buf, offset) => Ok(RpcResponse::from_record(buf, offset)),
                         ReplyResult::Err(e) => Err(e),
                     }),
                     _ => unreachable!(),
@@ -911,21 +912,21 @@ mod tests {
         assert_eq!(xid, 1);
 
         // Reply for unknown xid — should be ignored.
-        state.handle_reply(0, ReplyResult::Ok(Bytes::from_static(b"world")));
+        state.handle_reply(0, ReplyResult::Ok(b"world".to_vec(), 0));
 
         // Reply for our xid.
-        state.handle_reply(xid, ReplyResult::Ok(Bytes::from_static(b"hello")));
+        state.handle_reply(xid, ReplyResult::Ok(b"hello".to_vec(), 0));
 
         // Slot should now be Ready.
         match state.pending_requests.remove(&xid) {
-            Some(CallbackSlot::Ready(ReplyResult::Ok(data))) => {
-                assert_eq!(&data[..], b"hello");
+            Some(CallbackSlot::Ready(ReplyResult::Ok(data, offset))) => {
+                assert_eq!(&data[offset..], b"hello");
             }
             other => panic!("expected Ready(Ok), got {other:?}"),
         }
 
         // Duplicate reply — entry already removed, should be ignored.
-        state.handle_reply(xid, ReplyResult::Ok(Bytes::from_static(b"foo")));
+        state.handle_reply(xid, ReplyResult::Ok(b"foo".to_vec(), 0));
     }
 
     #[test]
@@ -969,7 +970,7 @@ mod tests {
 
         // Fire-and-forget call: handle_reply should remove the entry and return true.
         let faf_xid = state.register_fire_and_forget().unwrap();
-        let was_faf = state.handle_reply(faf_xid, ReplyResult::Ok(Bytes::from_static(b"ignored")));
+        let was_faf = state.handle_reply(faf_xid, ReplyResult::Ok(b"ignored".to_vec(), 0));
         assert!(was_faf, "expected true for fire-and-forget reply");
         assert!(
             state.pending_requests.get(&faf_xid).is_none(),
@@ -978,7 +979,7 @@ mod tests {
 
         // Normal call: handle_reply should keep the entry as Ready and return false.
         let normal_xid = state.register_call().unwrap();
-        let was_faf = state.handle_reply(normal_xid, ReplyResult::Ok(Bytes::from_static(b"hello")));
+        let was_faf = state.handle_reply(normal_xid, ReplyResult::Ok(b"hello".to_vec(), 0));
         assert!(!was_faf, "expected false for normal reply");
         match state.pending_requests.get(&normal_xid) {
             Some(CallbackSlot::Ready(_)) => {}
@@ -986,7 +987,7 @@ mod tests {
         }
 
         // Unknown xid: should return false.
-        let was_faf = state.handle_reply(9999, ReplyResult::Ok(Bytes::from_static(b"unknown")));
+        let was_faf = state.handle_reply(9999, ReplyResult::Ok(b"unknown".to_vec(), 0));
         assert!(!was_faf, "expected false for unknown xid");
     }
 
