@@ -61,7 +61,11 @@ impl<'a> BufReader<'a> {
         else {
             // requested <= u32::MAX, so if pos + requested > data.len()
             // then data.len() - pos <= u32::MAX
-            // SAFETY: the above invariant guarantees the cast is lossless
+            // SAFETY: the cast is lossless in both cases that reach this branch:
+            // - Non-overflow: pos + requested > data.len() implies
+            //   data.len() - pos < requested <= u32::MAX.
+            // - checked_add overflow (32-bit only): pos <= data.len() <= isize::MAX,
+            //   so data.len() - pos <= isize::MAX < u32::MAX.
             let remaining: u32 = (self.data.len() - self.pos) as u32;
             return Err(ReadError::SourceEmpty {
                 requested,
