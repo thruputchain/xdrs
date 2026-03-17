@@ -32,7 +32,7 @@ where
 
     debug_assert!(reader.position() <= buf.len());
 
-    let remaining = buf.len().checked_sub(reader.position()).unwrap();
+    let remaining = buf.len() - reader.position();
     if remaining > 0 {
         let remaining = remaining as u64;
         return Err(ReadError::SourceRemaining { remaining });

@@ -87,23 +87,36 @@ pub const unsafe fn array_assume_init<T, const N: usize>(array: [MU<T>; N]) -> [
 /// Copies the elements from `src` to `uninit_dst`,
 /// returning a mutable reference to the now initialized contents.
 ///
-/// # Panics
+/// # Safety
 ///
-/// This function will panic if the two slices have different lengths.
+/// The two slices must have the same length. This is checked via
+/// `debug_assert` in debug builds; in release builds, passing
+/// mismatched lengths is undefined behavior.
 ///
 /// (This implementation fills in for `<[MaybeUninit<T>]>::write_copy_of_slice` in
 /// the unstable feature `maybe_uninit_write_slice`.)
 //
 // (Adapted from standard library.)
 #[inline(always)]
-pub const fn write_copy_of_slice<'a, T>(uninit_dst: &'a mut [MU<T>], src: &[T]) -> &'a mut [T]
+pub const unsafe fn write_copy_of_slice<'a, T>(
+    uninit_dst: &'a mut [MU<T>],
+    src: &[T],
+) -> &'a mut [T]
 where
     T: Copy,
 {
+    debug_assert!(uninit_dst.len() == src.len());
+
     // SAFETY: &[T] and &[MaybeUninit<T>] have the same layout
     let uninit_src: &[MU<T>] = unsafe { core::mem::transmute(src) };
 
-    uninit_dst.copy_from_slice(uninit_src);
+    // SAFETY: uninit_dst and uninit_src have the same length (asserted above),
+    // and both are valid for their respective lengths. Using copy_from_slice
+    // would be equivalent but generates a panic path that the compiler can't
+    // eliminate even though the lengths are always equal.
+    unsafe {
+        core::ptr::copy_nonoverlapping(uninit_src.as_ptr(), uninit_dst.as_mut_ptr(), src.len());
+    }
 
     // SAFETY: Valid elements have just been copied into `self` so it is initialized
     unsafe { assume_init_mut(uninit_dst) }

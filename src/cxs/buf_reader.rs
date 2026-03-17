@@ -49,16 +49,21 @@ impl<'a> BufReader<'a> {
             .checked_add(requested as usize)
             .filter(|&e| e <= self.data.len())
         else {
-            // requested <= u32::MAX, so if pos + requested > data.len()
-            // then data.len() - pos <= u32::MAX
-            let remaining: u32 = (self.data.len() - self.pos).try_into().unwrap();
+            // SAFETY: the cast is lossless in both cases that reach this branch:
+            // - Non-overflow: pos + requested > data.len() implies
+            //   data.len() - pos < requested <= u32::MAX.
+            // - checked_add overflow (32-bit only): pos <= data.len() <= isize::MAX,
+            //   so data.len() - pos <= isize::MAX < u32::MAX.
+            let remaining: u32 = (self.data.len() - self.pos) as u32;
             return Err(ReadError::SourceEmpty {
                 requested,
                 remaining,
             });
         };
 
-        let buf = &self.data[self.pos..extent];
+        // SAFETY: we just verified extent <= self.data.len() and
+        // self.pos <= extent (since requested >= 0)
+        let buf = unsafe { self.data.get_unchecked(self.pos..extent) };
 
         self.pos = extent;
 

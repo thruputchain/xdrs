@@ -48,9 +48,11 @@ impl<'a> IntoBufWriter<'a> {
         }
 
         let start = self.written;
-        self.written += len;
+        self.written = extent;
 
-        let reserved = &mut self.buf[start..extent];
+        // SAFETY: we just verified extent <= self.buf.len(), and
+        // start <= extent (since len >= 0 and start = old written).
+        let reserved = unsafe { self.buf.get_unchecked_mut(start..extent) };
 
         Ok(reserved)
     }
@@ -69,7 +71,9 @@ impl<'a> Put for IntoBufWriter<'a> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 
-        mu::write_copy_of_slice(buf, bytes);
+        // SAFETY: reserve returns a slice of exactly `len` bytes,
+        // and bytes.len() == len.
+        unsafe { mu::write_copy_of_slice(buf, bytes) };
 
         Ok(())
     }
