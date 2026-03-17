@@ -139,9 +139,7 @@ impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
 
         // SAFETY: read_opaque_fixed returns a slice of exactly `len` bytes,
         // and len == N as u32, so the slice length matches the array size.
-        let bytes: &[u8; N] = unsafe {
-            r.read_opaque_fixed(len)?.try_into().unwrap_unchecked()
-        };
+        let bytes: &[u8; N] = unsafe { r.read_opaque_fixed(len)?.try_into().unwrap_unchecked() };
         Ok(bytes)
     }
 }
