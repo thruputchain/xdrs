@@ -87,9 +87,9 @@ pub const unsafe fn array_assume_init<T, const N: usize>(array: [MU<T>; N]) -> [
 /// Copies the elements from `src` to `uninit_dst`,
 /// returning a mutable reference to the now initialized contents.
 ///
-/// # Panics
-///
-/// This function will panic if the two slices have different lengths.
+/// The two slices must have the same length. This is checked via
+/// `debug_assert` in debug builds; in release builds, passing
+/// mismatched lengths is undefined behavior.
 ///
 /// (This implementation fills in for `<[MaybeUninit<T>]>::write_copy_of_slice` in
 /// the unstable feature `maybe_uninit_write_slice`.)

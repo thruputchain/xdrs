@@ -61,14 +61,17 @@ impl<'a> BufReader<'a> {
         else {
             // requested <= u32::MAX, so if pos + requested > data.len()
             // then data.len() - pos <= u32::MAX
-            let remaining: u32 = (self.data.len() - self.pos).try_into().unwrap();
+            // SAFETY: the above invariant guarantees the cast is lossless
+            let remaining: u32 = (self.data.len() - self.pos) as u32;
             return Err(ReadError::SourceEmpty {
                 requested,
                 remaining,
             });
         };
 
-        let buf = &self.data[self.pos..extent];
+        // SAFETY: we just verified extent <= self.data.len() and
+        // self.pos <= extent (since requested >= 0)
+        let buf = unsafe { self.data.get_unchecked(self.pos..extent) };
 
         self.pos = extent;
 

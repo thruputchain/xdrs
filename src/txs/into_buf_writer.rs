@@ -48,9 +48,11 @@ impl<'a> IntoBufWriter<'a> {
         }
 
         let start = self.written;
-        self.written += len;
+        self.written = extent;
 
-        let reserved = &mut self.buf[start..extent];
+        // SAFETY: we just verified extent <= self.buf.len(), and
+        // start <= extent (since len >= 0 and start = old written).
+        let reserved = unsafe { self.buf.get_unchecked_mut(start..extent) };
 
         Ok(reserved)
     }
