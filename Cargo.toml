@@ -3,6 +3,8 @@ members = [
     "xdr-common",
     "xdr-derive",
     "xdr-repr",
+]
+exclude = [
     "wasm-size-test",
 ]
 
