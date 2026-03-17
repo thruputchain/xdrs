@@ -17,6 +17,7 @@ concurrent-dispatch = []
 
 [dependencies]
 async-trait = "0.1.89"
+bytes = "1"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
 tracing = "0.1"
