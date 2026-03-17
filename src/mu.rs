@@ -87,6 +87,8 @@ pub const unsafe fn array_assume_init<T, const N: usize>(array: [MU<T>; N]) -> [
 /// Copies the elements from `src` to `uninit_dst`,
 /// returning a mutable reference to the now initialized contents.
 ///
+/// # Safety
+///
 /// The two slices must have the same length. This is checked via
 /// `debug_assert` in debug builds; in release builds, passing
 /// mismatched lengths is undefined behavior.
@@ -96,7 +98,10 @@ pub const unsafe fn array_assume_init<T, const N: usize>(array: [MU<T>; N]) -> [
 //
 // (Adapted from standard library.)
 #[inline(always)]
-pub const fn write_copy_of_slice<'a, T>(uninit_dst: &'a mut [MU<T>], src: &[T]) -> &'a mut [T]
+pub const unsafe fn write_copy_of_slice<'a, T>(
+    uninit_dst: &'a mut [MU<T>],
+    src: &[T],
+) -> &'a mut [T]
 where
     T: Copy,
 {

@@ -64,7 +64,9 @@ impl<'a> Put for IntoBufWriter<'a> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 
-        mu::write_copy_of_slice(buf, bytes);
+        // SAFETY: reserve returns a slice of exactly `len` bytes,
+        // and bytes.len() == len.
+        unsafe { mu::write_copy_of_slice(buf, bytes) };
 
         Ok(())
     }
@@ -86,9 +88,13 @@ impl<'a> Put for IntoBufWriter<'a> {
 
         let buf = self.reserve(size)?;
 
-        mu::write_copy_of_slice(&mut buf[0..4], &(len as u32).to_be_bytes());
-        mu::write_copy_of_slice(&mut buf[4..4 + len], bytes);
-        mu::write_copy_of_slice(&mut buf[4 + len..4 + len + rem], &PAD[0..rem]);
+        // SAFETY: all sub-slices partition `buf` (of length `size = 4 + len + rem`)
+        // exactly, so each pair of slices has matching lengths.
+        unsafe {
+            mu::write_copy_of_slice(&mut buf[0..4], &(len as u32).to_be_bytes());
+            mu::write_copy_of_slice(&mut buf[4..4 + len], bytes);
+            mu::write_copy_of_slice(&mut buf[4 + len..4 + len + rem], &PAD[0..rem]);
+        }
 
         Ok(())
     }
@@ -109,8 +115,12 @@ impl<'a> Put for IntoBufWriter<'a> {
 
         let buf = self.reserve(size)?;
 
-        mu::write_copy_of_slice(&mut buf[0..len], bytes);
-        mu::write_copy_of_slice(&mut buf[len..size], &PAD[0..rem]);
+        // SAFETY: buf[0..len] and bytes both have length `len`;
+        // buf[len..size] and PAD[0..rem] both have length `rem`.
+        unsafe {
+            mu::write_copy_of_slice(&mut buf[0..len], bytes);
+            mu::write_copy_of_slice(&mut buf[len..size], &PAD[0..rem]);
+        }
 
         Ok(())
     }

@@ -44,6 +44,9 @@ pub trait Reader<'r>: Sized {
     fn read_u16(&mut self) -> ReadResult<u16>;
 
     /// Reads a byte array of known length, borrowing the contents from the reader.
+    ///
+    /// On success, the returned slice must have exactly `len` bytes.
+    /// Callers may rely on this invariant for soundness.
     fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]>;
 
     /// Reads a byte sequence of variable length (not exceeding `max`), borrowing the contents from the reader.
@@ -72,7 +75,9 @@ pub trait Reader<'r>: Sized {
 
         let data = self.read_opaque_fixed(len)?;
 
-        let initialized = mu::write_copy_of_slice(dst, data);
+        // SAFETY: read_opaque_fixed returns exactly `len` bytes, and
+        // dst.len() == len as usize (asserted above).
+        let initialized = unsafe { mu::write_copy_of_slice(dst, data) };
 
         Ok(initialized)
     }

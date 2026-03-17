@@ -71,7 +71,9 @@ impl<'a> Put for IntoBufWriter<'a> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 
-        mu::write_copy_of_slice(buf, bytes);
+        // SAFETY: reserve returns a slice of exactly `len` bytes,
+        // and bytes.len() == len.
+        unsafe { mu::write_copy_of_slice(buf, bytes) };
 
         Ok(())
     }
