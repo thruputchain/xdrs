@@ -37,6 +37,7 @@ impl<'a> IntoBufWriter<'a> {
         self.written
     }
 
+    #[inline]
     fn reserve<'s>(&'s mut self, len: usize) -> WriteResult<&'s mut [Mu8]>
     where
         'a: 's,

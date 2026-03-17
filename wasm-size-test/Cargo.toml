@@ -1,0 +1,18 @@
+[package]
+name = "wasm-size-test"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+xdrs = { path = "..", default-features = false, features = ["alloc"] }
+lol_alloc = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true

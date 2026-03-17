@@ -18,62 +18,73 @@ pub struct BufWriter(Vec<u8>);
 
 impl BufWriter {
     /// Creates a new `BufWriter` with an empty buffer.
+    #[inline]
     pub fn new() -> Self {
         Self(vec![])
     }
 
     /// Clear the buffer, to later reuse the memory
     /// for another encoding
+    #[inline]
     pub fn clear(&mut self) {
         self.0.clear();
     }
 
     /// Reserve space for the given number of bytes
+    #[inline]
     pub fn reserve(&mut self, len: usize) {
         self.0.reserve(len);
     }
 
     /// Returns the length of the buffer in bytes.
+    #[inline]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Returns `true` if the buffer contains no bytes.
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// Creates a new `BufWriter` with the specified capacity.
+    #[inline]
     pub fn with_capacity(cap: usize) -> Self {
         Self(Vec::with_capacity(cap))
     }
 }
 
 impl Default for BufWriter {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl From<Vec<u8>> for BufWriter {
+    #[inline]
     fn from(vec: Vec<u8>) -> Self {
         Self(vec)
     }
 }
 
 impl AsRef<[u8]> for BufWriter {
+    #[inline]
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
     }
 }
 
 impl AsMut<Vec<u8>> for BufWriter {
+    #[inline]
     fn as_mut(&mut self) -> &mut Vec<u8> {
         &mut self.0
     }
 }
 
 impl From<BufWriter> for Vec<u8> {
+    #[inline]
     fn from(w: BufWriter) -> Self {
         w.0
     }

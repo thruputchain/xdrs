@@ -72,6 +72,7 @@ impl<'a> BufReader<'a> {
         Ok(byte[0])
     }
 
+    #[inline]
     fn read_signed(&mut self) -> ReadResult<i64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
@@ -139,6 +140,7 @@ impl<'a> BufReader<'a> {
         Ok(n)
     }
 
+    #[inline]
     fn read_unsigned(&mut self) -> ReadResult<u64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
@@ -227,10 +229,12 @@ impl<'r> Reader<'r> for BufReader<'r> {
         [read_u16, u16],
     }
 
+    #[inline]
     fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
         self.get_input(len)
     }
 
+    #[inline]
     fn read_opaque_variable(&mut self, max: u32) -> ReadResult<&'r [u8]> {
         let len = self.read_u32()?;
 
