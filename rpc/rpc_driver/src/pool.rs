@@ -222,6 +222,16 @@ impl DynamicPool {
     async fn lease_connection(&self) -> Result<Arc<ConnectionHandle>, RpcError> {
         let mut conns = self.connections.lock().await;
 
+        // Remove poisoned connections before any selection logic.
+        let mut i = 0;
+        while i < conns.len() {
+            if conns[i].handle.is_poisoned() {
+                conns.swap_remove(i);
+            } else {
+                i += 1;
+            }
+        }
+
         if conns.is_empty() {
             // No connections yet — open the first one.
             let handle = connect_client(&self.addr).await.map_err(|e| {
@@ -292,21 +302,28 @@ impl DynamicPool {
         self.connections.lock().await.len()
     }
 
-    /// Remove connections that have been idle longer than `idle_ttl`.
-    ///
-    /// Poisoned connections are cleaned up so the remote end sees a FIN.
+    /// Remove connections that have been idle longer than `idle_ttl`, or that
+    /// have been poisoned (remote peer closed the connection).
     async fn evict_idle(&self) {
         let mut conns = self.connections.lock().await;
         let mut i = 0;
         while i < conns.len() {
+            let poisoned = conns[i].handle.is_poisoned();
             let idle_duration = conns[i].last_used.elapsed();
             let pending = conns[i].handle.num_pending_requests();
-            if pending == 0 && idle_duration > self.idle_ttl {
+            // Poisoned connections are evicted unconditionally: the read task has
+            // already called poison(), waking all in-flight waiters. Those futures
+            // will resolve to SystemError and decrement pending_count on their own.
+            if poisoned || (pending == 0 && idle_duration > self.idle_ttl) {
                 let removed = conns.swap_remove(i);
-                // Poison in background to avoid holding the lock during async poison.
-                tokio::spawn(async move {
-                    removed.handle.poison().await;
-                });
+                if !poisoned {
+                    // Poison in background to avoid holding the lock during
+                    // async poison. Already-poisoned connections don't need this
+                    // — the read task already called poison() when it detected EOF.
+                    tokio::spawn(async move {
+                        removed.handle.poison().await;
+                    });
+                }
                 // Don't increment i — swap_remove moved the last element here.
             } else {
                 i += 1;

@@ -822,6 +822,12 @@ impl ConnectionHandle {
         .await
     }
 
+    /// Returns true if the connection has been poisoned (e.g. the remote
+    /// peer closed the connection and the read task detected the EOF).
+    pub fn is_poisoned(&self) -> bool {
+        self.connection_state.lock().unwrap().poisoned
+    }
+
     /// Returns the number of pending (in-flight) requests.
     ///
     /// Lock-free — reads an atomic counter instead of acquiring the

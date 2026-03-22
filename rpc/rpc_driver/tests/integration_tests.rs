@@ -10,7 +10,7 @@ mod tests {
 
     use async_trait::async_trait;
     use rpc_driver::{
-        ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client,
+        ConnectionConfig, ProgVers, RpcError, RpcSender, RpcServer, connect_client,
         connect_client_with_config, handler::RpcHandler, tcp_connection::accept,
     };
 
@@ -455,6 +455,301 @@ mod tests {
 
         // make sure the callback was cleaned up
         assert_eq!(client_handle.num_pending_requests(), 0);
+    }
+
+    /// Poll `is_poisoned()` with a short interval instead of a fixed sleep,
+    /// so the test is robust on slow CI runners.
+    async fn wait_for_poison(handle: &ConnectionHandle) {
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(2);
+        loop {
+            if handle.is_poisoned() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for connection to become poisoned"
+            );
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fire_and_forget_after_server_drop() {
+        // Server accepts connection and immediately drops it.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            drop(stream);
+        });
+
+        let client = connect_client(&addr).await.unwrap();
+
+        // Wait for read task to detect EOF and poison the connection.
+        wait_for_poison(&client).await;
+
+        // fire-and-forget on a poisoned connection should return SystemError.
+        let result = client
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"hello")
+            .await;
+        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(client.num_pending_requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_fire_and_forget_owned_after_server_drop() {
+        // Same as above but for the _owned variant.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            drop(stream);
+        });
+
+        let client = connect_client(&addr).await.unwrap();
+
+        // Wait for read task to detect EOF and poison the connection.
+        wait_for_poison(&client).await;
+
+        let result = client
+            .send_fire_and_forget_owned(ProgVers::new(1, 1), 1, b"hello".to_vec())
+            .await;
+        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(client.num_pending_requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_pool_evicts_poisoned_connections() {
+        use rpc_driver::pool::DynamicPool;
+        use std::time::Duration;
+
+        // Server: accept one connection, then drop it to trigger EOF.
+        // Keep the listener alive but don't accept more connections so
+        // the evictor can't reconnect.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let barrier = Arc::new(tokio::sync::Notify::new());
+        let barrier_clone = barrier.clone();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            drop(stream); // close connection -> read task detects EOF -> poison
+            barrier_clone.notify_one();
+            // Don't accept again; hold the listener so the address stays valid
+            // but reconnections will hang (never accepted).
+            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            drop(listener);
+        });
+
+        // Use a very short idle_ttl so the evictor ticks quickly.
+        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_millis(50)));
+        let evictor = pool.start_evictor();
+
+        // Open the first connection via fire-and-forget.
+        let _ = pool
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"probe")
+            .await;
+        assert_eq!(pool.active_connections().await, 1);
+
+        // Wait for the server to drop the stream.
+        barrier.notified().await;
+
+        // Wait for the evictor to sweep the poisoned connection.
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(2);
+        loop {
+            if pool.active_connections().await == 0 {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for pool to evict poisoned connection"
+            );
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(pool.active_connections().await, 0);
+        evictor.abort();
+    }
+
+    #[tokio::test]
+    async fn test_pool_skips_poisoned_on_lease() {
+        use rpc_driver::pool::DynamicPool;
+        use std::time::Duration;
+
+        // Manual server with a blocking echo service on connection 1. Connection
+        // 1 uses a blocking handler so we can hold it busy to force a second
+        // connection. Connection 2 uses a normal echo handler.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let blocker = Arc::new(tokio::sync::Notify::new());
+        let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let blocker_clone = blocker.clone();
+        tokio::spawn(async move {
+            // Connection 1 — blocking echo handler.
+            let (r1, w1, _) = accept(&listener, 0x100_0000, 65536).await.unwrap();
+            let h1 = Arc::new(ConnectionHandle::new(
+                w1,
+                &Default::default(),
+                tracing::Span::none(),
+            ));
+            let mut svc1 = ServiceMap::new();
+            svc1.add_service(Box::new(BlockingEchoService {
+                notify: blocker_clone,
+            }));
+            let h1_clone = h1.clone();
+            let read_task_1 = tokio::spawn(async move {
+                let _ = launch_read_task(Arc::new(svc1), h1_clone, r1).await;
+            });
+
+            // Connection 2 — normal echo handler.
+            let (r2, w2, _) = accept(&listener, 0x100_0000, 65536).await.unwrap();
+            let h2 = Arc::new(ConnectionHandle::new(
+                w2,
+                &Default::default(),
+                tracing::Span::none(),
+            ));
+            let mut svc2 = ServiceMap::new();
+            svc2.add_service(Box::new(EchoCallbackService {}));
+            let h2_clone = h2.clone();
+            let read_task_2 = tokio::spawn(async move {
+                let _ = launch_read_task(Arc::new(svc2), h2_clone, r2).await;
+            });
+
+            // Wait for the kill signal, then poison connection 1.
+            let _ = kill_rx.await;
+            h1.poison().await;
+            read_task_1.abort();
+
+            // Keep connection 2 alive.
+            let _ = read_task_2.await;
+        });
+
+        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_secs(60)));
+
+        // Send a call that blocks on connection 1 (the BlockingEchoService waits
+        // for blocker.notify_one()).
+        let pool_clone = pool.clone();
+        let blocked_call = tokio::spawn(async move {
+            pool_clone
+                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .await
+        });
+
+        // Give time for the blocked call to be dispatched and hold conn1 busy.
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        assert_eq!(pool.active_connections().await, 1);
+
+        // Send a second call. Connection 1 is busy (pending > 0), so the pool
+        // opens connection 2.
+        let resp = pool
+            .send_call(ProgVers::new(1, 1), 1, b"conn2")
+            .await
+            .unwrap();
+        assert_eq!(&*resp, b"conn2");
+        assert_eq!(pool.active_connections().await, 2);
+
+        // Unblock connection 1's call.
+        blocker.notify_one();
+        let blocked_result = blocked_call.await.unwrap().unwrap();
+        assert_eq!(&*blocked_result, b"blocked");
+
+        // Now kill connection 1 on the server side.
+        kill_tx.send(()).unwrap();
+
+        // Wait for the pool to detect the poisoned connection and verify the
+        // next lease returns a healthy connection (connection 2).
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(2);
+        loop {
+            match pool.send_call(ProgVers::new(1, 1), 1, b"after").await {
+                Ok(resp) => {
+                    assert_eq!(&*resp, b"after");
+                    break;
+                }
+                Err(_) => {
+                    assert!(
+                        tokio::time::Instant::now() < deadline,
+                        "timed out waiting for pool to skip poisoned connection"
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                }
+            }
+        }
+
+        // The poisoned connection should have been swept, leaving 1 healthy conn.
+        assert_eq!(pool.active_connections().await, 1);
+    }
+
+    #[tokio::test]
+    async fn test_all_connections_poisoned_reopens() {
+        use rpc_driver::pool::DynamicPool;
+        use std::time::Duration;
+
+        // Server: accept first connection and drop it to poison, then accept
+        // the replacement connection with an echo service running.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let barrier = Arc::new(tokio::sync::Notify::new());
+        let barrier_clone = barrier.clone();
+
+        tokio::spawn(async move {
+            // Accept first connection and drop it to trigger EOF/poison.
+            let (stream, _) = listener.accept().await.unwrap();
+            drop(stream);
+            barrier_clone.notify_one();
+
+            // Accept the reconnection and run a proper echo handler.
+            let (reader, writer, _addr) = accept(&listener, 0x100_0000, 65536).await.unwrap();
+            let handle = Arc::new(ConnectionHandle::new(
+                writer,
+                &Default::default(),
+                tracing::Span::none(),
+            ));
+            let mut svc = ServiceMap::new();
+            svc.add_service(Box::new(EchoCallbackService {}));
+            let _ = launch_read_task(Arc::new(svc), handle, reader).await;
+        });
+
+        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_secs(60)));
+
+        // Open the first connection.
+        let _ = pool
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"probe")
+            .await;
+
+        // Wait for the server to drop the first connection, then wait for the
+        // read task to detect EOF and poison connection 1.
+        barrier.notified().await;
+
+        // The retry loop below handles the case where the read task hasn't
+        // poisoned the connection yet — send_call will fail, and the next
+        // iteration will sweep the poisoned connection and open a fresh one.
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
+        loop {
+            match pool.send_call(ProgVers::new(1, 1), 1, b"alive").await {
+                Ok(resp) => {
+                    assert_eq!(&*resp, b"alive");
+                    break;
+                }
+                Err(_) => {
+                    assert!(
+                        tokio::time::Instant::now() < deadline,
+                        "timed out waiting for pool to reopen after all connections poisoned"
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                }
+            }
+        }
+
+        // The pool should have at least one healthy connection. It may have more
+        // than one if a lease opened a connection before the poison was detected
+        // (a race inherent to async TCP), but the important thing is that the pool
+        // did not panic and successfully recovered.
+        assert!(pool.active_connections().await >= 1);
     }
 
     #[tokio::test]
