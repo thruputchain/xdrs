@@ -46,14 +46,14 @@ impl Attrs {
 pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let attrs = Attrs::from_derive_input(input)?;
     let crate_attr = CrateAttr::from_derive_input(input)?;
-    if let (Some(a), Some(b)) = (&attrs.krate, &crate_attr.krate) {
-        if a.to_token_stream().to_string() != b.to_token_stream().to_string() {
-            return err(
-                input,
-                "conflicting crate paths: `#[xdr(crate = \"...\")]` and \
-                 `#[xdrs(crate = \"...\")]` must match if both are specified",
-            );
-        }
+    if let (Some(a), Some(b)) = (&attrs.krate, &crate_attr.krate)
+        && a.to_token_stream().to_string() != b.to_token_stream().to_string()
+    {
+        return err(
+            input,
+            "conflicting crate paths: `#[xdr(crate = \"...\")]` and \
+             `#[xdrs(crate = \"...\")]` must match if both are specified",
+        );
     }
     let krate = attrs
         .krate
