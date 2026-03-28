@@ -130,6 +130,8 @@ use proc_macro::TokenStream;
 /// - `#[xdrs(into_type = "Type")]` - Convert (via `Into`) a different type before
 ///   serializing.
 /// - `#[xdrs(via = "Type")]` - Same as above (also implies `from_type`).
+/// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
+///   (useful when re-exporting from another crate).
 ///
 #[proc_macro_derive(WriteXDR, attributes(xdrs))]
 pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
@@ -150,6 +152,8 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 /// - `#[xdrs(from_type = "Type")]` - Deserialize to the intermediate type
 ///   "Type" before converting into the target type via `Into`.
 /// - `#[xdrs(via = "Type")]` - Same as above (also implies `into_type`).
+/// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
+///   (useful when re-exporting from another crate).
 ///
 #[proc_macro_derive(ReadXDR, attributes(xdrs))]
 pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
@@ -174,7 +178,12 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
 /// - `#[xdr(discrim_var = "field_name")]` - Specify a custom discriminant
 ///   field name
 ///
-#[proc_macro_derive(XDR, attributes(xdr))]
+/// All three derive macros (`ReadXDR`, `WriteXDR`, `XDR`) accept:
+///
+/// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
+///   (useful when re-exporting from another crate).
+///
+#[proc_macro_derive(XDR, attributes(xdr, xdrs))]
 pub fn derive_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 

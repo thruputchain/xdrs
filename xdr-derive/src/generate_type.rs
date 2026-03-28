@@ -16,6 +16,17 @@ struct Attrs {
 
     // The name of the discriminant variable, if not "which"
     discrim_var: Option<String>,
+
+    /// Override the path to the `xdrs` crate, e.g. `#[xdr(crate = "my_sdk::xdrs")]`.
+    #[darling(rename = "crate")]
+    krate: Option<syn::Path>,
+}
+
+#[derive(Clone, Debug, Default, FromDeriveInput)]
+#[darling(attributes(xdrs), default)]
+struct CrateAttr {
+    #[darling(rename = "crate")]
+    krate: Option<syn::Path>,
 }
 
 impl Attrs {
@@ -33,13 +44,28 @@ impl Attrs {
 
 /// Generate implementations of HasTypeDef (and for datafull enums, HasSpecification)
 pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
+    let attrs = Attrs::from_derive_input(input)?;
+    let crate_attr = CrateAttr::from_derive_input(input)?;
+    if let (Some(a), Some(b)) = (&attrs.krate, &crate_attr.krate) {
+        if a.to_token_stream().to_string() != b.to_token_stream().to_string() {
+            return err(
+                input,
+                "conflicting crate paths: `#[xdr(crate = \"...\")]` and \
+                 `#[xdrs(crate = \"...\")]` must match if both are specified",
+            );
+        }
+    }
+    let krate = attrs
+        .krate
+        .or(crate_attr.krate)
+        .unwrap_or_else(|| syn::parse_quote!(::xdrs));
     let imp = from_input(input)?;
 
     Ok(quote! {
         const _: () = {
             mod __xdrs {
-                pub use ::xdrs::*;
-                pub use ::xdrs::xdr_repr::*;
+                pub use #krate::*;
+                pub use #krate::xdr_repr::*;
                 pub use ::std::vec;
             }
 
