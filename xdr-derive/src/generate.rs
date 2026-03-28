@@ -11,11 +11,21 @@ struct Attrs {
     pub from_type: Option<syn::Type>,
     pub via: Option<syn::Type>,
 
+    /// Override the path to the `xdrs` crate, e.g. `#[xdrs(crate = "my_sdk::xdrs")]`.
+    #[darling(rename = "crate")]
+    pub krate: Option<syn::Path>,
+
     // Deprecated
     pub as_type: Option<syn::Type>,
 }
 
 impl Attrs {
+    fn crate_path(&self) -> syn::Path {
+        self.krate
+            .clone()
+            .unwrap_or_else(|| syn::parse_quote!(::xdrs))
+    }
+
     fn check<S: syn::spanned::Spanned>(&self, item: &S) -> Result<()> {
         if self.via.is_some() {
             if self.into_type.is_some() {
@@ -52,14 +62,15 @@ impl Attrs {
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let attrs = Attrs::from_derive_input(input)?;
     attrs.check(input)?;
+    let krate = attrs.crate_path();
     let impls = write_data(input, &attrs)?;
 
     Ok(quote! {
         const _: () = {
             mod __xdrs {
-                pub use ::xdrs::serialize::writer::{Writer, WriteResult};
-                pub use ::xdrs::discrim::XDRDiscriminant;
-                pub use ::xdrs::WriteXDR;
+                pub use #krate::serialize::writer::{Writer, WriteResult};
+                pub use #krate::discrim::XDRDiscriminant;
+                pub use #krate::WriteXDR;
             }
 
             #impls
@@ -273,14 +284,15 @@ fn named_field_binding(index: usize, field: &syn::Field) -> TokenStream {
 pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let attrs = Attrs::from_derive_input(input)?;
     attrs.check(input)?;
+    let krate = attrs.crate_path();
     let impls = read_data(input, &attrs)?;
 
     Ok(quote! {
         const _: () = {
             mod __xdrs {
-                pub use ::xdrs::discrim::XDRDiscriminant;
-                pub use ::xdrs::read_xdr::{ReadXDR, read_xdr};
-                pub use ::xdrs::serialize::reader::{Reader, ReadError, ReadResult};
+                pub use #krate::discrim::XDRDiscriminant;
+                pub use #krate::read_xdr::{ReadXDR, read_xdr};
+                pub use #krate::serialize::reader::{Reader, ReadError, ReadResult};
             }
 
             #impls
