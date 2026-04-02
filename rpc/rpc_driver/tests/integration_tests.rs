@@ -6,13 +6,16 @@ use tokio::net::TcpListener;
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::net::SocketAddr;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Weak};
 
     use async_trait::async_trait;
     use rpc_driver::{
         ConnectionConfig, ProgVers, RpcError, RpcSender, RpcServer, connect_client,
         connect_client_with_config, handler::RpcHandler, tcp_connection::accept,
     };
+    use tokio::io::AsyncReadExt;
 
     use super::*;
     struct EchoCallbackService {}
@@ -32,6 +35,71 @@ mod tests {
 
         fn prog_vers(&self) -> ProgVers {
             ProgVers::new(1, 1)
+        }
+    }
+
+    async fn spawn_close_observer() -> (SocketAddr, Arc<AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let closed = Arc::new(AtomicUsize::new(0));
+        let closed_for_task = closed.clone();
+
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = match listener.accept().await {
+                    Ok(pair) => pair,
+                    Err(_) => break,
+                };
+                let closed_for_conn = closed_for_task.clone();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1];
+                    loop {
+                        match stream.read(&mut buf).await {
+                            Ok(0) => {
+                                closed_for_conn.fetch_add(1, Ordering::SeqCst);
+                                break;
+                            }
+                            Ok(_) => {}
+                            Err(_) => {
+                                closed_for_conn.fetch_add(1, Ordering::SeqCst);
+                                break;
+                            }
+                        }
+                    }
+                });
+            }
+        });
+
+        (addr, closed)
+    }
+
+    async fn wait_for_closed(counter: &AtomicUsize, expected: usize) {
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
+        loop {
+            if counter.load(Ordering::SeqCst) >= expected {
+                return;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for {} closed connections; saw {}",
+                expected,
+                counter.load(Ordering::SeqCst)
+            );
+            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        }
+    }
+
+    async fn wait_for_dropped<T>(weak: &Weak<T>) {
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
+        loop {
+            if weak.upgrade().is_none() {
+                return;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for Arc to be dropped"
+            );
+            tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
         }
     }
 
@@ -518,6 +586,109 @@ mod tests {
             .await;
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
         assert_eq!(client.num_pending_requests(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_fixed_pool_drop_eventually_closes_connections() {
+        let (addr, closed) = spawn_close_observer().await;
+        let pool = rpc_driver::pool::FixedSerialPool::connect(&addr, 2)
+            .await
+            .unwrap();
+        drop(pool);
+        wait_for_closed(&closed, 2).await;
+    }
+
+    #[tokio::test]
+    async fn test_dynamic_pool_drop_eventually_closes_connections() {
+        let (addr, closed) = spawn_close_observer().await;
+        let pool = rpc_driver::pool::DynamicPool::new(addr, 2, std::time::Duration::from_secs(60));
+        let _ = pool
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"open")
+            .await;
+        drop(pool);
+        wait_for_closed(&closed, 1).await;
+    }
+
+    #[tokio::test]
+    async fn test_dynamic_pool_drop_with_evictor_eventually_closes_connections() {
+        let (addr, closed) = spawn_close_observer().await;
+        let pool = Arc::new(rpc_driver::pool::DynamicPool::new(
+            addr,
+            2,
+            std::time::Duration::from_millis(50),
+        ));
+        let _ = pool
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"open")
+            .await;
+        let weak = Arc::downgrade(&pool);
+        // The evictor must not keep the pool alive after the last user-owned Arc is dropped.
+        let _evictor = pool.start_evictor();
+        drop(pool);
+        wait_for_dropped(&weak).await;
+        wait_for_closed(&closed, 1).await;
+    }
+
+    #[tokio::test]
+    async fn test_cpu_pool_drop_eventually_closes_connections() {
+        let (addr, closed) = spawn_close_observer().await;
+        let pool = rpc_driver::pool::CpuSetPool::connect_with_map(&addr, 2, vec![0, 1])
+            .await
+            .unwrap();
+        drop(pool);
+        wait_for_closed(&closed, 2).await;
+    }
+
+    #[tokio::test]
+    async fn test_pool_drop_churn_does_not_exhaust_file_descriptors() {
+        let (addr, closed) = spawn_close_observer().await;
+        let mut expected_closed = 0usize;
+
+        for _ in 0..64 {
+            let fixed = rpc_driver::pool::FixedSerialPool::connect(&addr, 4)
+                .await
+                .unwrap();
+            drop(fixed);
+            expected_closed += 4;
+
+            let dynamic = Arc::new(rpc_driver::pool::DynamicPool::new(
+                addr,
+                4,
+                std::time::Duration::from_secs(60),
+            ));
+            let mut handles = Vec::new();
+            for i in 0..4u32 {
+                let dynamic = dynamic.clone();
+                handles.push(tokio::spawn(async move {
+                    let data = format!("open-{i}");
+                    dynamic
+                        .send_fire_and_forget(ProgVers::new(1, 1), 1, data.as_bytes())
+                        .await
+                        .unwrap();
+                }));
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            let dynamic_active = dynamic.active_connections().await;
+            assert!(
+                dynamic_active >= 2,
+                "expected multiple dynamic connections, saw {dynamic_active}"
+            );
+            expected_closed += dynamic_active;
+
+            for handle in handles {
+                handle.await.unwrap();
+            }
+            drop(dynamic);
+
+            let cpu = rpc_driver::pool::CpuSetPool::connect_with_map(&addr, 4, vec![0, 1, 2, 3])
+                .await
+                .unwrap();
+            drop(cpu);
+            expected_closed += 4;
+
+            let target = expected_closed;
+            wait_for_closed(&closed, target).await;
+        }
     }
 
     #[tokio::test]

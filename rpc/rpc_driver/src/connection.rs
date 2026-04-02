@@ -458,6 +458,32 @@ impl Drop for ConnectionState {
     }
 }
 
+pub(crate) struct ConnectionShutdown {
+    writer: Option<JoinHandle<()>>,
+    client_read_runner: Option<crate::tasks::ClientReadRunner>,
+}
+
+impl ConnectionShutdown {
+    pub(crate) fn start(&mut self) {
+        if let Some(join) = &self.writer {
+            join.abort();
+        }
+        if let Some(runner) = self.client_read_runner.as_mut() {
+            runner.begin_shutdown();
+        }
+    }
+
+    pub(crate) async fn finish(mut self) {
+        self.start();
+        if let Some(join) = self.writer.take() {
+            let _ = join.await;
+        }
+        if let Some(mut runner) = self.client_read_runner.take() {
+            runner.shutdown().await;
+        }
+    }
+}
+
 /// Handle for making RPC calls over an established connection.
 ///
 /// Manages pending requests and provides methods for sending calls
@@ -478,6 +504,7 @@ pub struct ConnectionHandle {
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) read_channel_capacity: usize,
     writer_handle: StdMutex<Option<JoinHandle<()>>>,
+    client_read_runner: StdMutex<Option<crate::tasks::ClientReadRunner>>,
 }
 
 impl ConnectionHandle {
@@ -498,13 +525,17 @@ impl ConnectionHandle {
             pending_count: AtomicUsize::new(0),
             connection_span: span,
             writer_handle: StdMutex::new(Some(handle)),
+            client_read_runner: StdMutex::new(None),
             max_concurrent_dispatches: config.max_concurrent_dispatches,
             read_channel_capacity: config.read_channel_capacity,
         }
     }
 
-    /// Poison the connection, failing all pending requests and closing the write half.
-    pub async fn poison(&self) {
+    pub(crate) fn attach_client_read_runner(&self, runner: crate::tasks::ClientReadRunner) {
+        *self.client_read_runner.lock().unwrap() = Some(runner);
+    }
+
+    pub(crate) fn begin_poison(&self) -> ConnectionShutdown {
         // Fail all pending requests. Wakes callers parked in poll_fn,
         // which will see the entry removed and return Err(SystemError).
         let faf_count = self.connection_state.lock().unwrap().poison();
@@ -516,15 +547,17 @@ impl ConnectionHandle {
                 });
         }
 
-        // Abort the writer task and wait for it to finish. This drops the
-        // WriteHalf (TCP FIN) and the channel Receiver. Any messages still
-        // in the channel are discarded — their waiters were already resolved
-        // above.
-        let handle = self.writer_handle.lock().unwrap().take();
-        if let Some(h) = handle {
-            h.abort();
-            let _ = h.await;
-        }
+        let mut shutdown = ConnectionShutdown {
+            writer: self.writer_handle.lock().unwrap().take(),
+            client_read_runner: self.client_read_runner.lock().unwrap().take(),
+        };
+        shutdown.start();
+        shutdown
+    }
+
+    /// Poison the connection, failing all pending requests and closing the write half.
+    pub async fn poison(&self) {
+        self.begin_poison().finish().await;
     }
 
     /// Send a pre-serialized message through the write channel.

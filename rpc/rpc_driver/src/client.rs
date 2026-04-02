@@ -2,9 +2,16 @@
 
 use std::{net::SocketAddr, sync::Arc};
 
-use tracing::Instrument;
+use crate::{
+    ConnectionConfig, ConnectionHandle, tasks::spawn_client_read_task, tcp_connection::connect,
+};
 
-use crate::{ConnectionConfig, ConnectionHandle, tasks::launch_read_task, tcp_connection::connect};
+fn attach_client_read_runner(
+    handle: &Arc<ConnectionHandle>,
+    runner: crate::tasks::ClientReadRunner,
+) {
+    handle.attach_client_read_runner(runner);
+}
 
 /// Connect to an RPC server and return a handle for making calls.
 ///
@@ -26,20 +33,8 @@ pub async fn connect_client_with_config(
 
     let span = tracing::info_span!("rpc_connection", peer = %addr, role = "client");
     let client_handle = Arc::new(ConnectionHandle::new(client_write, &config, span.clone()));
-
-    tokio::spawn({
-        let client_handle = client_handle.clone();
-        async move {
-            match launch_read_task(service_map, client_handle.clone(), client_read).await {
-                Ok(_) => (),
-                Err(e) => {
-                    tracing::error!(error = %e, "client read task failed");
-                    client_handle.poison().await;
-                }
-            }
-        }
-        .instrument(span)
-    });
+    let runner = spawn_client_read_task(service_map, client_handle.clone(), client_read, span);
+    attach_client_read_runner(&client_handle, runner);
 
     Ok(client_handle)
 }

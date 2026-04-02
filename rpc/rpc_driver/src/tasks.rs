@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use tokio::task::JoinHandle;
 use tracing::Instrument;
 
 use crate::{
@@ -20,6 +21,28 @@ pub enum ReadTaskError {
     ReadError(#[from] std::io::Error),
     #[error("Write error: {0}")]
     WriteError(std::io::Error),
+}
+
+#[derive(Debug)]
+pub(crate) struct ClientReadRunner {
+    shutdown_tx: tokio::sync::watch::Sender<bool>,
+    join_handle: Option<JoinHandle<()>>,
+}
+
+impl ClientReadRunner {
+    pub(crate) fn begin_shutdown(&mut self) {
+        let _ = self.shutdown_tx.send(true);
+        if let Some(join) = &self.join_handle {
+            join.abort();
+        }
+    }
+
+    pub(crate) async fn shutdown(&mut self) {
+        self.begin_shutdown();
+        if let Some(join) = self.join_handle.take() {
+            let _ = join.await;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +168,159 @@ fn parse_record(record: Vec<u8>) -> Result<ParsedRecord, ReadTaskError> {
             record,
             payload_offset,
         }),
+    }
+}
+
+async fn run_client_read_task(
+    service_map: Arc<ServiceMap>,
+    client_handle: Arc<ConnectionHandle>,
+    mut read_half: ReadHalf,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) -> Result<(), ReadTaskError> {
+    #[cfg(not(feature = "concurrent-dispatch"))]
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.changed() => return Ok(()),
+            record = read_half.read_record() => {
+                let record = match record? {
+                    Some(record) => record,
+                    None => return Err(ReadTaskError::Shutdown),
+                };
+
+                let mut reader = xdrs::txs::buf_reader::BufReader::new(record);
+                let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
+                    Ok(msg) => msg,
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to parse XDR record");
+                        return Err(ReadTaskError::Shutdown);
+                    }
+                };
+                let remaining = &record[reader.position()..];
+
+                match msg.body {
+                    rpc_msg::rpc_msg_body::CALL { cbody } => {
+                        let xid = msg.xid;
+                        let vers = ProgVers {
+                            prog: cbody.prog,
+                            vers: cbody.vers,
+                        };
+                        let sender: Arc<dyn RpcSender> = client_handle.clone();
+                        let res = with_peer(sender, async {
+                            service_map
+                                .dispatch(cbody.rpcvers, vers, cbody.proc, remaining)
+                                .await
+                        })
+                        .await;
+                        send_response(&client_handle, xid, res).await?;
+                    }
+                    rpc_msg::rpc_msg_body::REPLY { rbody } => {
+                        route_reply(&client_handle, msg.xid, rbody, remaining.to_vec(), 0);
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "concurrent-dispatch")]
+    {
+        let (record_tx, mut record_rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, ReadTaskError>>(
+            client_handle.read_channel_capacity,
+        );
+        let cbs_for_reader = client_handle.clone();
+        let mut shutdown_for_reader = shutdown_rx.clone();
+        let reader_handle = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = shutdown_for_reader.changed() => break,
+                    record = read_half.read_record() => {
+                        match record {
+                            Err(e) => {
+                                let _ = record_tx.send(Err(ReadTaskError::ReadError(e))).await;
+                                break;
+                            }
+                            Ok(None) => {
+                                let _ = record_tx.send(Err(ReadTaskError::Shutdown)).await;
+                                break;
+                            }
+                            Ok(Some(data)) => {
+                                let record = data.to_vec();
+                                let is_reply = record.len() >= 8
+                                    && u32::from_be_bytes(record[4..8].try_into().unwrap()) == 1;
+
+                                if is_reply {
+                                    match parse_record(record) {
+                                        Ok(ParsedRecord::Reply {
+                                            xid,
+                                            rbody,
+                                            record,
+                                            payload_offset,
+                                        }) => {
+                                            route_reply(
+                                                &cbs_for_reader,
+                                                xid,
+                                                rbody,
+                                                record,
+                                                payload_offset,
+                                            );
+                                        }
+                                        Ok(ParsedRecord::Call { record, .. }) => {
+                                            if record_tx.send(Ok(record)).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = record_tx.send(Err(e)).await;
+                                            break;
+                                        }
+                                    }
+                                } else if record_tx.send(Ok(record)).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let dispatch_result = tokio::select! {
+            _ = shutdown_rx.changed() => Ok(()),
+            result = concurrent::dispatch_loop(
+                &service_map,
+                &client_handle,
+                &mut record_rx,
+                client_handle.max_concurrent_dispatches,
+            ) => result,
+        };
+
+        reader_handle.abort();
+        let _ = reader_handle.await;
+        dispatch_result
+    }
+}
+
+pub(crate) fn spawn_client_read_task(
+    service_map: Arc<ServiceMap>,
+    client_handle: Arc<ConnectionHandle>,
+    read_half: ReadHalf,
+    span: tracing::Span,
+) -> ClientReadRunner {
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let join_handle = tokio::spawn(
+        async move {
+            let result =
+                run_client_read_task(service_map, client_handle.clone(), read_half, shutdown_rx)
+                    .await;
+            if let Err(e) = result {
+                tracing::error!(error = %e, "client read task failed");
+                let _shutdown = client_handle.begin_poison();
+            }
+        }
+        .instrument(span),
+    );
+    ClientReadRunner {
+        shutdown_tx,
+        join_handle: Some(join_handle),
     }
 }
 
@@ -500,4 +676,27 @@ fn prepare_success_response(
         tracing::warn!(results_len = results.len(), "message too large");
         ReadTaskError::Shutdown
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn client_read_runner_begin_shutdown_aborts_stuck_task() {
+        let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
+        let join_handle = tokio::spawn(async {
+            std::future::pending::<()>().await;
+        });
+        let mut runner = ClientReadRunner {
+            shutdown_tx,
+            join_handle: Some(join_handle),
+        };
+
+        runner.begin_shutdown();
+
+        tokio::time::timeout(std::time::Duration::from_millis(100), runner.shutdown())
+            .await
+            .expect("shutdown should complete after begin_shutdown aborts the task");
+    }
 }
