@@ -939,6 +939,106 @@ impl Drop for FireAndForgetGuard<'_> {
     }
 }
 
+/// RAII wrapper for a client connection created by [`connect_client`](crate::connect_client).
+///
+/// Automatically shuts down the connection (poisoning pending requests
+/// and aborting background tasks) when dropped. For pool implementations
+/// that manage their own lifecycle, call [`into_handle`](Self::into_handle)
+/// to take the raw handle and disable automatic shutdown.
+pub struct ClientConnection {
+    handle: Option<Arc<ConnectionHandle>>,
+}
+
+impl ClientConnection {
+    pub(crate) fn new(handle: Arc<ConnectionHandle>) -> Self {
+        Self {
+            handle: Some(handle),
+        }
+    }
+
+    /// Access the underlying connection handle.
+    ///
+    /// Use this to clone the `Arc` for passing to generated RPC client
+    /// wrappers or spawned tasks:
+    ///
+    /// ```ignore
+    /// let conn = connect_client(&addr).await?;
+    /// let rpc_client = MyService::new(conn.handle().clone());
+    /// ```
+    ///
+    /// Note: `conn` must remain alive for as long as the extracted handle
+    /// is used. To fully transfer ownership (disconnecting RAII shutdown),
+    /// use [`into_handle`](Self::into_handle) instead.
+    pub fn handle(&self) -> &Arc<ConnectionHandle> {
+        self.handle.as_ref().unwrap()
+    }
+
+    /// Consume this wrapper, returning the raw handle without triggering
+    /// automatic shutdown.
+    ///
+    /// The caller becomes responsible for calling [`ConnectionHandle::poison`]
+    /// when done. Used by pool implementations that manage connection
+    /// lifecycle explicitly.
+    pub fn into_handle(mut self) -> Arc<ConnectionHandle> {
+        self.handle.take().unwrap()
+    }
+
+    /// Explicitly shut down the connection, awaiting task completion.
+    ///
+    /// This is the async counterpart to the synchronous shutdown that
+    /// `Drop` performs. Prefer this when you can `.await`.
+    pub async fn shutdown(mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.poison().await;
+        }
+    }
+}
+
+impl Drop for ClientConnection {
+    fn drop(&mut self) {
+        if let Some(handle) = &self.handle {
+            let _ = handle.begin_poison();
+        }
+    }
+}
+
+impl std::ops::Deref for ClientConnection {
+    type Target = ConnectionHandle;
+    fn deref(&self) -> &ConnectionHandle {
+        // Safe: Option is None only after into_handle()/shutdown() consume self
+        self.handle.as_ref().unwrap()
+    }
+}
+
+impl std::fmt::Debug for ClientConnection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientConnection")
+            .field("handle", &self.handle)
+            .finish()
+    }
+}
+
+#[async_trait]
+impl RpcSender for ClientConnection {
+    async fn send_call(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<RpcResponse, RpcError> {
+        (**self).send_call(progvers, proc, data).await
+    }
+
+    async fn send_fire_and_forget(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+    ) -> Result<(), RpcError> {
+        (**self).send_fire_and_forget(progvers, proc, data).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

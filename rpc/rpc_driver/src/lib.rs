@@ -8,8 +8,9 @@
 //! use rpc_driver::{connect_client, ProgVers};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let client = connect_client(&"127.0.0.1:111".parse()?).await?;
-//! let response = client.send_call(ProgVers::new(100000, 1), 0, b"").await?;
+//! let conn = connect_client(&"127.0.0.1:111".parse()?).await?;
+//! let response = conn.send_call(ProgVers::new(100000, 1), 0, b"").await?;
+//! // conn automatically shuts down when dropped
 //! # Ok(())
 //! # }
 //! ```

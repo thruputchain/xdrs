@@ -111,7 +111,7 @@ impl FixedSerialPool {
 
         let mut connections: Vec<Arc<ConnectionHandle>> = Vec::with_capacity(pool_size);
         for _ in 0..pool_size {
-            let client = match connect_client(addr).await {
+            let client = match connect_client(addr).await.map(|c| c.into_handle()) {
                 Ok(client) => client,
                 Err(e) => {
                     let shutdowns: Vec<_> =
@@ -417,7 +417,7 @@ impl DynamicPool {
             }
 
             if should_connect {
-                let handle = match connect_client(&self.addr).await {
+                let handle = match connect_client(&self.addr).await.map(|c| c.into_handle()) {
                     Ok(handle) => handle,
                     Err(e) => {
                         self.connecting.fetch_sub(1, Ordering::SeqCst);
@@ -680,7 +680,7 @@ impl CpuSetPool {
 
         let mut connections = Vec::with_capacity(num_connections);
         for _ in 0..num_connections {
-            let handle = connect_client(addr).await.map_err(|e| {
+            let handle = connect_client(addr).await.map(|c| c.into_handle()).map_err(|e| {
                 tracing::error!(%addr, error = %e, pool_type = "cpu_set", "pool connection failed");
                 RpcError::SystemError
             })?;

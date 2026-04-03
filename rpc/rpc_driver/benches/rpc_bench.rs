@@ -567,7 +567,7 @@ async fn scenario_concurrent_throughput(quick: bool) -> Vec<ScenarioResult> {
         }
 
         let (mut samples, wall) = run_concurrent(
-            client.clone() as Arc<dyn RpcSender>,
+            client.handle().clone() as Arc<dyn RpcSender>,
             ECHO_PROG,
             1,
             payload,
@@ -726,7 +726,7 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
         }
 
         let (mut samples, wall) = run_concurrent(
-            client.clone() as Arc<dyn RpcSender>,
+            client.handle().clone() as Arc<dyn RpcSender>,
             ECHO_PROG,
             1,
             payload,
@@ -856,7 +856,7 @@ async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
         }
 
         let (mut samples, wall) = run_concurrent(
-            client.clone() as Arc<dyn RpcSender>,
+            client.handle().clone() as Arc<dyn RpcSender>,
             ECHO_PROG,
             1,
             payload,
@@ -991,7 +991,7 @@ async fn scenario_handler_contention(quick: bool) -> Vec<ScenarioResult> {
     }
 
     let (mut samples, wall) = run_concurrent(
-        client.clone() as Arc<dyn RpcSender>,
+        client.handle().clone() as Arc<dyn RpcSender>,
         ECHO_PROG,
         1,
         payload,

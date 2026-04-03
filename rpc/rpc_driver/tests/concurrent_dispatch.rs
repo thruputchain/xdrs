@@ -210,7 +210,7 @@ async fn test_concurrent_bidirectional_at_capacity() {
     let n = 4;
     let mut handles = Vec::new();
     for i in 0..n {
-        let client = client.clone();
+        let client = client.handle().clone();
         let payload = format!("concurrent-bidir-{i}");
         handles.push(tokio::spawn(async move {
             let result = tokio::time::timeout(
@@ -248,7 +248,7 @@ async fn test_concurrent_throughput() {
     let start = tokio::time::Instant::now();
     let mut handles = Vec::new();
     for i in 0..n {
-        let client = client.clone();
+        let client = client.handle().clone();
         handles.push(tokio::spawn(async move {
             client.send_call(ECHO_PROG, 1, &[i as u8]).await.unwrap()
         }));
@@ -285,7 +285,7 @@ async fn test_backpressure() {
     let start = tokio::time::Instant::now();
     let mut handles = Vec::new();
     for i in 0..n {
-        let client = client.clone();
+        let client = client.handle().clone();
         handles.push(tokio::spawn(async move {
             client.send_call(ECHO_PROG, 1, &[i as u8]).await.unwrap()
         }));
@@ -360,7 +360,7 @@ async fn test_load_shedding() {
     let n = 8;
     let mut handles = Vec::new();
     for i in 0..n {
-        let client = client.clone();
+        let client = client.handle().clone();
         handles.push(tokio::spawn(async move {
             tokio::time::timeout(Duration::from_secs(2), client.send_call(ECHO_PROG, 1, &[i])).await
         }));
@@ -406,7 +406,7 @@ async fn test_client_disconnect_during_dispatch() {
     // Fire several calls that will be in-flight for a long time.
     let mut handles = Vec::new();
     for i in 0..5 {
-        let client = client.clone();
+        let client = client.handle().clone();
         handles.push(tokio::spawn(async move {
             client.send_call(ECHO_PROG, 1, &[i]).await
         }));

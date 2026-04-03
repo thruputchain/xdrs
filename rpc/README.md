@@ -28,8 +28,8 @@ let server = RpcServer::new(listener, services);
 let _handle = server.start().await;
 
 // Client
-let client = connect_client(&addr).await?;
-let response = client.send_call(ProgVers::new(100000, 1), 0, b"").await?;
+let conn = connect_client(&addr).await?;
+let response = conn.send_call(ProgVers::new(100000, 1), 0, b"").await?;
 ```
 
 ## Concurrent Dispatch

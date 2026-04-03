@@ -1,6 +1,6 @@
 [package]
 name = "rpc_driver"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2024"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"

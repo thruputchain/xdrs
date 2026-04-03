@@ -337,7 +337,7 @@ mod tests {
             // Make a call - this will start processing on the server side
             // The server will wait on the notify, giving us time to close the connection
             let call_handle = tokio::spawn({
-                let client_handle = client_handle.clone();
+                let client_handle = client_handle.handle().clone();
                 async move {
                     let res = client_handle
                         .send_call(ProgVers::new(1, 1), 1, b"test")
@@ -365,7 +365,7 @@ mod tests {
 
         // Make a call on the new connection - it will also block on the notify
         let new_call_handle = tokio::spawn({
-            let new_client_handle = new_client_handle.clone();
+            let new_client_handle = new_client_handle.handle().clone();
             async move {
                 new_client_handle
                     .send_call(ProgVers::new(1, 1), 1, b"new_test")
@@ -636,6 +636,21 @@ mod tests {
             .unwrap();
         drop(pool);
         wait_for_closed(&closed, 2).await;
+    }
+
+    #[tokio::test]
+    async fn test_connect_client_drop_closes_connection() {
+        let (addr, closed) = spawn_close_observer().await;
+        {
+            let conn = connect_client(&addr).await.unwrap();
+            // Send a message so the server-side connection is fully established.
+            let _ = conn
+                .send_fire_and_forget(ProgVers::new(1, 1), 1, b"hello")
+                .await;
+        }
+        // ClientConnection dropped — begin_poison fires, aborting the read task
+        // and dropping the write half, which sends TCP FIN.
+        wait_for_closed(&closed, 1).await;
     }
 
     #[tokio::test]

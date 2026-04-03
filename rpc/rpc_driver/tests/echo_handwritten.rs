@@ -162,7 +162,8 @@ mod tests {
 
         println!("server started");
         // client
-        let client = TestProgram_TestVersion_Client::new(connect_client(&addr).await.unwrap());
+        let conn = connect_client(&addr).await.unwrap();
+        let client = TestProgram_TestVersion_Client::new(conn.handle().clone());
 
         println!("client created");
         // Give tasks a moment to start up
@@ -266,7 +267,8 @@ mod tests {
         let server = RpcServer::new(listener, service_map);
         server.start().await;
 
-        let client = TestProgram_TestVersion_Client::new(connect_client(&addr).await.unwrap());
+        let conn = connect_client(&addr).await.unwrap();
+        let client = TestProgram_TestVersion_Client::new(conn.handle().clone());
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
         // All methods should return SystemError because the service returns ProgramError
@@ -337,13 +339,13 @@ mod tests {
         ))));
 
         let client_config = rpc_driver::ConnectionConfig::new(None, client_services);
-        let client_handle = rpc_driver::connect_client_with_config(&addr, client_config)
+        let conn = rpc_driver::connect_client_with_config(&addr, client_config)
             .await
             .unwrap();
 
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
-        let client = TestProgram_TestVersion_Client::new(client_handle);
+        let client = TestProgram_TestVersion_Client::new(conn.handle().clone());
 
         // Client calls server; server's handler fires a callback to the client's service
         let res = client.takes_int(42).await.unwrap();

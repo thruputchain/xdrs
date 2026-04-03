@@ -3,7 +3,8 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use crate::{
-    ConnectionConfig, ConnectionHandle, tasks::spawn_client_read_task, tcp_connection::connect,
+    ConnectionConfig, ConnectionHandle, connection::ClientConnection,
+    tasks::spawn_client_read_task, tcp_connection::connect,
 };
 
 fn attach_client_read_runner(
@@ -13,20 +14,24 @@ fn attach_client_read_runner(
     handle.attach_client_read_runner(runner);
 }
 
-/// Connect to an RPC server and return a handle for making calls.
+/// Connect to an RPC server and return a [`ClientConnection`] for making calls.
 ///
+/// The returned [`ClientConnection`] automatically shuts down the connection
+/// (poisoning pending requests and aborting background tasks) when dropped.
 /// Spawns a background read task for the connection.
-pub async fn connect_client(addr: &SocketAddr) -> Result<Arc<ConnectionHandle>, std::io::Error> {
+pub async fn connect_client(addr: &SocketAddr) -> Result<ClientConnection, std::io::Error> {
     connect_client_with_config(addr, ConnectionConfig::default()).await
 }
 
 /// Connect to an RPC server with custom configuration.
 ///
+/// The returned [`ClientConnection`] automatically shuts down the connection
+/// (poisoning pending requests and aborting background tasks) when dropped.
 /// Spawns a background read task for the connection.
 pub async fn connect_client_with_config(
     addr: &SocketAddr,
     config: ConnectionConfig,
-) -> Result<Arc<ConnectionHandle>, std::io::Error> {
+) -> Result<ClientConnection, std::io::Error> {
     let (client_read, client_write) =
         connect(addr, config.max_message_size, config.read_buffer_size).await?;
     let service_map = config.services.clone();
@@ -36,5 +41,5 @@ pub async fn connect_client_with_config(
     let runner = spawn_client_read_task(service_map, client_handle.clone(), client_read, span);
     attach_client_read_runner(&client_handle, runner);
 
-    Ok(client_handle)
+    Ok(ClientConnection::new(client_handle))
 }
