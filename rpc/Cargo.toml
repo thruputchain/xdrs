@@ -3,6 +3,9 @@ members = ["rpc_driver", "bench-compare", "rpc-smoke"]
 
 resolver = "2"
 
+[workspace.package]
+version = "0.8.0"
+
 [workspace.lints.rust]
 # Safety
 unsafe_op_in_unsafe_fn = "warn"
