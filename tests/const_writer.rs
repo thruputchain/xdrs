@@ -290,3 +290,153 @@ fn auto_sized_encode() {
     assert_eq!(&AUTO_TXS, txs_runtime_encode(&CONFIG).as_slice());
     assert_eq!(&AUTO_CXS, cxs_runtime_encode(&CONFIG).as_slice());
 }
+
+// -- CXS variable-width size tests --
+// Verify that CXS size calculation handles the cascading encoding sizes correctly.
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct WidthTest {
+    small: i32,  // fits in 1 byte (header-only) for small values
+    medium: u32, // needs 2+ bytes for values > 62
+    big: u32,    // needs 5 bytes for values > u16::MAX
+}
+
+const NARROW: WidthTest = WidthTest {
+    small: 0,
+    medium: 1,
+    big: 100_000,
+};
+
+const WIDE: WidthTest = WidthTest {
+    small: i32::MIN,
+    medium: u32::MAX,
+    big: 0,
+};
+
+#[test]
+fn cxs_size_varies_with_value() {
+    // Small values → compact encoding
+    assert_eq!(NARROW.const_cxs_size(), cxs_runtime_encode(&NARROW).len());
+    // Large values → wider encoding
+    assert_eq!(WIDE.const_cxs_size(), cxs_runtime_encode(&WIDE).len());
+    // CXS sizes should differ because values differ
+    assert_ne!(NARROW.const_cxs_size(), WIDE.const_cxs_size());
+    // TXS sizes are always the same regardless of value
+    assert_eq!(NARROW.const_txs_size(), WIDE.const_txs_size());
+}
+
+// Auto-size with variable-width CXS values
+const NARROW_CXS: [u8; NARROW.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ NARROW.const_cxs_size() }>::new();
+    NARROW.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const WIDE_CXS: [u8; WIDE.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ WIDE.const_cxs_size() }>::new();
+    WIDE.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn auto_sized_cxs_variable_width() {
+    assert_eq!(&NARROW_CXS, cxs_runtime_encode(&NARROW).as_slice());
+    assert_eq!(&WIDE_CXS, cxs_runtime_encode(&WIDE).as_slice());
+}
+
+// -- Enum variant size divergence (CXS) --
+// Different variants encode to different sizes in CXS.
+
+#[test]
+fn enum_variant_sizes_differ_cxs() {
+    let circle = Shape::Circle { radius: 5 };
+    let rect = Shape::Rect { w: 10, h: 20 };
+    let empty = Shape::Empty;
+    // Circle: discriminant(1) + u32(1) = 2 bytes in CXS
+    // Rect: discriminant(1) + u32(1) + u32(1) = 3 bytes in CXS
+    // Empty: discriminant(1) = 1 byte in CXS
+    assert!(circle.const_cxs_size() < rect.const_cxs_size());
+    assert!(empty.const_cxs_size() < circle.const_cxs_size());
+
+    // But all match runtime
+    assert_eq!(circle.const_cxs_size(), cxs_runtime_encode(&circle).len());
+    assert_eq!(rect.const_cxs_size(), cxs_runtime_encode(&rect).len());
+    assert_eq!(empty.const_cxs_size(), cxs_runtime_encode(&empty).len());
+}
+
+// -- Struct with opaque data --
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct WithOpaque {
+    tag: u32,
+    data: [u8; 7],
+}
+
+const OPAQUE_STRUCT: WithOpaque = WithOpaque {
+    tag: 42,
+    data: [1, 2, 3, 4, 5, 6, 7],
+};
+
+const OPAQUE_STRUCT_TXS: [u8; OPAQUE_STRUCT.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ OPAQUE_STRUCT.const_txs_size() }>::new();
+    OPAQUE_STRUCT.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const OPAQUE_STRUCT_CXS: [u8; OPAQUE_STRUCT.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ OPAQUE_STRUCT.const_cxs_size() }>::new();
+    OPAQUE_STRUCT.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn struct_with_opaque_auto_sized() {
+    assert_eq!(
+        &OPAQUE_STRUCT_TXS,
+        txs_runtime_encode(&OPAQUE_STRUCT).as_slice()
+    );
+    assert_eq!(
+        &OPAQUE_STRUCT_CXS,
+        cxs_runtime_encode(&OPAQUE_STRUCT).as_slice()
+    );
+}
+
+// -- End-to-end: link_section pattern --
+// This is the actual motivating use case.
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+enum SpecVersion {
+    V1 = 0,
+}
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+struct InterfaceSpec {
+    version: SpecVersion,
+    magic: u32,
+    flags: u32,
+}
+
+const MY_SPEC: InterfaceSpec = InterfaceSpec {
+    version: SpecVersion::V1,
+    magic: 0xDEAD,
+    flags: 1,
+};
+
+#[used]
+#[cfg_attr(target_family = "wasm", unsafe(link_section = "groundhogspecrawv0"))]
+static RAW_INTERFACE_SPEC: [u8; MY_SPEC.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ MY_SPEC.const_txs_size() }>::new();
+    MY_SPEC.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn link_section_pattern() {
+    // The static exists and matches runtime encoding
+    assert_eq!(&RAW_INTERFACE_SPEC, txs_runtime_encode(&MY_SPEC).as_slice());
+    // And can be decoded back
+    let decoded: InterfaceSpec = xdrs::txs::decode(&RAW_INTERFACE_SPEC).unwrap();
+    assert_eq!(decoded.magic, 0xDEAD);
+    assert_eq!(decoded.flags, 1);
+}
