@@ -115,6 +115,7 @@
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 mod generate;
+mod generate_const;
 mod generate_type;
 mod util;
 
@@ -188,6 +189,29 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
     generate_type::xdr(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derives const-compatible XDR encoding methods for compile-time use.
+///
+/// Generates two inherent `const fn` methods on the type:
+/// - `const_write_cxs<const N: usize>(&self, w: &mut cxs::ConstWriter<N>)`
+/// - `const_write_txs<const N: usize>(&self, w: &mut txs::ConstWriter<N>)`
+///
+/// These methods can be used in `const` blocks to encode values at compile time.
+///
+/// # Limitations
+///
+/// - Does not support `#[xdrs(into_type)]` or `#[xdrs(via)]` attributes
+/// - Does not support generic type parameters
+/// - Field types must be primitives, byte arrays, or other types that derive `ConstWriteXDR`
+///
+#[proc_macro_derive(ConstWriteXDR, attributes(xdrs))]
+pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    generate_const::const_write_xdr(&input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

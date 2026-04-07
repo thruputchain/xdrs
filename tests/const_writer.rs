@@ -114,3 +114,38 @@ fn cxs_cross_validate_u64_db() {
         cxs_runtime_encode(&0xdead1234beef5678u64).as_slice()
     );
 }
+
+// -- Derive macro tests: structs --
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct Foo {
+    bytes: [u8; 3],
+    blerg: i32,
+}
+
+const FOO: Foo = Foo {
+    bytes: [0xAA, 0xBB, 0xCC],
+    blerg: 7,
+};
+
+const FOO_CXS: [u8; 4] = {
+    let mut w = xdrs::cxs::ConstWriter::<4>::new();
+    FOO.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const FOO_TXS: [u8; 8] = {
+    let mut w = xdrs::txs::ConstWriter::<8>::new();
+    FOO.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn derive_struct_cxs() {
+    assert_eq!(&FOO_CXS, cxs_runtime_encode(&FOO).as_slice());
+}
+
+#[test]
+fn derive_struct_txs() {
+    assert_eq!(&FOO_TXS, txs_runtime_encode(&FOO).as_slice());
+}
