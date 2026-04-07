@@ -110,3 +110,7 @@ required-features = ["alloc", "derive"]
 [[test]]
 name = "pointer"
 required-features = ["alloc", "derive"]
+
+[[test]]
+name = "const_writer"
+required-features = ["alloc", "derive"]
