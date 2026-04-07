@@ -42,3 +42,5 @@ pub mod into_buf_writer;
 pub mod buf_writer;
 
 mod put;
+
+pub mod const_writer;
