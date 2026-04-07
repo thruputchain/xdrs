@@ -3,3 +3,6 @@
 # We can remove this once the actions/ repo is public and we don't have to 
 # explicitly clone it.
 actions/
+
+#mac nonsense
+**/.DS_Store

@@ -115,6 +115,7 @@
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 mod generate;
+mod generate_const;
 mod generate_type;
 mod util;
 
@@ -188,6 +189,40 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
     generate_type::xdr(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derives const-compatible XDR encoding methods for compile-time use.
+///
+/// Generates four inherent `const fn` methods on the type:
+/// - `const_write_cxs<const N: usize>(&self, w: &mut cxs::ConstWriter<N>)`
+/// - `const_write_txs<const N: usize>(&self, w: &mut txs::ConstWriter<N>)`
+/// - `const_cxs_size(&self) -> usize`
+/// - `const_txs_size(&self) -> usize`
+///
+/// These methods can be used in `const` blocks to encode values at compile time.
+/// The size methods allow the buffer size to be derived automatically:
+///
+/// ```rust,ignore
+/// static ENCODED: [u8; MY_VAL.const_txs_size()] = {
+///     let mut w = xdrs::txs::ConstWriter::<{ MY_VAL.const_txs_size() }>::new();
+///     MY_VAL.const_write_txs(&mut w);
+///     w.into_bytes()
+/// };
+/// ```
+///
+/// # Limitations
+///
+/// - Does not support `#[xdrs(into_type)]` or `#[xdrs(via)]` attributes
+/// - Does not support generic type parameters
+/// - Field types must be primitives, byte arrays, or other types that derive `ConstWriteXDR`
+///
+#[proc_macro_derive(ConstWriteXDR, attributes(xdrs))]
+pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    generate_const::const_write_xdr(&input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
