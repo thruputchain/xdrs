@@ -1,4 +1,5 @@
 //! Tests that const writers produce the same output as runtime encoders.
+#![allow(dead_code)]
 
 /// Helper: runtime-encode a value with CXS, return the bytes.
 fn cxs_runtime_encode<T: xdrs::WriteXDR>(val: &T) -> Vec<u8> {
@@ -148,4 +149,101 @@ fn derive_struct_cxs() {
 #[test]
 fn derive_struct_txs() {
     assert_eq!(&FOO_TXS, txs_runtime_encode(&FOO).as_slice());
+}
+
+// -- Derive macro tests: enums --
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+#[repr(i32)]
+enum Status {
+    On,
+    Off,
+}
+
+const STATUS_ON_CXS: [u8; 1] = {
+    let mut w = xdrs::cxs::ConstWriter::<1>::new();
+    Status::On.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const STATUS_ON_TXS: [u8; 4] = {
+    let mut w = xdrs::txs::ConstWriter::<4>::new();
+    Status::On.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const STATUS_OFF_CXS: [u8; 1] = {
+    let mut w = xdrs::cxs::ConstWriter::<1>::new();
+    Status::Off.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn derive_enum_bare() {
+    assert_eq!(&STATUS_ON_CXS, cxs_runtime_encode(&Status::On).as_slice());
+    assert_eq!(&STATUS_ON_TXS, txs_runtime_encode(&Status::On).as_slice());
+    assert_eq!(
+        &STATUS_OFF_CXS,
+        cxs_runtime_encode(&Status::Off).as_slice()
+    );
+}
+
+// Enum with fields
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+#[repr(i32)]
+enum Shape {
+    Circle { radius: u32 } = 0,
+    Rect { w: u32, h: u32 } = 1,
+    Empty = 2,
+}
+
+const CIRCLE_CXS: [u8; 2] = {
+    let mut w = xdrs::cxs::ConstWriter::<2>::new();
+    (Shape::Circle { radius: 5 }).const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const RECT_TXS: [u8; 12] = {
+    let mut w = xdrs::txs::ConstWriter::<12>::new();
+    (Shape::Rect { w: 10, h: 20 }).const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn derive_enum_with_fields() {
+    let circle = Shape::Circle { radius: 5 };
+    assert_eq!(&CIRCLE_CXS, cxs_runtime_encode(&circle).as_slice());
+
+    let rect = Shape::Rect { w: 10, h: 20 };
+    assert_eq!(&RECT_TXS, txs_runtime_encode(&rect).as_slice());
+}
+
+// Nested: struct containing enum
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct Config {
+    version: u32,
+    status: Status,
+}
+
+const CONFIG: Config = Config {
+    version: 1,
+    status: Status::On,
+};
+
+const CONFIG_CXS: [u8; 2] = {
+    let mut w = xdrs::cxs::ConstWriter::<2>::new();
+    CONFIG.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const CONFIG_TXS: [u8; 8] = {
+    let mut w = xdrs::txs::ConstWriter::<8>::new();
+    CONFIG.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn derive_nested_struct_enum() {
+    assert_eq!(&CONFIG_CXS, cxs_runtime_encode(&CONFIG).as_slice());
+    assert_eq!(&CONFIG_TXS, txs_runtime_encode(&CONFIG).as_slice());
 }
