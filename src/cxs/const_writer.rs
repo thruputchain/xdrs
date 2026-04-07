@@ -330,7 +330,7 @@ mod tests {
     // Unsigned: u32 deadbeef
     const U32_DB: [u8; 5] = {
         let mut w = ConstWriter::<5>::new();
-        w.write_u32(4022250974); // 0xdeadbeef
+        w.write_u32(4022250974); // 0xEFBEADDE (LE bytes spell out 0xdeadbeef)
         w.into_bytes()
     };
 

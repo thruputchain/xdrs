@@ -195,11 +195,22 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 
 /// Derives const-compatible XDR encoding methods for compile-time use.
 ///
-/// Generates two inherent `const fn` methods on the type:
+/// Generates four inherent `const fn` methods on the type:
 /// - `const_write_cxs<const N: usize>(&self, w: &mut cxs::ConstWriter<N>)`
 /// - `const_write_txs<const N: usize>(&self, w: &mut txs::ConstWriter<N>)`
+/// - `const_cxs_size(&self) -> usize`
+/// - `const_txs_size(&self) -> usize`
 ///
 /// These methods can be used in `const` blocks to encode values at compile time.
+/// The size methods allow the buffer size to be derived automatically:
+///
+/// ```rust,ignore
+/// static ENCODED: [u8; MY_VAL.const_txs_size()] = {
+///     let mut w = xdrs::txs::ConstWriter::<{ MY_VAL.const_txs_size() }>::new();
+///     MY_VAL.const_write_txs(&mut w);
+///     w.into_bytes()
+/// };
+/// ```
 ///
 /// # Limitations
 ///
