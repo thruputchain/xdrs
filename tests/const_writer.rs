@@ -1,5 +1,5 @@
 //! Tests that const writers produce the same output as runtime encoders.
-#![allow(dead_code)]
+#![allow(dead_code, unused_imports)]
 
 /// Helper: runtime-encode a value with CXS, return the bytes.
 fn cxs_runtime_encode<T: xdrs::WriteXDR>(val: &T) -> Vec<u8> {
@@ -47,10 +47,7 @@ fn txs_cross_validate_u64() {
 #[test]
 fn txs_cross_validate_opaque_fixed() {
     let bytes: [u8; 3] = [0xAA, 0xBB, 0xCC];
-    assert_eq!(
-        &TXS_OPAQUE_FIXED_3,
-        txs_runtime_encode(&bytes).as_slice()
-    );
+    assert_eq!(&TXS_OPAQUE_FIXED_3, txs_runtime_encode(&bytes).as_slice());
 }
 
 // -- CXS cross-validation --
@@ -182,10 +179,7 @@ const STATUS_OFF_CXS: [u8; 1] = {
 fn derive_enum_bare() {
     assert_eq!(&STATUS_ON_CXS, cxs_runtime_encode(&Status::On).as_slice());
     assert_eq!(&STATUS_ON_TXS, txs_runtime_encode(&Status::On).as_slice());
-    assert_eq!(
-        &STATUS_OFF_CXS,
-        cxs_runtime_encode(&Status::Off).as_slice()
-    );
+    assert_eq!(&STATUS_OFF_CXS, cxs_runtime_encode(&Status::Off).as_slice());
 }
 
 // Enum with fields

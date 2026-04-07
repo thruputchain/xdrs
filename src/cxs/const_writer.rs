@@ -22,6 +22,12 @@ const IH_MAX: i8 = 31;
 const IH_MIN: i8 = -31;
 const UH_MAX: u8 = 62;
 
+impl<const N: usize> Default for ConstWriter<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const N: usize> ConstWriter<N> {
     /// Creates a new writer with a zeroed buffer.
     pub const fn new() -> Self {

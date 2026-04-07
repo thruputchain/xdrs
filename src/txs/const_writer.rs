@@ -10,6 +10,12 @@ pub struct ConstWriter<const N: usize> {
     pos: usize,
 }
 
+impl<const N: usize> Default for ConstWriter<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const N: usize> ConstWriter<N> {
     /// Creates a new writer with a zeroed buffer.
     pub const fn new() -> Self {
@@ -157,10 +163,7 @@ mod tests {
 
     #[test]
     fn const_encode_opaque_variable() {
-        assert_eq!(
-            OPAQUE_VAR,
-            [0x00, 0x00, 0x00, 0x02, 0x68, 0x69, 0x00, 0x00]
-        );
+        assert_eq!(OPAQUE_VAR, [0x00, 0x00, 0x00, 0x02, 0x68, 0x69, 0x00, 0x00]);
     }
 
     const BOOL_TRUE: [u8; 4] = {

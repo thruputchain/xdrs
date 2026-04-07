@@ -316,10 +316,10 @@ fn primitive_write_method(ty: &syn::Type) -> Option<TokenStream> {
 }
 
 fn is_path_ident(ty: &syn::Type, name: &str) -> bool {
-    if let syn::Type::Path(p) = ty {
-        if let Some(ident) = p.path.get_ident() {
-            return ident == name;
-        }
+    if let syn::Type::Path(p) = ty
+        && let Some(ident) = p.path.get_ident()
+    {
+        return ident == name;
     }
     false
 }
@@ -340,10 +340,10 @@ fn is_u8_array(ty: &syn::Type) -> bool {
 }
 
 fn is_u8_slice_ref(ty: &syn::Type) -> bool {
-    if let syn::Type::Reference(r) = ty {
-        if let syn::Type::Slice(s) = &*r.elem {
-            return is_path_ident(&s.elem, "u8");
-        }
+    if let syn::Type::Reference(r) = ty
+        && let syn::Type::Slice(s) = &*r.elem
+    {
+        return is_path_ident(&s.elem, "u8");
     }
     false
 }
