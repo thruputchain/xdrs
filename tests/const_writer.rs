@@ -241,3 +241,52 @@ fn derive_nested_struct_enum() {
     assert_eq!(&CONFIG_CXS, cxs_runtime_encode(&CONFIG).as_slice());
     assert_eq!(&CONFIG_TXS, txs_runtime_encode(&CONFIG).as_slice());
 }
+
+// -- Size calculation tests --
+
+// Verify size methods match actual encoded sizes
+#[test]
+fn size_matches_encoded_struct() {
+    assert_eq!(FOO.const_cxs_size(), cxs_runtime_encode(&FOO).len());
+    assert_eq!(FOO.const_txs_size(), txs_runtime_encode(&FOO).len());
+    assert_eq!(CONFIG.const_cxs_size(), cxs_runtime_encode(&CONFIG).len());
+    assert_eq!(CONFIG.const_txs_size(), txs_runtime_encode(&CONFIG).len());
+}
+
+#[test]
+fn size_matches_encoded_enum() {
+    let on = Status::On;
+    let off = Status::Off;
+    assert_eq!(on.const_cxs_size(), cxs_runtime_encode(&on).len());
+    assert_eq!(on.const_txs_size(), txs_runtime_encode(&on).len());
+    assert_eq!(off.const_cxs_size(), cxs_runtime_encode(&off).len());
+
+    let circle = Shape::Circle { radius: 5 };
+    let rect = Shape::Rect { w: 10, h: 20 };
+    let empty = Shape::Empty;
+    assert_eq!(circle.const_cxs_size(), cxs_runtime_encode(&circle).len());
+    assert_eq!(circle.const_txs_size(), txs_runtime_encode(&circle).len());
+    assert_eq!(rect.const_cxs_size(), cxs_runtime_encode(&rect).len());
+    assert_eq!(rect.const_txs_size(), txs_runtime_encode(&rect).len());
+    assert_eq!(empty.const_cxs_size(), cxs_runtime_encode(&empty).len());
+    assert_eq!(empty.const_txs_size(), txs_runtime_encode(&empty).len());
+}
+
+// The main use case: use const_*_size to compute N automatically
+const AUTO_TXS: [u8; CONFIG.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ CONFIG.const_txs_size() }>::new();
+    CONFIG.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const AUTO_CXS: [u8; CONFIG.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ CONFIG.const_cxs_size() }>::new();
+    CONFIG.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn auto_sized_encode() {
+    assert_eq!(&AUTO_TXS, txs_runtime_encode(&CONFIG).as_slice());
+    assert_eq!(&AUTO_CXS, cxs_runtime_encode(&CONFIG).as_slice());
+}

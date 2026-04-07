@@ -82,6 +82,20 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
         .map(|(i, f)| const_write_field(i, f, Format::Txs))
         .collect::<Result<Vec<_>>>()?;
 
+    let cxs_size_fields = item
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| const_size_field(i, f, Format::Cxs))
+        .collect::<Result<Vec<_>>>()?;
+
+    let txs_size_fields = item
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| const_size_field(i, f, Format::Txs))
+        .collect::<Result<Vec<_>>>()?;
+
     Ok(quote! {
         impl #ty_ident {
             pub const fn const_write_cxs<const __N: usize>(&self, w: &mut cxs::ConstWriter<__N>) {
@@ -91,6 +105,16 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
             pub const fn const_write_txs<const __N: usize>(&self, w: &mut txs::ConstWriter<__N>) {
                 #(#txs_fields)*
             }
+
+            /// Returns the CXS encoded size of this value in bytes.
+            pub const fn const_cxs_size(&self) -> usize {
+                0 #(+ #cxs_size_fields)*
+            }
+
+            /// Returns the TXS encoded size of this value in bytes.
+            pub const fn const_txs_size(&self) -> usize {
+                0 #(+ #txs_size_fields)*
+            }
         }
     })
 }
@@ -99,6 +123,59 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
 enum Format {
     Cxs,
     Txs,
+}
+
+fn const_size_field(index: usize, field: &syn::Field, fmt: Format) -> Result<TokenStream> {
+    let attrs = Attrs::from_field(field)?;
+    attrs.check_no_conversion(field)?;
+
+    let fa = FieldAccess::new(index, field);
+    let ty = &field.ty;
+
+    Ok(const_size_field_expr(&fa, ty, fmt))
+}
+
+fn const_size_field_expr(fa: &FieldAccess<'_>, ty: &syn::Type, fmt: Format) -> TokenStream {
+    let mod_path = match fmt {
+        Format::Cxs => quote! { cxs::const_writer },
+        Format::Txs => quote! { txs::const_writer },
+    };
+    let size_method = match fmt {
+        Format::Cxs => quote! { const_cxs_size },
+        Format::Txs => quote! { const_txs_size },
+    };
+
+    if let Some(size_fn) = primitive_size_fn(ty) {
+        return quote! { #mod_path::#size_fn(self.#fa) };
+    }
+
+    if is_i128(ty) {
+        return quote! {
+            (#mod_path::size_i64((self.#fa >> 64) as i64)
+             + #mod_path::size_u64((self.#fa & 0xffffffffffffffff) as u64))
+        };
+    }
+    if is_u128(ty) {
+        return quote! {
+            (#mod_path::size_u64((self.#fa >> 64) as u64)
+             + #mod_path::size_u64((self.#fa & 0xffffffffffffffff) as u64))
+        };
+    }
+
+    if is_u8_array(ty) {
+        return quote! { #mod_path::size_opaque_fixed(self.#fa.len()) };
+    }
+
+    if is_u8_slice_ref(ty) {
+        return quote! { #mod_path::size_opaque_variable(self.#fa.len()) };
+    }
+
+    if is_str_ref(ty) {
+        return quote! { #mod_path::size_opaque_variable(self.#fa.as_bytes().len()) };
+    }
+
+    // Nested type — call its const size method
+    quote! { self.#fa.#size_method() }
 }
 
 fn const_write_field(index: usize, field: &syn::Field, fmt: Format) -> Result<TokenStream> {
@@ -170,6 +247,20 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
         .map(|(i, v)| const_write_variant(i, v, input, Format::Txs))
         .collect::<Vec<_>>();
 
+    let cxs_size_arms = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| const_size_variant(i, v, input, Format::Cxs))
+        .collect::<Vec<_>>();
+
+    let txs_size_arms = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| const_size_variant(i, v, input, Format::Txs))
+        .collect::<Vec<_>>();
+
     Ok(quote! {
         impl #ty_ident {
             pub const fn const_write_cxs<const __N: usize>(&self, w: &mut cxs::ConstWriter<__N>) {
@@ -181,6 +272,20 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
             pub const fn const_write_txs<const __N: usize>(&self, w: &mut txs::ConstWriter<__N>) {
                 match self {
                     #(#txs_arms)*
+                }
+            }
+
+            /// Returns the CXS encoded size of this value in bytes.
+            pub const fn const_cxs_size(&self) -> usize {
+                match self {
+                    #(#cxs_size_arms)*
+                }
+            }
+
+            /// Returns the TXS encoded size of this value in bytes.
+            pub const fn const_txs_size(&self) -> usize {
+                match self {
+                    #(#txs_size_arms)*
                 }
             }
         }
@@ -231,6 +336,102 @@ fn const_write_variant(
             #write_fields
         }
     }
+}
+
+fn const_size_variant(
+    index: usize,
+    v: &syn::Variant,
+    input: &syn::DeriveInput,
+    fmt: Format,
+) -> TokenStream {
+    let is_default_arm = variant_is_default(v);
+    let var_ident = &v.ident;
+    let ty_ident = &input.ident;
+    let var_bindings = const_var_bindings(&v.fields);
+
+    let mod_path = match fmt {
+        Format::Cxs => quote! { cxs::const_writer },
+        Format::Txs => quote! { txs::const_writer },
+    };
+
+    let variant_idx = index as i32;
+    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #d }
+    } else if is_default_arm {
+        quote! { *_self_0 }
+    } else {
+        quote! { #variant_idx }
+    };
+
+    let discrim_size = quote! { #mod_path::size_i32(#discriminant) };
+
+    let fields_size = if is_default_arm {
+        quote! { 0 }
+    } else {
+        let field_sizes: Vec<_> = v
+            .fields
+            .iter()
+            .enumerate()
+            .map(|(i, field)| {
+                let bind = tmp_binding(i);
+                let ty = &field.ty;
+                const_size_binding_expr(&bind, ty, fmt)
+            })
+            .collect();
+        if field_sizes.is_empty() {
+            quote! { 0 }
+        } else {
+            quote! { 0 #(+ #field_sizes)* }
+        }
+    };
+
+    quote! {
+        #ty_ident::#var_ident #var_bindings => {
+            #discrim_size + #fields_size
+        }
+    }
+}
+
+fn const_size_binding_expr(bind: &syn::Ident, ty: &syn::Type, fmt: Format) -> TokenStream {
+    let mod_path = match fmt {
+        Format::Cxs => quote! { cxs::const_writer },
+        Format::Txs => quote! { txs::const_writer },
+    };
+    let size_method = match fmt {
+        Format::Cxs => quote! { const_cxs_size },
+        Format::Txs => quote! { const_txs_size },
+    };
+
+    if let Some(size_fn) = primitive_size_fn(ty) {
+        return quote! { #mod_path::#size_fn(*#bind) };
+    }
+
+    if is_i128(ty) {
+        return quote! {
+            (#mod_path::size_i64((*#bind >> 64) as i64)
+             + #mod_path::size_u64((*#bind & 0xffffffffffffffff) as u64))
+        };
+    }
+    if is_u128(ty) {
+        return quote! {
+            (#mod_path::size_u64((*#bind >> 64) as u64)
+             + #mod_path::size_u64((*#bind & 0xffffffffffffffff) as u64))
+        };
+    }
+
+    if is_u8_array(ty) {
+        return quote! { #mod_path::size_opaque_fixed(#bind.len()) };
+    }
+
+    if is_u8_slice_ref(ty) {
+        return quote! { #mod_path::size_opaque_variable(#bind.len()) };
+    }
+
+    if is_str_ref(ty) {
+        return quote! { #mod_path::size_opaque_variable(#bind.as_bytes().len()) };
+    }
+
+    quote! { #bind.#size_method() }
 }
 
 fn const_write_binding_expr(bind: &syn::Ident, ty: &syn::Type, fmt: Format) -> TokenStream {
@@ -293,6 +494,27 @@ fn const_var_bindings(fields: &syn::Fields) -> TokenStream {
 }
 
 // -- Type detection helpers --
+
+fn primitive_size_fn(ty: &syn::Type) -> Option<TokenStream> {
+    let path = match ty {
+        syn::Type::Path(p) => p,
+        _ => return None,
+    };
+
+    let ident = path.path.get_ident()?;
+    let s = ident.to_string();
+
+    match s.as_str() {
+        "i32" => Some(quote! { size_i32 }),
+        "u32" => Some(quote! { size_u32 }),
+        "i64" => Some(quote! { size_i64 }),
+        "u64" => Some(quote! { size_u64 }),
+        "i16" => Some(quote! { size_i16 }),
+        "u16" => Some(quote! { size_u16 }),
+        "bool" => Some(quote! { size_bool }),
+        _ => None,
+    }
+}
 
 fn primitive_write_method(ty: &syn::Type) -> Option<TokenStream> {
     let path = match ty {

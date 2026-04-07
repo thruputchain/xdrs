@@ -197,6 +197,92 @@ impl<const N: usize> ConstWriter<N> {
     }
 }
 
+// -- Size calculation helpers --
+// These are free functions usable in const contexts to compute CXS encoded sizes.
+// Sizes are value-dependent due to variable-width encoding.
+
+/// Returns the CXS encoded size of a boolean (encoded as i32).
+pub const fn size_bool(v: bool) -> usize {
+    size_i32(if v { 1 } else { 0 })
+}
+
+/// Returns the CXS encoded size of a signed 64-bit integer.
+pub const fn size_i64(n: i64) -> usize {
+    if n > i32::MAX as i64 || n < (i32::MIN as i64) {
+        9 // 1 header + 8 data
+    } else {
+        size_i32(n as i32)
+    }
+}
+
+/// Returns the CXS encoded size of a signed 32-bit integer.
+pub const fn size_i32(n: i32) -> usize {
+    if n > i16::MAX as i32 || n < (i16::MIN as i32) {
+        5 // 1 header + 4 data
+    } else {
+        size_i16(n as i16)
+    }
+}
+
+/// Returns the CXS encoded size of a signed 16-bit integer.
+pub const fn size_i16(n: i16) -> usize {
+    if n > i8::MAX as i16 || n < (i8::MIN as i16) {
+        3 // 1 header + 2 data
+    } else {
+        size_i8(n as i8)
+    }
+}
+
+const fn size_i8(n: i8) -> usize {
+    if n < IH_MIN || n > IH_MAX {
+        2 // 1 header + 1 data
+    } else {
+        1 // header only
+    }
+}
+
+/// Returns the CXS encoded size of an unsigned 64-bit integer.
+pub const fn size_u64(n: u64) -> usize {
+    if n > u32::MAX as u64 {
+        9
+    } else {
+        size_u32(n as u32)
+    }
+}
+
+/// Returns the CXS encoded size of an unsigned 32-bit integer.
+pub const fn size_u32(n: u32) -> usize {
+    if n > u16::MAX as u32 {
+        5
+    } else {
+        size_u16(n as u16)
+    }
+}
+
+/// Returns the CXS encoded size of an unsigned 16-bit integer.
+pub const fn size_u16(n: u16) -> usize {
+    if n > u8::MAX as u16 {
+        3
+    } else {
+        size_u8(n as u8)
+    }
+}
+
+const fn size_u8(n: u8) -> usize {
+    if n > UH_MAX { 2 } else { 1 }
+}
+
+/// Returns the CXS encoded size of fixed-length opaque data (raw bytes, no padding).
+pub const fn size_opaque_fixed(len: usize) -> usize {
+    len
+}
+
+/// Returns the CXS encoded size of variable-length opaque data
+/// (CXS-encoded u32 length prefix + raw bytes).
+pub const fn size_opaque_variable(len: usize) -> usize {
+    size_u32(len as u32) + len
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

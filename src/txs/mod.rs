@@ -43,5 +43,5 @@ pub mod buf_writer;
 
 mod put;
 
-mod const_writer;
+pub mod const_writer;
 pub use const_writer::ConstWriter;

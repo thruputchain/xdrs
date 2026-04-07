@@ -128,6 +128,56 @@ impl<const N: usize> ConstWriter<N> {
     }
 }
 
+// -- Size calculation helpers --
+// These are free functions usable in const contexts to compute TXS encoded sizes.
+
+/// Returns the TXS encoded size of a 32-bit integer (always 4).
+pub const fn size_i32(_n: i32) -> usize {
+    4
+}
+
+/// Returns the TXS encoded size of an unsigned 32-bit integer (always 4).
+pub const fn size_u32(_n: u32) -> usize {
+    4
+}
+
+/// Returns the TXS encoded size of a signed 64-bit integer (always 8).
+pub const fn size_i64(_n: i64) -> usize {
+    8
+}
+
+/// Returns the TXS encoded size of an unsigned 64-bit integer (always 8).
+pub const fn size_u64(_n: u64) -> usize {
+    8
+}
+
+/// Returns the TXS encoded size of a signed 16-bit integer (promoted to i32, always 4).
+pub const fn size_i16(_n: i16) -> usize {
+    4
+}
+
+/// Returns the TXS encoded size of an unsigned 16-bit integer (promoted to u32, always 4).
+pub const fn size_u16(_n: u16) -> usize {
+    4
+}
+
+/// Returns the TXS encoded size of a boolean (encoded as i32, always 4).
+pub const fn size_bool(_v: bool) -> usize {
+    4
+}
+
+/// Returns the TXS encoded size of fixed-length opaque data (padded to 4-byte boundary).
+pub const fn size_opaque_fixed(len: usize) -> usize {
+    let rem = len % 4;
+    if rem != 0 { len + 4 - rem } else { len }
+}
+
+/// Returns the TXS encoded size of variable-length opaque data
+/// (4-byte length prefix + data padded to 4-byte boundary).
+pub const fn size_opaque_variable(len: usize) -> usize {
+    4 + size_opaque_fixed(len)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
