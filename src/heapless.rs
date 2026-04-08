@@ -14,6 +14,8 @@ impl<'r, const N: usize> ReadXDR<'r> for Vec<u8, N> {
         let bytes = r.read_opaque_variable(N as u32)?;
 
         let mut s = Vec::new();
+        // Cannot fail: read_opaque_variable(N) returns at most N bytes,
+        // which is exactly the capacity of Vec<u8, N>.
         s.extend_from_slice(bytes).unwrap();
 
         Ok(s)
@@ -36,6 +38,8 @@ impl<'r, const N: usize> ReadXDR<'r> for String<N> {
         let slice = str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)?;
 
         let mut s = String::new();
+        // Cannot fail: read_opaque_variable(N) returns at most N bytes,
+        // which is exactly the capacity of String<N>.
         s.push_str(slice).unwrap();
 
         Ok(s)
