@@ -9,7 +9,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.5.5"
+version = "0.5.6"
 edition = "2024"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"  
