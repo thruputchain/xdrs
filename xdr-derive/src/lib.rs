@@ -215,8 +215,10 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// # Limitations
 ///
 /// - Does not support `#[xdrs(into_type)]` or `#[xdrs(via)]` attributes
-/// - Does not support generic type parameters
-/// - Field types must be primitives, byte arrays, or other types that derive `ConstWriteXDR`
+/// - Supports lifetime and const generics, but not type parameters
+/// - Field types may use recursive concrete shapes inline, including `Option<T>`,
+///   `Result<T, E>`, `&[T]`, `[T; N]`, and tuples, as long as leaf types are
+///   concrete and const-encodable
 ///
 #[proc_macro_derive(ConstWriteXDR, attributes(xdrs))]
 pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {

@@ -440,3 +440,97 @@ fn link_section_pattern() {
     assert_eq!(decoded.magic, 0xDEAD);
     assert_eq!(decoded.flags, 1);
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct Leaf {
+    code: u32,
+}
+
+const LEAF_A: Leaf = Leaf { code: 7 };
+const LEAF_B: Leaf = Leaf { code: 42 };
+const LEAF_ITEMS: [Leaf; 2] = [LEAF_A, LEAF_B];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct RecursiveShapes {
+    maybe: Option<Leaf>,
+    nested: Option<Option<Leaf>>,
+    choice: Result<Leaf, Leaf>,
+    items: [Leaf; 2],
+    pair: (Leaf, Leaf),
+}
+
+const RECURSIVE: RecursiveShapes = RecursiveShapes {
+    maybe: Some(LEAF_A),
+    nested: Some(Some(LEAF_B)),
+    choice: Err(LEAF_A),
+    items: LEAF_ITEMS,
+    pair: (LEAF_A, LEAF_B),
+};
+
+const RECURSIVE_TXS: [u8; RECURSIVE.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ RECURSIVE.const_txs_size() }>::new();
+    RECURSIVE.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const RECURSIVE_CXS: [u8; RECURSIVE.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ RECURSIVE.const_cxs_size() }>::new();
+    RECURSIVE.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn derive_recursive_concrete_shapes() {
+    assert_eq!(&RECURSIVE_TXS, txs_runtime_encode(&RECURSIVE).as_slice());
+    assert_eq!(&RECURSIVE_CXS, cxs_runtime_encode(&RECURSIVE).as_slice());
+    assert_eq!(
+        RECURSIVE.const_txs_size(),
+        txs_runtime_encode(&RECURSIVE).len()
+    );
+    assert_eq!(
+        RECURSIVE.const_cxs_size(),
+        cxs_runtime_encode(&RECURSIVE).len()
+    );
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct NonCopyLeaf {
+    code: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct NonCopyTopLevel {
+    maybe: Option<NonCopyLeaf>,
+    choice: Result<NonCopyLeaf, NonCopyLeaf>,
+}
+
+const NON_COPY: NonCopyTopLevel = NonCopyTopLevel {
+    maybe: Some(NonCopyLeaf { code: 11 }),
+    choice: Err(NonCopyLeaf { code: 99 }),
+};
+
+const NON_COPY_TXS: [u8; NON_COPY.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ NON_COPY.const_txs_size() }>::new();
+    NON_COPY.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const NON_COPY_CXS: [u8; NON_COPY.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ NON_COPY.const_cxs_size() }>::new();
+    NON_COPY.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn derive_top_level_option_and_result_for_non_copy_inner() {
+    assert_eq!(&NON_COPY_TXS, txs_runtime_encode(&NON_COPY).as_slice());
+    assert_eq!(&NON_COPY_CXS, cxs_runtime_encode(&NON_COPY).as_slice());
+    assert_eq!(
+        NON_COPY.const_txs_size(),
+        txs_runtime_encode(&NON_COPY).len()
+    );
+    assert_eq!(
+        NON_COPY.const_cxs_size(),
+        cxs_runtime_encode(&NON_COPY).len()
+    );
+}
