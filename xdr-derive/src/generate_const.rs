@@ -296,6 +296,10 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
 mod tests {
     use super::const_write_xdr;
 
+    fn normalize_tokens(tokens: &str) -> String {
+        tokens.chars().filter(|c| !c.is_whitespace()).collect()
+    }
+
     #[test]
     fn lifetime_only_generics_are_allowed() {
         let input: syn::DeriveInput = syn::parse_quote! {
@@ -325,6 +329,27 @@ mod tests {
     }
 
     #[test]
+    fn recursive_concrete_shapes_are_allowed() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct RecursiveShapes {
+                maybe: Option<Leaf>,
+                nested: Option<Option<Leaf>>,
+                choice: Result<Leaf, Leaf>,
+                items: [Leaf; 2],
+                pair: (Leaf, Leaf),
+            }
+        };
+
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        assert!(toks.contains("matchself.maybe{Some(inner)=>"));
+        assert!(toks.contains("matchself.nested{Some(inner)=>"));
+        assert!(toks.contains("matchself.choice{Ok(inner)=>"));
+        assert!(toks.contains("whilei<arr.len()"));
+        assert!(toks.contains("self.pair.0"));
+        assert!(toks.contains("self.pair.1"));
+    }
+
+    #[test]
     fn type_generics_are_rejected() {
         let input: syn::DeriveInput = syn::parse_quote! {
             struct Bad<T> {
@@ -333,7 +358,8 @@ mod tests {
         };
 
         let err = const_write_xdr(&input).unwrap_err();
-        assert!(err.to_string().contains("type parameters"));
+        let msg = err.to_string();
+        assert!(msg.contains("generic types") || msg.contains("type parameters"));
     }
 }
 

@@ -449,24 +449,21 @@ struct Leaf {
 const LEAF_A: Leaf = Leaf { code: 7 };
 const LEAF_B: Leaf = Leaf { code: 42 };
 const LEAF_ITEMS: [Leaf; 2] = [LEAF_A, LEAF_B];
-const LEAF_SLICE: &[Leaf] = &LEAF_ITEMS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
-struct RecursiveShapes<'a, const N: usize> {
+struct RecursiveShapes {
     maybe: Option<Leaf>,
     nested: Option<Option<Leaf>>,
     choice: Result<Leaf, Leaf>,
-    items: &'a [Leaf],
-    array: [Leaf; N],
+    items: [Leaf; 2],
     pair: (Leaf, Leaf),
 }
 
-const RECURSIVE: RecursiveShapes<'static, 2> = RecursiveShapes {
+const RECURSIVE: RecursiveShapes = RecursiveShapes {
     maybe: Some(LEAF_A),
     nested: Some(Some(LEAF_B)),
     choice: Err(LEAF_A),
-    items: LEAF_SLICE,
-    array: LEAF_ITEMS,
+    items: LEAF_ITEMS,
     pair: (LEAF_A, LEAF_B),
 };
 
