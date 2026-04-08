@@ -292,6 +292,51 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::const_write_xdr;
+
+    #[test]
+    fn lifetime_only_generics_are_allowed() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Borrowed<'a> {
+                items: &'a [Leaf],
+                maybe: Option<Leaf>,
+            }
+        };
+
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        assert!(toks.contains("const_write_txs"));
+        assert!(toks.contains("const_cxs_size"));
+    }
+
+    #[test]
+    fn const_generics_are_allowed() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Fixed<const N: usize> {
+                bytes: [u8; N],
+                pair: (u32, u32),
+            }
+        };
+
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        assert!(toks.contains("const_write_cxs"));
+        assert!(toks.contains("const_txs_size"));
+    }
+
+    #[test]
+    fn type_generics_are_rejected() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Bad<T> {
+                value: Option<T>,
+            }
+        };
+
+        let err = const_write_xdr(&input).unwrap_err();
+        assert!(err.to_string().contains("type parameters"));
+    }
+}
+
 fn const_write_variant(
     index: usize,
     v: &syn::Variant,
