@@ -162,6 +162,122 @@ fn str_slice_ref() {
     TXS::check_encode(r, &hex!("00000007537472696e672100"));
 }
 
+// -- Zero-length edge cases --
+
+#[test]
+fn empty_fixed_byte_array() {
+    let arr: [u8; 0] = [];
+
+    // Fixed-size opaque: no length prefix, no padding, zero bytes
+    CXS::check_codec(&arr, &hex!(""));
+    TXS::check_codec(&arr, &hex!(""));
+}
+
+#[test]
+fn empty_fixed_int_array() {
+    let arr: [i32; 0] = [];
+
+    CXS::check_codec(&arr, &hex!(""));
+    TXS::check_codec(&arr, &hex!(""));
+}
+
+#[test]
+fn empty_byte_slice() {
+    let buf: &[u8] = &[];
+
+    // Variable-length opaque: length prefix of 0, no data
+    CXS::check_encode(&buf, &hex!("00"));
+    TXS::check_encode(&buf, &hex!("00000000"));
+}
+
+#[test]
+fn empty_str_slice() {
+    let s = "";
+
+    CXS::check_encode(s, &hex!("00"));
+    TXS::check_encode(s, &hex!("00000000"));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn empty_string() {
+    let s = String::new();
+
+    CXS::check_codec(&s, &hex!("00"));
+    TXS::check_codec(&s, &hex!("00000000"));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn empty_byte_vec() {
+    let v: Vec<u8> = vec![];
+
+    CXS::check_codec(&v, &hex!("00"));
+    TXS::check_codec(&v, &hex!("00000000"));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn bytesm_zero_bound() {
+    use xdrs::BytesM;
+
+    let v: BytesM<0> = BytesM(vec![]);
+
+    CXS::check_codec(&v, &hex!("00"));
+    TXS::check_codec(&v, &hex!("00000000"));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn vecm_u8_zero_bound() {
+    use xdrs::VecM;
+
+    let v: VecM<u8, 0> = VecM(vec![]);
+
+    CXS::check_codec(&v, &hex!("00"));
+    TXS::check_codec(&v, &hex!("00000000"));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn vecm_i32_zero_bound() {
+    use xdrs::VecM;
+
+    let v: VecM<i32, 0> = VecM(vec![]);
+
+    CXS::check_codec(&v, &hex!("00"));
+    TXS::check_codec(&v, &hex!("00000000"));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn stringm_zero_bound() {
+    use xdrs::StringM;
+
+    let v: StringM<0> = StringM(vec![]);
+
+    CXS::check_codec(&v, &hex!("00"));
+    TXS::check_codec(&v, &hex!("00000000"));
+}
+
+#[cfg(feature = "heapless")]
+#[test]
+fn empty_heapless_vec() {
+    let v = heapless::Vec::<u8, 10>::new();
+
+    CXS::check_codec(&v, &hex!("00"));
+    TXS::check_codec(&v, &hex!("00000000"));
+}
+
+#[cfg(feature = "heapless")]
+#[test]
+fn empty_heapless_string() {
+    let s = heapless::String::<10>::new();
+
+    CXS::check_codec(&s, &hex!("00"));
+    TXS::check_codec(&s, &hex!("00000000"));
+}
+
 #[cfg(feature = "alloc")]
 #[allow(dead_code)]
 fn array_too_big() {
