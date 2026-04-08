@@ -137,6 +137,13 @@ impl<T: WriteXDR> WriteXDR for &T {
     }
 }
 
+impl<T: WriteXDR> WriteXDR for &[T] {
+    #[inline(always)]
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+        <[T] as WriteXDR>::write_xdr(*self, w)
+    }
+}
+
 impl WriteXDR for str {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         w.write_opaque_variable(self.as_bytes())
