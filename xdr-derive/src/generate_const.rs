@@ -246,6 +246,10 @@ fn const_size_value_expr(
         return Ok(quote! { 0 #(+ #elem_sizes)* });
     }
 
+    if let syn::Type::Reference(r) = ty {
+        return const_size_value_expr(quote! { *#expr_ref }, &r.elem, fmt);
+    }
+
     Ok(quote! { (#expr_ref).#size_method() })
 }
 
@@ -364,6 +368,10 @@ fn const_write_value_expr(
             .map(|(i, elem)| const_write_value_expr(tuple_elem_ref(&expr_ref, i), elem, fmt))
             .collect::<Result<Vec<_>>>()?;
         return Ok(quote! { #(#elem_writes)* });
+    }
+
+    if let syn::Type::Reference(r) = ty {
+        return const_write_value_expr(quote! { *#expr_ref }, &r.elem, fmt);
     }
 
     Ok(quote! { (#expr_ref).#method(w); })
@@ -726,6 +734,10 @@ fn check_supported_const_shape(ty: &syn::Type) -> Result<()> {
             check_supported_const_shape(elem)?;
         }
         return Ok(());
+    }
+
+    if let syn::Type::Reference(r) = ty {
+        return check_supported_const_shape(&r.elem);
     }
 
     if matches!(ty, syn::Type::Path(_)) {

@@ -122,3 +122,7 @@ required-features = ["alloc", "derive"]
 [[test]]
 name = "borrowed_slices"
 required-features = ["alloc", "derive"]
+
+[[test]]
+name = "plain_ref"
+required-features = ["alloc", "derive"]
