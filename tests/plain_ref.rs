@@ -1,6 +1,4 @@
 // tests/plain_ref.rs
-mod common;
-use common::*;
 
 fn cxs_runtime_encode<T: xdrs::WriteXDR>(val: &T) -> Vec<u8> {
     xdrs::cxs::encode(val).unwrap()
@@ -59,6 +57,7 @@ fn struct_with_plain_ref_const_matches_runtime() {
 
 #[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
 #[repr(i32)]
+#[allow(dead_code)]
 enum TypeRef<'a> {
     None = 0,
     Single(&'a Leaf) = 1,
