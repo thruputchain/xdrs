@@ -136,32 +136,6 @@ fn const_size_field(index: usize, field: &syn::Field, fmt: Format) -> Result<Tok
     attrs.check_no_conversion(field)?;
 
     let fa = FieldAccess::new(index, field);
-    let mod_path = match fmt {
-        Format::Cxs => quote! { cxs::const_writer },
-        Format::Txs => quote! { txs::const_writer },
-    };
-
-    if let Some(inner) = option_inner(&field.ty) {
-        let inner_size = const_size_value_expr(quote! { &inner }, inner, fmt)?;
-        return Ok(quote! {
-            match self.#fa {
-                Some(inner) => #mod_path::size_i32(1) + #inner_size,
-                None => #mod_path::size_i32(0),
-            }
-        });
-    }
-
-    if let Some((ok_ty, err_ty)) = result_inners(&field.ty) {
-        let ok_size = const_size_value_expr(quote! { &inner }, ok_ty, fmt)?;
-        let err_size = const_size_value_expr(quote! { &inner }, err_ty, fmt)?;
-        return Ok(quote! {
-            match self.#fa {
-                Ok(inner) => #mod_path::size_i32(0) + #ok_size,
-                Err(inner) => #mod_path::size_i32(1) + #err_size,
-            }
-        });
-    }
-
     const_size_value_expr(quote! { &self.#fa }, &field.ty, fmt)
 }
 
@@ -280,36 +254,6 @@ fn const_write_field(index: usize, field: &syn::Field, fmt: Format) -> Result<To
     attrs.check_no_conversion(field)?;
 
     let fa = FieldAccess::new(index, field);
-    if let Some(inner) = option_inner(&field.ty) {
-        let inner_write = const_write_value_expr(quote! { &inner }, inner, fmt)?;
-        return Ok(quote! {
-            match self.#fa {
-                Some(inner) => {
-                    w.write_i32(1);
-                    #inner_write
-                }
-                None => w.write_i32(0),
-            }
-        });
-    }
-
-    if let Some((ok_ty, err_ty)) = result_inners(&field.ty) {
-        let ok_write = const_write_value_expr(quote! { &inner }, ok_ty, fmt)?;
-        let err_write = const_write_value_expr(quote! { &inner }, err_ty, fmt)?;
-        return Ok(quote! {
-            match self.#fa {
-                Ok(inner) => {
-                    w.write_i32(0);
-                    #ok_write
-                }
-                Err(inner) => {
-                    w.write_i32(1);
-                    #err_write
-                }
-            }
-        });
-    }
-
     const_write_value_expr(quote! { &self.#fa }, &field.ty, fmt)
 }
 
@@ -540,9 +484,9 @@ mod tests {
         };
 
         let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        assert!(toks.contains("matchself.maybe{Some(inner)=>"));
-        assert!(toks.contains("matchself.nested{Some(inner)=>"));
-        assert!(toks.contains("matchself.choice{Ok(inner)=>"));
+        assert!(toks.contains("match&self.maybe{Some(inner)=>"));
+        assert!(toks.contains("match&self.nested{Some(inner)=>"));
+        assert!(toks.contains("match&self.choice{Ok(inner)=>"));
         assert!(toks.contains("whilei<arr.len()"));
         assert!(toks.contains("&(*&self.pair).0"));
         assert!(toks.contains("&(*&self.pair).1"));
@@ -557,8 +501,8 @@ mod tests {
         };
 
         let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        assert!(toks.contains("&(*&inner).0"));
-        assert!(toks.contains("&(*&(*&inner).1).0"));
+        assert!(toks.contains("&(*inner).0"));
+        assert!(toks.contains("&(*&(*inner).1).0"));
         assert!(!toks.contains("&&inner.0"));
     }
 

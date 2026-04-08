@@ -492,3 +492,45 @@ fn derive_recursive_concrete_shapes() {
         cxs_runtime_encode(&RECURSIVE).len()
     );
 }
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct NonCopyLeaf {
+    code: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct NonCopyTopLevel {
+    maybe: Option<NonCopyLeaf>,
+    choice: Result<NonCopyLeaf, NonCopyLeaf>,
+}
+
+const NON_COPY: NonCopyTopLevel = NonCopyTopLevel {
+    maybe: Some(NonCopyLeaf { code: 11 }),
+    choice: Err(NonCopyLeaf { code: 99 }),
+};
+
+const NON_COPY_TXS: [u8; NON_COPY.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ NON_COPY.const_txs_size() }>::new();
+    NON_COPY.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const NON_COPY_CXS: [u8; NON_COPY.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ NON_COPY.const_cxs_size() }>::new();
+    NON_COPY.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn derive_top_level_option_and_result_for_non_copy_inner() {
+    assert_eq!(&NON_COPY_TXS, txs_runtime_encode(&NON_COPY).as_slice());
+    assert_eq!(&NON_COPY_CXS, cxs_runtime_encode(&NON_COPY).as_slice());
+    assert_eq!(
+        NON_COPY.const_txs_size(),
+        txs_runtime_encode(&NON_COPY).len()
+    );
+    assert_eq!(
+        NON_COPY.const_cxs_size(),
+        cxs_runtime_encode(&NON_COPY).len()
+    );
+}
