@@ -892,19 +892,25 @@ fn byte_slice_empty_const_matches_runtime() {
     );
 }
 
-// -- None / Ok path tests --
+// -- None / Ok / Some / Err path tests --
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
-struct NoneAndOk {
+struct OptionResultPaths {
     absent: Option<Leaf>,
     nested_absent: Option<Option<Leaf>>,
     success: Result<Leaf, Leaf>,
 }
 
-const NONE_AND_OK: NoneAndOk = NoneAndOk {
+const NONE_AND_OK: OptionResultPaths = OptionResultPaths {
     absent: None,
     nested_absent: Some(None),
     success: Ok(LEAF_A),
+};
+
+const SOME_AND_ERR: OptionResultPaths = OptionResultPaths {
+    absent: Some(LEAF_A),
+    nested_absent: Some(Some(LEAF_A)),
+    success: Err(LEAF_A),
 };
 
 const NONE_AND_OK_TXS: [u8; NONE_AND_OK.const_txs_size()] = {
@@ -936,6 +942,38 @@ fn none_and_ok_const_matches_runtime() {
     assert_eq!(
         NONE_AND_OK.const_cxs_size(),
         cxs_runtime_encode(&NONE_AND_OK).len()
+    );
+}
+
+const SOME_AND_ERR_TXS: [u8; SOME_AND_ERR.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ SOME_AND_ERR.const_txs_size() }>::new();
+    SOME_AND_ERR.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const SOME_AND_ERR_CXS: [u8; SOME_AND_ERR.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ SOME_AND_ERR.const_cxs_size() }>::new();
+    SOME_AND_ERR.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn some_and_err_const_matches_runtime() {
+    assert_eq!(
+        &SOME_AND_ERR_TXS,
+        txs_runtime_encode(&SOME_AND_ERR).as_slice()
+    );
+    assert_eq!(
+        &SOME_AND_ERR_CXS,
+        cxs_runtime_encode(&SOME_AND_ERR).as_slice()
+    );
+    assert_eq!(
+        SOME_AND_ERR.const_txs_size(),
+        txs_runtime_encode(&SOME_AND_ERR).len()
+    );
+    assert_eq!(
+        SOME_AND_ERR.const_cxs_size(),
+        cxs_runtime_encode(&SOME_AND_ERR).len()
     );
 }
 
