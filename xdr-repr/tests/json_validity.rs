@@ -453,3 +453,73 @@ fn valid_field_names_work() {
     assert_eq!(fields[1]["name"], "field2");
     assert_eq!(fields[2]["name"], "FIELD_THREE");
 }
+
+#[test]
+fn embedded_union_json_is_valid() {
+    let union = TypeSpec::Union(std::boxed::Box::new(UnionBody {
+        discriminant_decl: declare_int("which"),
+        case_specs: vec![
+            CaseSpec {
+                cases: vec![signed(0)],
+                decl: declare_type("ok", TypeSpec::Bool),
+            },
+            CaseSpec {
+                cases: vec![signed(1)],
+                decl: declare_unsigned("err"),
+            },
+        ],
+        default_decl: None,
+    }));
+
+    let json = union.get_type_json();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid for embedded union");
+
+    assert_eq!(parsed["type"], "union");
+    assert_eq!(parsed["discriminant"]["name"], "which");
+    assert_eq!(parsed["discriminant"]["element_type"]["type"], "int");
+
+    let cases = parsed["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 2);
+    assert_eq!(cases[0]["values"][0], 0);
+    assert_eq!(cases[0]["element_type"]["type"], "bool");
+    assert_eq!(cases[1]["values"][0], 1);
+    assert_eq!(cases[1]["element_type"]["type"], "unsigned");
+}
+
+#[test]
+fn embedded_union_identifier_cases_and_default_json_are_valid() {
+    let union = TypeSpec::Union(std::boxed::Box::new(UnionBody {
+        discriminant_decl: declare_int("which"),
+        case_specs: vec![
+            CaseSpec {
+                cases: vec![Value::Ident(ident("RECOVERABLE"))],
+                decl: declare_type("ok", TypeSpec::Bool),
+            },
+            CaseSpec {
+                cases: vec![Value::Ident(ident("FATAL"))],
+                decl: declare_unsigned("err"),
+            },
+        ],
+        default_decl: Some(declare_type("fallback", TypeSpec::Bool)),
+    }));
+
+    let json = union.get_type_json();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).expect("JSON output should be valid for embedded union");
+
+    assert_eq!(parsed["type"], "union");
+    assert_eq!(parsed["discriminant"]["name"], "which");
+    assert_eq!(parsed["discriminant"]["element_type"]["type"], "int");
+
+    let cases = parsed["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 2);
+    assert_eq!(cases[0]["values"][0], "RECOVERABLE");
+    assert_eq!(cases[0]["element_type"]["type"], "bool");
+    assert_eq!(cases[1]["values"][0], "FATAL");
+    assert_eq!(cases[1]["element_type"]["type"], "unsigned");
+
+    let default = parsed["default"].as_object().unwrap();
+    assert_eq!(default["name"], "fallback");
+    assert_eq!(default["element_type"]["type"], "bool");
+}

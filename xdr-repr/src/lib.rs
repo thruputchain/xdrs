@@ -282,7 +282,8 @@
 //!
 //! ### Limitations
 //!
-//! **IMPORTANT:** Embedded enum and union types are **not supported** and will cause a **panic** at runtime.
+//! **IMPORTANT:** Embedded enum types are **not supported** and will cause a **panic** at runtime.
+//! Embedded struct and union types are supported.
 //!
 //! ```rust,should_panic
 //! # use xdr_repr::*;
@@ -291,23 +292,33 @@
 //! let json = enum_type.get_type_json();  // PANIC!
 //! ```
 //!
-//! ```rust,should_panic
+//! ```rust
 //! # use xdr_repr::*;
-//! // This will also PANIC:
 //! let union_type = TypeSpec::Union(Box::new(UnionBody {
-//!     discriminant_decl: Declaration::Void,
-//!     case_specs: vec![],
+//!     discriminant_decl: declare_int("which"),
+//!     case_specs: vec![
+//!         CaseSpec {
+//!             cases: vec![signed(0)],
+//!             decl: declare_type("ok", TypeSpec::Bool),
+//!         },
+//!         CaseSpec {
+//!             cases: vec![signed(1)],
+//!             decl: declare_unsigned("err"),
+//!         },
+//!     ],
 //!     default_decl: None,
 //! }));
-//! let json = union_type.get_type_json();  // PANIC!
+//! let json = union_type.get_type_json();
+//! assert!(json.contains(r#""type": "union""#));
 //! ```
 //!
-//! **Workaround:** Define enum and union types at the top level in your XDR specification
-//! and reference them by name using `TypeSpec::Ident`. Embedded struct types are fully supported.
+//! **Workaround:** Define embedded enums at the top level in your XDR specification
+//! and reference them by name using `TypeSpec::Ident`. Embedded struct and union types
+//! are fully supported.
 //!
 //! ```rust
 //! # use xdr_repr::*;
-//! // Instead, reference enums and unions by name:
+//! // Instead, reference enums by name:
 //! let named_type = TypeSpec::Ident(ident("MyEnum"));
 //! let json = named_type.get_type_json();  // OK: "MyEnum"
 //! ```
@@ -448,6 +459,40 @@
 //! ```
 //!
 //! - **`optional_type`**: The wrapped type (recursive type specification)
+//!
+//! ### Union
+//!
+//! Discriminated unions:
+//!
+//! ```json
+//! {
+//!   "type": "union",
+//!   "discriminant": {
+//!     "name": "which",
+//!     "element_type": { "type": "int" }
+//!   },
+//!   "cases": [
+//!     {
+//!       "values": [0, "RECOVERABLE"],
+//!       "element_type": { "type": "bool" }
+//!     },
+//!     {
+//!       "values": [1],
+//!       "element_type": { "type": "unsigned" }
+//!     }
+//!   ],
+//!   "default": {
+//!     "name": "fallback",
+//!     "element_type": { "type": "bool" }
+//!   }
+//! }
+//! ```
+//!
+//! - **`discriminant`**: Named declaration object for the union discriminant
+//! - **`cases`**: Array of case objects
+//!   - **`values`**: Discriminant values for the case; numeric labels serialize as JSON numbers, identifier-valued labels serialize as JSON strings
+//!   - **`element_type`**: Case payload type (recursive type specification)
+//! - **`default`**: Optional default declaration object, present when the union has a default branch
 //!
 //! ### Struct
 //!
