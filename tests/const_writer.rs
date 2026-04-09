@@ -696,8 +696,14 @@ mod int128_const {
     fn i128_u128_const_matches_runtime() {
         assert_eq!(&WIDE_TXS, txs_runtime_encode(&WIDE_VAL).as_slice());
         assert_eq!(&WIDE_CXS, cxs_runtime_encode(&WIDE_VAL).as_slice());
-        assert_eq!(WIDE_VAL.const_txs_size(), txs_runtime_encode(&WIDE_VAL).len());
-        assert_eq!(WIDE_VAL.const_cxs_size(), cxs_runtime_encode(&WIDE_VAL).len());
+        assert_eq!(
+            WIDE_VAL.const_txs_size(),
+            txs_runtime_encode(&WIDE_VAL).len()
+        );
+        assert_eq!(
+            WIDE_VAL.const_cxs_size(),
+            cxs_runtime_encode(&WIDE_VAL).len()
+        );
     }
 
     // Boundary values
@@ -753,10 +759,7 @@ const WITH_STR: WithStr<'static> = WithStr {
     code: 42,
 };
 
-const WITH_STR_EMPTY: WithStr<'static> = WithStr {
-    label: "",
-    code: 0,
-};
+const WITH_STR_EMPTY: WithStr<'static> = WithStr { label: "", code: 0 };
 
 const WITH_STR_TXS: [u8; WITH_STR.const_txs_size()] = {
     let mut w = xdrs::txs::ConstWriter::<{ WITH_STR.const_txs_size() }>::new();
@@ -786,8 +789,14 @@ const WITH_STR_EMPTY_CXS: [u8; WITH_STR_EMPTY.const_cxs_size()] = {
 fn str_ref_const_matches_runtime() {
     assert_eq!(&WITH_STR_TXS, txs_runtime_encode(&WITH_STR).as_slice());
     assert_eq!(&WITH_STR_CXS, cxs_runtime_encode(&WITH_STR).as_slice());
-    assert_eq!(WITH_STR.const_txs_size(), txs_runtime_encode(&WITH_STR).len());
-    assert_eq!(WITH_STR.const_cxs_size(), cxs_runtime_encode(&WITH_STR).len());
+    assert_eq!(
+        WITH_STR.const_txs_size(),
+        txs_runtime_encode(&WITH_STR).len()
+    );
+    assert_eq!(
+        WITH_STR.const_cxs_size(),
+        cxs_runtime_encode(&WITH_STR).len()
+    );
 }
 
 #[test]
@@ -823,10 +832,7 @@ const WITH_BYTES: WithByteSlice<'static> = WithByteSlice {
     tag: 1,
 };
 
-const WITH_BYTES_EMPTY: WithByteSlice<'static> = WithByteSlice {
-    data: &[],
-    tag: 0,
-};
+const WITH_BYTES_EMPTY: WithByteSlice<'static> = WithByteSlice { data: &[], tag: 0 };
 
 const WITH_BYTES_TXS: [u8; WITH_BYTES.const_txs_size()] = {
     let mut w = xdrs::txs::ConstWriter::<{ WITH_BYTES.const_txs_size() }>::new();
