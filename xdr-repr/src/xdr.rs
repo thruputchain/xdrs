@@ -268,6 +268,85 @@ fn get_validated_identifier(s: &str) -> &str {
     s
 }
 
+fn value_json(value: &Value) -> String {
+    use alloc::format;
+
+    match value {
+        Value::Const(Constant::Unsigned(n)) => n.to_string(),
+        Value::Const(Constant::Signed(n)) => n.to_string(),
+        Value::Ident(ident) => format!("\"{}\"", get_validated_identifier(&ident.0)),
+    }
+}
+
+fn named_element_json(name: Option<&Ident>, element_json: String) -> String {
+    use alloc::format;
+
+    let name_json = match name {
+        Some(name) => format!("\"{}\"", get_validated_identifier(&name.0)),
+        None => "null".to_string(),
+    };
+
+    if element_json.contains('\n') {
+        format!(
+            "{{\n  \"name\": {},\n  \"element_type\": {}\n}}",
+            name_json,
+            element_json.replace('\n', "\n  ")
+        )
+    } else {
+        format!("{{ \"name\": {}, \"element_type\": {} }}", name_json, element_json)
+    }
+}
+
+fn union_json(body: &UnionBody) -> String {
+    use alloc::format;
+    use alloc::string::String;
+
+    let discriminant_json = named_element_json(
+        body.discriminant_decl.name(),
+        body.discriminant_decl.get_type_json(),
+    )
+    .replace('\n', "\n  ");
+
+    let mut result = String::from("{\n  \"type\": \"union\",\n  \"discriminant\": ");
+    result.push_str(&discriminant_json);
+    result.push_str(",\n  \"cases\": [\n");
+
+    for (idx, case_spec) in body.case_specs.iter().enumerate() {
+        if idx > 0 {
+            result.push_str(",\n");
+        }
+
+        let values = case_spec
+            .cases
+            .iter()
+            .map(value_json)
+            .collect::<Vec<_>>()
+            .join(", ");
+        let element_json = case_spec.decl.get_type_json();
+        let element_json = if element_json.contains('\n') {
+            element_json.replace('\n', "\n      ")
+        } else {
+            element_json
+        };
+
+        result.push_str(&format!(
+            "    {{\n      \"values\": [{}],\n      \"element_type\": {}\n    }}",
+            values, element_json
+        ));
+    }
+
+    result.push_str("\n  ]");
+
+    if let Some(default_decl) = &body.default_decl {
+        let default_json = named_element_json(default_decl.name(), default_decl.get_type_json())
+            .replace('\n', "\n  ");
+        result.push_str(&format!(",\n  \"default\": {}", default_json));
+    }
+
+    result.push_str("\n}");
+    result
+}
+
 impl Declaration {
     /// Returns the name of this declaration, or None for void declarations.
     pub fn name(&self) -> Option<&Ident> {
@@ -303,9 +382,9 @@ impl Declaration {
     ///
     /// # Panics
     ///
-    /// **Panics if the declaration contains embedded enum or union types.**
-    /// These types are not yet supported. Define them at the top level and reference
-    /// them by name instead. Embedded struct types are fully supported.
+    /// **Panics if the declaration contains embedded enum types.**
+    /// Embedded struct and union types are supported. Define embedded enums at the
+    /// top level and reference them by name instead.
     ///
     /// # Examples
     ///
@@ -461,12 +540,13 @@ impl TypeSpec {
     ///
     /// - Primitive types: Returns the type name as a string (`"int"`, `"unsigned"`, etc.)
     /// - Named types: Returns the identifier name (validated as XDR identifier)
-    /// - Struct types: Returns a JSON object with type "struct" and a "fields" array
+    /// - Struct and union types: Return JSON objects describing the embedded type structure
     ///
     /// # Panics
     ///
-    /// **Panics for embedded enum and union types.** These types are not yet supported.
-    /// Define them at the top level and reference them by name instead.
+    /// **Panics for embedded enum types.**
+    /// Embedded struct and union types are supported. Define embedded enums at the
+    /// top level and reference them by name instead.
     ///
     /// # Examples
     ///
@@ -542,7 +622,7 @@ impl TypeSpec {
                 result.push_str("\n  ]\n}");
                 TypeJsonRepr::Object(result)
             }
-            TypeSpec::Union(_body) => panic!("Embedded union type not yet supported"),
+            TypeSpec::Union(body) => TypeJsonRepr::Object(union_json(body)),
             TypeSpec::Ident(ident) => {
                 TypeJsonRepr::Name(get_validated_identifier(&ident.0).to_string())
             }
