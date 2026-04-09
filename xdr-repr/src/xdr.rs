@@ -571,7 +571,7 @@ impl TypeSpec {
     ///     declare_type("name", TypeSpec::Ident(ident("String"))),
     /// ]));
     /// let json = struct_type.get_type_json();
-    /// // Returns: { "type": "struct", "fields": [{ "name": "id", "field_type": { "type": "unsigned" } }, ...] }
+    /// // Returns: { "type": "struct", "fields": [{ "name": "id", "element_type": { "type": "unsigned" } }, ...] }
     /// ```
     pub fn get_type_json(&self) -> alloc::string::String {
         self.get_type_json_repr().into_string()

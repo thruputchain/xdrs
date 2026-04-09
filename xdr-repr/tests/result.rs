@@ -1,5 +1,13 @@
 use xdr_repr::*;
 
+struct TypedefBackedBool;
+
+impl HasTypeDef for TypedefBackedBool {
+    fn type_def() -> TypeDef {
+        TypeDef::Def(declare_type("wrapped", TypeSpec::Bool))
+    }
+}
+
 #[test]
 fn result_unit_unit_type_spec_is_inline_union() {
     let type_spec = <Result<(), ()>>::type_spec();
@@ -38,4 +46,14 @@ fn result_bool_u32_formats_as_inline_union() {
         <Result<bool, u32>>::type_spec().to_string(),
         "union switch (int which)\n{\ncase 0:\n\tbool ok;\ncase 1:\n\tunsigned int err;\n}"
     );
+}
+
+#[test]
+fn result_typedef_backed_payload_uses_result_arm_name() {
+    let type_spec = <Result<TypedefBackedBool, u32>>::type_spec();
+    let TypeSpec::Union(body) = type_spec else {
+        panic!("Expected TypeSpec::Union");
+    };
+
+    assert_eq!(body.case_specs[0].decl, declare_type("ok", TypeSpec::Bool));
 }
