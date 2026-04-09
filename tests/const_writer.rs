@@ -662,3 +662,388 @@ fn newtype_in_composites() {
         cxs_runtime_encode(&NT_COMPOSITES).len()
     );
 }
+
+// -- i128/u128 tests --
+
+#[cfg(feature = "int128")]
+mod int128_const {
+    use super::*;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+    struct Wide {
+        a: u128,
+        b: i128,
+    }
+
+    const WIDE_VAL: Wide = Wide {
+        a: 0x0001_dead_1234_beef_5678,
+        b: -1,
+    };
+
+    const WIDE_TXS: [u8; WIDE_VAL.const_txs_size()] = {
+        let mut w = xdrs::txs::ConstWriter::<{ WIDE_VAL.const_txs_size() }>::new();
+        WIDE_VAL.const_write_txs(&mut w);
+        w.into_bytes()
+    };
+
+    const WIDE_CXS: [u8; WIDE_VAL.const_cxs_size()] = {
+        let mut w = xdrs::cxs::ConstWriter::<{ WIDE_VAL.const_cxs_size() }>::new();
+        WIDE_VAL.const_write_cxs(&mut w);
+        w.into_bytes()
+    };
+
+    #[test]
+    fn i128_u128_const_matches_runtime() {
+        assert_eq!(&WIDE_TXS, txs_runtime_encode(&WIDE_VAL).as_slice());
+        assert_eq!(&WIDE_CXS, cxs_runtime_encode(&WIDE_VAL).as_slice());
+        assert_eq!(
+            WIDE_VAL.const_txs_size(),
+            txs_runtime_encode(&WIDE_VAL).len()
+        );
+        assert_eq!(
+            WIDE_VAL.const_cxs_size(),
+            cxs_runtime_encode(&WIDE_VAL).len()
+        );
+    }
+
+    // Boundary values
+    const U128_ZERO: Wide = Wide { a: 0, b: 0 };
+    const U128_MAX: Wide = Wide {
+        a: u128::MAX,
+        b: i128::MIN,
+    };
+
+    const U128_ZERO_TXS: [u8; U128_ZERO.const_txs_size()] = {
+        let mut w = xdrs::txs::ConstWriter::<{ U128_ZERO.const_txs_size() }>::new();
+        U128_ZERO.const_write_txs(&mut w);
+        w.into_bytes()
+    };
+
+    const U128_MAX_TXS: [u8; U128_MAX.const_txs_size()] = {
+        let mut w = xdrs::txs::ConstWriter::<{ U128_MAX.const_txs_size() }>::new();
+        U128_MAX.const_write_txs(&mut w);
+        w.into_bytes()
+    };
+
+    const U128_ZERO_CXS: [u8; U128_ZERO.const_cxs_size()] = {
+        let mut w = xdrs::cxs::ConstWriter::<{ U128_ZERO.const_cxs_size() }>::new();
+        U128_ZERO.const_write_cxs(&mut w);
+        w.into_bytes()
+    };
+
+    const U128_MAX_CXS: [u8; U128_MAX.const_cxs_size()] = {
+        let mut w = xdrs::cxs::ConstWriter::<{ U128_MAX.const_cxs_size() }>::new();
+        U128_MAX.const_write_cxs(&mut w);
+        w.into_bytes()
+    };
+
+    #[test]
+    fn i128_u128_boundary_values() {
+        assert_eq!(&U128_ZERO_TXS, txs_runtime_encode(&U128_ZERO).as_slice());
+        assert_eq!(&U128_MAX_TXS, txs_runtime_encode(&U128_MAX).as_slice());
+        assert_eq!(&U128_ZERO_CXS, cxs_runtime_encode(&U128_ZERO).as_slice());
+        assert_eq!(&U128_MAX_CXS, cxs_runtime_encode(&U128_MAX).as_slice());
+    }
+}
+
+// -- &str const tests --
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct WithStr<'a> {
+    label: &'a str,
+    code: u32,
+}
+
+const WITH_STR: WithStr<'static> = WithStr {
+    label: "hello",
+    code: 42,
+};
+
+const WITH_STR_EMPTY: WithStr<'static> = WithStr { label: "", code: 0 };
+
+const WITH_STR_TXS: [u8; WITH_STR.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ WITH_STR.const_txs_size() }>::new();
+    WITH_STR.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_STR_CXS: [u8; WITH_STR.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ WITH_STR.const_cxs_size() }>::new();
+    WITH_STR.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_STR_EMPTY_TXS: [u8; WITH_STR_EMPTY.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ WITH_STR_EMPTY.const_txs_size() }>::new();
+    WITH_STR_EMPTY.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_STR_EMPTY_CXS: [u8; WITH_STR_EMPTY.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ WITH_STR_EMPTY.const_cxs_size() }>::new();
+    WITH_STR_EMPTY.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn str_ref_const_matches_runtime() {
+    assert_eq!(&WITH_STR_TXS, txs_runtime_encode(&WITH_STR).as_slice());
+    assert_eq!(&WITH_STR_CXS, cxs_runtime_encode(&WITH_STR).as_slice());
+    assert_eq!(
+        WITH_STR.const_txs_size(),
+        txs_runtime_encode(&WITH_STR).len()
+    );
+    assert_eq!(
+        WITH_STR.const_cxs_size(),
+        cxs_runtime_encode(&WITH_STR).len()
+    );
+}
+
+#[test]
+fn str_ref_empty_const_matches_runtime() {
+    assert_eq!(
+        &WITH_STR_EMPTY_TXS,
+        txs_runtime_encode(&WITH_STR_EMPTY).as_slice()
+    );
+    assert_eq!(
+        &WITH_STR_EMPTY_CXS,
+        cxs_runtime_encode(&WITH_STR_EMPTY).as_slice()
+    );
+    assert_eq!(
+        WITH_STR_EMPTY.const_txs_size(),
+        txs_runtime_encode(&WITH_STR_EMPTY).len()
+    );
+    assert_eq!(
+        WITH_STR_EMPTY.const_cxs_size(),
+        cxs_runtime_encode(&WITH_STR_EMPTY).len()
+    );
+}
+
+// -- &[u8] const tests --
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct WithByteSlice<'a> {
+    data: &'a [u8],
+    tag: u32,
+}
+
+const WITH_BYTES: WithByteSlice<'static> = WithByteSlice {
+    data: &[0xDE, 0xAD, 0xBE, 0xEF],
+    tag: 1,
+};
+
+const WITH_BYTES_EMPTY: WithByteSlice<'static> = WithByteSlice { data: &[], tag: 0 };
+
+const WITH_BYTES_TXS: [u8; WITH_BYTES.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ WITH_BYTES.const_txs_size() }>::new();
+    WITH_BYTES.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_BYTES_CXS: [u8; WITH_BYTES.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ WITH_BYTES.const_cxs_size() }>::new();
+    WITH_BYTES.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_BYTES_EMPTY_TXS: [u8; WITH_BYTES_EMPTY.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ WITH_BYTES_EMPTY.const_txs_size() }>::new();
+    WITH_BYTES_EMPTY.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_BYTES_EMPTY_CXS: [u8; WITH_BYTES_EMPTY.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ WITH_BYTES_EMPTY.const_cxs_size() }>::new();
+    WITH_BYTES_EMPTY.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn byte_slice_const_matches_runtime() {
+    assert_eq!(&WITH_BYTES_TXS, txs_runtime_encode(&WITH_BYTES).as_slice());
+    assert_eq!(&WITH_BYTES_CXS, cxs_runtime_encode(&WITH_BYTES).as_slice());
+    assert_eq!(
+        WITH_BYTES.const_txs_size(),
+        txs_runtime_encode(&WITH_BYTES).len()
+    );
+    assert_eq!(
+        WITH_BYTES.const_cxs_size(),
+        cxs_runtime_encode(&WITH_BYTES).len()
+    );
+}
+
+#[test]
+fn byte_slice_empty_const_matches_runtime() {
+    assert_eq!(
+        &WITH_BYTES_EMPTY_TXS,
+        txs_runtime_encode(&WITH_BYTES_EMPTY).as_slice()
+    );
+    assert_eq!(
+        &WITH_BYTES_EMPTY_CXS,
+        cxs_runtime_encode(&WITH_BYTES_EMPTY).as_slice()
+    );
+    assert_eq!(
+        WITH_BYTES_EMPTY.const_txs_size(),
+        txs_runtime_encode(&WITH_BYTES_EMPTY).len()
+    );
+    assert_eq!(
+        WITH_BYTES_EMPTY.const_cxs_size(),
+        cxs_runtime_encode(&WITH_BYTES_EMPTY).len()
+    );
+}
+
+// -- None / Ok / Some / Err path tests --
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct OptionResultPaths {
+    absent: Option<Leaf>,
+    nested_absent: Option<Option<Leaf>>,
+    success: Result<Leaf, Leaf>,
+}
+
+const NONE_AND_OK: OptionResultPaths = OptionResultPaths {
+    absent: None,
+    nested_absent: Some(None),
+    success: Ok(LEAF_A),
+};
+
+const SOME_AND_ERR: OptionResultPaths = OptionResultPaths {
+    absent: Some(LEAF_A),
+    nested_absent: Some(Some(LEAF_A)),
+    success: Err(LEAF_A),
+};
+
+const NONE_AND_OK_TXS: [u8; NONE_AND_OK.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ NONE_AND_OK.const_txs_size() }>::new();
+    NONE_AND_OK.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const NONE_AND_OK_CXS: [u8; NONE_AND_OK.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ NONE_AND_OK.const_cxs_size() }>::new();
+    NONE_AND_OK.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn none_and_ok_const_matches_runtime() {
+    assert_eq!(
+        &NONE_AND_OK_TXS,
+        txs_runtime_encode(&NONE_AND_OK).as_slice()
+    );
+    assert_eq!(
+        &NONE_AND_OK_CXS,
+        cxs_runtime_encode(&NONE_AND_OK).as_slice()
+    );
+    assert_eq!(
+        NONE_AND_OK.const_txs_size(),
+        txs_runtime_encode(&NONE_AND_OK).len()
+    );
+    assert_eq!(
+        NONE_AND_OK.const_cxs_size(),
+        cxs_runtime_encode(&NONE_AND_OK).len()
+    );
+}
+
+const SOME_AND_ERR_TXS: [u8; SOME_AND_ERR.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ SOME_AND_ERR.const_txs_size() }>::new();
+    SOME_AND_ERR.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const SOME_AND_ERR_CXS: [u8; SOME_AND_ERR.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ SOME_AND_ERR.const_cxs_size() }>::new();
+    SOME_AND_ERR.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn some_and_err_const_matches_runtime() {
+    assert_eq!(
+        &SOME_AND_ERR_TXS,
+        txs_runtime_encode(&SOME_AND_ERR).as_slice()
+    );
+    assert_eq!(
+        &SOME_AND_ERR_CXS,
+        cxs_runtime_encode(&SOME_AND_ERR).as_slice()
+    );
+    assert_eq!(
+        SOME_AND_ERR.const_txs_size(),
+        txs_runtime_encode(&SOME_AND_ERR).len()
+    );
+    assert_eq!(
+        SOME_AND_ERR.const_cxs_size(),
+        cxs_runtime_encode(&SOME_AND_ERR).len()
+    );
+}
+
+// -- Enum with tuple variants (unnamed fields) --
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+#[repr(i32)]
+#[allow(dead_code)]
+enum TupleShape {
+    Circle(u32) = 0,
+    Rect(u32, u32) = 1,
+    Empty = 2,
+}
+
+const TCIRCLE: TupleShape = TupleShape::Circle(5);
+const TRECT: TupleShape = TupleShape::Rect(10, 20);
+const TEMPTY: TupleShape = TupleShape::Empty;
+
+const TCIRCLE_TXS: [u8; TCIRCLE.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ TCIRCLE.const_txs_size() }>::new();
+    TCIRCLE.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const TCIRCLE_CXS: [u8; TCIRCLE.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ TCIRCLE.const_cxs_size() }>::new();
+    TCIRCLE.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const TRECT_TXS: [u8; TRECT.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ TRECT.const_txs_size() }>::new();
+    TRECT.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const TRECT_CXS: [u8; TRECT.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ TRECT.const_cxs_size() }>::new();
+    TRECT.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const TEMPTY_TXS: [u8; TEMPTY.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ TEMPTY.const_txs_size() }>::new();
+    TEMPTY.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const TEMPTY_CXS: [u8; TEMPTY.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ TEMPTY.const_cxs_size() }>::new();
+    TEMPTY.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn enum_tuple_variants_const_matches_runtime() {
+    assert_eq!(&TCIRCLE_TXS, txs_runtime_encode(&TCIRCLE).as_slice());
+    assert_eq!(&TCIRCLE_CXS, cxs_runtime_encode(&TCIRCLE).as_slice());
+    assert_eq!(&TRECT_TXS, txs_runtime_encode(&TRECT).as_slice());
+    assert_eq!(&TRECT_CXS, cxs_runtime_encode(&TRECT).as_slice());
+    assert_eq!(&TEMPTY_TXS, txs_runtime_encode(&TEMPTY).as_slice());
+    assert_eq!(&TEMPTY_CXS, cxs_runtime_encode(&TEMPTY).as_slice());
+}
+
+#[test]
+fn enum_tuple_variants_sizes_match() {
+    assert_eq!(TCIRCLE.const_txs_size(), txs_runtime_encode(&TCIRCLE).len());
+    assert_eq!(TCIRCLE.const_cxs_size(), cxs_runtime_encode(&TCIRCLE).len());
+    assert_eq!(TRECT.const_txs_size(), txs_runtime_encode(&TRECT).len());
+    assert_eq!(TRECT.const_cxs_size(), cxs_runtime_encode(&TRECT).len());
+    assert_eq!(TEMPTY.const_txs_size(), txs_runtime_encode(&TEMPTY).len());
+    assert_eq!(TEMPTY.const_cxs_size(), cxs_runtime_encode(&TEMPTY).len());
+}

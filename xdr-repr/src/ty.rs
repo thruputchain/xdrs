@@ -177,9 +177,9 @@ const _: () = {
 
 impl<const N: usize> Declare for [u8; N] {
     fn declare(name: Ident) -> Declaration {
+        const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
         Declaration::FixedOpaque {
             name,
-            // TODO: use compile-time asserts to check N fits in u32
             size: Value::Const((N as u32).into()),
         }
     }
@@ -189,6 +189,7 @@ impl<const N: usize> Declare for [u8; N] {
 // This allows nested arrays like [[u8; 3]; 5] to work
 impl<const N: usize> HasTypeSpec for [u8; N] {
     fn type_spec() -> TypeSpec {
+        const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
         // Arrays aren't types in XDR, so we represent them as embedded structs
         // with a single field named "unnamed_0"
         TypeSpec::Struct(StructBody(alloc::vec![Declaration::FixedOpaque {
@@ -200,10 +201,10 @@ impl<const N: usize> HasTypeSpec for [u8; N] {
 
 impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
     fn declare(name: Ident) -> Declaration {
+        const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
         Declaration::FixedArray {
             name,
             elt_ty: T::type_spec(),
-            // TODO: use compile-time asserts to check N fits in u32
             len: Value::Const((N as u32).into()),
         }
     }
@@ -213,6 +214,7 @@ impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
 // This allows nested arrays like [[u32; 3]; 5] to work
 impl<const N: usize, T: HasTypeSpec> HasTypeSpec for [T; N] {
     fn type_spec() -> TypeSpec {
+        const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
         // Arrays aren't types in XDR, so we represent them as embedded structs
         // with a single field named "unnamed_0"
         TypeSpec::Struct(StructBody(alloc::vec![Declaration::FixedArray {
@@ -253,7 +255,6 @@ const _: () = {
             Declaration::VariableArray {
                 name,
                 elt_ty: T::type_spec(),
-                // TODO: use compile-time asserts to check MAX fits in u32
                 max: Value::Const(Constant::Unsigned(MAX)),
             }
         }
