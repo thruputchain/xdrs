@@ -32,14 +32,10 @@ fn result_bool_u32_type_spec_uses_ok_and_err_cases() {
     assert!(body.default_decl.is_none());
 }
 
-check_format! { result_bool_u32_formats_as_inline_union
-    <Result<bool, u32>>::type_spec()
-    =>
-        "union switch (int which)"
-        "{"
-        "case 0:"
-        "\tbool ok;"
-        "case 1:"
-        "\tunsigned int err;"
-        "}"
+#[test]
+fn result_bool_u32_formats_as_inline_union() {
+    assert_eq!(
+        <Result<bool, u32>>::type_spec().to_string(),
+        "union switch (int which)\n{\ncase 0:\n\tbool ok;\ncase 1:\n\tunsigned int err;\n}"
+    );
 }

@@ -259,14 +259,23 @@ impl Format for TypeSpec {
             TypeSpec::Int => {
                 f.write_str("int");
             }
-            TypeSpec::Hyper => {
-                f.write_str("hyper");
-            }
             TypeSpec::Unsigned => {
                 f.write_str("unsigned int");
             }
+            TypeSpec::Hyper => {
+                f.write_str("hyper");
+            }
             TypeSpec::UnsignedHyper => {
                 f.write_str("unsigned hyper");
+            }
+            TypeSpec::Float => {
+                f.write_str("float");
+            }
+            TypeSpec::Double => {
+                f.write_str("double");
+            }
+            TypeSpec::Quadruple => {
+                f.write_str("quadruple");
             }
             TypeSpec::Bool => {
                 f.write_str("bool");
@@ -282,7 +291,10 @@ impl Format for TypeSpec {
                 f.write_str("enum ");
                 body.fmt(f);
             }
-            _ => panic!("Format unimplemented for {self:?}"),
+            TypeSpec::Union(body) => {
+                f.write_str("union ");
+                body.fmt(f);
+            }
         }
     }
 }
