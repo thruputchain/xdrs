@@ -460,6 +460,40 @@
 //!
 //! - **`optional_type`**: The wrapped type (recursive type specification)
 //!
+//! ### Union
+//!
+//! Discriminated unions:
+//!
+//! ```json
+//! {
+//!   "type": "union",
+//!   "discriminant": {
+//!     "name": "which",
+//!     "element_type": { "type": "int" }
+//!   },
+//!   "cases": [
+//!     {
+//!       "values": [0, "RECOVERABLE"],
+//!       "element_type": { "type": "bool" }
+//!     },
+//!     {
+//!       "values": [1],
+//!       "element_type": { "type": "unsigned" }
+//!     }
+//!   ],
+//!   "default": {
+//!     "name": "fallback",
+//!     "element_type": { "type": "bool" }
+//!   }
+//! }
+//! ```
+//!
+//! - **`discriminant`**: Named declaration object for the union discriminant
+//! - **`cases`**: Array of case objects
+//!   - **`values`**: Discriminant values for the case; numeric labels serialize as JSON numbers, identifier-valued labels serialize as JSON strings
+//!   - **`element_type`**: Case payload type (recursive type specification)
+//! - **`default`**: Optional default declaration object, present when the union has a default branch
+//!
 //! ### Struct
 //!
 //! Struct with named fields:
