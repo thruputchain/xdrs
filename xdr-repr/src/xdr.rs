@@ -293,7 +293,10 @@ fn named_element_json(name: Option<&Ident>, element_json: String) -> String {
             element_json.replace('\n', "\n  ")
         )
     } else {
-        format!("{{ \"name\": {}, \"element_type\": {} }}", name_json, element_json)
+        format!(
+            "{{ \"name\": {}, \"element_type\": {} }}",
+            name_json, element_json
+        )
     }
 }
 

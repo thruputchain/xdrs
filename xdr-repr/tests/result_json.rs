@@ -34,6 +34,12 @@ fn nested_struct_with_result_json_is_valid() {
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0]["name"], "choice");
     assert_eq!(fields[0]["element_type"]["type"], "union");
-    assert_eq!(fields[0]["element_type"]["cases"][0]["element_type"]["type"], "bool");
-    assert_eq!(fields[0]["element_type"]["cases"][1]["element_type"]["type"], "unsigned");
+    assert_eq!(
+        fields[0]["element_type"]["cases"][0]["element_type"]["type"],
+        "bool"
+    );
+    assert_eq!(
+        fields[0]["element_type"]["cases"][1]["element_type"]["type"],
+        "unsigned"
+    );
 }
