@@ -107,11 +107,16 @@ impl<const MAX: u32> schemars::JsonSchema for BytesM<MAX> {
     }
 
     fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
+        let mut schema = schemars::json_schema!({
             "type": "string",
-            "format": "hex",
+            "contentEncoding": "hex",
+            "contentMediaType": "application/binary",
             "pattern": "^[0-9a-fA-F]*$",
-        })
+        });
+        if let Some(max) = MAX.checked_mul(2) {
+            schema.insert("maxLength".to_owned(), max.into());
+        }
+        schema
     }
 }
 
