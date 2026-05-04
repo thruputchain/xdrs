@@ -107,6 +107,25 @@ impl<const MAX: u32> core::str::FromStr for StringM<MAX> {
     }
 }
 
+#[cfg(feature = "schemars")]
+#[cfg_attr(docsrs, doc(cfg(feature = "schemars")))]
+impl<const MAX: u32> schemars::JsonSchema for StringM<MAX> {
+    fn schema_name() -> alloc::borrow::Cow<'static, str> {
+        alloc::format!("StringM<{}>", MAX).into()
+    }
+
+    fn schema_id() -> alloc::borrow::Cow<'static, str> {
+        alloc::format!("xdr_common::StringM<{}>", MAX).into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "maxLength": MAX,
+        })
+    }
+}
+
 impl<const MAX: u32> Deref for StringM<MAX> {
     type Target = Vec<u8>;
 

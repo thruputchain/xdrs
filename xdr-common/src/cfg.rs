@@ -8,10 +8,6 @@ pub(crate) use serde::de::{Deserialize, Deserializer, Error as DeError, SeqAcces
 #[cfg(all(feature = "serde", feature = "alloc"))]
 pub(crate) use serde::ser::{Serialize, Serializer};
 
-// When feature std is turned off, but feature alloc is turned on import the
-// alloc crate and use its Box and Vec types.
-#[cfg(feature = "alloc")]
-extern crate alloc;
 #[cfg(feature = "alloc")]
 pub(crate) use alloc::{
     borrow::ToOwned,

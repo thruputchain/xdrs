@@ -95,6 +95,26 @@ impl<const MAX: u32> core::fmt::Debug for BytesM<MAX> {
     }
 }
 
+#[cfg(feature = "schemars")]
+#[cfg_attr(docsrs, doc(cfg(feature = "schemars")))]
+impl<const MAX: u32> schemars::JsonSchema for BytesM<MAX> {
+    fn schema_name() -> alloc::borrow::Cow<'static, str> {
+        alloc::format!("BytesM<{}>", MAX).into()
+    }
+
+    fn schema_id() -> alloc::borrow::Cow<'static, str> {
+        alloc::format!("xdr_common::BytesM<{}>", MAX).into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "string",
+            "format": "hex",
+            "pattern": "^[0-9a-fA-F]*$",
+        })
+    }
+}
+
 impl<const MAX: u32> Deref for BytesM<MAX> {
     type Target = Vec<u8>;
 
