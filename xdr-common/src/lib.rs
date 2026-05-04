@@ -10,6 +10,7 @@
 //! - **`alloc`** - Enables heap allocation support (required for most functionality)
 //! - **`std`** - Enables standard library support (implies `alloc`)
 //! - **`serde`** - Enables serde serialization/deserialization (implies `alloc`)
+//! - **`schemars`** - Enables JSON Schema generation via schemars (implies `alloc`)
 //!
 //! # no_std Support
 //!
@@ -36,6 +37,9 @@
 
 #[cfg(feature = "std")]
 extern crate std;
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 mod cfg;
 pub use cfg::{Box, Vec};

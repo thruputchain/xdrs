@@ -125,6 +125,27 @@ where
     }
 }
 
+#[cfg(feature = "schemars")]
+#[cfg_attr(docsrs, doc(cfg(feature = "schemars")))]
+impl<T: schemars::JsonSchema, const MAX: u32> schemars::JsonSchema for VecM<T, MAX> {
+    fn schema_name() -> alloc::borrow::Cow<'static, str> {
+        alloc::format!("VecM<{}, {}>", T::schema_name(), MAX).into()
+    }
+
+    fn schema_id() -> alloc::borrow::Cow<'static, str> {
+        alloc::format!("xdr_common::VecM<{}, {}>", T::schema_id(), MAX).into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let items = generator.subschema_for::<T>();
+        schemars::json_schema!({
+            "type": "array",
+            "items": items,
+            "maxItems": MAX,
+        })
+    }
+}
+
 impl<T: StaticIfNoAlloc, const MAX: u32> Deref for VecM<T, MAX> {
     type Target = Vec<T>;
 

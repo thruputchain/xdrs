@@ -9,7 +9,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.5.6"
+version = "0.5.7"
 edition = "2024"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"  
@@ -25,9 +25,9 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.5.6", registry = "groundhog" }
-xdr-repr = { path = "xdr-repr", version = "=0.5.6", registry = "groundhog" }
-xdr-common = { path = "xdr-common", version = "=0.5.6", registry = "groundhog" }
+xdr-derive = { path = "xdr-derive", version = "=0.5.7", registry = "groundhog" }
+xdr-repr = { path = "xdr-repr", version = "=0.5.7", registry = "groundhog" }
+xdr-common = { path = "xdr-common", version = "=0.5.7", registry = "groundhog" }
 
 thiserror = { version = "2.0.12", default-features = false }
 pretty_assertions = "1.4.1"
@@ -74,6 +74,7 @@ permissive = [] # relax wire validation: CXS minimal integer encoding + TXS non-
 alloc = ["xdr-common/alloc"] # enable allocating interfaces
 int128 = ["xdr-repr?/int128"] # enable de/serialization of i128/u128
 serde = ["xdr-common/serde"] # serde support for xdr-common types
+schemars = ["xdr-common/schemars"] # schemars JsonSchema support for xdr-common types
 
 # Enable optional dependencies
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
