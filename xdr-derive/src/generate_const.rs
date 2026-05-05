@@ -680,11 +680,7 @@ fn primitive_write_method(ty: &syn::Type) -> Option<TokenStream> {
 }
 
 fn check_supported_const_shape(ty: &syn::Type) -> Result<()> {
-    if primitive_size_fn(ty).is_some()
-        || is_u8_array(ty)
-        || is_u8_slice_ref(ty)
-        || is_str_ref(ty)
-    {
+    if primitive_size_fn(ty).is_some() || is_u8_array(ty) || is_u8_slice_ref(ty) || is_str_ref(ty) {
         return Ok(());
     }
 
