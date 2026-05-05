@@ -101,7 +101,7 @@ pub struct EnumBody(pub Vec<(Ident, Value)>);
 pub struct UnionBody {
     /// The declaration of the discriminant field.
     pub discriminant_decl: Declaration,
-    /// The case specifications. Must be non-empty.
+    /// The case specifications. May be empty when `default_decl` is `Some`.
     pub case_specs: Vec<CaseSpec>,
     /// An optional default case declaration.
     pub default_decl: Option<Declaration>,
