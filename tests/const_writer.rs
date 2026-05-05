@@ -1056,12 +1056,18 @@ struct Zst;
 impl Zst {
     pub const fn const_write_cxs<const N: usize>(&self, _: &mut xdrs::cxs::ConstWriter<N>) {}
     pub const fn const_write_txs<const N: usize>(&self, _: &mut xdrs::txs::ConstWriter<N>) {}
-    pub const fn const_cxs_size(&self) -> usize { 0 }
-    pub const fn const_txs_size(&self) -> usize { 0 }
+    pub const fn const_cxs_size(&self) -> usize {
+        0
+    }
+    pub const fn const_txs_size(&self) -> usize {
+        0
+    }
 }
 
 impl xdrs::WriteXDR for Zst {
-    fn write_xdr<F, W: xdrs::Writer<F>>(&self, _: &mut W) -> xdrs::WriteResult<()> { Ok(()) }
+    fn write_xdr<F, W: xdrs::Writer<F>>(&self, _: &mut W) -> xdrs::WriteResult<()> {
+        Ok(())
+    }
 }
 
 #[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
