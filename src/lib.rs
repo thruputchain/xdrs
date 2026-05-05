@@ -24,6 +24,9 @@
 //! - **`permissive`**: When reading CXS data, don't reject (as is the default)
 //!   integers using non-minimal-size encoding.
 //!   Also, when reading TXS data, do not reject non-zero padding bytes.
+//!   This includes the upper two bytes of a 4-byte wire integer decoded as
+//!   `i16` or `u16`, which are treated as padding; in permissive mode these
+//!   bytes are allowed to be non-zero and the value is truncated to 16 bits.
 //!
 //! ### Allocation
 //!

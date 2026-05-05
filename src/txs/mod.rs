@@ -17,7 +17,10 @@
 //!   Variable-length opaque data is prefixed with a 32-bit unsigned integer length,
 //!   followed by the data padded to 4-byte boundaries. By default, decoders
 //!   require padding bytes to be zero; with feature `permissive`, non-zero
-//!   padding is accepted.
+//!   padding is accepted. The same applies to the upper two bytes of a 4-byte
+//!   wire integer decoded as `i16` or `u16`: they are treated as padding and
+//!   must be zero by default, but are allowed to be non-zero in permissive mode
+//!   (the value is truncated to 16 bits).
 //!
 //! - **Arrays**: Variable-length arrays are prefixed with a 32-bit unsigned integer
 //!   length, followed by the array elements.
