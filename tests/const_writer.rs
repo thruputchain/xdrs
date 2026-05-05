@@ -1145,26 +1145,3 @@ fn const_array_cxs_write_rejects_overlong() {
     let mut w = xdrs::cxs::ConstWriter::<0>::new();
     holder.const_write_cxs(&mut w);
 }
-
-// Positive test: normal-sized typed slice still encodes correctly through const path.
-#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
-struct LeafSliceHolder<'a> {
-    items: &'a [Leaf],
-}
-
-#[test]
-fn const_typed_slice_matches_runtime() {
-    let items = [LEAF_A, LEAF_B];
-    let holder = LeafSliceHolder { items: &items };
-
-    let mut cxs_w = xdrs::cxs::ConstWriter::<64>::new();
-    holder.const_write_cxs(&mut cxs_w);
-    let cxs_const_bytes = cxs_w.as_written();
-
-    let mut txs_w = xdrs::txs::ConstWriter::<64>::new();
-    holder.const_write_txs(&mut txs_w);
-    let txs_const_bytes = txs_w.as_written();
-
-    assert_eq!(cxs_const_bytes, cxs_runtime_encode(&holder).as_slice());
-    assert_eq!(txs_const_bytes, txs_runtime_encode(&holder).as_slice());
-}

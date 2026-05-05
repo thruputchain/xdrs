@@ -43,14 +43,6 @@ impl<const N: usize> ConstWriter<N> {
         self.buf
     }
 
-    /// Returns a slice of the bytes written so far.
-    ///
-    /// Unlike [`into_bytes`](Self::into_bytes), this does not require the
-    /// buffer to be completely filled.
-    pub fn as_written(&self) -> &[u8] {
-        &self.buf[..self.pos]
-    }
-
     // -- internal helpers --
 
     const fn put_byte(&mut self, b: u8) {
