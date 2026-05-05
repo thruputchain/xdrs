@@ -254,7 +254,7 @@ pub(crate) fn validate_xdr_identifier(s: &str) {
                 "Invalid XDR identifier '{}': character at position {} ('{}') is not allowed. \
                  XDR identifiers can only contain ASCII letters, digits, and underscores.",
                 s,
-                idx + 1,
+                idx + 2,
                 ch
             );
         }
