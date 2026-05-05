@@ -3,6 +3,20 @@ use alloc::string::*;
 use alloc::vec;
 use alloc::vec::Vec;
 
+fn values_wire_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Const(ca), Value::Const(cb)) => const_wire_bits(ca) == const_wire_bits(cb),
+        _ => a == b,
+    }
+}
+
+fn const_wire_bits(c: &Constant) -> u32 {
+    match *c {
+        Constant::Unsigned(n) => n,
+        Constant::Signed(n) => n as u32,
+    }
+}
+
 /// Creates an identifier from a string.
 pub fn ident(s: &str) -> Ident {
     Ident(s.to_string())
@@ -200,7 +214,7 @@ pub fn union_def(
     for cs in &case_specs {
         for v in &cs.cases {
             assert!(
-                !seen.contains(&v),
+                !seen.iter().any(|s| values_wire_equal(s, v)),
                 "XDR Union: duplicate discriminant value across case arms"
             );
             seen.push(v);

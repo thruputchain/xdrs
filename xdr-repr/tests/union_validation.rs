@@ -113,6 +113,27 @@ fn union_with_distinct_values_across_arms_succeeds() {
 }
 
 #[test]
+#[should_panic(expected = "duplicate discriminant value")]
+fn union_with_signed_unsigned_same_wire_value_panics() {
+    union_def(
+        "Ambiguous",
+        "which",
+        TypeSpec::Int,
+        vec![
+            CaseSpec {
+                cases: vec![signed(0)],
+                decl: declare_unsigned("amount"),
+            },
+            CaseSpec {
+                cases: vec![unsigned(0)],
+                decl: declare_string("memo", 32),
+            },
+        ],
+        None,
+    );
+}
+
+#[test]
 fn union_with_multi_value_arm_distinct_succeeds() {
     union_def(
         "Good",
