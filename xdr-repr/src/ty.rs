@@ -225,6 +225,15 @@ impl<const N: usize, T: HasTypeSpec> HasTypeSpec for [T; N] {
     }
 }
 
+impl HasTypeSpec for &[u8] {
+    fn type_spec() -> TypeSpec {
+        TypeSpec::Struct(StructBody(alloc::vec![Declaration::VariableOpaque {
+            name: ident("unnamed_0"),
+            max: Value::Const(Constant::Unsigned(u32::MAX)),
+        }]))
+    }
+}
+
 impl Declare for &[u8] {
     fn declare(name: Ident) -> Declaration {
         Declaration::VariableOpaque {
@@ -263,9 +272,24 @@ const _: () = {
     /// We default a `VecM<u8>` to declaring as a BytesM;
     /// It's not clear to an end user what the difference is between a `VecM<u8>` and a BytesM,
     /// so this makes the two types work more like each other.
+    impl<const MAX: u32> HasTypeSpec for VecM<u8, MAX> {
+        fn type_spec() -> TypeSpec {
+            BytesM::<MAX>::type_spec()
+        }
+    }
+
     impl<const MAX: u32> Declare for VecM<u8, MAX> {
         fn declare(name: Ident) -> Declaration {
             BytesM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> HasTypeSpec for BytesM<MAX> {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody(alloc::vec![Declaration::VariableOpaque {
+                name: ident("unnamed_0"),
+                max: Value::Const(Constant::Unsigned(MAX)),
+            }]))
         }
     }
 
@@ -290,6 +314,15 @@ const _: () = {
 
 const _: () = {
     use alloc::vec::Vec;
+
+    impl HasTypeSpec for Vec<u8> {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody(alloc::vec![Declaration::VariableOpaque {
+                name: ident("unnamed_0"),
+                max: Value::Const(Constant::Unsigned(u32::MAX)),
+            }]))
+        }
+    }
 
     impl Declare for Vec<u8> {
         fn declare(name: Ident) -> Declaration {
