@@ -530,6 +530,36 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("generic types") || msg.contains("type parameters"));
     }
+
+    #[test]
+    fn slice_branch_emits_length_assert() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Borrowed<'a> {
+                items: &'a [Leaf],
+            }
+        };
+
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        assert!(
+            toks.contains("assert!(slice.len()<=u32::MAXasusize"),
+            "generated slice branch must contain u32 length assert, got: {toks}"
+        );
+    }
+
+    #[test]
+    fn array_branch_emits_length_assert() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Fixed {
+                items: [Leaf; 4],
+            }
+        };
+
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        assert!(
+            toks.contains("assert!(arr.len()<=u32::MAXasusize"),
+            "generated array branch must contain u32 length assert, got: {toks}"
+        );
+    }
 }
 
 fn const_write_variant(
