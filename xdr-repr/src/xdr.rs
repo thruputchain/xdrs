@@ -268,6 +268,19 @@ fn get_validated_identifier(s: &str) -> &str {
     s
 }
 
+/// Panics if `value` is a negative signed constant, which is invalid in
+/// length / size / max bound positions.  `Value::Ident` references are not
+/// validated here because the referenced constant's value is not available
+/// at the AST level.
+pub(crate) fn assert_non_negative_bound(value: &Value) {
+    if let Value::Const(Constant::Signed(n)) = value {
+        assert!(
+            *n >= 0,
+            "XDR length/size bound must not be negative, got {n}"
+        );
+    }
+}
+
 fn value_json(value: &Value) -> String {
     use alloc::format;
 
@@ -423,25 +436,36 @@ impl Declaration {
                 }
             }
             Declaration::FixedOpaque { name: _, size } => {
-                format!("{{ \"type\": \"fixed opaque\", \"len\": {} }}", size)
+                assert_non_negative_bound(size);
+                format!(
+                    "{{ \"type\": \"fixed opaque\", \"len\": {} }}",
+                    value_json(size)
+                )
             }
             Declaration::VariableOpaque { name: _, max } => {
-                format!("{{ \"type\": \"variable opaque\", \"max\": {} }}", max)
+                assert_non_negative_bound(max);
+                format!(
+                    "{{ \"type\": \"variable opaque\", \"max\": {} }}",
+                    value_json(max)
+                )
             }
             Declaration::String { name: _, max } => {
-                format!("{{ \"type\": \"string\", \"max\": {} }}", max)
+                assert_non_negative_bound(max);
+                format!("{{ \"type\": \"string\", \"max\": {} }}", value_json(max))
             }
             Declaration::FixedArray {
                 name: _,
                 elt_ty,
                 len,
             } => {
+                assert_non_negative_bound(len);
+                let len_json = value_json(len);
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
                             "{{ \"type\": \"fixed array\", \"element_type\": {{ \"type\": \"{}\" }}, \"len\": {} }}",
-                            type_name, len
+                            type_name, len_json
                         )
                     }
                     TypeJsonRepr::Object(type_obj) => {
@@ -449,7 +473,7 @@ impl Declaration {
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
                             "{{\n  \"type\": \"fixed array\",\n  \"element_type\": {},\n  \"len\": {}\n}}",
-                            indented, len
+                            indented, len_json
                         )
                     }
                 }
@@ -459,12 +483,14 @@ impl Declaration {
                 elt_ty,
                 max,
             } => {
+                assert_non_negative_bound(max);
+                let max_json = value_json(max);
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it (already validated in get_type_json_repr)
                         format!(
                             "{{ \"type\": \"variable array\", \"element_type\": {{ \"type\": \"{}\" }}, \"max\": {} }}",
-                            type_name, max
+                            type_name, max_json
                         )
                     }
                     TypeJsonRepr::Object(type_obj) => {
@@ -472,7 +498,7 @@ impl Declaration {
                         let indented = type_obj.replace('\n', "\n  ");
                         format!(
                             "{{\n  \"type\": \"variable array\",\n  \"element_type\": {},\n  \"max\": {}\n}}",
-                            indented, max
+                            indented, max_json
                         )
                     }
                 }
