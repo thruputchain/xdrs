@@ -138,12 +138,18 @@ fn poc_negative_length_bounds_emit_invalid_schema() {
     for (decl, label) in &cases {
         let decl_clone = decl.clone();
         let result = panic::catch_unwind(move || TypeDef::Def(decl_clone).to_string());
-        assert!(result.is_err(), "{label}: should reject negative bound in IDL formatting");
+        assert!(
+            result.is_err(),
+            "{label}: should reject negative bound in IDL formatting"
+        );
     }
 
     for (decl, label) in &cases {
         let decl_clone = decl.clone();
         let result = panic::catch_unwind(move || decl_clone.get_type_json());
-        assert!(result.is_err(), "{label}: should reject negative bound in JSON output");
+        assert!(
+            result.is_err(),
+            "{label}: should reject negative bound in JSON output"
+        );
     }
 }
