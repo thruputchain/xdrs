@@ -358,20 +358,14 @@ const _: () = {
 
             let mut vec: Vec<T> = Vec::with_capacity(len);
             let slice = &mut vec.spare_capacity_mut()[..len];
+            let mut guard = PartialInitGuard { slice, initialized: 0 };
 
-            for (i, elt) in slice.iter_mut().enumerate() {
-                match read_xdr(r) {
-                    Ok(val) => {
-                        elt.write(val);
-                    }
-                    Err(e) => {
-                        slice.iter_mut().take(i).for_each(|elt| unsafe {
-                            elt.assume_init_drop();
-                        });
-                        return Err(e);
-                    }
-                }
+            for elt in guard.slice.iter_mut() {
+                elt.write(read_xdr(r)?);
+                guard.initialized += 1;
             }
+
+            core::mem::forget(guard);
 
             // SAFETY: all elts up to `len` have been initialized
             unsafe { vec.set_len(len) }
