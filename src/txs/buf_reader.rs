@@ -128,9 +128,10 @@ impl<'r> Reader<'r> for BufReader<'r> {
 
     #[inline]
     fn read_i16(&mut self) -> ReadResult<i16> {
-        // i16 is non-standard for XDR.
-        // We enforce here that the encoding matches the i32 encoding of n,
-        // unless we are in permissive mode.
+        // i16 is encoded as a 4-byte big-endian i32. The upper two bytes are
+        // padding: they must be zero (or 0xFF for sign-extension) by default,
+        // but in permissive mode non-zero padding is accepted and the value is
+        // truncated to 16 bits.
         let n = self.read_i32()?;
         #[cfg(not(feature = "permissive"))]
         if n < i16::MIN as i32 || n > i16::MAX as i32 {
@@ -141,9 +142,9 @@ impl<'r> Reader<'r> for BufReader<'r> {
 
     #[inline]
     fn read_u16(&mut self) -> ReadResult<u16> {
-        // u16 is non-standard for XDR.
-        // We enforce here that the top-level bits are zeros,
-        // unless we are in permissive mode.
+        // u16 is encoded as a 4-byte big-endian u32. The upper two bytes are
+        // padding: they must be zero by default, but in permissive mode
+        // non-zero padding is accepted and the value is truncated to 16 bits.
         let n = self.read_u32()?;
         #[cfg(not(feature = "permissive"))]
         if n < u16::MIN as u32 || n > u16::MAX as u32 {
