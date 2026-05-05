@@ -210,6 +210,7 @@ fn const_size_value_expr(
         return Ok(quote! {
             {
                 let slice = *#expr_ref;
+                assert!(slice.len() <= u32::MAX as usize, "slice length exceeds u32::MAX");
                 let mut total = #mod_path::size_u32(slice.len() as u32);
                 let mut i = 0;
                 while i < slice.len() {
@@ -337,6 +338,7 @@ fn const_write_value_expr(
         return Ok(quote! {
             {
                 let slice = *#expr_ref;
+                assert!(slice.len() <= u32::MAX as usize, "slice length exceeds u32::MAX");
                 w.write_u32(slice.len() as u32);
                 let mut i = 0;
                 while i < slice.len() {
