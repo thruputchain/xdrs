@@ -140,8 +140,8 @@ pub fn check_variants(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<
         // shadows later concrete variants.
         if !variants
             .iter()
-            .last()
-            .is_some_and(|v| variant_is_default(v))
+            .next_back()
+            .is_some_and(variant_is_default)
         {
             err(
                 &dv.ident,
