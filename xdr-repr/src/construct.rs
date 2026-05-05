@@ -3,6 +3,20 @@ use alloc::string::*;
 use alloc::vec;
 use alloc::vec::Vec;
 
+fn values_wire_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Const(ca), Value::Const(cb)) => const_wire_bits(ca) == const_wire_bits(cb),
+        _ => a == b,
+    }
+}
+
+fn const_wire_bits(c: &Constant) -> u32 {
+    match *c {
+        Constant::Unsigned(n) => n,
+        Constant::Signed(n) => n as u32,
+    }
+}
+
 /// Creates an identifier from a string.
 pub fn ident(s: &str) -> Ident {
     Ident(s.to_string())
@@ -179,7 +193,8 @@ pub fn enum_def(name: &str, variants: Vec<(Ident, Value)>) -> TypeDef {
 ///
 /// Panics if both `case_specs` is empty and `default_decl` is `None`,
 /// as XDR unions must have at least one arm.
-/// Also panics if any `CaseSpec` has an empty `cases` vector.
+/// Also panics if any `CaseSpec` has an empty `cases` vector,
+/// or if any discriminant value appears more than once across all arms.
 pub fn union_def(
     name: &str,
     discrim_name: &str,
@@ -195,6 +210,16 @@ pub fn union_def(
         case_specs.iter().all(|cs| !cs.cases.is_empty()),
         "XDR Union: every CaseSpec must have at least one discriminant value"
     );
+    let mut seen: Vec<&Value> = Vec::new();
+    for cs in &case_specs {
+        for v in &cs.cases {
+            assert!(
+                !seen.iter().any(|s| values_wire_equal(s, v)),
+                "XDR Union: duplicate discriminant value across case arms"
+            );
+            seen.push(v);
+        }
+    }
 
     TypeDef::Union(
         ident(name),
