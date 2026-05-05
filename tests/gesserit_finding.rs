@@ -3,7 +3,7 @@ use std::cell::Cell;
 use std::panic;
 
 use xdrs::serialize::reader::{ReadError, Reader};
-use xdrs::{ReadXDR, cxs, txs};
+use xdrs::{ReadXDR, VecM, cxs, txs};
 
 thread_local! {
     static ACTIVE_COUNT: Cell<usize> = const { Cell::new(0) };
@@ -154,4 +154,34 @@ fn poc_negative_length_bounds_emit_invalid_schema() {
             "{label}: should reject negative bound in JSON output"
         );
     }
+}
+
+#[test]
+fn poc_vecm_decode_unwind_drops_initialized_elements() {
+    type Elem = Result<LeakDetector, Infallible>;
+    type Values = VecM<Elem, 2>;
+
+    #[rustfmt::skip]
+    let txs_bytes: &[u8] = &[
+        0x00, 0x00, 0x00, 0x02, // VecM length = 2
+        0x00, 0x00, 0x00, 0x00, // element 0: Result::Ok
+        0x00, 0x00, 0x00, 0x05, // element 0: LeakDetector id = 5
+        0x00, 0x00, 0x00, 0x01, // element 1: Result::Err(Infallible)
+    ];
+
+    assert_no_leak_on_unwind(|| {
+        let _: Result<Values, _> = txs::decode(txs_bytes);
+    });
+
+    #[rustfmt::skip]
+    let cxs_bytes: &[u8] = &[
+        0x02, // VecM length = 2
+        0x00, // element 0: Result::Ok
+        0x05, // element 0: LeakDetector id = 5
+        0x01, // element 1: Result::Err(Infallible)
+    ];
+
+    assert_no_leak_on_unwind(|| {
+        let _: Result<Values, _> = cxs::decode(cxs_bytes);
+    });
 }
