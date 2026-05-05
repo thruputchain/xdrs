@@ -70,6 +70,11 @@ fn option_vec_u8_has_type_spec() {
         json.contains("variable opaque"),
         "expected variable opaque in: {json}"
     );
+    assert!(
+        json.contains(&u32::MAX.to_string()),
+        "expected max {} in: {json}",
+        u32::MAX
+    );
 }
 
 #[test]
@@ -84,6 +89,11 @@ fn option_slice_u8_has_type_spec() {
     assert!(
         json.contains("variable opaque"),
         "expected variable opaque in: {json}"
+    );
+    assert!(
+        json.contains(&u32::MAX.to_string()),
+        "expected max {} in: {json}",
+        u32::MAX
     );
 }
 
