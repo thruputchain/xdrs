@@ -4,7 +4,13 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 /// Creates an identifier from a string.
+///
+/// # Panics
+///
+/// Panics if `s` is not a valid XDR identifier (ASCII letters, digits,
+/// and underscores; must start with a letter or underscore).
 pub fn ident(s: &str) -> Ident {
+    validate_xdr_identifier(s);
     Ident(s.to_string())
 }
 
