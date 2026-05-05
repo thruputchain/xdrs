@@ -229,7 +229,7 @@ impl TypeJsonRepr {
 /// # Panics
 ///
 /// Panics if the string is not a valid identifier, with a descriptive error message.
-fn validate_xdr_identifier(s: &str) {
+pub(crate) fn validate_xdr_identifier(s: &str) {
     if s.is_empty() {
         panic!("XDR identifier cannot be empty");
     }
@@ -254,7 +254,7 @@ fn validate_xdr_identifier(s: &str) {
                 "Invalid XDR identifier '{}': character at position {} ('{}') is not allowed. \
                  XDR identifiers can only contain ASCII letters, digits, and underscores.",
                 s,
-                idx + 1,
+                idx + 2,
                 ch
             );
         }
