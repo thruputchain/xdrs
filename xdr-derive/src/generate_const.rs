@@ -227,6 +227,7 @@ fn const_size_value_expr(
         return Ok(quote! {
             {
                 let arr = #expr_ref;
+                assert!(arr.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
                 let mut total = 0;
                 let mut i = 0;
                 while i < arr.len() {
@@ -354,6 +355,7 @@ fn const_write_value_expr(
         return Ok(quote! {
             {
                 let arr = #expr_ref;
+                assert!(arr.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
                 let mut i = 0;
                 while i < arr.len() {
                     #inner_write
