@@ -66,7 +66,10 @@ fn option_vec_u8_has_type_spec() {
     assert_eq!(body.0.len(), 1);
     let json = body.0[0].get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
-    assert!(json.contains("variable opaque"), "expected variable opaque in: {json}");
+    assert!(
+        json.contains("variable opaque"),
+        "expected variable opaque in: {json}"
+    );
 }
 
 #[test]
@@ -78,7 +81,10 @@ fn option_slice_u8_has_type_spec() {
     assert_eq!(body.0.len(), 1);
     let json = body.0[0].get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
-    assert!(json.contains("variable opaque"), "expected variable opaque in: {json}");
+    assert!(
+        json.contains("variable opaque"),
+        "expected variable opaque in: {json}"
+    );
 }
 
 #[test]
@@ -90,7 +96,10 @@ fn option_bytes_m_has_type_spec() {
     assert_eq!(body.0.len(), 1);
     let json = body.0[0].get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
-    assert!(json.contains("variable opaque"), "expected variable opaque in: {json}");
+    assert!(
+        json.contains("variable opaque"),
+        "expected variable opaque in: {json}"
+    );
     assert!(json.contains("512"), "expected max 512 in: {json}");
 }
 
@@ -103,7 +112,10 @@ fn option_vec_m_u8_has_type_spec() {
     assert_eq!(body.0.len(), 1);
     let json = body.0[0].get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
-    assert!(json.contains("variable opaque"), "expected variable opaque in: {json}");
+    assert!(
+        json.contains("variable opaque"),
+        "expected variable opaque in: {json}"
+    );
     assert!(json.contains("100"), "expected max 100 in: {json}");
 }
 
@@ -112,7 +124,10 @@ fn declare_option_vec_u8() {
     let decl = <Option<Vec<u8>>>::declare(ident("payload"));
     let json = decl.get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
-    assert!(json.contains("variable opaque"), "expected variable opaque in: {json}");
+    assert!(
+        json.contains("variable opaque"),
+        "expected variable opaque in: {json}"
+    );
 }
 
 #[test]
@@ -120,6 +135,9 @@ fn declare_option_bytes_m() {
     let decl = <Option<BytesM<64>>>::declare(ident("data"));
     let json = decl.get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
-    assert!(json.contains("variable opaque"), "expected variable opaque in: {json}");
+    assert!(
+        json.contains("variable opaque"),
+        "expected variable opaque in: {json}"
+    );
     assert!(json.contains("64"), "expected max 64 in: {json}");
 }
