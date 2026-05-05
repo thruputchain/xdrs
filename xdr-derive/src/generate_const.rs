@@ -159,19 +159,6 @@ fn const_size_value_expr(
         return Ok(quote! { #mod_path::#size_fn(*#expr_ref) });
     }
 
-    if is_i128(ty) {
-        return Ok(quote! {
-            (#mod_path::size_i64((*#expr_ref >> 64) as i64)
-             + #mod_path::size_u64((*#expr_ref & 0xffffffffffffffff) as u64))
-        });
-    }
-    if is_u128(ty) {
-        return Ok(quote! {
-            (#mod_path::size_u64((*#expr_ref >> 64) as u64)
-             + #mod_path::size_u64((*#expr_ref & 0xffffffffffffffff) as u64))
-        });
-    }
-
     if is_u8_array(ty) {
         return Ok(quote! { #mod_path::size_opaque_fixed((#expr_ref).len()) });
     }
@@ -275,19 +262,6 @@ fn const_write_value_expr(
 
     if let Some(writer_method) = primitive_write_method(ty) {
         return Ok(quote! { w.#writer_method(*#expr_ref); });
-    }
-
-    if is_i128(ty) {
-        return Ok(quote! {
-            w.write_i64((*#expr_ref >> 64) as i64);
-            w.write_u64((*#expr_ref & 0xffffffffffffffff) as u64);
-        });
-    }
-    if is_u128(ty) {
-        return Ok(quote! {
-            w.write_u64((*#expr_ref >> 64) as u64);
-            w.write_u64((*#expr_ref & 0xffffffffffffffff) as u64);
-        });
     }
 
     if is_u8_array(ty) {
@@ -673,6 +647,8 @@ fn primitive_size_fn(ty: &syn::Type) -> Option<TokenStream> {
         "u32" => Some(quote! { size_u32 }),
         "i64" => Some(quote! { size_i64 }),
         "u64" => Some(quote! { size_u64 }),
+        "i128" => Some(quote! { size_i128 }),
+        "u128" => Some(quote! { size_u128 }),
         "i16" => Some(quote! { size_i16 }),
         "u16" => Some(quote! { size_u16 }),
         "bool" => Some(quote! { size_bool }),
@@ -694,6 +670,8 @@ fn primitive_write_method(ty: &syn::Type) -> Option<TokenStream> {
         "u32" => Some(quote! { write_u32 }),
         "i64" => Some(quote! { write_i64 }),
         "u64" => Some(quote! { write_u64 }),
+        "i128" => Some(quote! { write_i128 }),
+        "u128" => Some(quote! { write_u128 }),
         "i16" => Some(quote! { write_i16 }),
         "u16" => Some(quote! { write_u16 }),
         "bool" => Some(quote! { write_bool }),
@@ -703,8 +681,6 @@ fn primitive_write_method(ty: &syn::Type) -> Option<TokenStream> {
 
 fn check_supported_const_shape(ty: &syn::Type) -> Result<()> {
     if primitive_size_fn(ty).is_some()
-        || is_i128(ty)
-        || is_u128(ty)
         || is_u8_array(ty)
         || is_u8_slice_ref(ty)
         || is_str_ref(ty)
@@ -835,14 +811,6 @@ fn angle_bracketed_args(seg: &syn::PathSegment) -> Option<&syn::AngleBracketedGe
     } else {
         None
     }
-}
-
-fn is_i128(ty: &syn::Type) -> bool {
-    is_path_ident(ty, "i128")
-}
-
-fn is_u128(ty: &syn::Type) -> bool {
-    is_path_ident(ty, "u128")
 }
 
 fn is_u8_array(ty: &syn::Type) -> bool {
