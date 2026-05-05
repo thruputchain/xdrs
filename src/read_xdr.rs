@@ -22,7 +22,9 @@ impl<T> Drop for PartialInitGuard<'_, T> {
         for elt in &mut self.slice[..self.initialized] {
             // SAFETY: elements up to `self.initialized` were successfully
             // written via `MaybeUninit::write` before the count was incremented.
-            unsafe { elt.assume_init_drop(); }
+            unsafe {
+                elt.assume_init_drop();
+            }
         }
     }
 }
@@ -115,7 +117,10 @@ where
         let () = ValidU32::<N>::OK;
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
-        let mut guard = PartialInitGuard { slice: &mut arr, initialized: 0 };
+        let mut guard = PartialInitGuard {
+            slice: &mut arr,
+            initialized: 0,
+        };
 
         for elt in guard.slice.iter_mut() {
             elt.write(read_xdr(r)?);
@@ -358,7 +363,10 @@ const _: () = {
 
             let mut vec: Vec<T> = Vec::with_capacity(len);
             let slice = &mut vec.spare_capacity_mut()[..len];
-            let mut guard = PartialInitGuard { slice, initialized: 0 };
+            let mut guard = PartialInitGuard {
+                slice,
+                initialized: 0,
+            };
 
             for elt in guard.slice.iter_mut() {
                 elt.write(read_xdr(r)?);
