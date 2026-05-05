@@ -138,11 +138,7 @@ pub fn check_variants(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<
         // RFC 4506 requires the default arm of a union to be trailing.
         // A non-trailing Default would generate a wildcard match arm that
         // shadows later concrete variants.
-        if !variants
-            .iter()
-            .next_back()
-            .is_some_and(variant_is_default)
-        {
+        if !variants.iter().next_back().is_some_and(variant_is_default) {
             err(
                 &dv.ident,
                 "derive XDR: Default variant must be the last variant \
