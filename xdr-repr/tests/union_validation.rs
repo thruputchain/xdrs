@@ -29,7 +29,10 @@ fn default_only_union_json_has_empty_cases() {
 
     let json = TypeSpec::Union(Box::new(body)).get_type_json();
     assert!(json.contains("\"cases\": ["), "JSON must have cases array");
-    assert!(json.contains("\"default\":"), "JSON must have default field");
+    assert!(
+        json.contains("\"default\":"),
+        "JSON must have default field"
+    );
 }
 
 #[test]
