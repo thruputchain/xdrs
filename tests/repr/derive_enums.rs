@@ -218,6 +218,30 @@ pub mod enum_with_default {
     }
 }
 
+pub mod default_only {
+    use super::*;
+
+    #[derive(XDR)]
+    #[repr(i32)]
+    pub enum CatchAll {
+        Default(i32),
+    }
+
+    check_format! { derive_default_only
+        CatchAll::spec()
+        =>
+            "enum CatchAllType {"
+            "};"
+            ""
+            "union CatchAll switch (CatchAllType which)"
+            "{"
+            "default:"
+            "	void;"
+            "};"
+            ""
+    }
+}
+
 // Unit-only enum with all-implicit discriminants
 pub mod implicit_unit {
     use super::*;

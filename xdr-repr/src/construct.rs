@@ -177,7 +177,9 @@ pub fn enum_def(name: &str, variants: Vec<(Ident, Value)>) -> TypeDef {
 ///
 /// # Panics
 ///
-/// Panics if `case_specs` is empty, as XDR unions must have at least one case.
+/// Panics if both `case_specs` is empty and `default_decl` is `None`,
+/// as XDR unions must have at least one arm.
+/// Also panics if any `CaseSpec` has an empty `cases` vector.
 pub fn union_def(
     name: &str,
     discrim_name: &str,
@@ -186,8 +188,12 @@ pub fn union_def(
     default_decl: Option<Declaration>,
 ) -> TypeDef {
     assert!(
-        !case_specs.is_empty(),
-        "XDR Union: must have at least one case-spec"
+        !case_specs.is_empty() || default_decl.is_some(),
+        "XDR Union: must have at least one case-spec or a default arm"
+    );
+    assert!(
+        case_specs.iter().all(|cs| !cs.cases.is_empty()),
+        "XDR Union: every CaseSpec must have at least one discriminant value"
     );
 
     TypeDef::Union(
