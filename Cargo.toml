@@ -127,3 +127,7 @@ required-features = ["alloc", "derive"]
 [[test]]
 name = "plain_ref"
 required-features = ["alloc", "derive"]
+
+[[test]]
+name = "issue_105_bufwriter_overflow"
+required-features = ["alloc"]
