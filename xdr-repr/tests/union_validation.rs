@@ -55,3 +55,73 @@ fn union_with_empty_case_spec_panics() {
         None,
     );
 }
+
+#[test]
+#[should_panic(expected = "duplicate discriminant value")]
+fn union_with_duplicate_value_across_arms_panics() {
+    union_def(
+        "Ambiguous",
+        "which",
+        TypeSpec::Int,
+        vec![
+            CaseSpec {
+                cases: vec![signed(0)],
+                decl: declare_unsigned("amount"),
+            },
+            CaseSpec {
+                cases: vec![signed(0)],
+                decl: declare_string("memo", 32),
+            },
+        ],
+        None,
+    );
+}
+
+#[test]
+#[should_panic(expected = "duplicate discriminant value")]
+fn union_with_duplicate_value_within_arm_panics() {
+    union_def(
+        "Ambiguous",
+        "which",
+        TypeSpec::Int,
+        vec![CaseSpec {
+            cases: vec![signed(1), signed(1)],
+            decl: declare_unsigned("amount"),
+        }],
+        None,
+    );
+}
+
+#[test]
+fn union_with_distinct_values_across_arms_succeeds() {
+    union_def(
+        "Good",
+        "which",
+        TypeSpec::Int,
+        vec![
+            CaseSpec {
+                cases: vec![signed(0)],
+                decl: declare_unsigned("amount"),
+            },
+            CaseSpec {
+                cases: vec![signed(1)],
+                decl: declare_string("memo", 32),
+            },
+        ],
+        None,
+    );
+}
+
+#[test]
+fn union_with_multi_value_arm_distinct_succeeds() {
+    union_def(
+        "Good",
+        "which",
+        TypeSpec::Int,
+        vec![CaseSpec {
+            cases: vec![signed(0), signed(1), signed(2)],
+            decl: declare_unsigned("amount"),
+        }],
+        None,
+    );
+}

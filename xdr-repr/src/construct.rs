@@ -179,7 +179,8 @@ pub fn enum_def(name: &str, variants: Vec<(Ident, Value)>) -> TypeDef {
 ///
 /// Panics if both `case_specs` is empty and `default_decl` is `None`,
 /// as XDR unions must have at least one arm.
-/// Also panics if any `CaseSpec` has an empty `cases` vector.
+/// Also panics if any `CaseSpec` has an empty `cases` vector,
+/// or if any discriminant value appears more than once across all arms.
 pub fn union_def(
     name: &str,
     discrim_name: &str,
@@ -195,6 +196,16 @@ pub fn union_def(
         case_specs.iter().all(|cs| !cs.cases.is_empty()),
         "XDR Union: every CaseSpec must have at least one discriminant value"
     );
+    let mut seen: Vec<&Value> = Vec::new();
+    for cs in &case_specs {
+        for v in &cs.cases {
+            assert!(
+                !seen.contains(&v),
+                "XDR Union: duplicate discriminant value across case arms"
+            );
+            seen.push(v);
+        }
+    }
 
     TypeDef::Union(
         ident(name),
