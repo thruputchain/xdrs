@@ -12,6 +12,21 @@ use crate::valid_u32::*;
 use core::convert::Infallible;
 use core::mem::MaybeUninit as MU;
 
+struct PartialInitGuard<'a, T> {
+    slice: &'a mut [MU<T>],
+    initialized: usize,
+}
+
+impl<T> Drop for PartialInitGuard<'_, T> {
+    fn drop(&mut self) {
+        for elt in &mut self.slice[..self.initialized] {
+            // SAFETY: elements up to `self.initialized` were successfully
+            // written via `MaybeUninit::write` before the count was incremented.
+            unsafe { elt.assume_init_drop(); }
+        }
+    }
+}
+
 /// Reads an XDR value of type `T` from the reader `r`.
 ///
 /// This is a convenience function that calls [`ReadXDR::read_xdr`] on the type.
@@ -100,22 +115,14 @@ where
         let () = ValidU32::<N>::OK;
 
         let mut arr: [MU<T>; N] = [const { MU::uninit() }; N];
+        let mut guard = PartialInitGuard { slice: &mut arr, initialized: 0 };
 
-        // Initialize elements one by one, dropping already-initialized elements on error
-        for (i, elt) in arr.iter_mut().enumerate() {
-            match read_xdr(r) {
-                Ok(val) => {
-                    elt.write(val);
-                }
-                Err(e) => {
-                    // Drop all initialized elements to avoid memory leak
-                    arr.iter_mut().take(i).for_each(|elt| unsafe {
-                        elt.assume_init_drop();
-                    });
-                    return Err(e);
-                }
-            }
+        for elt in guard.slice.iter_mut() {
+            elt.write(read_xdr(r)?);
+            guard.initialized += 1;
         }
+
+        core::mem::forget(guard);
 
         // SAFETY: all elements have been initialized
         let arr = unsafe { mu::array_assume_init(arr) };
