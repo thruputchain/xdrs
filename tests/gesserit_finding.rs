@@ -2,7 +2,6 @@ use core::convert::Infallible;
 use std::cell::Cell;
 use std::panic;
 
-use xdr_repr::{Declaration, TypeDef, TypeSpec, ident, signed};
 use xdrs::serialize::reader::{ReadError, Reader};
 use xdrs::{ReadXDR, cxs, txs};
 
@@ -93,8 +92,11 @@ fn poc_array_decode_unwind_drops_initialized_elements() {
     });
 }
 
+#[cfg(feature = "repr")]
 #[test]
 fn poc_negative_length_bounds_emit_invalid_schema() {
+    use xdr_repr::{Declaration, TypeDef, TypeSpec, ident, signed};
+
     let cases: Vec<(Declaration, &str)> = vec![
         (
             Declaration::FixedOpaque {
