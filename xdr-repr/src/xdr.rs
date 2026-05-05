@@ -268,6 +268,17 @@ fn get_validated_identifier(s: &str) -> &str {
     s
 }
 
+/// Panics if `value` is a negative signed constant, which is invalid in
+/// length / size / max bound positions.
+pub(crate) fn assert_non_negative_bound(value: &Value) {
+    if let Value::Const(Constant::Signed(n)) = value {
+        assert!(
+            *n >= 0,
+            "XDR length/size bound must not be negative, got {n}"
+        );
+    }
+}
+
 fn value_json(value: &Value) -> String {
     use alloc::format;
 
@@ -423,12 +434,15 @@ impl Declaration {
                 }
             }
             Declaration::FixedOpaque { name: _, size } => {
+                assert_non_negative_bound(size);
                 format!("{{ \"type\": \"fixed opaque\", \"len\": {} }}", size)
             }
             Declaration::VariableOpaque { name: _, max } => {
+                assert_non_negative_bound(max);
                 format!("{{ \"type\": \"variable opaque\", \"max\": {} }}", max)
             }
             Declaration::String { name: _, max } => {
+                assert_non_negative_bound(max);
                 format!("{{ \"type\": \"string\", \"max\": {} }}", max)
             }
             Declaration::FixedArray {
@@ -436,6 +450,7 @@ impl Declaration {
                 elt_ty,
                 len,
             } => {
+                assert_non_negative_bound(len);
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it (already validated in get_type_json_repr)
@@ -459,6 +474,7 @@ impl Declaration {
                 elt_ty,
                 max,
             } => {
+                assert_non_negative_bound(max);
                 match elt_ty.get_type_json_repr() {
                     TypeJsonRepr::Name(type_name) => {
                         // Simple type name - quote it (already validated in get_type_json_repr)

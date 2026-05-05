@@ -199,6 +199,7 @@ impl Format for Declaration {
                 name.fmt(f);
             }
             Declaration::FixedOpaque { name, size } => {
+                assert_non_negative_bound(size);
                 f.write_str("opaque ");
                 name.fmt(f);
                 f.write_str("[");
@@ -206,6 +207,7 @@ impl Format for Declaration {
                 f.write_str("]");
             }
             Declaration::VariableOpaque { name, max } => {
+                assert_non_negative_bound(max);
                 f.write_str("opaque ");
                 name.fmt(f);
                 f.write_str("<");
@@ -215,6 +217,7 @@ impl Format for Declaration {
                 f.write_str(">");
             }
             Declaration::String { name, max } => {
+                assert_non_negative_bound(max);
                 f.write_str("string ");
                 name.fmt(f);
                 f.write_str("<");
@@ -224,6 +227,7 @@ impl Format for Declaration {
                 f.write_str(">");
             }
             Declaration::FixedArray { name, elt_ty, len } => {
+                assert_non_negative_bound(len);
                 elt_ty.fmt(f);
                 f.write_str(" ");
                 name.fmt(f);
@@ -232,6 +236,7 @@ impl Format for Declaration {
                 f.write_str("]");
             }
             Declaration::VariableArray { name, elt_ty, max } => {
+                assert_non_negative_bound(max);
                 elt_ty.fmt(f);
                 f.write_str(" ");
                 name.fmt(f);
