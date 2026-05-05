@@ -1,0 +1,93 @@
+use core::convert::Infallible;
+use std::cell::Cell;
+use std::panic;
+
+use xdrs::serialize::reader::{ReadError, Reader};
+use xdrs::{ReadXDR, cxs, txs};
+
+thread_local! {
+    static ACTIVE_COUNT: Cell<usize> = const { Cell::new(0) };
+}
+
+#[derive(Debug)]
+struct LeakDetector {
+    _id: u32,
+    _payload: Vec<u8>,
+}
+
+impl LeakDetector {
+    fn new(id: u32) -> Self {
+        ACTIVE_COUNT.with(|count| count.set(count.get() + 1));
+
+        Self {
+            _id: id,
+            _payload: vec![0xa5; 4096],
+        }
+    }
+}
+
+impl Drop for LeakDetector {
+    fn drop(&mut self) {
+        ACTIVE_COUNT.with(|count| count.set(count.get() - 1));
+    }
+}
+
+impl<'r> ReadXDR<'r> for LeakDetector {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
+        Ok(Self::new(r.read_u32()?))
+    }
+}
+
+fn reset_active_count() {
+    ACTIVE_COUNT.with(|count| count.set(0));
+}
+
+fn active_count() -> usize {
+    ACTIVE_COUNT.with(Cell::get)
+}
+
+fn assert_no_leak_on_unwind<F>(decode: F)
+where
+    F: FnOnce() + panic::UnwindSafe,
+{
+    reset_active_count();
+
+    let result = panic::catch_unwind(decode);
+
+    assert!(
+        result.is_err(),
+        "crafted bytes should unwind before returning a decode result"
+    );
+    assert_eq!(
+        active_count(),
+        0,
+        "the initialized first array element was not dropped while unwinding"
+    );
+}
+
+#[test]
+fn poc_array_decode_unwind_drops_initialized_elements() {
+    type Elem = Result<LeakDetector, Infallible>;
+
+    #[rustfmt::skip]
+    let txs_bytes: &[u8] = &[
+        0x00, 0x00, 0x00, 0x00, // element 0: Result::Ok
+        0x00, 0x00, 0x00, 0x05, // element 0: LeakDetector id = 5
+        0x00, 0x00, 0x00, 0x01, // element 1: Result::Err(Infallible)
+    ];
+
+    assert_no_leak_on_unwind(|| {
+        let _: Result<[Elem; 2], _> = txs::decode(txs_bytes);
+    });
+
+    #[rustfmt::skip]
+    let cxs_bytes: &[u8] = &[
+        0x00, // element 0: Result::Ok
+        0x05, // element 0: LeakDetector id = 5
+        0x01, // element 1: Result::Err(Infallible)
+    ];
+
+    assert_no_leak_on_unwind(|| {
+        let _: Result<[Elem; 2], _> = cxs::decode(cxs_bytes);
+    });
+}
