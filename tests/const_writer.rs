@@ -1102,3 +1102,46 @@ fn const_slice_cxs_write_rejects_overlong() {
     let mut w = xdrs::cxs::ConstWriter::<1>::new();
     holder.const_write_cxs(&mut w);
 }
+
+const OVERLONG: usize = u32::MAX as usize + 1;
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct ZstArrayHolder {
+    items: [Zst; OVERLONG],
+}
+
+fn make_overlong_array() -> ZstArrayHolder {
+    ZstArrayHolder {
+        items: [Zst; OVERLONG],
+    }
+}
+
+#[test]
+#[should_panic(expected = "u32")]
+fn const_array_txs_size_rejects_overlong() {
+    let holder = make_overlong_array();
+    let _ = holder.const_txs_size();
+}
+
+#[test]
+#[should_panic(expected = "u32")]
+fn const_array_cxs_size_rejects_overlong() {
+    let holder = make_overlong_array();
+    let _ = holder.const_cxs_size();
+}
+
+#[test]
+#[should_panic(expected = "u32")]
+fn const_array_txs_write_rejects_overlong() {
+    let holder = make_overlong_array();
+    let mut w = xdrs::txs::ConstWriter::<0>::new();
+    holder.const_write_txs(&mut w);
+}
+
+#[test]
+#[should_panic(expected = "u32")]
+fn const_array_cxs_write_rejects_overlong() {
+    let holder = make_overlong_array();
+    let mut w = xdrs::cxs::ConstWriter::<0>::new();
+    holder.const_write_cxs(&mut w);
+}
