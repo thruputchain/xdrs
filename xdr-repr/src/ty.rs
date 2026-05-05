@@ -332,6 +332,26 @@ const _: () = {
             }
         }
     }
+
+    impl<T: HasTypeSpec> HasTypeSpec for Vec<T> {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody(alloc::vec![Declaration::VariableArray {
+                name: ident("unnamed_0"),
+                elt_ty: T::type_spec(),
+                max: Value::Const(Constant::Unsigned(u32::MAX)),
+            }]))
+        }
+    }
+
+    impl<T: HasTypeSpec> Declare for Vec<T> {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::VariableArray {
+                name,
+                elt_ty: T::type_spec(),
+                max: Value::Const(Constant::Unsigned(u32::MAX)),
+            }
+        }
+    }
 };
 
 impl HasTypeDef for () {

@@ -129,6 +129,41 @@ pub mod arrays_variable {
     }
 }
 
+pub mod vec_variable {
+    use super::*;
+
+    #[derive(ReadXDR, WriteXDR, XDR)]
+    struct Batch {
+        items: Vec<u32>,
+    }
+
+    check_format! { derive
+        Batch::def()
+        =>
+            "struct Batch {"
+            "	unsigned int items<>;"
+            "};"
+    }
+
+    #[derive(ReadXDR, WriteXDR, XDR)]
+    struct Element {
+        okay: bool,
+    }
+
+    #[derive(ReadXDR, WriteXDR, XDR)]
+    struct ElementList {
+        entries: Vec<Element>,
+    }
+
+    check_format! { derive_named_type
+        ElementList::def()
+        =>
+            "struct ElementList {"
+            "	Element entries<>;"
+            "};"
+    }
+}
+
 pub mod variable_array_of_variable_array {
     use super::*;
 
