@@ -1,7 +1,9 @@
 mod common;
 use common::*;
 
-use xdrs::{BytesM, StringM, VecM, WriteError};
+#[cfg(feature = "alloc")]
+use xdrs::{BytesM, StringM};
+use xdrs::{VecM, WriteError};
 
 fn assert_encode_rejects<T: xdrs::WriteXDR>(label: &str, value: &T) {
     #[cfg(feature = "alloc")]
@@ -111,25 +113,14 @@ fn bounded_empty_always_accepted() {
     TXS::check_encode(&vec_u32, &hex!("00000000"));
 }
 
-// No-alloc tests: exercise the #[cfg(not(feature = "alloc"))] WriteXDR impls
-// which use &'static [T] instead of Vec<T>.
+// Exercise the #[cfg(not(feature = "alloc"))] WriteXDR impls for VecM,
+// which are the only bounded writer impls that are feature-gated.
 #[cfg(not(feature = "alloc"))]
 mod no_alloc {
     use super::*;
 
     static OVERLONG_BYTES: &[u8] = &[1, 2, 3];
-    static OVERLONG_STR: &[u8] = b"abc";
     static OVERLONG_U32: &[u32] = &[1, 2, 3];
-
-    #[test]
-    fn bytesm_rejects_overlong_write_no_alloc() {
-        assert_encode_rejects("BytesM<2> len=3", &BytesM::<2>(OVERLONG_BYTES));
-    }
-
-    #[test]
-    fn stringm_rejects_overlong_write_no_alloc() {
-        assert_encode_rejects("StringM<2> len=3", &StringM::<2>(OVERLONG_STR));
-    }
 
     #[test]
     fn vecm_u8_rejects_overlong_write_no_alloc() {
