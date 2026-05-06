@@ -21,7 +21,10 @@ fn derived_struct_fields_json() {
         assert_eq!(body.fields().len(), 2);
 
         // Test individual field JSON
-        assert_eq!(body.fields()[0].get_type_json(), "{ \"type\": \"unsigned\" }");
+        assert_eq!(
+            body.fields()[0].get_type_json(),
+            "{ \"type\": \"unsigned\" }"
+        );
         assert_eq!(body.fields()[1].get_type_json(), "{ \"type\": \"int\" }");
 
         // Test full struct JSON

@@ -212,7 +212,10 @@ fn tuple_type_spec_structure() {
 
         // Check field types
         assert_eq!(body.fields()[0].get_type_json(), "{ \"type\": \"int\" }");
-        assert_eq!(body.fields()[1].get_type_json(), "{ \"type\": \"unsigned\" }");
+        assert_eq!(
+            body.fields()[1].get_type_json(),
+            "{ \"type\": \"unsigned\" }"
+        );
         assert_eq!(body.fields()[2].get_type_json(), "{ \"type\": \"bool\" }");
 
         // Check the full struct JSON representation

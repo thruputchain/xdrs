@@ -95,7 +95,10 @@ fn byte_array_in_derived_struct() {
         assert_eq!(body.fields().len(), 3);
 
         // First field should be unsigned
-        assert_eq!(body.fields()[0].get_type_json(), r#"{ "type": "unsigned" }"#);
+        assert_eq!(
+            body.fields()[0].get_type_json(),
+            r#"{ "type": "unsigned" }"#
+        );
 
         // Second field should be fixed opaque (not fixed array!)
         assert_eq!(
