@@ -103,7 +103,7 @@ required-features = ["repr", "alloc", "derive"]
 
 [[test]]
 name = "enums"
-required-features = ["alloc", "derive", "repr"]
+required-features = ["alloc", "derive"]
 
 [[test]]
 name = "structs"
