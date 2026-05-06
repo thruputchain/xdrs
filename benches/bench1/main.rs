@@ -121,11 +121,65 @@ fn bench_large_vecm_decode(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_vecm_struct_decode(c: &mut Criterion) {
+    let mut group = c.benchmark_group("VecMStructDecode");
+
+    for &len in &[64usize, 512, 4096, 8192] {
+        let value: VecM<Entry, { u32::MAX }> = VecM(
+            (0..len)
+                .map(|i| Entry {
+                    id: i as u64,
+                    amount: i as i32 * 7,
+                })
+                .collect(),
+        );
+
+        let txs_input_vec = txs::encode(&value).unwrap();
+        let txs_input: &[u8] = txs_input_vec.as_ref();
+        group.throughput(Throughput::Bytes(
+            (N_LARGE_DECODE_ITERATIONS * txs_input.len()) as u64,
+        ));
+
+        let id = BenchmarkId::new("decode_txs", format!("len={len}"));
+        group.bench_with_input(id, txs_input, |b, input| {
+            b.iter(|| {
+                let mut output: VecM<Entry, { u32::MAX }>;
+                output = txs::decode(input).unwrap();
+                for _ in 1..N_LARGE_DECODE_ITERATIONS {
+                    output = txs::decode(input).unwrap();
+                }
+                debug_assert_eq!(output.0.len(), len);
+            })
+        });
+
+        let cxs_input_vec = cxs::encode(&value).unwrap();
+        let cxs_input: &[u8] = cxs_input_vec.as_ref();
+        group.throughput(Throughput::Bytes(
+            (N_LARGE_DECODE_ITERATIONS * cxs_input.len()) as u64,
+        ));
+
+        let id = BenchmarkId::new("decode_cxs", format!("len={len}"));
+        group.bench_with_input(id, cxs_input, |b, input| {
+            b.iter(|| {
+                let mut output: VecM<Entry, { u32::MAX }>;
+                output = cxs::decode(input).unwrap();
+                for _ in 1..N_LARGE_DECODE_ITERATIONS {
+                    output = cxs::decode(input).unwrap();
+                }
+                debug_assert_eq!(output.0.len(), len);
+            })
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_codec,
     bench_variable_opaque_decode,
-    bench_large_vecm_decode
+    bench_large_vecm_decode,
+    bench_vecm_struct_decode
 );
 criterion_main!(benches);
 
@@ -267,6 +321,12 @@ const VALUES: [Value; N_VALUES] = [const {
 }; N_VALUES];
 
 const VALUE_BYTES: [u8; 9] = [7; 9];
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+struct Entry {
+    id: u64,
+    amount: i32,
+}
 
 /*
 const fn default_value() -> Value<'static> {

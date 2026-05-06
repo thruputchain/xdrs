@@ -12,6 +12,9 @@ use crate::valid_u32::*;
 use core::convert::Infallible;
 use core::mem::MaybeUninit as MU;
 
+#[cfg(feature = "alloc")]
+const MAX_PREALLOC_BYTES: usize = 0x1_0000;
+
 struct PartialInitGuard<'a, T> {
     slice: &'a mut [MU<T>],
     initialized: usize,
@@ -315,7 +318,8 @@ const _: () = {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
 
-            let mut vec: Vec<T> = Vec::with_capacity(len.min(4096));
+            let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
+            let mut vec: Vec<T> = Vec::with_capacity(cap);
             for _ in 0..len {
                 vec.push(read_xdr(r)?);
             }
@@ -361,8 +365,9 @@ const _: () = {
                 return Err(ReadError::MaxLengthExceeded);
             }
 
-            let mut vec: Vec<T> = Vec::with_capacity(len);
-            let slice = &mut vec.spare_capacity_mut()[..len];
+            let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
+            let mut vec: Vec<T> = Vec::with_capacity(cap);
+            let slice = &mut vec.spare_capacity_mut()[..cap];
             let mut guard = PartialInitGuard {
                 slice,
                 initialized: 0,
@@ -375,8 +380,12 @@ const _: () = {
 
             core::mem::forget(guard);
 
-            // SAFETY: all elts up to `len` have been initialized
-            unsafe { vec.set_len(len) }
+            // SAFETY: all elts up to `cap` have been initialized
+            unsafe { vec.set_len(cap) }
+
+            for _ in cap..len {
+                vec.push(read_xdr(r)?);
+            }
 
             Ok(Self(vec))
         }
