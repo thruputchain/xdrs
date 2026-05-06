@@ -125,6 +125,28 @@ where
             write_u8(self, n as u8)
         }
     }
+
+    /// Writes a 32-bit IEEE 754 float as raw little-endian bytes.
+    ///
+    /// Unlike integers, floats are not compressed with CXS variable-width
+    /// encoding — the bit pattern is written as-is. Little-endian byte order
+    /// follows CXS convention (not RFC 4506 big-endian).
+    #[inline]
+    fn write_f32(&mut self, n: f32) -> WriteResult<()> {
+        let bytes: [u8; 4] = n.to_le_bytes();
+        self.put_bytes(&bytes)
+    }
+
+    /// Writes a 64-bit IEEE 754 double as raw little-endian bytes.
+    ///
+    /// Unlike integers, floats are not compressed with CXS variable-width
+    /// encoding — the bit pattern is written as-is. Little-endian byte order
+    /// follows CXS convention (not RFC 4506 big-endian).
+    #[inline]
+    fn write_f64(&mut self, n: f64) -> WriteResult<()> {
+        let bytes: [u8; 8] = n.to_le_bytes();
+        self.put_bytes(&bytes)
+    }
 }
 
 #[inline]

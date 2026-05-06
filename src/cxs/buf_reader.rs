@@ -234,6 +234,32 @@ impl<'r> Reader<'r> for BufReader<'r> {
         [read_u16, u16],
     }
 
+    /// Reads a 32-bit IEEE 754 float from raw little-endian bytes.
+    ///
+    /// CXS encodes floats as fixed-size raw bytes (not variable-width
+    /// compressed). Little-endian byte order follows CXS convention
+    /// (not RFC 4506 big-endian).
+    #[inline]
+    fn read_f32(&mut self) -> ReadResult<f32> {
+        let input = self.read_opaque_fixed(4)?;
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(input);
+        Ok(f32::from_le_bytes(bytes))
+    }
+
+    /// Reads a 64-bit IEEE 754 double from raw little-endian bytes.
+    ///
+    /// CXS encodes floats as fixed-size raw bytes (not variable-width
+    /// compressed). Little-endian byte order follows CXS convention
+    /// (not RFC 4506 big-endian).
+    #[inline]
+    fn read_f64(&mut self) -> ReadResult<f64> {
+        let input = self.read_opaque_fixed(8)?;
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(input);
+        Ok(f64::from_le_bytes(bytes))
+    }
+
     #[inline]
     fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
         self.get_input(len)

@@ -62,4 +62,10 @@ pub trait Writer<F> {
 
     /// Writes a boolean value.
     fn write_bool(&mut self, b: bool) -> WriteResult<()>;
+
+    /// Writes a 32-bit IEEE 754 floating-point value.
+    fn write_f32(&mut self, n: f32) -> WriteResult<()>;
+
+    /// Writes a 64-bit IEEE 754 floating-point value.
+    fn write_f64(&mut self, n: f64) -> WriteResult<()>;
 }

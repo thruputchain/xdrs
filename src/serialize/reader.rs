@@ -43,6 +43,12 @@ pub trait Reader<'r>: Sized {
     /// Reads an unsigned 16-bit integer.
     fn read_u16(&mut self) -> ReadResult<u16>;
 
+    /// Reads a 32-bit IEEE 754 floating-point value.
+    fn read_f32(&mut self) -> ReadResult<f32>;
+
+    /// Reads a 64-bit IEEE 754 floating-point value.
+    fn read_f64(&mut self) -> ReadResult<f64>;
+
     /// Reads a byte array of known length, borrowing the contents from the reader.
     ///
     /// On success, the returned slice must have exactly `len` bytes.

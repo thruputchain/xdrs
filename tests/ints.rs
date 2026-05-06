@@ -56,6 +56,96 @@ mod txs {
         [i128_pos, i128, 0x03dead1234beef5678, "0000000000000003dead1234beef5678"],
         [i128_max, i128, i128::MAX, "7fffffffffffffffffffffffffffffff"],
     }
+
+    #[test]
+    fn f32_one() {
+        let val: f32 = 1.0;
+        let expected = &hex::decode("3f800000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f32 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_one() {
+        let val: f64 = 1.0;
+        let expected = &hex::decode("3ff0000000000000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f64 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f32_zero() {
+        let val: f32 = 0.0;
+        let expected = &hex::decode("00000000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f32 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f32_neg_zero() {
+        let val: f32 = -0.0;
+        let expected = &hex::decode("80000000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f32 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f32_infinity() {
+        let val: f32 = f32::INFINITY;
+        let expected = &hex::decode("7f800000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f32 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f32_neg_infinity() {
+        let val: f32 = f32::NEG_INFINITY;
+        let expected = &hex::decode("ff800000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f32 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_zero() {
+        let val: f64 = 0.0;
+        let expected = &hex::decode("0000000000000000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f64 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_neg_zero() {
+        let val: f64 = -0.0;
+        let expected = &hex::decode("8000000000000000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f64 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_infinity() {
+        let val: f64 = f64::INFINITY;
+        let expected = &hex::decode("7ff0000000000000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f64 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_neg_infinity() {
+        let val: f64 = f64::NEG_INFINITY;
+        let expected = &hex::decode("fff0000000000000").unwrap();
+        TXS::check_encode(&val, expected);
+        let decoded: f64 = TXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
 }
 
 mod cxs {
@@ -348,5 +438,77 @@ mod cxs {
         [i128_min, i128, i128::MIN, "ff000000000000008000"],
         [i128_pos, i128, 0x03dead1234beef5678, "03ff7856efbe3412adde"],
         [i128_max, i128, i128::MAX, "ffffffffffffffff7fffffffffffffffffff"],
+    }
+
+    #[test]
+    fn f32_one() {
+        let val: f32 = 1.0;
+        let expected = &hex::decode("0000803f").unwrap();
+        CXS::check_encode(&val, expected);
+        let decoded: f32 = CXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_one() {
+        let val: f64 = 1.0;
+        let expected = &hex::decode("000000000000f03f").unwrap();
+        CXS::check_encode(&val, expected);
+        let decoded: f64 = CXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f32_zero() {
+        let val: f32 = 0.0;
+        let expected = &hex::decode("00000000").unwrap();
+        CXS::check_encode(&val, expected);
+        let decoded: f32 = CXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f32_neg_zero() {
+        let val: f32 = -0.0;
+        let expected = &hex::decode("00000080").unwrap();
+        CXS::check_encode(&val, expected);
+        let decoded: f32 = CXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f32_infinity() {
+        let val: f32 = f32::INFINITY;
+        let expected = &hex::decode("0000807f").unwrap();
+        CXS::check_encode(&val, expected);
+        let decoded: f32 = CXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_zero() {
+        let val: f64 = 0.0;
+        let expected = &hex::decode("0000000000000000").unwrap();
+        CXS::check_encode(&val, expected);
+        let decoded: f64 = CXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_neg_zero() {
+        let val: f64 = -0.0;
+        let expected = &hex::decode("0000000000000080").unwrap();
+        CXS::check_encode(&val, expected);
+        let decoded: f64 = CXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[test]
+    fn f64_infinity() {
+        let val: f64 = f64::INFINITY;
+        let expected = &hex::decode("000000000000f07f").unwrap();
+        CXS::check_encode(&val, expected);
+        let decoded: f64 = CXS::decode(expected).unwrap();
+        assert_eq!(decoded.to_bits(), val.to_bits());
     }
 }

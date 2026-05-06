@@ -160,4 +160,20 @@ impl<'r> Reader<'r> for BufReader<'r> {
         read_i64(8): i64,
         read_i32(4): i32,
     ];
+
+    #[inline]
+    fn read_f32(&mut self) -> ReadResult<f32> {
+        let input = self.get_input(4)?;
+        let mut bytes = [0u8; 4];
+        bytes.copy_from_slice(input);
+        Ok(f32::from_be_bytes(bytes))
+    }
+
+    #[inline]
+    fn read_f64(&mut self) -> ReadResult<f64> {
+        let input = self.get_input(8)?;
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(input);
+        Ok(f64::from_be_bytes(bytes))
+    }
 }
