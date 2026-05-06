@@ -55,5 +55,8 @@ fn result_typedef_backed_payload_uses_result_arm_name() {
         panic!("Expected TypeSpec::Union");
     };
 
-    assert_eq!(body.case_specs[0].decl, declare_type("ok", TypeSpec::Bool));
+    assert_eq!(
+        body.case_specs[0].decl,
+        declare_type("ok", TypeSpec::Ident(ident("wrapped")))
+    );
 }

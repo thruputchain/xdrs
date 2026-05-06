@@ -371,7 +371,10 @@ where
         };
 
         match T::type_def() {
-            TypeDef::Def(decl) => decl,
+            TypeDef::Def(decl) => match decl.name() {
+                Some(ty_ident) => declare_named(ty_ident.clone()),
+                None => decl,
+            },
             TypeDef::Struct(ty_ident, _) => declare_named(ty_ident),
             TypeDef::Enum(ty_ident, _) => declare_named(ty_ident),
             TypeDef::Union(ty_ident, _) => declare_named(ty_ident),
