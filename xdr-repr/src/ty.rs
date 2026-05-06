@@ -247,6 +247,24 @@ impl Declare for &[u8] {
     }
 }
 
+impl HasTypeSpec for &str {
+    fn type_spec() -> TypeSpec {
+        TypeSpec::Struct(StructBody(alloc::vec![Declaration::String {
+            name: ident("unnamed_0"),
+            max: Value::Const(Constant::Unsigned(u32::MAX)),
+        }]))
+    }
+}
+
+impl Declare for &str {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::String {
+            name,
+            max: Value::Const(Constant::Unsigned(u32::MAX)),
+        }
+    }
+}
+
 impl<T: HasTypeSpec> Declare for &[T] {
     fn declare(name: Ident) -> Declaration {
         Declaration::VariableArray {
@@ -352,6 +370,24 @@ const _: () = {
             Declaration::VariableArray {
                 name,
                 elt_ty: T::type_spec(),
+                max: Value::Const(Constant::Unsigned(u32::MAX)),
+            }
+        }
+    }
+
+    impl HasTypeSpec for alloc::string::String {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody(alloc::vec![Declaration::String {
+                name: ident("unnamed_0"),
+                max: Value::Const(Constant::Unsigned(u32::MAX)),
+            }]))
+        }
+    }
+
+    impl Declare for alloc::string::String {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::String {
+                name,
                 max: Value::Const(Constant::Unsigned(u32::MAX)),
             }
         }
