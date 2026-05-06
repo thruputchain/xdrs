@@ -398,6 +398,12 @@ impl HasTypeDef for () {
     }
 }
 
+impl<T> HasTypeDef for core::marker::PhantomData<T> {
+    fn type_def() -> TypeDef {
+        TypeDef::Def(Declaration::Void)
+    }
+}
+
 impl<T> Declare for T
 where
     T: HasTypeDef,
