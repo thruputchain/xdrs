@@ -24,7 +24,12 @@ use thiserror::Error;
 /// Implementations of this trait are used by [`ReadXDR`](crate::ReadXDR)
 /// to deserialize complex types.
 ///
-pub trait Reader<'r>: Sized {
+/// # Safety
+///
+/// [`read_opaque_fixed`](Reader::read_opaque_fixed) must return a slice
+/// of exactly `len` bytes on success. Unsafe code in this crate relies on
+/// that invariant.
+pub unsafe trait Reader<'r>: Sized {
     /// Reads a signed 64-bit integer.
     fn read_i64(&mut self) -> ReadResult<i64>;
 
