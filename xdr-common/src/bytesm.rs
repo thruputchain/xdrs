@@ -76,7 +76,7 @@ impl<const MAX: u32> core::fmt::Display for BytesM<MAX> {
 impl<const MAX: u32> core::str::FromStr for BytesM<MAX> {
     type Err = Error;
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
-        if s.len() % 2 != 0 {
+        if !s.len().is_multiple_of(2) {
             return Err(Error::InvalidHex);
         }
         if s.len() / 2 > MAX as usize {
