@@ -399,7 +399,7 @@ fn const_write_value_expr(
 
 fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_repr(input)?;
-    check_variants(input, item)?;
+    check_variants(input, item, has_xdr_discrim_type(input))?;
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();

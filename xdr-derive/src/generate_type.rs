@@ -135,7 +135,7 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
 
 fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_repr(input)?;
-    check_variants(input, item)?;
+    check_variants(input, item, has_xdr_discrim_type(input))?;
 
     let attrs = Attrs::from_derive_input(input)?;
 
