@@ -85,6 +85,37 @@ fn enum_default_variant_encode() {
     TXS::check_codec(&val, &hex!("0ABBCCDD"));
 }
 
+#[test]
+fn enum_default_variant_with_payload_roundtrip() {
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum UnnamedPayload {
+        Known = 0,
+        Default(i32, u32),
+    }
+
+    let original = UnnamedPayload::Default(7, 9);
+    TXS::check_codec(&original, &hex!("0000000700000009"));
+
+    let cxs_encoded = xdrs::cxs::encode(&original).unwrap();
+    let cxs_decoded: UnnamedPayload = xdrs::cxs::decode(&cxs_encoded).unwrap();
+    assert_eq!(cxs_decoded, original);
+
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum NamedPayload {
+        Known { val: u32 } = 0,
+        Default { code: i32, data: u32 },
+    }
+
+    let original = NamedPayload::Default { code: 7, data: 9 };
+    TXS::check_codec(&original, &hex!("0000000700000009"));
+
+    let cxs_encoded = xdrs::cxs::encode(&original).unwrap();
+    let cxs_decoded: NamedPayload = xdrs::cxs::decode(&cxs_encoded).unwrap();
+    assert_eq!(cxs_decoded, original);
+}
+
 // We don't support enums with mixed implicit/explicit variants
 // (except that a default arm is allowed).
 //
