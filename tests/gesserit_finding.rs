@@ -61,7 +61,7 @@ where
     assert_eq!(
         active_count(),
         0,
-        "the initialized first array element was not dropped while unwinding"
+        "an initialized element was not dropped while unwinding"
     );
 }
 
@@ -156,6 +156,7 @@ fn poc_negative_length_bounds_emit_invalid_schema() {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn poc_vecm_decode_unwind_drops_initialized_elements() {
     type Elem = Result<LeakDetector, Infallible>;
