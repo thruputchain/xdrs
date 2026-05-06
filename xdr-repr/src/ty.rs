@@ -249,9 +249,9 @@ impl Declare for &[u8] {
 
 impl HasTypeSpec for &str {
     fn type_spec() -> TypeSpec {
-        TypeSpec::Struct(StructBody(alloc::vec![
-            <&str as Declare>::declare(ident("unnamed_0")),
-        ]))
+        TypeSpec::Struct(StructBody(alloc::vec![<&str as Declare>::declare(ident(
+            "unnamed_0"
+        )),]))
     }
 }
 
