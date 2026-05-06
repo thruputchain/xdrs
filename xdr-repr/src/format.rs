@@ -309,7 +309,7 @@ impl Format for StructBody {
         f.write_str("{");
         f.endln();
         f.start_indent();
-        for d in &self.0 {
+        for d in self.fields() {
             f.startln();
             d.fmt(f);
             f.write_str(";");

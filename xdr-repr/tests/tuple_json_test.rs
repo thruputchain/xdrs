@@ -55,7 +55,7 @@ fn tuple_type_spec() {
     // Should be TypeSpec::Struct
     match type_spec {
         TypeSpec::Struct(body) => {
-            assert_eq!(body.0.len(), 2);
+            assert_eq!(body.fields().len(), 2);
         }
         _ => panic!("Expected TypeSpec::Struct"),
     }
@@ -71,10 +71,10 @@ fn tuple_in_struct_field() {
 
     let type_def = Point::type_def();
     if let TypeDef::Struct(_, body) = type_def {
-        assert_eq!(body.0.len(), 1);
+        assert_eq!(body.fields().len(), 1);
 
         // Get JSON for the tuple field - should be an embedded struct
-        let coords_json = body.0[0].get_type_json();
+        let coords_json = body.fields()[0].get_type_json();
 
         // Verify the JSON has the embedded struct
         assert!(coords_json.contains(r#""type": "struct""#));
@@ -208,12 +208,15 @@ fn tuple_type_spec_structure() {
     // Tuples should return TypeSpec::Struct (embedded struct)
     if let TypeSpec::Struct(body) = type_spec {
         // Should have 3 fields (unnamed_0, unnamed_1, unnamed_2)
-        assert_eq!(body.0.len(), 3);
+        assert_eq!(body.fields().len(), 3);
 
         // Check field types
-        assert_eq!(body.0[0].get_type_json(), "{ \"type\": \"int\" }");
-        assert_eq!(body.0[1].get_type_json(), "{ \"type\": \"unsigned\" }");
-        assert_eq!(body.0[2].get_type_json(), "{ \"type\": \"bool\" }");
+        assert_eq!(body.fields()[0].get_type_json(), "{ \"type\": \"int\" }");
+        assert_eq!(
+            body.fields()[1].get_type_json(),
+            "{ \"type\": \"unsigned\" }"
+        );
+        assert_eq!(body.fields()[2].get_type_json(), "{ \"type\": \"bool\" }");
 
         // Check the full struct JSON representation
         let struct_json = TypeSpec::Struct(body).get_type_json();
@@ -279,10 +282,10 @@ fn nested_tuple_in_derived_struct() {
 
     if let TypeDef::Struct(name, body) = type_def {
         assert_eq!(name.0, "ComplexNesting");
-        assert_eq!(body.0.len(), 1);
+        assert_eq!(body.fields().len(), 1);
 
         // The field should have the embedded struct inline
-        let json = body.0[0].get_type_json();
+        let json = body.fields()[0].get_type_json();
 
         // Verify it contains the fully nested structure
         assert!(json.contains(r#""type": "struct""#));

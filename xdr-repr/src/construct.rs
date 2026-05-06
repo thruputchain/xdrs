@@ -157,16 +157,9 @@ pub fn named_type(name: &str) -> TypeSpec {
 
 /// Creates an inline struct type specification.
 ///
-/// # Panics
-///
-/// Panics if `fields` is empty, as XDR structs must contain at least one declaration.
+/// Empty field lists are normalized to contain a single `void` declaration.
 pub fn struct_type(fields: Vec<Declaration>) -> TypeSpec {
-    assert!(
-        !fields.is_empty(),
-        "XDR struct must contain at least one declaration (e.g., `void`)"
-    );
-
-    TypeSpec::Struct(StructBody(fields))
+    TypeSpec::Struct(StructBody::new(fields))
 }
 
 /// Creates an inline enum type specification.
@@ -176,16 +169,9 @@ pub fn enum_type(variants: Vec<(Ident, Value)>) -> TypeSpec {
 
 /// Creates a struct type definition.
 ///
-/// # Panics
-///
-/// Panics if `fields` is empty, as XDR structs must contain at least one declaration.
+/// Empty field lists are normalized to contain a single `void` declaration.
 pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
-    assert!(
-        !fields.is_empty(),
-        "XDR struct must contain at least one declaration (e.g., `void`)"
-    );
-
-    TypeDef::Struct(ident(name), StructBody(fields))
+    TypeDef::Struct(ident(name), StructBody::new(fields))
 }
 
 /// Creates an enum type definition.

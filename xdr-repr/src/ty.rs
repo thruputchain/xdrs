@@ -153,7 +153,7 @@ impl<T: HasTypeSpec> HasTypeSpec for Option<T> {
     fn type_spec() -> TypeSpec {
         // Options aren't types in XDR, so we represent them as embedded structs
         // with a single optional field named "unnamed_0"
-        TypeSpec::Struct(StructBody(alloc::vec![Declaration::Optional {
+        TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::Optional {
             name: ident("unnamed_0"),
             opt_ty: T::type_spec(),
         }]))
@@ -196,7 +196,7 @@ impl<const N: usize> HasTypeSpec for [u8; N] {
         const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
         // Arrays aren't types in XDR, so we represent them as embedded structs
         // with a single field named "unnamed_0"
-        TypeSpec::Struct(StructBody(alloc::vec![Declaration::FixedOpaque {
+        TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::FixedOpaque {
             name: ident("unnamed_0"),
             size: Value::Const((N as u32).into()),
         }]))
@@ -221,7 +221,7 @@ impl<const N: usize, T: HasTypeSpec> HasTypeSpec for [T; N] {
         const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
         // Arrays aren't types in XDR, so we represent them as embedded structs
         // with a single field named "unnamed_0"
-        TypeSpec::Struct(StructBody(alloc::vec![Declaration::FixedArray {
+        TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::FixedArray {
             name: ident("unnamed_0"),
             elt_ty: T::type_spec(),
             len: Value::Const((N as u32).into()),
@@ -231,7 +231,7 @@ impl<const N: usize, T: HasTypeSpec> HasTypeSpec for [T; N] {
 
 impl HasTypeSpec for &[u8] {
     fn type_spec() -> TypeSpec {
-        TypeSpec::Struct(StructBody(alloc::vec![Declaration::VariableOpaque {
+        TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::VariableOpaque {
             name: ident("unnamed_0"),
             max: Value::Const(Constant::Unsigned(u32::MAX)),
         }]))
@@ -249,9 +249,9 @@ impl Declare for &[u8] {
 
 impl HasTypeSpec for &str {
     fn type_spec() -> TypeSpec {
-        TypeSpec::Struct(StructBody(alloc::vec![<&str as Declare>::declare(ident(
-            "unnamed_0"
-        )),]))
+        TypeSpec::Struct(StructBody::new(alloc::vec![<&str as Declare>::declare(
+            ident("unnamed_0")
+        ),]))
     }
 }
 
@@ -307,7 +307,7 @@ const _: () = {
 
     impl<const MAX: u32> HasTypeSpec for BytesM<MAX> {
         fn type_spec() -> TypeSpec {
-            TypeSpec::Struct(StructBody(alloc::vec![Declaration::VariableOpaque {
+            TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::VariableOpaque {
                 name: ident("unnamed_0"),
                 max: Value::Const(Constant::Unsigned(MAX)),
             }]))
@@ -338,7 +338,7 @@ const _: () = {
 
     impl HasTypeSpec for Vec<u8> {
         fn type_spec() -> TypeSpec {
-            TypeSpec::Struct(StructBody(alloc::vec![Declaration::VariableOpaque {
+            TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::VariableOpaque {
                 name: ident("unnamed_0"),
                 max: Value::Const(Constant::Unsigned(u32::MAX)),
             }]))
@@ -356,7 +356,7 @@ const _: () = {
 
     impl<T: HasTypeSpec> HasTypeSpec for Vec<T> {
         fn type_spec() -> TypeSpec {
-            TypeSpec::Struct(StructBody(alloc::vec![Declaration::VariableArray {
+            TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::VariableArray {
                 name: ident("unnamed_0"),
                 elt_ty: T::type_spec(),
                 max: Value::Const(Constant::Unsigned(u32::MAX)),
@@ -376,7 +376,7 @@ const _: () = {
 
     impl HasTypeSpec for alloc::string::String {
         fn type_spec() -> TypeSpec {
-            TypeSpec::Struct(StructBody(alloc::vec![
+            TypeSpec::Struct(StructBody::new(alloc::vec![
                 <alloc::string::String as Declare>::declare(ident("unnamed_0")),
             ]))
         }
@@ -445,7 +445,7 @@ macro_rules! impl_tuple_types {
         {
             fn type_spec() -> TypeSpec {
                 // Create an embedded struct body
-                let body = StructBody(alloc::vec![
+                let body = StructBody::new(alloc::vec![
                     $(
                         $t::declare(ident(concat!("unnamed_", stringify!($idx)))),
                     )+

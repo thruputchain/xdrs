@@ -20,7 +20,7 @@ fn result_json_is_valid() {
 
 #[test]
 fn nested_struct_with_result_json_is_valid() {
-    let body = StructBody(vec![Declaration::Named {
+    let body = StructBody::new(vec![Declaration::Named {
         name: ident("choice"),
         ty: <Result<bool, u32>>::type_spec(),
     }]);

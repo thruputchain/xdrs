@@ -252,17 +252,14 @@ fn optional_all_types() {
 // Tests for embedded struct types
 
 #[test]
-fn embedded_struct_empty() {
-    let empty_struct = TypeSpec::Struct(StructBody(vec![]));
-    assert_eq!(
-        empty_struct.get_type_json(),
-        "{\n  \"type\": \"struct\",\n  \"fields\": []\n}"
-    );
+fn empty_struct_body_normalizes_to_void() {
+    let body = StructBody::new(vec![]);
+    assert_eq!(body.fields(), &[Declaration::Void]);
 }
 
 #[test]
 fn embedded_struct_simple() {
-    let struct_body = StructBody(vec![
+    let struct_body = StructBody::new(vec![
         declare_type("id", TypeSpec::Unsigned),
         declare_type("count", TypeSpec::Int),
     ]);
@@ -288,7 +285,7 @@ fn embedded_struct_simple() {
 
 #[test]
 fn embedded_struct_complex() {
-    let struct_body = StructBody(vec![
+    let struct_body = StructBody::new(vec![
         declare_type("name", TypeSpec::Ident(ident("String"))),
         declare_fixed_opaque("data", 16),
         Declaration::FixedArray {
@@ -325,7 +322,7 @@ fn embedded_struct_complex() {
 fn embedded_struct_in_declaration() {
     let decl = Declaration::Named {
         name: ident("message"),
-        ty: TypeSpec::Struct(StructBody(vec![
+        ty: TypeSpec::Struct(StructBody::new(vec![
             declare_type("id", TypeSpec::Unsigned),
             declare_type("payload", TypeSpec::Ident(ident("Bytes"))),
         ])),
@@ -352,12 +349,12 @@ fn embedded_struct_in_declaration() {
 #[test]
 fn nested_struct() {
     // Test a struct containing another struct
-    let inner_struct = TypeSpec::Struct(StructBody(vec![
+    let inner_struct = TypeSpec::Struct(StructBody::new(vec![
         declare_type("x", TypeSpec::Int),
         declare_type("y", TypeSpec::Int),
     ]));
 
-    let outer_struct = StructBody(vec![
+    let outer_struct = StructBody::new(vec![
         declare_type("point", inner_struct),
         declare_type("label", TypeSpec::Ident(ident("String"))),
     ]);
