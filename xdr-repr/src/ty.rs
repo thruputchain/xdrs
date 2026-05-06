@@ -249,10 +249,9 @@ impl Declare for &[u8] {
 
 impl HasTypeSpec for &str {
     fn type_spec() -> TypeSpec {
-        TypeSpec::Struct(StructBody(alloc::vec![Declaration::String {
-            name: ident("unnamed_0"),
-            max: Value::Const(Constant::Unsigned(u32::MAX)),
-        }]))
+        TypeSpec::Struct(StructBody(alloc::vec![
+            <&str as Declare>::declare(ident("unnamed_0")),
+        ]))
     }
 }
 
@@ -377,10 +376,9 @@ const _: () = {
 
     impl HasTypeSpec for alloc::string::String {
         fn type_spec() -> TypeSpec {
-            TypeSpec::Struct(StructBody(alloc::vec![Declaration::String {
-                name: ident("unnamed_0"),
-                max: Value::Const(Constant::Unsigned(u32::MAX)),
-            }]))
+            TypeSpec::Struct(StructBody(alloc::vec![
+                <alloc::string::String as Declare>::declare(ident("unnamed_0")),
+            ]))
         }
     }
 
