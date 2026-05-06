@@ -197,23 +197,31 @@ fn const_size_value_expr(
         return Ok(quote! { #mod_path::size_opaque_variable((*#expr_ref).as_bytes().len()) });
     }
 
+    if is_phantom_data(ty) {
+        return Ok(quote! { 0 });
+    }
+
+    if is_infallible(ty) {
+        return Ok(quote! { 0 });
+    }
+
     if let Some(inner) = option_inner(ty) {
-        let inner_size = const_size_value_expr(quote! { inner }, inner, fmt)?;
+        let inner_size = const_size_value_expr(quote! { _inner }, inner, fmt)?;
         return Ok(quote! {
             match #expr_ref {
-                Some(inner) => #mod_path::size_i32(1) + #inner_size,
+                Some(_inner) => #mod_path::size_i32(1) + #inner_size,
                 None => #mod_path::size_i32(0),
             }
         });
     }
 
     if let Some((ok_ty, err_ty)) = result_inners(ty) {
-        let ok_size = const_size_value_expr(quote! { inner }, ok_ty, fmt)?;
-        let err_size = const_size_value_expr(quote! { inner }, err_ty, fmt)?;
+        let ok_size = const_size_value_expr(quote! { _inner }, ok_ty, fmt)?;
+        let err_size = const_size_value_expr(quote! { _inner }, err_ty, fmt)?;
         return Ok(quote! {
             match #expr_ref {
-                Ok(inner) => #mod_path::size_i32(0) + #ok_size,
-                Err(inner) => #mod_path::size_i32(1) + #err_size,
+                Ok(_inner) => #mod_path::size_i32(0) + #ok_size,
+                Err(_inner) => #mod_path::size_i32(1) + #err_size,
             }
         });
     }
@@ -304,11 +312,19 @@ fn const_write_value_expr(
         return Ok(quote! { w.write_opaque_variable((*#expr_ref).as_bytes()); });
     }
 
+    if is_phantom_data(ty) {
+        return Ok(quote! {});
+    }
+
+    if is_infallible(ty) {
+        return Ok(quote! {});
+    }
+
     if let Some(inner) = option_inner(ty) {
-        let inner_write = const_write_value_expr(quote! { inner }, inner, fmt)?;
+        let inner_write = const_write_value_expr(quote! { _inner }, inner, fmt)?;
         return Ok(quote! {
             match #expr_ref {
-                Some(inner) => {
+                Some(_inner) => {
                     w.write_i32(1);
                     #inner_write
                 }
@@ -318,15 +334,15 @@ fn const_write_value_expr(
     }
 
     if let Some((ok_ty, err_ty)) = result_inners(ty) {
-        let ok_write = const_write_value_expr(quote! { inner }, ok_ty, fmt)?;
-        let err_write = const_write_value_expr(quote! { inner }, err_ty, fmt)?;
+        let ok_write = const_write_value_expr(quote! { _inner }, ok_ty, fmt)?;
+        let err_write = const_write_value_expr(quote! { _inner }, err_ty, fmt)?;
         return Ok(quote! {
             match #expr_ref {
-                Ok(inner) => {
+                Ok(_inner) => {
                     w.write_i32(0);
                     #ok_write
                 }
-                Err(inner) => {
+                Err(_inner) => {
                     w.write_i32(1);
                     #err_write
                 }
@@ -498,9 +514,9 @@ mod tests {
         };
 
         let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        assert!(toks.contains("match&self.maybe{Some(inner)=>"));
-        assert!(toks.contains("match&self.nested{Some(inner)=>"));
-        assert!(toks.contains("match&self.choice{Ok(inner)=>"));
+        assert!(toks.contains("match&self.maybe{Some(_inner)=>"));
+        assert!(toks.contains("match&self.nested{Some(_inner)=>"));
+        assert!(toks.contains("match&self.choice{Ok(_inner)=>"));
         assert!(toks.contains("whilei<arr.len()"));
         assert!(toks.contains("&(*&self.pair).0"));
         assert!(toks.contains("&(*&self.pair).1"));
@@ -515,9 +531,9 @@ mod tests {
         };
 
         let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        assert!(toks.contains("&(*inner).0"));
-        assert!(toks.contains("&(*&(*inner).1).0"));
-        assert!(!toks.contains("&&inner.0"));
+        assert!(toks.contains("&(*_inner).0"));
+        assert!(toks.contains("&(*&(*_inner).1).0"));
+        assert!(!toks.contains("&&_inner.0"));
     }
 
     #[test]
@@ -895,4 +911,12 @@ fn is_str_ref(ty: &syn::Type) -> bool {
         return is_path_ident(&r.elem, "str");
     }
     false
+}
+
+fn is_phantom_data(ty: &syn::Type) -> bool {
+    path_segment(ty, "PhantomData").is_some()
+}
+
+fn is_infallible(ty: &syn::Type) -> bool {
+    path_segment(ty, "Infallible").is_some()
 }

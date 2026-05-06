@@ -1171,3 +1171,143 @@ fn const_typed_slice_matches_runtime() {
     assert_eq!(holder.const_cxs_size(), cxs_runtime_encode(&holder).len());
     assert_eq!(holder.const_txs_size(), txs_runtime_encode(&holder).len());
 }
+
+// -- PhantomData tests (issue #88) --
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct WithPhantom {
+    tag: u32,
+    marker: core::marker::PhantomData<u32>,
+}
+
+const WITH_PHANTOM: WithPhantom = WithPhantom {
+    tag: 7,
+    marker: core::marker::PhantomData,
+};
+
+const WITH_PHANTOM_CXS: [u8; WITH_PHANTOM.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ WITH_PHANTOM.const_cxs_size() }>::new();
+    WITH_PHANTOM.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_PHANTOM_TXS: [u8; WITH_PHANTOM.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ WITH_PHANTOM.const_txs_size() }>::new();
+    WITH_PHANTOM.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn phantom_data_const_matches_runtime() {
+    assert_eq!(
+        &WITH_PHANTOM_CXS,
+        cxs_runtime_encode(&WITH_PHANTOM).as_slice()
+    );
+    assert_eq!(
+        &WITH_PHANTOM_TXS,
+        txs_runtime_encode(&WITH_PHANTOM).as_slice()
+    );
+    assert_eq!(
+        WITH_PHANTOM.const_cxs_size(),
+        cxs_runtime_encode(&WITH_PHANTOM).len()
+    );
+    assert_eq!(
+        WITH_PHANTOM.const_txs_size(),
+        txs_runtime_encode(&WITH_PHANTOM).len()
+    );
+}
+
+// PhantomData newtype wrapper
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct PhantomNewtype(core::marker::PhantomData<u32>);
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct WithPhantomNewtype {
+    tag: u32,
+    marker: PhantomNewtype,
+}
+
+const WITH_PHANTOM_NT: WithPhantomNewtype = WithPhantomNewtype {
+    tag: 7,
+    marker: PhantomNewtype(core::marker::PhantomData),
+};
+
+const WITH_PHANTOM_NT_CXS: [u8; WITH_PHANTOM_NT.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ WITH_PHANTOM_NT.const_cxs_size() }>::new();
+    WITH_PHANTOM_NT.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_PHANTOM_NT_TXS: [u8; WITH_PHANTOM_NT.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ WITH_PHANTOM_NT.const_txs_size() }>::new();
+    WITH_PHANTOM_NT.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn phantom_newtype_const_matches_runtime() {
+    assert_eq!(
+        &WITH_PHANTOM_NT_CXS,
+        cxs_runtime_encode(&WITH_PHANTOM_NT).as_slice()
+    );
+    assert_eq!(
+        &WITH_PHANTOM_NT_TXS,
+        txs_runtime_encode(&WITH_PHANTOM_NT).as_slice()
+    );
+    assert_eq!(
+        WITH_PHANTOM_NT.const_cxs_size(),
+        cxs_runtime_encode(&WITH_PHANTOM_NT).len()
+    );
+    assert_eq!(
+        WITH_PHANTOM_NT.const_txs_size(),
+        txs_runtime_encode(&WITH_PHANTOM_NT).len()
+    );
+    // Encoding should match the non-newtype version (PhantomData contributes zero bytes)
+    assert_eq!(&WITH_PHANTOM_NT_CXS, &WITH_PHANTOM_CXS);
+    assert_eq!(&WITH_PHANTOM_NT_TXS, &WITH_PHANTOM_TXS);
+}
+
+// -- Infallible tests (issue #88) --
+
+#[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct WithInfallible {
+    ok: Result<u32, core::convert::Infallible>,
+    never: Option<core::convert::Infallible>,
+}
+
+const WITH_INFALLIBLE: WithInfallible = WithInfallible {
+    ok: Ok(7),
+    never: None,
+};
+
+const WITH_INFALLIBLE_CXS: [u8; WITH_INFALLIBLE.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ WITH_INFALLIBLE.const_cxs_size() }>::new();
+    WITH_INFALLIBLE.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const WITH_INFALLIBLE_TXS: [u8; WITH_INFALLIBLE.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ WITH_INFALLIBLE.const_txs_size() }>::new();
+    WITH_INFALLIBLE.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn infallible_const_matches_runtime() {
+    assert_eq!(
+        &WITH_INFALLIBLE_CXS,
+        cxs_runtime_encode(&WITH_INFALLIBLE).as_slice()
+    );
+    assert_eq!(
+        &WITH_INFALLIBLE_TXS,
+        txs_runtime_encode(&WITH_INFALLIBLE).as_slice()
+    );
+    assert_eq!(
+        WITH_INFALLIBLE.const_cxs_size(),
+        cxs_runtime_encode(&WITH_INFALLIBLE).len()
+    );
+    assert_eq!(
+        WITH_INFALLIBLE.const_txs_size(),
+        txs_runtime_encode(&WITH_INFALLIBLE).len()
+    );
+}

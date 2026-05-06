@@ -220,6 +220,18 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///   `Result<T, E>`, `&[T]`, `[T; N]`, and tuples, as long as leaf types are
 ///   concrete and const-encodable
 ///
+/// # Standard library type recognition
+///
+/// The macro recognizes `Option`, `Result`, `PhantomData`, and `Infallible` by
+/// their **last path segment** (e.g. both `Option<T>` and `std::option::Option<T>`
+/// match). This is a syntactic check — type aliases are not resolved. A field
+/// declared as `type MyOpt = Option<Foo>; ..  my_field: MyOpt` will **not** be
+/// recognized as an `Option` and will instead be treated as a named leaf whose
+/// type must provide its own `const_cxs_size` / `const_write_cxs` / etc. inherent
+/// methods (i.e. it must itself derive `ConstWriteXDR` or provide them manually).
+/// The same applies to `PhantomData` — if you need a type-alias, wrap it in a
+/// newtype and derive `ConstWriteXDR` on the newtype instead.
+///
 #[proc_macro_derive(ConstWriteXDR, attributes(xdrs))]
 pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
