@@ -111,6 +111,36 @@ fn enum_with_ref_variants_const_matches_runtime() {
     );
 }
 
+// --- &mut T in a struct ---
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct MutLeaf<'a> {
+    tag: u32,
+    inner: &'a mut Leaf,
+}
+
+#[test]
+fn struct_with_mut_ref_runtime_matches_shared_ref() {
+    let mut leaf = LEAF_A;
+    let val = MutLeaf {
+        tag: 1,
+        inner: &mut leaf,
+    };
+    assert_eq!(cxs_runtime_encode(&val), cxs_runtime_encode(&BORROWED_LEAF));
+    assert_eq!(txs_runtime_encode(&val), txs_runtime_encode(&BORROWED_LEAF));
+}
+
+#[test]
+fn struct_with_mut_ref_const_size_matches_shared_ref() {
+    let mut leaf = LEAF_A;
+    let val = MutLeaf {
+        tag: 1,
+        inner: &mut leaf,
+    };
+    assert_eq!(val.const_cxs_size(), BORROWED_LEAF.const_cxs_size());
+    assert_eq!(val.const_txs_size(), BORROWED_LEAF.const_txs_size());
+}
+
 // --- Option<&T> (the sdk_rs pattern) ---
 
 #[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
