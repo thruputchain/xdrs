@@ -439,9 +439,15 @@ mod tests {
     #[cfg(feature = "schemars")]
     fn schema_pattern_rejects_odd_length_hex() {
         let schema = schemars::schema_for!(BytesM<2>);
-        let obj = schema.as_value().as_object().expect("schema should be a JSON object");
-        let pattern = obj.get("pattern").expect("schema missing pattern key")
-            .as_str().expect("pattern should be a string");
+        let obj = schema
+            .as_value()
+            .as_object()
+            .expect("schema should be a JSON object");
+        let pattern = obj
+            .get("pattern")
+            .expect("schema missing pattern key")
+            .as_str()
+            .expect("pattern should be a string");
         let re = regex_lite::Regex::new(pattern).unwrap();
         assert!(re.is_match("aabb"), "pattern should accept even-length hex");
         assert!(re.is_match(""), "pattern should accept empty string");
