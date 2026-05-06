@@ -15,12 +15,19 @@ use alloc::vec::Vec;
 pub struct Id(String);
 
 impl Id {
+    /// Creates a new identifier from a string.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `s` is not a valid XDR identifier (ASCII letters, digits,
+    /// and underscores; must start with a letter or underscore).
     pub fn new(s: impl Into<String>) -> Self {
         let s = s.into();
         validate_xdr_identifier(&s);
         Self(s)
     }
 
+    /// Returns a string slice of this identifier.
     pub fn as_str(&self) -> &str {
         &self.0
     }
