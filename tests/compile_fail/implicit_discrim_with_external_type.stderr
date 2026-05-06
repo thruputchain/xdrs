@@ -1,0 +1,5 @@
+error: derive XDR: all payload variants must have explicit discriminants when `discrim_type` is set (e.g. `VariantName { ... } = ExternalEnum::VariantName as i32`)
+  --> tests/compile_fail/implicit_discrim_with_external_type.rs:11:1
+   |
+11 | #[xdr(discrim_type = "Status")]
+   | ^

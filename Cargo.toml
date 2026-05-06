@@ -68,6 +68,7 @@ heapless = { workspace = true, optional = true }
 criterion = "0.6.0"
 hex = "0.4.3"
 pretty_assertions = { workspace = true }
+trybuild = "1"
 
 [features]
 permissive = [] # relax wire validation: CXS minimal integer encoding + TXS non-zero padding
@@ -135,3 +136,7 @@ required-features = ["alloc"]
 [[test]]
 name = "vecm_prealloc_dos"
 required-features = ["alloc"]
+
+[[test]]
+name = "compile_fail"
+required-features = ["alloc", "derive", "repr"]
