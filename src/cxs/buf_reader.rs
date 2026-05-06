@@ -221,7 +221,8 @@ macro_rules! read_unsigned {
     )* };
 }
 
-impl<'r> Reader<'r> for BufReader<'r> {
+// SAFETY: read_opaque_fixed returns exactly `len` bytes (or an error).
+unsafe impl<'r> Reader<'r> for BufReader<'r> {
     read_signed! {
         [read_i64, i64],
         [read_i32, i32],

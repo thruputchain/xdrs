@@ -101,7 +101,8 @@ impl<'a> BufReader<'a> {
     }
 }
 
-impl<'r> Reader<'r> for BufReader<'r> {
+// SAFETY: read_opaque_fixed returns exactly `len` bytes (or an error).
+unsafe impl<'r> Reader<'r> for BufReader<'r> {
     #[inline]
     fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
         let buf = self.get_input(len)?;
