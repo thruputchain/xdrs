@@ -403,7 +403,10 @@ mod tests {
     fn from_str_accepts_valid_hex_within_bound() {
         let result = "deadbeef".parse::<BytesM<4>>();
         assert!(result.is_ok());
-        assert_eq!(AsRef::<[u8]>::as_ref(&result.unwrap()), &[0xde, 0xad, 0xbe, 0xef]);
+        assert_eq!(
+            AsRef::<[u8]>::as_ref(&result.unwrap()),
+            &[0xde, 0xad, 0xbe, 0xef]
+        );
     }
 
     #[test]
