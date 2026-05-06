@@ -117,10 +117,7 @@ where
                     }
                 }
                 if seq.next_element::<IgnoredAny>()?.is_some() {
-                    return Err(<A::Error as DeError>::invalid_length(
-                        buf.len() + 1,
-                        &self,
-                    ));
+                    return Err(<A::Error as DeError>::invalid_length(buf.len() + 1, &self));
                 }
                 Ok(VecM(buf))
             }
