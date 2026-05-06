@@ -74,7 +74,8 @@ impl<'a> BufReader<'a> {
     fn read_byte(&mut self) -> ReadResult<u8> {
         let byte = self.get_input(1)?;
 
-        Ok(byte[0])
+        // SAFETY: get_input(1) returns exactly 1 byte.
+        Ok(unsafe { *byte.get_unchecked(0) })
     }
 
     #[inline]
@@ -94,10 +95,18 @@ impl<'a> BufReader<'a> {
 
             let mut int_bytes = [0u8; 8];
 
-            let int_dest = &mut int_bytes[0..n_bytes];
-            int_dest.copy_from_slice(input);
+            // SAFETY: read_opaque_fixed returns exactly n_bytes bytes,
+            // and n_bytes is in {1, 2, 4, 8}, so both slices are valid.
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    input.as_ptr(),
+                    int_bytes.as_mut_ptr(),
+                    n_bytes,
+                );
+            }
 
-            if input[n_bytes - 1] & 0x80 != 0 {
+            // SAFETY: n_bytes >= 1 and input has exactly n_bytes elements.
+            if unsafe { *input.get_unchecked(n_bytes - 1) } & 0x80 != 0 {
                 // the high bit is set, so sign-extend remaining bytes
                 for b in int_bytes.iter_mut().skip(n_bytes) {
                     *b = 0xff;
@@ -160,9 +169,16 @@ impl<'a> BufReader<'a> {
             let input = self.read_opaque_fixed(n_bytes as u32)?;
 
             let mut int_bytes = [0u8; 8];
-            let int_dest = &mut int_bytes[0..n_bytes];
 
-            int_dest.copy_from_slice(input);
+            // SAFETY: read_opaque_fixed returns exactly n_bytes bytes,
+            // and n_bytes is in {1, 2, 4, 8}, so both slices are valid.
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    input.as_ptr(),
+                    int_bytes.as_mut_ptr(),
+                    n_bytes,
+                );
+            }
             let uint = u64::from_le_bytes(int_bytes);
 
             #[cfg(not(feature = "permissive"))]
@@ -244,7 +260,8 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
     fn read_f32(&mut self) -> ReadResult<f32> {
         let input = self.read_opaque_fixed(4)?;
         let mut bytes = [0u8; 4];
-        bytes.copy_from_slice(input);
+        // SAFETY: read_opaque_fixed(4) returns exactly 4 bytes.
+        unsafe { core::ptr::copy_nonoverlapping(input.as_ptr(), bytes.as_mut_ptr(), 4) };
         Ok(f32::from_le_bytes(bytes))
     }
 
@@ -257,7 +274,8 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
     fn read_f64(&mut self) -> ReadResult<f64> {
         let input = self.read_opaque_fixed(8)?;
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(input);
+        // SAFETY: read_opaque_fixed(8) returns exactly 8 bytes.
+        unsafe { core::ptr::copy_nonoverlapping(input.as_ptr(), bytes.as_mut_ptr(), 8) };
         Ok(f64::from_le_bytes(bytes))
     }
 

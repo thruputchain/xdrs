@@ -167,9 +167,10 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
 
         let mut arr: [MU<u8>; N] = [MU::uninit(); N];
 
-        r.read_opaque_fixed_into(&mut arr, N as u32)?;
+        // SAFETY: arr has exactly N elements and len is N as u32.
+        unsafe { r.read_opaque_fixed_into(&mut arr, N as u32)? };
 
-        // SAFETY: We rely on `read_opaque_fixed_into` to init all elements
+        // SAFETY: read_opaque_fixed_into initialized all N elements.
         let arr = unsafe { mu::array_assume_init(arr) };
 
         Ok(arr)

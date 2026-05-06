@@ -21,7 +21,8 @@ macro_rules! read_int {
         fn $read(&mut self) -> ReadResult<$ty> {
             let input = self.get_input($nbytes)?;
             let mut bytes = [0u8; $nbytes];
-            bytes.copy_from_slice(input);
+            // SAFETY: get_input($nbytes) returns exactly $nbytes bytes.
+            unsafe { core::ptr::copy_nonoverlapping(input.as_ptr(), bytes.as_mut_ptr(), $nbytes) };
             let n = <$ty>::from_be_bytes(bytes);
             Ok(n)
         }
@@ -166,7 +167,8 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
     fn read_f32(&mut self) -> ReadResult<f32> {
         let input = self.get_input(4)?;
         let mut bytes = [0u8; 4];
-        bytes.copy_from_slice(input);
+        // SAFETY: get_input(4) returns exactly 4 bytes.
+        unsafe { core::ptr::copy_nonoverlapping(input.as_ptr(), bytes.as_mut_ptr(), 4) };
         Ok(f32::from_be_bytes(bytes))
     }
 
@@ -174,7 +176,8 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
     fn read_f64(&mut self) -> ReadResult<f64> {
         let input = self.get_input(8)?;
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(input);
+        // SAFETY: get_input(8) returns exactly 8 bytes.
+        unsafe { core::ptr::copy_nonoverlapping(input.as_ptr(), bytes.as_mut_ptr(), 8) };
         Ok(f64::from_be_bytes(bytes))
     }
 }
