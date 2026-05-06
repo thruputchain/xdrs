@@ -1028,6 +1028,7 @@ dependencies = [
  "hex",
  "schemars 1.2.0",
  "serde",
+ "serde_json",
  "serde_with",
 ]
 
