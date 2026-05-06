@@ -237,6 +237,9 @@ const _: () = {
 
     impl<const MAX: u32> WriteXDR for BytesM<MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+            if self.0.len() > MAX as usize {
+                return Err(WriteError::InvalidArrayLength);
+            }
             self.0.write_xdr(w)
         }
     }
@@ -245,18 +248,27 @@ const _: () = {
     #[cfg(feature = "alloc")]
     impl<const MAX: u32> WriteXDR for VecM<u8, MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+            if self.0.len() > MAX as usize {
+                return Err(WriteError::InvalidArrayLength);
+            }
             self.0.write_xdr(w)
         }
     }
     #[cfg(not(feature = "alloc"))]
     impl<const MAX: u32> WriteXDR for VecM<u8, MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+            if self.len() > MAX as usize {
+                return Err(WriteError::InvalidArrayLength);
+            }
             <Self as AsRef<[u8]>>::as_ref(self).write_xdr(w)
         }
     }
 
     impl<const MAX: u32> WriteXDR for StringM<MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+            if self.0.len() > MAX as usize {
+                return Err(WriteError::InvalidArrayLength);
+            }
             self.0.write_xdr(w)
         }
     }
@@ -267,6 +279,9 @@ const _: () = {
         T: WriteXDR,
     {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+            if self.len() > MAX as usize {
+                return Err(WriteError::InvalidArrayLength);
+            }
             <Self as AsRef<[T]>>::as_ref(self).write_xdr(w)
         }
     }
@@ -277,6 +292,9 @@ const _: () = {
         T: WriteXDR + 'static,
     {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+            if self.len() > MAX as usize {
+                return Err(WriteError::InvalidArrayLength);
+            }
             <Self as AsRef<[T]>>::as_ref(self).write_xdr(w)
         }
     }
