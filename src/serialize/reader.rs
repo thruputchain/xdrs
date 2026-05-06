@@ -75,9 +75,10 @@ pub unsafe trait Reader<'r>: Sized {
     /// Reads a byte array of known length, copying into a provided buffer
     /// rather than borrowing from the reader.
     ///
-    /// Panics if `dst.len()` is not equal to `len as usize`.
+    /// # Safety
     ///
-    fn read_opaque_fixed_into<'a>(
+    /// `dst.len()` must equal `len as usize`.
+    unsafe fn read_opaque_fixed_into<'a>(
         &mut self,
         dst: &'a mut [MU<u8>],
         len: u32,
@@ -87,7 +88,7 @@ pub unsafe trait Reader<'r>: Sized {
         let data = self.read_opaque_fixed(len)?;
 
         // SAFETY: read_opaque_fixed returns exactly `len` bytes, and
-        // dst.len() == len as usize (asserted above).
+        // dst.len() == len as usize (caller invariant).
         let initialized = unsafe { mu::write_copy_of_slice(dst, data) };
 
         Ok(initialized)
@@ -111,7 +112,8 @@ pub unsafe trait Reader<'r>: Sized {
             return Err(ReadError::MaxLengthExceeded);
         }
 
-        self.read_opaque_fixed_into(&mut dst[..len as usize], len)
+        // SAFETY: dst[..len as usize] has exactly `len` elements.
+        unsafe { self.read_opaque_fixed_into(&mut dst[..len as usize], len) }
     }
 
     /// Reads a byte array of known length, returning an owned `Vec<u8>`.
