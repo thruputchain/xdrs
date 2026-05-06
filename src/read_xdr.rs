@@ -12,6 +12,8 @@ use crate::valid_u32::*;
 use core::convert::Infallible;
 use core::mem::MaybeUninit as MU;
 
+const MAX_PREALLOC_BYTES: usize = 0x1_0000;
+
 struct PartialInitGuard<'a, T> {
     slice: &'a mut [MU<T>],
     initialized: usize,
@@ -315,7 +317,8 @@ const _: () = {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
 
-            let mut vec: Vec<T> = Vec::with_capacity(len.min(4096));
+            let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
+            let mut vec: Vec<T> = Vec::with_capacity(cap);
             for _ in 0..len {
                 vec.push(read_xdr(r)?);
             }
@@ -361,7 +364,7 @@ const _: () = {
                 return Err(ReadError::MaxLengthExceeded);
             }
 
-            let cap = len.min(4096);
+            let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
             let mut vec: Vec<T> = Vec::with_capacity(cap);
             let slice = &mut vec.spare_capacity_mut()[..cap];
             let mut guard = PartialInitGuard {
