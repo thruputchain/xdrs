@@ -3,7 +3,9 @@ use std::cell::Cell;
 use std::panic;
 
 use xdrs::serialize::reader::{ReadError, Reader};
-use xdrs::{ReadXDR, VecM, cxs, txs};
+use xdrs::{ReadXDR, cxs, txs};
+#[cfg(feature = "alloc")]
+use xdrs::VecM;
 
 thread_local! {
     static ACTIVE_COUNT: Cell<usize> = const { Cell::new(0) };
