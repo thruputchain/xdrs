@@ -5,7 +5,7 @@ use core::fmt::{Display, Formatter, Result};
 
 impl Display for Id {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.0.fmt(f)
+        f.write_str(self.as_str())
     }
 }
 

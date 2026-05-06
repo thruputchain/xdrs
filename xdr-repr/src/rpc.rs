@@ -4,11 +4,35 @@
 //! as specified in [RFC 5531, section 12](https://datatracker.ietf.org/doc/html/rfc5531#section-12).
 
 pub use super::xdr::TypeSpec;
+use super::xdr::validate_xdr_identifier;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 /// An identifier in an RPC program definition.
-pub struct Id(pub String);
+///
+/// Validated at construction to contain only ASCII letters, digits,
+/// and underscores per RFC 4506 §6.1.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Id(String);
+
+impl Id {
+    /// Creates a new identifier from a string.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `s` is not a valid XDR identifier (ASCII letters, digits,
+    /// and underscores; must start with a letter or underscore).
+    pub fn new(s: impl Into<String>) -> Self {
+        let s = s.into();
+        validate_xdr_identifier(&s);
+        Self(s)
+    }
+
+    /// Returns a string slice of this identifier.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 /// A constant value in an RPC program definition.
 pub struct Constant(pub usize);
