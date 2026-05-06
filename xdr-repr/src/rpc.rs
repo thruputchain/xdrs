@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 ///
 /// Validated at construction to contain only ASCII letters, digits,
 /// and underscores per RFC 4506 §6.1.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Id(String);
 
 impl Id {
