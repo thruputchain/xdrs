@@ -98,11 +98,7 @@ impl<'a> BufReader<'a> {
             // SAFETY: read_opaque_fixed returns exactly n_bytes bytes,
             // and n_bytes is in {1, 2, 4, 8}, so both slices are valid.
             unsafe {
-                core::ptr::copy_nonoverlapping(
-                    input.as_ptr(),
-                    int_bytes.as_mut_ptr(),
-                    n_bytes,
-                );
+                core::ptr::copy_nonoverlapping(input.as_ptr(), int_bytes.as_mut_ptr(), n_bytes);
             }
 
             // SAFETY: n_bytes >= 1 and input has exactly n_bytes elements.
@@ -173,11 +169,7 @@ impl<'a> BufReader<'a> {
             // SAFETY: read_opaque_fixed returns exactly n_bytes bytes,
             // and n_bytes is in {1, 2, 4, 8}, so both slices are valid.
             unsafe {
-                core::ptr::copy_nonoverlapping(
-                    input.as_ptr(),
-                    int_bytes.as_mut_ptr(),
-                    n_bytes,
-                );
+                core::ptr::copy_nonoverlapping(input.as_ptr(), int_bytes.as_mut_ptr(), n_bytes);
             }
             let uint = u64::from_le_bytes(int_bytes);
 
