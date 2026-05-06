@@ -477,6 +477,12 @@ const _: () = {
         }
     }
 
+    impl<const MAX: u32> Declare for Box<VecM<u8, MAX>> {
+        fn declare(name: Ident) -> Declaration {
+            BytesM::<MAX>::declare(name)
+        }
+    }
+
     impl<const MAX: u32> HasTypeSpec for Box<BytesM<MAX>> {
         fn type_spec() -> TypeSpec {
             BytesM::<MAX>::type_spec()
@@ -495,6 +501,12 @@ const _: () = {
     {
         fn type_spec() -> TypeSpec {
             VecM::<T, MAX>::type_spec()
+        }
+    }
+
+    impl<const MAX: u32> HasTypeSpec for Box<VecM<u8, MAX>> {
+        fn type_spec() -> TypeSpec {
+            BytesM::<MAX>::type_spec()
         }
     }
 };

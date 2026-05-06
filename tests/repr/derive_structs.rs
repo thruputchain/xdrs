@@ -333,6 +333,19 @@ pub mod boxed_fields {
     }
 
     #[derive(XDR)]
+    pub struct BoxedOpaqueVec {
+        pub data: Box<VecM<u8, 5>>,
+    }
+
+    check_format! { boxed_vecm_u8
+        BoxedOpaqueVec::def()
+        =>
+            "struct BoxedOpaqueVec {"
+            "	opaque data<5>;"
+            "};"
+    }
+
+    #[derive(XDR)]
     pub struct BoxedOptional {
         pub maybe: Option<Box<Inner>>,
     }
