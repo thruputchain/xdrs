@@ -134,6 +134,22 @@ use proc_macro::TokenStream;
 /// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
+/// # Limitations
+///
+/// - **No recursive types.** XDR encoding is not self-describing; a recursive
+///   type will loop at runtime. The macro does not detect or reject recursion.
+///   In particular, `#[xdrs(into_type = "Self")]` is an infinite loop — the
+///   generated impl converts `self` into `Self` (a no-op) and re-enters the
+///   same encoder until the stack overflows. The surrogate type must always be
+///   a **distinct**, non-recursive type.
+/// - **All field types must be serializable.** Every field (or the surrogate
+///   type, when using `into_type`/`via`) must independently satisfy `WriteXDR`.
+///   The macro copies the input type's generic bounds verbatim — it does **not**
+///   infer or propagate trait bounds required by a surrogate type's own generic
+///   parameters. For example, `#[xdrs(into_type = "VecM<T, 8>")]` on a generic
+///   `Wrapper<T>` will not automatically add `T: WriteXDR`; you must supply the
+///   bound yourself.
+///
 #[proc_macro_derive(WriteXDR, attributes(xdrs))]
 pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
@@ -155,6 +171,22 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 /// - `#[xdrs(via = "Type")]` - Same as above (also implies `into_type`).
 /// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
+///
+/// # Limitations
+///
+/// - **No recursive types.** XDR decoding is not self-describing; a recursive
+///   type will loop at runtime. The macro does not detect or reject recursion.
+///   In particular, `#[xdrs(from_type = "Self")]` is an infinite loop — the
+///   generated impl reads a `Self` and converts it into `Self` (a no-op),
+///   re-entering the same decoder until the stack overflows. The surrogate type
+///   must always be a **distinct**, non-recursive type.
+/// - **All field types must be deserializable.** Every field (or the surrogate
+///   type, when using `from_type`/`via`) must independently satisfy `ReadXDR`.
+///   The macro copies the input type's generic bounds verbatim — it does **not**
+///   infer or propagate trait bounds required by a surrogate type's own generic
+///   parameters. For example, `#[xdrs(from_type = "VecM<T, 8>")]` on a generic
+///   `Wrapper<T>` will not automatically add `T: ReadXDR`; you must supply the
+///   bound yourself.
 ///
 #[proc_macro_derive(ReadXDR, attributes(xdrs))]
 pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
