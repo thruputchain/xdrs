@@ -146,6 +146,24 @@ mod txs {
         let decoded: f64 = TXS::decode(expected).unwrap();
         assert_eq!(decoded.to_bits(), val.to_bits());
     }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn f32_nan_roundtrip() {
+        let val: f32 = f32::NAN;
+        let encoded = TXS::encode(&val).unwrap();
+        let decoded: f32 = TXS::decode(&encoded).unwrap();
+        assert!(decoded.is_nan());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn f64_nan_roundtrip() {
+        let val: f64 = f64::NAN;
+        let encoded = TXS::encode(&val).unwrap();
+        let decoded: f64 = TXS::decode(&encoded).unwrap();
+        assert!(decoded.is_nan());
+    }
 }
 
 mod cxs {
@@ -510,5 +528,23 @@ mod cxs {
         CXS::check_encode(&val, expected);
         let decoded: f64 = CXS::decode(expected).unwrap();
         assert_eq!(decoded.to_bits(), val.to_bits());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn f32_nan_roundtrip() {
+        let val: f32 = f32::NAN;
+        let encoded = CXS::encode(&val).unwrap();
+        let decoded: f32 = CXS::decode(&encoded).unwrap();
+        assert!(decoded.is_nan());
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn f64_nan_roundtrip() {
+        let val: f64 = f64::NAN;
+        let encoded = CXS::encode(&val).unwrap();
+        let decoded: f64 = CXS::decode(&encoded).unwrap();
+        assert!(decoded.is_nan());
     }
 }
