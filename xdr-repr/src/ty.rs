@@ -149,6 +149,31 @@ impl_declare_named! {
     u128 => <(u64, u64)>::type_spec(),
 }
 
+macro_rules! impl_declare_for_refs {
+    ($($ty:ty),* $(,)?) => {$(
+        impl Declare for &$ty {
+            fn declare(name: Ident) -> Declaration {
+                <$ty>::declare(name)
+            }
+        }
+        impl Declare for &mut $ty {
+            fn declare(name: Ident) -> Declaration {
+                <$ty>::declare(name)
+            }
+        }
+    )*};
+}
+
+impl_declare_for_refs! {
+    i32, u32, i64, u64, bool, f32, f64,
+}
+
+#[cfg(feature = "int128")]
+#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
+impl_declare_for_refs! {
+    i128, u128,
+}
+
 impl<T: HasTypeSpec> HasTypeSpec for Option<T> {
     fn type_spec() -> TypeSpec {
         // Options aren't types in XDR, so we represent them as embedded structs
@@ -247,6 +272,12 @@ impl Declare for &[u8] {
     }
 }
 
+impl Declare for &mut [u8] {
+    fn declare(name: Ident) -> Declaration {
+        <&[u8]>::declare(name)
+    }
+}
+
 impl HasTypeSpec for &str {
     fn type_spec() -> TypeSpec {
         TypeSpec::Struct(StructBody::new(alloc::vec![<&str as Declare>::declare(
@@ -264,6 +295,12 @@ impl Declare for &str {
     }
 }
 
+impl Declare for &mut str {
+    fn declare(name: Ident) -> Declaration {
+        <&str>::declare(name)
+    }
+}
+
 impl<T: HasTypeSpec> Declare for &[T] {
     fn declare(name: Ident) -> Declaration {
         Declaration::VariableArray {
@@ -271,6 +308,12 @@ impl<T: HasTypeSpec> Declare for &[T] {
             elt_ty: T::type_spec(),
             max: Value::Const(Constant::Unsigned(u32::MAX)),
         }
+    }
+}
+
+impl<T: HasTypeSpec> Declare for &mut [T] {
+    fn declare(name: Ident) -> Declaration {
+        <&[T]>::declare(name)
     }
 }
 
@@ -329,6 +372,60 @@ const _: () = {
                 name,
                 max: Value::Const(Constant::Unsigned(MAX)),
             }
+        }
+    }
+
+    impl<const MAX: u32> Declare for &BytesM<MAX> {
+        fn declare(name: Ident) -> Declaration {
+            BytesM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> Declare for &mut BytesM<MAX> {
+        fn declare(name: Ident) -> Declaration {
+            BytesM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> Declare for &StringM<MAX> {
+        fn declare(name: Ident) -> Declaration {
+            StringM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> Declare for &mut StringM<MAX> {
+        fn declare(name: Ident) -> Declaration {
+            StringM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> Declare for &VecM<u8, MAX> {
+        fn declare(name: Ident) -> Declaration {
+            VecM::<u8, MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> Declare for &mut VecM<u8, MAX> {
+        fn declare(name: Ident) -> Declaration {
+            VecM::<u8, MAX>::declare(name)
+        }
+    }
+
+    impl<T, const MAX: u32> Declare for &VecM<T, MAX>
+    where
+        T: HasTypeSpec + StaticIfNoAlloc,
+    {
+        fn declare(name: Ident) -> Declaration {
+            VecM::<T, MAX>::declare(name)
+        }
+    }
+
+    impl<T, const MAX: u32> Declare for &mut VecM<T, MAX>
+    where
+        T: HasTypeSpec + StaticIfNoAlloc,
+    {
+        fn declare(name: Ident) -> Declaration {
+            VecM::<T, MAX>::declare(name)
         }
     }
 };
@@ -390,6 +487,42 @@ const _: () = {
             }
         }
     }
+
+    impl Declare for &Vec<u8> {
+        fn declare(name: Ident) -> Declaration {
+            Vec::<u8>::declare(name)
+        }
+    }
+
+    impl Declare for &mut Vec<u8> {
+        fn declare(name: Ident) -> Declaration {
+            Vec::<u8>::declare(name)
+        }
+    }
+
+    impl<T: HasTypeSpec> Declare for &Vec<T> {
+        fn declare(name: Ident) -> Declaration {
+            Vec::<T>::declare(name)
+        }
+    }
+
+    impl<T: HasTypeSpec> Declare for &mut Vec<T> {
+        fn declare(name: Ident) -> Declaration {
+            Vec::<T>::declare(name)
+        }
+    }
+
+    impl Declare for &alloc::string::String {
+        fn declare(name: Ident) -> Declaration {
+            alloc::string::String::declare(name)
+        }
+    }
+
+    impl Declare for &mut alloc::string::String {
+        fn declare(name: Ident) -> Declaration {
+            alloc::string::String::declare(name)
+        }
+    }
 };
 
 impl HasTypeDef for () {
@@ -428,6 +561,12 @@ where
 
 // TODO: feature-gate this, as some users may not want it?
 impl<T: HasTypeDef> HasTypeDef for &T {
+    fn type_def() -> TypeDef {
+        T::type_def()
+    }
+}
+
+impl<T: HasTypeDef> HasTypeDef for &mut T {
     fn type_def() -> TypeDef {
         T::type_def()
     }

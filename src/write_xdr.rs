@@ -139,6 +139,13 @@ impl<T: WriteXDR> WriteXDR for &T {
     }
 }
 
+impl<T: WriteXDR> WriteXDR for &mut T {
+    #[inline]
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+        (**self).write_xdr(w)
+    }
+}
+
 impl<T: WriteXDR> WriteXDR for &[T] {
     #[inline(always)]
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
