@@ -78,4 +78,16 @@ where
         write_u64(8): u64,
         write_u32(4): u32,
     ];
+
+    #[inline]
+    fn write_f32(&mut self, n: f32) -> WriteResult<()> {
+        let bytes: [u8; 4] = n.to_be_bytes();
+        self.put_bytes(&bytes)
+    }
+
+    #[inline]
+    fn write_f64(&mut self, n: f64) -> WriteResult<()> {
+        let bytes: [u8; 8] = n.to_be_bytes();
+        self.put_bytes(&bytes)
+    }
 }

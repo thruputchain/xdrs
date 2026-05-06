@@ -1267,6 +1267,52 @@ fn phantom_newtype_const_matches_runtime() {
     assert_eq!(&WITH_PHANTOM_NT_TXS, &WITH_PHANTOM_TXS);
 }
 
+// -- f32/f64 cross-validation --
+
+const TXS_F32_ONE: [u8; 4] = {
+    let mut w = xdrs::txs::ConstWriter::<4>::new();
+    w.write_f32(1.0);
+    w.into_bytes()
+};
+
+const TXS_F64_ONE: [u8; 8] = {
+    let mut w = xdrs::txs::ConstWriter::<8>::new();
+    w.write_f64(1.0);
+    w.into_bytes()
+};
+
+const CXS_F32_ONE: [u8; 4] = {
+    let mut w = xdrs::cxs::ConstWriter::<4>::new();
+    w.write_f32(1.0);
+    w.into_bytes()
+};
+
+const CXS_F64_ONE: [u8; 8] = {
+    let mut w = xdrs::cxs::ConstWriter::<8>::new();
+    w.write_f64(1.0);
+    w.into_bytes()
+};
+
+#[test]
+fn txs_cross_validate_f32() {
+    assert_eq!(&TXS_F32_ONE, txs_runtime_encode(&1.0f32).as_slice());
+}
+
+#[test]
+fn txs_cross_validate_f64() {
+    assert_eq!(&TXS_F64_ONE, txs_runtime_encode(&1.0f64).as_slice());
+}
+
+#[test]
+fn cxs_cross_validate_f32() {
+    assert_eq!(&CXS_F32_ONE, cxs_runtime_encode(&1.0f32).as_slice());
+}
+
+#[test]
+fn cxs_cross_validate_f64() {
+    assert_eq!(&CXS_F64_ONE, cxs_runtime_encode(&1.0f64).as_slice());
+}
+
 // -- Infallible tests (issue #88) --
 
 #[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]

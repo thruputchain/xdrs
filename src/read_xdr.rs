@@ -110,6 +110,8 @@ construct_int_impls! {
     read_u16 for u16,
 
     read_bool for bool,
+    read_f32 for f32,
+    read_f64 for f64,
 }
 
 impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]

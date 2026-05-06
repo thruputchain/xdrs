@@ -80,6 +80,8 @@ write_xdr_int_impls! {
     write_u16 for u16,
 
     write_bool for bool,
+    write_f32 for f32,
+    write_f64 for f64,
 }
 
 impl WriteXDR for [u8] {

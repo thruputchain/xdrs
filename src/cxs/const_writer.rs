@@ -98,6 +98,26 @@ impl<const N: usize> ConstWriter<N> {
         self.write_i32(if v { 1 } else { 0 });
     }
 
+    /// Writes a 32-bit IEEE 754 float as raw little-endian bytes (4 bytes).
+    ///
+    /// Unlike integers, floats are not compressed with CXS variable-width
+    /// encoding — the bit pattern is written as-is. Little-endian byte order
+    /// follows CXS convention (not RFC 4506 big-endian).
+    pub const fn write_f32(&mut self, n: f32) {
+        let b = n.to_le_bytes();
+        self.put_bytes(&b);
+    }
+
+    /// Writes a 64-bit IEEE 754 double as raw little-endian bytes (8 bytes).
+    ///
+    /// Unlike integers, floats are not compressed with CXS variable-width
+    /// encoding — the bit pattern is written as-is. Little-endian byte order
+    /// follows CXS convention (not RFC 4506 big-endian).
+    pub const fn write_f64(&mut self, n: f64) {
+        let b = n.to_le_bytes();
+        self.put_bytes(&b);
+    }
+
     /// Writes a signed 64-bit integer using CXS variable-width encoding.
     pub const fn write_i64(&mut self, n: i64) {
         if n > i32::MAX as i64 || n < (i32::MIN as i64) {
@@ -220,6 +240,16 @@ impl<const N: usize> ConstWriter<N> {
 /// Returns the CXS encoded size of a boolean (encoded as i32).
 pub const fn size_bool(v: bool) -> usize {
     size_i32(if v { 1 } else { 0 })
+}
+
+/// Returns the CXS encoded size of a 32-bit float (always 4).
+pub const fn size_f32(_n: f32) -> usize {
+    4
+}
+
+/// Returns the CXS encoded size of a 64-bit double (always 8).
+pub const fn size_f64(_n: f64) -> usize {
+    8
 }
 
 /// Returns the CXS encoded size of a signed 64-bit integer.

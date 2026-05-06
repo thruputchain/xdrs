@@ -254,3 +254,20 @@ pub mod tuple_fields {
         "};"
     }
 }
+
+pub mod string_fields {
+    use super::*;
+
+    #[derive(XDR)]
+    pub struct Named {
+        pub label: String,
+    }
+
+    check_format! { derive_string_field
+        Named::def()
+        =>
+            "struct Named {"
+            "	string label<>;"
+            "};"
+    }
+}

@@ -93,6 +93,8 @@ impl_has_type_spec! {
     i64 => TypeSpec::Hyper,
     u64 => TypeSpec::UnsignedHyper,
     bool => TypeSpec::Bool,
+    f32 => TypeSpec::Float,
+    f64 => TypeSpec::Double,
 }
 
 // 128-bit integer types using the alternate XDR encoding.
@@ -135,6 +137,8 @@ impl_declare_named! {
     i64 => TypeSpec::Hyper,
     u64 => TypeSpec::UnsignedHyper,
     bool => TypeSpec::Bool,
+    f32 => TypeSpec::Float,
+    f64 => TypeSpec::Double,
 }
 
 #[cfg(feature = "int128")]
@@ -237,6 +241,23 @@ impl HasTypeSpec for &[u8] {
 impl Declare for &[u8] {
     fn declare(name: Ident) -> Declaration {
         Declaration::VariableOpaque {
+            name,
+            max: Value::Const(Constant::Unsigned(u32::MAX)),
+        }
+    }
+}
+
+impl HasTypeSpec for &str {
+    fn type_spec() -> TypeSpec {
+        TypeSpec::Struct(StructBody(alloc::vec![<&str as Declare>::declare(ident(
+            "unnamed_0"
+        )),]))
+    }
+}
+
+impl Declare for &str {
+    fn declare(name: Ident) -> Declaration {
+        Declaration::String {
             name,
             max: Value::Const(Constant::Unsigned(u32::MAX)),
         }
@@ -348,6 +369,23 @@ const _: () = {
             Declaration::VariableArray {
                 name,
                 elt_ty: T::type_spec(),
+                max: Value::Const(Constant::Unsigned(u32::MAX)),
+            }
+        }
+    }
+
+    impl HasTypeSpec for alloc::string::String {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody(alloc::vec![
+                <alloc::string::String as Declare>::declare(ident("unnamed_0")),
+            ]))
+        }
+    }
+
+    impl Declare for alloc::string::String {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::String {
+                name,
                 max: Value::Const(Constant::Unsigned(u32::MAX)),
             }
         }
