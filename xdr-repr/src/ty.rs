@@ -93,6 +93,8 @@ impl_has_type_spec! {
     i64 => TypeSpec::Hyper,
     u64 => TypeSpec::UnsignedHyper,
     bool => TypeSpec::Bool,
+    f32 => TypeSpec::Float,
+    f64 => TypeSpec::Double,
 }
 
 // 128-bit integer types using the alternate XDR encoding.
@@ -135,6 +137,8 @@ impl_declare_named! {
     i64 => TypeSpec::Hyper,
     u64 => TypeSpec::UnsignedHyper,
     bool => TypeSpec::Bool,
+    f32 => TypeSpec::Float,
+    f64 => TypeSpec::Double,
 }
 
 #[cfg(feature = "int128")]
