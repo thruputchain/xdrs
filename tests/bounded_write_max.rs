@@ -1,5 +1,3 @@
-#![cfg(feature = "alloc")]
-
 mod common;
 use common::*;
 
@@ -33,12 +31,14 @@ fn assert_encode_rejects<T: xdrs::WriteXDR>(label: &str, value: &T) {
     );
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn bytesm_rejects_overlong_write() {
     assert_encode_rejects("BytesM<2> len=3", &BytesM::<2>(vec![1, 2, 3]));
     assert_encode_rejects("BytesM<0> len=1", &BytesM::<0>(vec![1]));
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn bytesm_accepts_at_max() {
     let val = BytesM::<3>(vec![1, 2, 3]);
@@ -46,12 +46,14 @@ fn bytesm_accepts_at_max() {
     TXS::check_encode(&val, &hex!("0000000301020300"));
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn stringm_rejects_overlong_write() {
     assert_encode_rejects("StringM<2> len=3", &StringM::<2>(b"abc".to_vec()));
     assert_encode_rejects("StringM<0> len=1", &StringM::<0>(b"x".to_vec()));
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn stringm_accepts_at_max() {
     let val = StringM::<3>(b"abc".to_vec());
@@ -59,12 +61,14 @@ fn stringm_accepts_at_max() {
     TXS::check_encode(&val, &hex!("0000000361626300"));
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn vecm_u8_rejects_overlong_write() {
     assert_encode_rejects("VecM<u8,2> len=3", &VecM::<u8, 2>(vec![1, 2, 3]));
     assert_encode_rejects("VecM<u8,0> len=1", &VecM::<u8, 0>(vec![1]));
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn vecm_u8_accepts_at_max() {
     let val = VecM::<u8, 3>(vec![1, 2, 3]);
@@ -72,12 +76,14 @@ fn vecm_u8_accepts_at_max() {
     TXS::check_encode(&val, &hex!("0000000301020300"));
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn vecm_u32_rejects_overlong_write() {
     assert_encode_rejects("VecM<u32,2> len=3", &VecM::<u32, 2>(vec![1, 2, 3]));
     assert_encode_rejects("VecM<u32,0> len=1", &VecM::<u32, 0>(vec![1]));
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn vecm_u32_accepts_at_max() {
     let val = VecM::<u32, 2>(vec![1, 2]);
@@ -85,6 +91,7 @@ fn vecm_u32_accepts_at_max() {
     TXS::check_encode(&val, &hex!("000000020000000100000002"));
 }
 
+#[cfg(feature = "alloc")]
 #[test]
 fn bounded_empty_always_accepted() {
     let bytes = BytesM::<0>(vec![]);
@@ -102,4 +109,35 @@ fn bounded_empty_always_accepted() {
     let vec_u32 = VecM::<u32, 0>(vec![]);
     CXS::check_encode(&vec_u32, &hex!("00"));
     TXS::check_encode(&vec_u32, &hex!("00000000"));
+}
+
+// No-alloc tests: exercise the #[cfg(not(feature = "alloc"))] WriteXDR impls
+// which use &'static [T] instead of Vec<T>.
+#[cfg(not(feature = "alloc"))]
+mod no_alloc {
+    use super::*;
+
+    static OVERLONG_BYTES: &[u8] = &[1, 2, 3];
+    static OVERLONG_STR: &[u8] = b"abc";
+    static OVERLONG_U32: &[u32] = &[1, 2, 3];
+
+    #[test]
+    fn bytesm_rejects_overlong_write_no_alloc() {
+        assert_encode_rejects("BytesM<2> len=3", &BytesM::<2>(OVERLONG_BYTES));
+    }
+
+    #[test]
+    fn stringm_rejects_overlong_write_no_alloc() {
+        assert_encode_rejects("StringM<2> len=3", &StringM::<2>(OVERLONG_STR));
+    }
+
+    #[test]
+    fn vecm_u8_rejects_overlong_write_no_alloc() {
+        assert_encode_rejects("VecM<u8,2> len=3", &VecM::<u8, 2>(OVERLONG_BYTES));
+    }
+
+    #[test]
+    fn vecm_u32_rejects_overlong_write_no_alloc() {
+        assert_encode_rejects("VecM<u32,2> len=3", &VecM::<u32, 2>(OVERLONG_U32));
+    }
 }
