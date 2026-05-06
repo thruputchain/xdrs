@@ -18,11 +18,11 @@ fn derived_struct_fields_json() {
     // Extract struct body
     if let TypeDef::Struct(name, body) = type_def {
         assert_eq!(name.0, "SimpleStruct");
-        assert_eq!(body.0.len(), 2);
+        assert_eq!(body.fields().len(), 2);
 
         // Test individual field JSON
-        assert_eq!(body.0[0].get_type_json(), "{ \"type\": \"unsigned\" }");
-        assert_eq!(body.0[1].get_type_json(), "{ \"type\": \"int\" }");
+        assert_eq!(body.fields()[0].get_type_json(), "{ \"type\": \"unsigned\" }");
+        assert_eq!(body.fields()[1].get_type_json(), "{ \"type\": \"int\" }");
 
         // Test full struct JSON
         let struct_json = TypeSpec::Struct(body).get_type_json();
@@ -72,15 +72,15 @@ fn derived_complex_struct_json() {
 
     if let TypeDef::Struct(name, body) = type_def {
         assert_eq!(name.0, "ComplexStruct");
-        assert_eq!(body.0.len(), 2);
+        assert_eq!(body.fields().len(), 2);
 
         // Test individual field JSON
         assert_eq!(
-            body.0[0].get_type_json(),
+            body.fields()[0].get_type_json(),
             "{ \"type\": \"fixed array\", \"element_type\": { \"type\": \"unsigned\" }, \"len\": 10 }"
         );
         assert_eq!(
-            body.0[1].get_type_json(),
+            body.fields()[1].get_type_json(),
             "{ \"type\": \"optional\", \"element_type\": { \"type\": \"unsigned hyper\" } }"
         );
 

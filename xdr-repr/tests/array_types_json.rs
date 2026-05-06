@@ -92,20 +92,20 @@ fn byte_array_in_derived_struct() {
 
     if let TypeDef::Struct(name, body) = type_def {
         assert_eq!(name.0, "Message");
-        assert_eq!(body.0.len(), 3);
+        assert_eq!(body.fields().len(), 3);
 
         // First field should be unsigned
-        assert_eq!(body.0[0].get_type_json(), r#"{ "type": "unsigned" }"#);
+        assert_eq!(body.fields()[0].get_type_json(), r#"{ "type": "unsigned" }"#);
 
         // Second field should be fixed opaque (not fixed array!)
         assert_eq!(
-            body.0[1].get_type_json(),
+            body.fields()[1].get_type_json(),
             r#"{ "type": "fixed opaque", "len": 16 }"#
         );
 
         // Third field should also be fixed opaque
         assert_eq!(
-            body.0[2].get_type_json(),
+            body.fields()[2].get_type_json(),
             r#"{ "type": "fixed opaque", "len": 64 }"#
         );
 
@@ -150,29 +150,29 @@ fn mixed_arrays_in_struct() {
     let type_def = MixedArrays::type_def();
 
     if let TypeDef::Struct(_, body) = type_def {
-        assert_eq!(body.0.len(), 4);
+        assert_eq!(body.fields().len(), 4);
 
         // Byte arrays should be fixed opaque
         assert_eq!(
-            body.0[0].get_type_json(),
+            body.fields()[0].get_type_json(),
             r#"{ "type": "fixed opaque", "len": 32 }"#
         );
 
         // u32 array should be fixed array
         assert_eq!(
-            body.0[1].get_type_json(),
+            body.fields()[1].get_type_json(),
             r#"{ "type": "fixed array", "element_type": { "type": "unsigned" }, "len": 10 }"#
         );
 
         // Another byte array should be fixed opaque
         assert_eq!(
-            body.0[2].get_type_json(),
+            body.fields()[2].get_type_json(),
             r#"{ "type": "fixed opaque", "len": 8 }"#
         );
 
         // bool array should be fixed array
         assert_eq!(
-            body.0[3].get_type_json(),
+            body.fields()[3].get_type_json(),
             r#"{ "type": "fixed array", "element_type": { "type": "bool" }, "len": 5 }"#
         );
     } else {
@@ -233,9 +233,9 @@ fn nested_byte_arrays() {
     let type_def = NestedBytes::type_def();
 
     if let TypeDef::Struct(_, body) = type_def {
-        assert_eq!(body.0.len(), 1);
+        assert_eq!(body.fields().len(), 1);
 
-        let json = body.0[0].get_type_json();
+        let json = body.fields()[0].get_type_json();
 
         // The outer array should be a fixed array
         assert!(json.contains(r#""type": "fixed array""#));
@@ -271,9 +271,9 @@ fn nested_typed_arrays() {
     let type_def = Matrix::type_def();
 
     if let TypeDef::Struct(_, body) = type_def {
-        assert_eq!(body.0.len(), 1);
+        assert_eq!(body.fields().len(), 1);
 
-        let json = body.0[0].get_type_json();
+        let json = body.fields()[0].get_type_json();
 
         // Should be a fixed array of 4 elements
         assert!(json.contains(r#""len": 4"#));
@@ -298,9 +298,9 @@ fn triple_nested_arrays() {
     let type_def = Tensor::type_def();
 
     if let TypeDef::Struct(_, body) = type_def {
-        assert_eq!(body.0.len(), 1);
+        assert_eq!(body.fields().len(), 1);
 
-        let json = body.0[0].get_type_json();
+        let json = body.fields()[0].get_type_json();
 
         // Full expected structure with all three nesting levels:
         // - Outer: fixed array of 4 elements

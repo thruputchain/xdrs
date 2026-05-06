@@ -85,7 +85,23 @@ pub struct Ident(pub String);
 ///
 /// Contains the list of field declarations that make up the struct.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StructBody(pub Vec<Declaration>);
+pub struct StructBody(Vec<Declaration>);
+
+impl StructBody {
+    /// Creates a new struct body. Empty field lists are normalized to
+    /// contain a single `void` declaration per RFC 4506.
+    pub fn new(mut fields: Vec<Declaration>) -> Self {
+        if fields.is_empty() {
+            fields.push(Declaration::Void);
+        }
+        StructBody(fields)
+    }
+
+    /// Returns the declarations in this struct body.
+    pub fn fields(&self) -> &[Declaration] {
+        &self.0
+    }
+}
 
 /// The body of an enum type definition.
 ///
@@ -592,7 +608,7 @@ impl TypeSpec {
     /// assert_eq!(custom_type.get_type_json(), "CustomType");
     ///
     /// // Embedded struct type
-    /// let struct_type = TypeSpec::Struct(StructBody(vec![
+    /// let struct_type = TypeSpec::Struct(StructBody::new(vec![
     ///     declare_type("id", TypeSpec::Unsigned),
     ///     declare_type("name", TypeSpec::Ident(ident("String"))),
     /// ]));

@@ -7,8 +7,8 @@ fn slice_u8_has_type_spec() {
     let TypeSpec::Struct(body) = ts else {
         panic!("expected TypeSpec::Struct, got {ts:?}");
     };
-    assert_eq!(body.0.len(), 1);
-    let decl = &body.0[0];
+    assert_eq!(body.fields().len(), 1);
+    let decl = &body.fields()[0];
     assert_eq!(
         decl.get_type_json(),
         format!(r#"{{ "type": "variable opaque", "max": {} }}"#, u32::MAX),
@@ -21,8 +21,8 @@ fn vec_u8_has_type_spec() {
     let TypeSpec::Struct(body) = ts else {
         panic!("expected TypeSpec::Struct, got {ts:?}");
     };
-    assert_eq!(body.0.len(), 1);
-    let decl = &body.0[0];
+    assert_eq!(body.fields().len(), 1);
+    let decl = &body.fields()[0];
     assert_eq!(
         decl.get_type_json(),
         format!(r#"{{ "type": "variable opaque", "max": {} }}"#, u32::MAX),
@@ -35,8 +35,8 @@ fn bytes_m_has_type_spec() {
     let TypeSpec::Struct(body) = ts else {
         panic!("expected TypeSpec::Struct, got {ts:?}");
     };
-    assert_eq!(body.0.len(), 1);
-    let decl = &body.0[0];
+    assert_eq!(body.fields().len(), 1);
+    let decl = &body.fields()[0];
     assert_eq!(
         decl.get_type_json(),
         r#"{ "type": "variable opaque", "max": 256 }"#,
@@ -49,8 +49,8 @@ fn vec_m_u8_has_type_spec() {
     let TypeSpec::Struct(body) = ts else {
         panic!("expected TypeSpec::Struct, got {ts:?}");
     };
-    assert_eq!(body.0.len(), 1);
-    let decl = &body.0[0];
+    assert_eq!(body.fields().len(), 1);
+    let decl = &body.fields()[0];
     assert_eq!(
         decl.get_type_json(),
         r#"{ "type": "variable opaque", "max": 1024 }"#,
@@ -63,8 +63,8 @@ fn option_vec_u8_has_type_spec() {
     let TypeSpec::Struct(body) = ts else {
         panic!("expected TypeSpec::Struct, got {ts:?}");
     };
-    assert_eq!(body.0.len(), 1);
-    let json = body.0[0].get_type_json();
+    assert_eq!(body.fields().len(), 1);
+    let json = body.fields()[0].get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
     assert!(
         json.contains("variable opaque"),
@@ -83,8 +83,8 @@ fn option_slice_u8_has_type_spec() {
     let TypeSpec::Struct(body) = ts else {
         panic!("expected TypeSpec::Struct, got {ts:?}");
     };
-    assert_eq!(body.0.len(), 1);
-    let json = body.0[0].get_type_json();
+    assert_eq!(body.fields().len(), 1);
+    let json = body.fields()[0].get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
     assert!(
         json.contains("variable opaque"),
@@ -103,8 +103,8 @@ fn option_bytes_m_has_type_spec() {
     let TypeSpec::Struct(body) = ts else {
         panic!("expected TypeSpec::Struct, got {ts:?}");
     };
-    assert_eq!(body.0.len(), 1);
-    let json = body.0[0].get_type_json();
+    assert_eq!(body.fields().len(), 1);
+    let json = body.fields()[0].get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
     assert!(
         json.contains("variable opaque"),
@@ -119,8 +119,8 @@ fn option_vec_m_u8_has_type_spec() {
     let TypeSpec::Struct(body) = ts else {
         panic!("expected TypeSpec::Struct, got {ts:?}");
     };
-    assert_eq!(body.0.len(), 1);
-    let json = body.0[0].get_type_json();
+    assert_eq!(body.fields().len(), 1);
+    let json = body.fields()[0].get_type_json();
     assert!(json.contains("optional"), "expected optional in: {json}");
     assert!(
         json.contains("variable opaque"),
