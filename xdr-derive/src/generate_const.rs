@@ -171,6 +171,14 @@ fn const_size_value_expr(
         return Ok(quote! { #mod_path::size_opaque_variable((*#expr_ref).as_bytes().len()) });
     }
 
+    if is_phantom_data(ty) {
+        return Ok(quote! { 0 });
+    }
+
+    if is_infallible(ty) {
+        return Ok(quote! { 0 });
+    }
+
     if let Some(inner) = option_inner(ty) {
         let inner_size = const_size_value_expr(quote! { inner }, inner, fmt)?;
         return Ok(quote! {
@@ -276,6 +284,14 @@ fn const_write_value_expr(
 
     if is_str_ref(ty) {
         return Ok(quote! { w.write_opaque_variable((*#expr_ref).as_bytes()); });
+    }
+
+    if is_phantom_data(ty) {
+        return Ok(quote! {});
+    }
+
+    if is_infallible(ty) {
+        return Ok(quote! {});
     }
 
     if let Some(inner) = option_inner(ty) {
@@ -834,4 +850,12 @@ fn is_str_ref(ty: &syn::Type) -> bool {
         return is_path_ident(&r.elem, "str");
     }
     false
+}
+
+fn is_phantom_data(ty: &syn::Type) -> bool {
+    path_segment(ty, "PhantomData").is_some()
+}
+
+fn is_infallible(ty: &syn::Type) -> bool {
+    path_segment(ty, "Infallible").is_some()
 }
