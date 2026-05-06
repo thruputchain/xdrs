@@ -271,3 +271,90 @@ pub mod string_fields {
             "};"
     }
 }
+
+pub mod boxed_fields {
+    use super::*;
+
+    #[derive(XDR)]
+    pub struct Inner {
+        pub value: u32,
+    }
+
+    #[derive(XDR)]
+    pub struct BoxedNamed {
+        pub inner: Box<Inner>,
+    }
+
+    check_format! { boxed_named_struct
+        BoxedNamed::def()
+        =>
+            "struct BoxedNamed {"
+            "	Inner inner;"
+            "};"
+    }
+
+    #[derive(XDR)]
+    pub struct BoxedBlob {
+        pub blob: Box<BytesM<4>>,
+    }
+
+    check_format! { boxed_bytes
+        BoxedBlob::def()
+        =>
+            "struct BoxedBlob {"
+            "	opaque blob<4>;"
+            "};"
+    }
+
+    #[derive(XDR)]
+    pub struct BoxedText {
+        pub text: Box<StringM<8>>,
+    }
+
+    check_format! { boxed_string
+        BoxedText::def()
+        =>
+            "struct BoxedText {"
+            "	string text<8>;"
+            "};"
+    }
+
+    #[derive(XDR)]
+    pub struct BoxedValues {
+        pub values: Box<VecM<u32, 3>>,
+    }
+
+    check_format! { boxed_vecm
+        BoxedValues::def()
+        =>
+            "struct BoxedValues {"
+            "	unsigned int values<3>;"
+            "};"
+    }
+
+    #[derive(XDR)]
+    pub struct BoxedOpaqueVec {
+        pub data: Box<VecM<u8, 5>>,
+    }
+
+    check_format! { boxed_vecm_u8
+        BoxedOpaqueVec::def()
+        =>
+            "struct BoxedOpaqueVec {"
+            "	opaque data<5>;"
+            "};"
+    }
+
+    #[derive(XDR)]
+    pub struct BoxedOptional {
+        pub maybe: Option<Box<Inner>>,
+    }
+
+    check_format! { boxed_optional
+        BoxedOptional::def()
+        =>
+            "struct BoxedOptional {"
+            "	Inner *maybe;"
+            "};"
+    }
+}

@@ -76,6 +76,12 @@ impl<const MAX: u32> core::fmt::Display for BytesM<MAX> {
 impl<const MAX: u32> core::str::FromStr for BytesM<MAX> {
     type Err = Error;
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        if !s.len().is_multiple_of(2) {
+            return Err(Error::InvalidHex);
+        }
+        if s.len() / 2 > MAX as usize {
+            return Err(Error::LengthExceedsMax);
+        }
         hex::decode(s).map_err(|_| Error::InvalidHex)?.try_into()
     }
 }
@@ -112,7 +118,7 @@ impl<const MAX: u32> schemars::JsonSchema for BytesM<MAX> {
             "maxLength": u64::from(MAX) * 2,
             "contentEncoding": "hex",
             "contentMediaType": "application/binary",
-            "pattern": "^[0-9a-fA-F]*$",
+            "pattern": "^([0-9a-fA-F]{2})*$",
         })
     }
 }
@@ -373,6 +379,80 @@ mod tests {
         // Test length exceeds max
         let too_long: Result<BytesM<3>, _> = vec![1, 2, 3, 4].try_into();
         assert!(too_long.is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn from_str_rejects_odd_length_hex() {
+        let result = "abc".parse::<BytesM<100>>();
+        assert_eq!(result, Err(Error::InvalidHex));
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn from_str_rejects_overlength_before_decode() {
+        // 6 hex chars = 3 decoded bytes, which exceeds MAX=2.
+        // Must return LengthExceedsMax without allocating the decoded vec.
+        let input = "aabbcc";
+        let result = input.parse::<BytesM<2>>();
+        assert_eq!(result, Err(Error::LengthExceedsMax));
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn from_str_accepts_valid_hex_within_bound() {
+        let result = "deadbeef".parse::<BytesM<4>>();
+        assert!(result.is_ok());
+        assert_eq!(
+            AsRef::<[u8]>::as_ref(&result.unwrap()),
+            &[0xde, 0xad, 0xbe, 0xef]
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn from_str_accepts_exact_max_length() {
+        // 4 hex chars = 2 decoded bytes = exactly MAX
+        let result = "aabb".parse::<BytesM<2>>();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn from_str_rejects_invalid_hex_chars() {
+        let result = "zzzz".parse::<BytesM<100>>();
+        assert_eq!(result, Err(Error::InvalidHex));
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn from_str_overlength_rejects_before_validating_hex_content() {
+        // Input is overlength AND contains invalid hex chars.
+        // The pre-decode length guard should reject on length first,
+        // without attempting to decode and discover the invalid chars.
+        let result = "aabbccZZ".parse::<BytesM<1>>();
+        assert_eq!(result, Err(Error::LengthExceedsMax));
+    }
+
+    #[test]
+    #[cfg(feature = "schemars")]
+    fn schema_pattern_rejects_odd_length_hex() {
+        let schema = schemars::schema_for!(BytesM<2>);
+        let obj = schema
+            .as_value()
+            .as_object()
+            .expect("schema should be a JSON object");
+        let pattern = obj
+            .get("pattern")
+            .expect("schema missing pattern key")
+            .as_str()
+            .expect("pattern should be a string");
+        let re = regex_lite::Regex::new(pattern).unwrap();
+        assert!(re.is_match("aabb"), "pattern should accept even-length hex");
+        assert!(re.is_match(""), "pattern should accept empty string");
+        assert!(!re.is_match("f"), "pattern must reject odd-length hex");
+        assert!(!re.is_match("abc"), "pattern must reject odd-length hex");
     }
 
     #[test]

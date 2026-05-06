@@ -320,6 +320,19 @@ impl<T: HasTypeSpec> Declare for &mut [T] {
 const _: () = {
     use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
 
+    impl<T, const MAX: u32> HasTypeSpec for VecM<T, MAX>
+    where
+        T: HasTypeSpec + StaticIfNoAlloc,
+    {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::VariableArray {
+                name: ident("unnamed_0"),
+                elt_ty: T::type_spec(),
+                max: Value::Const(Constant::Unsigned(MAX)),
+            }]))
+        }
+    }
+
     impl<T, const MAX: u32> Declare for VecM<T, MAX>
     where
         T: HasTypeSpec + StaticIfNoAlloc,
@@ -375,6 +388,15 @@ const _: () = {
         }
     }
 
+    impl<const MAX: u32> HasTypeSpec for StringM<MAX> {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::String {
+                name: ident("unnamed_0"),
+                max: Value::Const(Constant::Unsigned(MAX)),
+            }]))
+        }
+    }
+
     impl<const MAX: u32> Declare for &BytesM<MAX> {
         fn declare(name: Ident) -> Declaration {
             BytesM::<MAX>::declare(name)
@@ -426,6 +448,65 @@ const _: () = {
     {
         fn declare(name: Ident) -> Declaration {
             VecM::<T, MAX>::declare(name)
+        }
+    }
+};
+
+const _: () = {
+    use alloc::boxed::Box;
+    use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
+
+    impl<const MAX: u32> Declare for Box<BytesM<MAX>> {
+        fn declare(name: Ident) -> Declaration {
+            BytesM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> Declare for Box<StringM<MAX>> {
+        fn declare(name: Ident) -> Declaration {
+            StringM::<MAX>::declare(name)
+        }
+    }
+
+    impl<T, const MAX: u32> Declare for Box<VecM<T, MAX>>
+    where
+        T: HasTypeSpec + StaticIfNoAlloc,
+    {
+        fn declare(name: Ident) -> Declaration {
+            VecM::<T, MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> Declare for Box<VecM<u8, MAX>> {
+        fn declare(name: Ident) -> Declaration {
+            BytesM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> HasTypeSpec for Box<BytesM<MAX>> {
+        fn type_spec() -> TypeSpec {
+            BytesM::<MAX>::type_spec()
+        }
+    }
+
+    impl<const MAX: u32> HasTypeSpec for Box<StringM<MAX>> {
+        fn type_spec() -> TypeSpec {
+            StringM::<MAX>::type_spec()
+        }
+    }
+
+    impl<T, const MAX: u32> HasTypeSpec for Box<VecM<T, MAX>>
+    where
+        T: HasTypeSpec + StaticIfNoAlloc,
+    {
+        fn type_spec() -> TypeSpec {
+            VecM::<T, MAX>::type_spec()
+        }
+    }
+
+    impl<const MAX: u32> HasTypeSpec for Box<VecM<u8, MAX>> {
+        fn type_spec() -> TypeSpec {
+            BytesM::<MAX>::type_spec()
         }
     }
 };
