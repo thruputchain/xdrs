@@ -110,14 +110,19 @@ where
                     buf.reserve(len);
                 }
 
-                while let Some(value) = seq.next_element::<T>()? {
-                    if buf.len() >= VecM::<T, MAX>::MAX_LEN {
-                        return Err(<A::Error as DeError>::invalid_length(buf.len() + 1, &self));
+                while buf.len() < VecM::<T, MAX>::MAX_LEN {
+                    match seq.next_element::<T>()? {
+                        Some(value) => buf.push(value),
+                        None => return Ok(VecM(buf)),
                     }
-                    buf.push(value);
                 }
-
-                VecM::<T, MAX>::try_from(buf).map_err(<A::Error as DeError>::custom)
+                if seq.next_element::<IgnoredAny>()?.is_some() {
+                    return Err(<A::Error as DeError>::invalid_length(
+                        buf.len() + 1,
+                        &self,
+                    ));
+                }
+                Ok(VecM(buf))
             }
         }
 

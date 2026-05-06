@@ -4,7 +4,9 @@
 #![allow(dead_code)]
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
-pub(crate) use serde::de::{Deserialize, Deserializer, Error as DeError, SeqAccess, Visitor};
+pub(crate) use serde::de::{
+    Deserialize, Deserializer, Error as DeError, IgnoredAny, SeqAccess, Visitor,
+};
 #[cfg(all(feature = "serde", feature = "alloc"))]
 pub(crate) use serde::ser::{Serialize, Serializer};
 
