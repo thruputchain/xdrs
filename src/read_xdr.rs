@@ -12,6 +12,7 @@ use crate::valid_u32::*;
 use core::convert::Infallible;
 use core::mem::MaybeUninit as MU;
 
+#[cfg(feature = "alloc")]
 const MAX_PREALLOC_BYTES: usize = 0x1_0000;
 
 struct PartialInitGuard<'a, T> {
