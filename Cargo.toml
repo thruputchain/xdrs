@@ -131,3 +131,7 @@ required-features = ["alloc", "derive"]
 [[test]]
 name = "issue_105_bufwriter_overflow"
 required-features = ["alloc"]
+
+[[test]]
+name = "vecm_prealloc_dos"
+required-features = ["alloc"]
