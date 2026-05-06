@@ -125,12 +125,14 @@ fn bench_vecm_struct_decode(c: &mut Criterion) {
     let mut group = c.benchmark_group("VecMStructDecode");
 
     for &len in &[64usize, 512, 4096, 8192] {
-        let value: VecM<Entry, { u32::MAX }> = VecM((0..len)
-            .map(|i| Entry {
-                id: i as u64,
-                amount: i as i32 * 7,
-            })
-            .collect());
+        let value: VecM<Entry, { u32::MAX }> = VecM(
+            (0..len)
+                .map(|i| Entry {
+                    id: i as u64,
+                    amount: i as i32 * 7,
+                })
+                .collect(),
+        );
 
         let txs_input_vec = txs::encode(&value).unwrap();
         let txs_input: &[u8] = txs_input_vec.as_ref();

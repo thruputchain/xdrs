@@ -109,8 +109,7 @@ fn run_child_mode(mode: &str) {
 
     match mode {
         "default-vecm" => {
-            let err =
-                xdrs::txs::decode::<xdrs::VecM<[u8; 1024]>>(HUGE_LENGTH_PREFIX).unwrap_err();
+            let err = xdrs::txs::decode::<xdrs::VecM<[u8; 1024]>>(HUGE_LENGTH_PREFIX).unwrap_err();
             assert!(
                 matches!(err, ReadError::SourceEmpty { .. }),
                 "default VecM should cap allocation and hit EOF, got {err:?}",
