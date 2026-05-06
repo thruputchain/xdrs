@@ -452,6 +452,27 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
+    fn test_vecm_serde_deser_rejects_overlimit() {
+        let ok: VecM<u32, 3> = serde_json::from_str("[1,2,3]").unwrap();
+        assert_eq!(ok.as_vec(), &vec![1, 2, 3]);
+
+        let under: VecM<u32, 5> = serde_json::from_str("[1]").unwrap();
+        assert_eq!(under.as_vec(), &vec![1]);
+
+        let empty: VecM<u32, 0> = serde_json::from_str("[]").unwrap();
+        assert!(empty.is_empty());
+
+        let err = serde_json::from_str::<VecM<u32, 2>>("[1,2,3]").unwrap_err();
+        let msg = alloc::format!("{err}");
+        assert!(msg.contains("length at most 2"), "{msg}");
+
+        let err = serde_json::from_str::<VecM<u32, 0>>("[1]").unwrap_err();
+        let msg = alloc::format!("{err}");
+        assert!(msg.contains("length at most 0"), "{msg}");
+    }
+
+    #[test]
     #[cfg(not(feature = "alloc"))]
     fn test_vecm_noalloc_basic() {
         // Test basic creation without alloc feature (static data only)
