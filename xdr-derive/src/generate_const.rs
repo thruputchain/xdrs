@@ -733,6 +733,8 @@ fn primitive_size_fn(ty: &syn::Type) -> Option<TokenStream> {
         "i16" => Some(quote! { size_i16 }),
         "u16" => Some(quote! { size_u16 }),
         "bool" => Some(quote! { size_bool }),
+        "f32" => Some(quote! { size_f32 }),
+        "f64" => Some(quote! { size_f64 }),
         _ => None,
     }
 }
@@ -756,6 +758,8 @@ fn primitive_write_method(ty: &syn::Type) -> Option<TokenStream> {
         "i16" => Some(quote! { write_i16 }),
         "u16" => Some(quote! { write_u16 }),
         "bool" => Some(quote! { write_bool }),
+        "f32" => Some(quote! { write_f32 }),
+        "f64" => Some(quote! { write_f64 }),
         _ => None,
     }
 }

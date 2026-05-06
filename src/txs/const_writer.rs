@@ -114,6 +114,18 @@ impl<const N: usize> ConstWriter<N> {
         self.write_i32(if v { 1 } else { 0 });
     }
 
+    /// Writes a 32-bit IEEE 754 float in big-endian format (4 bytes).
+    pub const fn write_f32(&mut self, n: f32) {
+        let b = n.to_be_bytes();
+        self.put_bytes(&b);
+    }
+
+    /// Writes a 64-bit IEEE 754 double in big-endian format (8 bytes).
+    pub const fn write_f64(&mut self, n: f64) {
+        let b = n.to_be_bytes();
+        self.put_bytes(&b);
+    }
+
     // -- opaque writes --
 
     // Callers must ensure bytes.len() <= u32::MAX; only debug-asserted.
@@ -192,6 +204,16 @@ pub const fn size_u16(_n: u16) -> usize {
 /// Returns the TXS encoded size of a boolean (encoded as i32, always 4).
 pub const fn size_bool(_v: bool) -> usize {
     4
+}
+
+/// Returns the TXS encoded size of a 32-bit float (always 4).
+pub const fn size_f32(_n: f32) -> usize {
+    4
+}
+
+/// Returns the TXS encoded size of a 64-bit double (always 8).
+pub const fn size_f64(_n: f64) -> usize {
+    8
 }
 
 /// Returns the TXS encoded size of fixed-length opaque data (padded to 4-byte boundary).
