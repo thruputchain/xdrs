@@ -452,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "serde")]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
     fn test_vecm_serde_deser_rejects_overlimit() {
         let ok: VecM<u32, 3> = serde_json::from_str("[1,2,3]").unwrap();
         assert_eq!(ok.as_vec(), &vec![1, 2, 3]);
