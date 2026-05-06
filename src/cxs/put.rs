@@ -29,6 +29,7 @@ where
 {
     #[inline]
     fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
         self.put_bytes(bytes)
     }
 

@@ -116,8 +116,10 @@ impl<const N: usize> ConstWriter<N> {
 
     // -- opaque writes --
 
-    /// Writes fixed-length opaque data, padded to a 4-byte boundary.
+    // Callers must ensure bytes.len() <= u32::MAX; only debug-asserted.
+    #[doc(hidden)]
     pub const fn write_opaque_fixed(&mut self, bytes: &[u8]) {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
         self.put_bytes(bytes);
         let rem = bytes.len() % 4;
         if rem != 0 {
@@ -194,6 +196,7 @@ pub const fn size_bool(_v: bool) -> usize {
 
 /// Returns the TXS encoded size of fixed-length opaque data (padded to 4-byte boundary).
 pub const fn size_opaque_fixed(len: usize) -> usize {
+    debug_assert!(len <= u32::MAX as usize);
     let rem = len % 4;
     if rem != 0 { len + 4 - rem } else { len }
 }

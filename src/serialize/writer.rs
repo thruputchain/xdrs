@@ -35,7 +35,8 @@ pub type WriteResult<T = ()> = core::result::Result<T, WriteError>;
 /// to serialize complex types.
 ///
 pub trait Writer<F> {
-    /// Writes a byte array of fixed length.
+    // Callers must ensure bytes.len() <= u32::MAX; only debug-asserted.
+    #[doc(hidden)]
     fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()>;
 
     /// Writes a byte sequence of variable length.
