@@ -4,7 +4,7 @@ use xdr_repr::xdr::TypeSpec;
 #[test]
 fn show_prog() {
     let proc1 = Procedure {
-        id: Id("ping".into()),
+        id: Id::new("ping"),
         value: Constant(1),
         return_type: None,
         arg_types: vec![
@@ -20,36 +20,42 @@ fn show_prog() {
     };
 
     let proc2 = Procedure {
-        id: Id("pong".into()),
+        id: Id::new("pong"),
         value: Constant(2),
         return_type: Some(TypeSpec::Unsigned),
         arg_types: vec![],
     };
 
     let version10 = Version {
-        id: Id("v0.1.0".into()),
+        id: Id::new("v0_1_0"),
         value: Constant(10),
         procedures: vec![proc1, proc2],
     };
 
     let program = Program {
-        id: Id("PingPong".into()),
+        id: Id::new("PingPong"),
         value: Constant(42),
         versions: vec![version10],
     };
 
     let expected = "program PingPong {
-	version v0.1.0 {
-		void ping (
-			int /* num */,
-			bool /* okay */
-		) = 1;
-		unsigned int pong (
-		) = 2;
-	} = 10;
+\tversion v0_1_0 {
+\t\tvoid ping (
+\t\t\tint /* num */,
+\t\t\tbool /* okay */
+\t\t) = 1;
+\t\tunsigned int pong (
+\t\t) = 2;
+\t} = 10;
 } = 42;
 ";
 
     let output = program.to_string();
     assert_eq!(output, expected);
+}
+
+#[test]
+#[should_panic(expected = "Invalid XDR identifier")]
+fn rpc_id_rejects_invalid_identifier() {
+    Id::new("Bad-Program");
 }
