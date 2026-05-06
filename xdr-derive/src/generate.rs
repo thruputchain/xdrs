@@ -208,8 +208,14 @@ fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> To
 
     let var_bindings = var_bindings(&v.fields);
     let write_bindings = if is_default_arm {
-        // Write only the discriminant
-        quote! {}
+        // Field 0 is the discriminant (already written above); write payload fields 1..N
+        token_reduce(&v.fields, |i, field| {
+            if i == 0 {
+                quote! {}
+            } else {
+                write_binding(i, field)
+            }
+        })
     } else {
         token_reduce(&v.fields, write_binding)
     };
@@ -436,7 +442,8 @@ fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput
     let ty_ident = &input.ident;
     let var_ident = &variant.ident;
     let read_fields = token_reduce(&variant.fields, |i, field| {
-        if is_default {
+        if is_default && i == 0 {
+            // Field 0 is the discriminant; initialized from `d` in init_fields
             return quote! {};
         }
 
@@ -460,8 +467,8 @@ fn init_fields(fields: &syn::Fields, is_default: bool) -> TokenStream {
     let init_fields = token_reduce(fields, |i, field| {
         let bind = tmp_binding(i);
 
-        let init_val = if is_default {
-            // The value is the discriminant
+        let init_val = if is_default && i == 0 {
+            // Field 0 is the discriminant
             quote! { d }
         } else {
             quote! { #bind }

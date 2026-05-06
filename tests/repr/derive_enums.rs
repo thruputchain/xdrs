@@ -242,6 +242,38 @@ pub mod default_only {
     }
 }
 
+pub mod default_with_payload {
+    use super::*;
+
+    #[derive(XDR)]
+    #[repr(i32)]
+    pub enum DefaultPayload {
+        Alpha { a: u32 } = 10,
+        Beta = 20,
+        Default { code: i32, data: u32 },
+    }
+
+    check_format! { derive_default_payload
+        DefaultPayload::spec()
+        =>
+            "enum DefaultPayloadType {"
+            "	Alpha = 10,"
+            "	Beta = 20,"
+            "};"
+            ""
+            "union DefaultPayload switch (DefaultPayloadType which)"
+            "{"
+            "case Alpha:"
+            "	unsigned int a;"
+            "case Beta:"
+            "	void;"
+            "default:"
+            "	unsigned int data;"
+            "};"
+            ""
+    }
+}
+
 // Unit-only enum with all-implicit discriminants
 pub mod implicit_unit {
     use super::*;

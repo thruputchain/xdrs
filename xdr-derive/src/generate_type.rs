@@ -282,11 +282,7 @@ fn union_typedef(
     let specs = item.variants.iter().filter_map(variant_case_spec);
     let case_specs = quote! { __xdrs::vec![#(#specs),*] };
     let default_variant = find_default_variant(item);
-    let default_decl = option_tok(default_variant.map(|_v| {
-        quote! {
-            __xdrs::declare_void()
-        }
-    }));
+    let default_decl = option_tok(default_variant.map(default_variant_payload_decl));
 
     Ok(quote! {
         __xdrs::union_def(
@@ -354,6 +350,41 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
 
             // TODO: Implement support for tuple variants with fields
             unimplemented!("Tuple variants with fields are not yet supported");
+        }
+    }
+}
+
+fn default_variant_payload_decl(variant: &syn::Variant) -> TokenStream {
+    match &variant.fields {
+        syn::Fields::Named(fields_named) => {
+            let payload_fields: Vec<_> = fields_named.named.iter().skip(1).collect();
+            if payload_fields.is_empty() {
+                return quote! { __xdrs::declare_void() };
+            }
+            let variant_name = variant.ident.to_string().to_lowercase();
+            let decls: Vec<_> = payload_fields
+                .iter()
+                .map(|field| {
+                    let field_ty = &field.ty;
+                    let field_name = field
+                        .ident
+                        .as_ref()
+                        .map(|i| i.to_string())
+                        .unwrap_or("inner".to_string());
+                    quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) }
+                })
+                .collect();
+            if decls.len() == 1 {
+                decls.into_iter().next().unwrap()
+            } else {
+                quote! {
+                    __xdrs::declare_type(#variant_name,
+                        __xdrs::struct_type(__xdrs::vec![ #(#decls),* ]))
+                }
+            }
+        }
+        syn::Fields::Unnamed(_) | syn::Fields::Unit => {
+            quote! { __xdrs::declare_void() }
         }
     }
 }

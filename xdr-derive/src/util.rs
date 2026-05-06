@@ -117,6 +117,15 @@ pub fn find_default_variant(item: &syn::DataEnum) -> Option<&syn::Variant> {
     item.variants.iter().find(|v| variant_is_default(v))
 }
 
+fn first_field_is_i32(variant: &syn::Variant) -> bool {
+    variant
+        .fields
+        .iter()
+        .next()
+        .map(|f| matches!(&f.ty, syn::Type::Path(p) if p.path.is_ident("i32")))
+        .unwrap_or(false)
+}
+
 pub fn check_variants(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<()> {
     let variants = &item.variants;
     let default_variant = item.variants.iter().find(|v| variant_is_default(v));
@@ -132,7 +141,7 @@ pub fn check_variants(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<
             "derive XDR: enum discriminants must be all implicit or \
              all explicit, and may optionally also include a default \
              variant (with no explicit discriminant) named \"Default\", \
-             which must have one i32 field",
+             whose first field must be i32",
         )
     } else if let Some(dv) = default_variant {
         // RFC 4506 requires the default arm of a union to be trailing.
@@ -143,6 +152,18 @@ pub fn check_variants(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<
                 &dv.ident,
                 "derive XDR: Default variant must be the last variant \
                  (RFC 4506 requires the default arm of a union to be trailing)",
+            )
+        } else if dv.fields.is_empty() {
+            err(
+                &dv.ident,
+                "derive XDR: Default variant must have at least one i32 field \
+                 to hold the unmatched discriminant value",
+            )
+        } else if !first_field_is_i32(dv) {
+            err(
+                &dv.ident,
+                "derive XDR: Default variant's first field must be i32 \
+                 (it holds the unmatched discriminant value)",
             )
         } else {
             Ok(())
