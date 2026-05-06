@@ -2,6 +2,7 @@ use crate::util::*;
 use darling::*;
 use proc_macro2::TokenStream;
 use quote::quote;
+use std::collections::HashSet;
 use syn::Result;
 
 #[derive(Clone, Debug, Default, FromDeriveInput, FromField)]
@@ -102,13 +103,15 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
         .map(|(i, f)| const_size_field(i, f, Format::Txs))
         .collect::<Result<Vec<_>>>()?;
 
+    let buf = fresh_buf_size_ident(&input.generics);
+
     Ok(quote! {
         impl #impl_generics #ty_ident #ty_generics #where_clause {
-            pub const fn const_write_cxs<const __N: usize>(&self, w: &mut cxs::ConstWriter<__N>) {
+            pub const fn const_write_cxs<const #buf: usize>(&self, w: &mut cxs::ConstWriter<#buf>) {
                 #(#cxs_fields)*
             }
 
-            pub const fn const_write_txs<const __N: usize>(&self, w: &mut txs::ConstWriter<__N>) {
+            pub const fn const_write_txs<const #buf: usize>(&self, w: &mut txs::ConstWriter<#buf>) {
                 #(#txs_fields)*
             }
 
@@ -129,6 +132,29 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
 enum Format {
     Cxs,
     Txs,
+}
+
+fn fresh_buf_size_ident(generics: &syn::Generics) -> syn::Ident {
+    let used: HashSet<String> = generics
+        .params
+        .iter()
+        .filter_map(|p| match p {
+            syn::GenericParam::Const(c) => Some(c.ident.to_string()),
+            _ => None,
+        })
+        .collect();
+
+    let base = "__N";
+    if !used.contains(base) {
+        return syn::Ident::new(base, proc_macro2::Span::call_site());
+    }
+    for i in 0u64.. {
+        let candidate = format!("{base}{i}");
+        if !used.contains(&candidate) {
+            return syn::Ident::new(&candidate, proc_macro2::Span::call_site());
+        }
+    }
+    unreachable!()
 }
 
 fn const_size_field(index: usize, field: &syn::Field, fmt: Format) -> Result<TokenStream> {
@@ -390,15 +416,17 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
         .map(|(i, v)| const_size_variant(i, v, input, Format::Txs))
         .collect::<Result<Vec<_>>>()?;
 
+    let buf = fresh_buf_size_ident(&input.generics);
+
     Ok(quote! {
         impl #impl_generics #ty_ident #ty_generics #where_clause {
-            pub const fn const_write_cxs<const __N: usize>(&self, w: &mut cxs::ConstWriter<__N>) {
+            pub const fn const_write_cxs<const #buf: usize>(&self, w: &mut cxs::ConstWriter<#buf>) {
                 match self {
                     #(#cxs_arms)*
                 }
             }
 
-            pub const fn const_write_txs<const __N: usize>(&self, w: &mut txs::ConstWriter<__N>) {
+            pub const fn const_write_txs<const #buf: usize>(&self, w: &mut txs::ConstWriter<#buf>) {
                 match self {
                     #(#txs_arms)*
                 }
@@ -490,6 +518,39 @@ mod tests {
         assert!(toks.contains("&(*inner).0"));
         assert!(toks.contains("&(*&(*inner).1).0"));
         assert!(!toks.contains("&&inner.0"));
+    }
+
+    #[test]
+    fn const_generic_named_dunder_n_does_not_collide() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Packet<const __N: usize> {
+                bytes: [u8; __N],
+            }
+        };
+
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        assert!(toks.contains("const_write_cxs"));
+        assert!(toks.contains("const_write_txs"));
+        assert!(
+            toks.contains("const __N0 : usize"),
+            "buffer generic should be renamed to avoid collision with user's __N"
+        );
+    }
+
+    #[test]
+    fn const_generic_named_dunder_n_and_n0_skips_to_n1() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Packet<const __N: usize, const __N0: usize> {
+                a: [u8; __N],
+                b: [u8; __N0],
+            }
+        };
+
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        assert!(
+            toks.contains("const __N1 : usize"),
+            "buffer generic should skip to __N1 when __N and __N0 are both taken"
+        );
     }
 
     #[test]
