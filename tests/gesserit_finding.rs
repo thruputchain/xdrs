@@ -2,10 +2,10 @@ use core::convert::Infallible;
 use std::cell::Cell;
 use std::panic;
 
-use xdrs::serialize::reader::{ReadError, Reader};
-use xdrs::{ReadXDR, cxs, txs};
 #[cfg(feature = "alloc")]
 use xdrs::VecM;
+use xdrs::serialize::reader::{ReadError, Reader};
+use xdrs::{ReadXDR, cxs, txs};
 
 thread_local! {
     static ACTIVE_COUNT: Cell<usize> = const { Cell::new(0) };
