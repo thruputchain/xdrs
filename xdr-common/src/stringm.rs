@@ -102,8 +102,9 @@ impl<const MAX: u32> core::fmt::Debug for StringM<MAX> {
 impl<const MAX: u32> core::str::FromStr for StringM<MAX> {
     type Err = Error;
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
-        let b = escape_bytes::unescape(s.as_bytes()).map_err(|_| Error::Invalid)?;
-        Ok(Self(b))
+        escape_bytes::unescape(s.as_bytes())
+            .map_err(|_| Error::Invalid)?
+            .try_into()
     }
 }
 
@@ -444,6 +445,8 @@ mod tests {
     #[cfg(feature = "alloc")]
     extern crate alloc;
     #[cfg(feature = "alloc")]
+    use alloc::string::ToString;
+    #[cfg(feature = "alloc")]
     use alloc::vec;
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
@@ -562,5 +565,35 @@ mod tests {
         let s: StringM<100> = "Hello 世界 🌍".try_into().unwrap();
         assert_eq!(s.to_utf8_string_lossy(), "Hello 世界 🌍");
         assert_eq!(s.to_utf8_string().unwrap(), "Hello 世界 🌍");
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_fromstr_rejects_overlength() {
+        let result = "abcd".parse::<StringM<3>>();
+        assert!(matches!(result, Err(Error::LengthExceedsMax)));
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_fromstr_accepts_at_max() {
+        let s = "abc".parse::<StringM<3>>().unwrap();
+        assert_eq!(s.as_ref() as &[u8], b"abc");
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_fromstr_rejects_overlength_escaped() {
+        let result = "\\x61\\x62\\x63\\x64".parse::<StringM<3>>();
+        assert!(matches!(result, Err(Error::LengthExceedsMax)));
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_fromstr_roundtrip() {
+        let original: StringM<10> = vec![0xFF, b'a', b'b'].try_into().unwrap();
+        let displayed = original.to_string();
+        let parsed: StringM<10> = displayed.parse().unwrap();
+        assert_eq!(original, parsed);
     }
 }
