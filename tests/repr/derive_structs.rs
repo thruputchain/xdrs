@@ -120,6 +120,79 @@ pub mod custom_name {
     }
 }
 
+pub mod typedef_backed_fields {
+    use super::*;
+
+    pub struct AccountId;
+
+    impl HasTypeDef for AccountId {
+        fn type_def() -> TypeDef {
+            TypeDef::Def(declare_unsigned("AccountId"))
+        }
+    }
+
+    #[derive(XDR)]
+    pub struct Payment {
+        pub payer: AccountId,
+        pub amount: u32,
+    }
+
+    check_format! { typedef_field_preserves_parent_name
+        Payment::def()
+        =>
+            "struct Payment {"
+            "	AccountId payer;"
+            "	unsigned int amount;"
+            "};"
+    }
+
+    pub struct WrappedBool;
+
+    impl HasTypeDef for WrappedBool {
+        fn type_def() -> TypeDef {
+            TypeDef::Def(declare_type("WrappedBool", TypeSpec::Bool))
+        }
+    }
+
+    #[derive(XDR)]
+    pub struct Flags {
+        pub active: WrappedBool,
+        pub count: i32,
+    }
+
+    check_format! { typedef_bool_field_preserves_parent_name
+        Flags::def()
+        =>
+            "struct Flags {"
+            "	WrappedBool active;"
+            "	int count;"
+            "};"
+    }
+}
+
+pub mod mixed_void_fields {
+    use super::*;
+
+    #[derive(XDR, ReadXDR, WriteXDR, Debug, PartialEq, Eq)]
+    pub struct MixedVoid {
+        pub x: u32,
+        pub gap1: (),
+        pub y: i32,
+        pub gap2: (),
+    }
+
+    check_format! { mixed_void_struct_renders_correctly
+        MixedVoid::def()
+        =>
+            "struct MixedVoid {"
+            "	unsigned int x;"
+            "	void;"
+            "	int y;"
+            "	void;"
+            "};"
+    }
+}
+
 pub mod tuple_fields {
     use super::*;
 
