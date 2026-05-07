@@ -36,6 +36,16 @@ impl<T: HasTypeDef> XDR for T {
 pub trait HasTypeDef {
     /// Returns the XDR type definition for this type.
     fn type_def() -> TypeDef;
+
+    /// Returns the XDR identifier for this named type.
+    fn type_ident() -> Ident {
+        type_def_ident(Self::type_def())
+    }
+
+    /// Creates a declaration that references this named type.
+    fn named_declaration(name: Ident) -> Declaration {
+        named_declaration_from_type_def(name, Self::type_def())
+    }
 }
 
 /// Types that can describe their XDR type specification.
@@ -49,8 +59,7 @@ pub trait HasTypeSpec {
 
 impl<T: HasTypeDef> HasTypeSpec for T {
     fn type_spec() -> TypeSpec {
-        let ident = type_def_ident(T::type_def());
-        TypeSpec::Ident(ident.clone())
+        TypeSpec::Ident(T::type_ident())
     }
 }
 
@@ -73,6 +82,23 @@ fn decl_ident(decl: Declaration) -> Ident {
         Declaration::VariableArray { name: ident, .. } => ident,
         Declaration::Optional { name: ident, .. } => ident,
         Declaration::Void => Ident("void".to_string()),
+    }
+}
+
+fn named_declaration_from_type_def(name: Ident, type_def: TypeDef) -> Declaration {
+    let declare_named = |ty_ident| Declaration::Named {
+        name,
+        ty: TypeSpec::Ident(ty_ident),
+    };
+
+    match type_def {
+        TypeDef::Def(decl) => match decl.name() {
+            Some(ty_ident) => declare_named(ty_ident.clone()),
+            None => decl,
+        },
+        TypeDef::Struct(ty_ident, _) => declare_named(ty_ident),
+        TypeDef::Enum(ty_ident, _) => declare_named(ty_ident),
+        TypeDef::Union(ty_ident, _) => declare_named(ty_ident),
     }
 }
 
@@ -200,6 +226,14 @@ const _: () = {
     impl<T: HasTypeDef> HasTypeDef for Box<T> {
         fn type_def() -> TypeDef {
             T::type_def()
+        }
+
+        fn type_ident() -> Ident {
+            T::type_ident()
+        }
+
+        fn named_declaration(name: Ident) -> Declaration {
+            T::named_declaration(name)
         }
     }
 };
@@ -610,11 +644,19 @@ impl HasTypeDef for () {
     fn type_def() -> TypeDef {
         TypeDef::Def(Declaration::Void)
     }
+
+    fn named_declaration(_name: Ident) -> Declaration {
+        Declaration::Void
+    }
 }
 
 impl<T> HasTypeDef for core::marker::PhantomData<T> {
     fn type_def() -> TypeDef {
         TypeDef::Def(Declaration::Void)
+    }
+
+    fn named_declaration(_name: Ident) -> Declaration {
+        Declaration::Void
     }
 }
 
@@ -623,20 +665,7 @@ where
     T: HasTypeDef,
 {
     fn declare(name: Ident) -> Declaration {
-        let declare_named = |ty_ident| Declaration::Named {
-            name,
-            ty: TypeSpec::Ident(ty_ident),
-        };
-
-        match T::type_def() {
-            TypeDef::Def(decl) => match decl.name() {
-                Some(ty_ident) => declare_named(ty_ident.clone()),
-                None => decl,
-            },
-            TypeDef::Struct(ty_ident, _) => declare_named(ty_ident),
-            TypeDef::Enum(ty_ident, _) => declare_named(ty_ident),
-            TypeDef::Union(ty_ident, _) => declare_named(ty_ident),
-        }
+        T::named_declaration(name)
     }
 }
 
@@ -645,11 +674,27 @@ impl<T: HasTypeDef> HasTypeDef for &T {
     fn type_def() -> TypeDef {
         T::type_def()
     }
+
+    fn type_ident() -> Ident {
+        T::type_ident()
+    }
+
+    fn named_declaration(name: Ident) -> Declaration {
+        T::named_declaration(name)
+    }
 }
 
 impl<T: HasTypeDef> HasTypeDef for &mut T {
     fn type_def() -> TypeDef {
         T::type_def()
+    }
+
+    fn type_ident() -> Ident {
+        T::type_ident()
+    }
+
+    fn named_declaration(name: Ident) -> Declaration {
+        T::named_declaration(name)
     }
 }
 
