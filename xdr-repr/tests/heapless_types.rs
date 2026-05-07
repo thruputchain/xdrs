@@ -48,3 +48,31 @@ fn heapless_vec_generic_declares_bounded_array() {
         r#"{ "type": "variable array", "element_type": { "type": "unsigned" }, "max": 4 }"#,
     );
 }
+
+#[test]
+fn borrowed_heapless_declare_forwards_to_owned() {
+    assert_eq!(
+        <&heapless::Vec<u8, 8> as Declare>::declare(ident("bytes")).to_string(),
+        "opaque bytes<8>",
+    );
+    assert_eq!(
+        <&mut heapless::Vec<u8, 8> as Declare>::declare(ident("bytes")).to_string(),
+        "opaque bytes<8>",
+    );
+    assert_eq!(
+        <&heapless::String<16> as Declare>::declare(ident("text")).to_string(),
+        "string text<16>",
+    );
+    assert_eq!(
+        <&mut heapless::String<16> as Declare>::declare(ident("text")).to_string(),
+        "string text<16>",
+    );
+    assert_eq!(
+        <&heapless::Vec<u32, 4> as Declare>::declare(ident("nums")).to_string(),
+        "unsigned int nums<4>",
+    );
+    assert_eq!(
+        <&mut heapless::Vec<u32, 4> as Declare>::declare(ident("nums")).to_string(),
+        "unsigned int nums<4>",
+    );
+}
