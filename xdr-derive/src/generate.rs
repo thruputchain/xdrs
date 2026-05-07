@@ -460,7 +460,7 @@ fn generic_lifetime_idents(generics: &syn::Generics) -> Vec<Ident> {
 }
 
 fn lifetime_matches_any(lifetime: &syn::Lifetime, lifetimes: &[Ident]) -> bool {
-    lifetimes.iter().any(|ident| lifetime.ident == *ident)
+    lifetimes.contains(&lifetime.ident)
 }
 
 struct LifetimeUse<'a> {
