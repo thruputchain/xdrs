@@ -28,10 +28,7 @@ fn heapless_vec_u8_declares_bounded_opaque() {
 fn heapless_string_declares_bounded_string() {
     let decl = <heapless::String<16> as Declare>::declare(ident("text"));
     assert_eq!(decl.to_string(), "string text<16>");
-    assert_eq!(
-        decl.get_type_json(),
-        r#"{ "type": "string", "max": 16 }"#,
-    );
+    assert_eq!(decl.get_type_json(), r#"{ "type": "string", "max": 16 }"#,);
     assert_eq!(
         only_field_type_json::<heapless::String<16>>(),
         r#"{ "type": "string", "max": 16 }"#,
