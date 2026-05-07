@@ -6,15 +6,23 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{self, Command};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn constwritexdr_opaque_paths_reject_overlong_lengths_in_release() {
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let crate_dir = workspace.join("target/const-opaque-bounds");
-    let target_dir = workspace.join("target/const-opaque-bounds-target");
+    let unique = format!(
+        "const-opaque-bounds-{}-{}",
+        process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after Unix epoch")
+            .as_nanos()
+    );
+    let crate_dir = workspace.join("target").join(&unique);
+    let target_dir = workspace.join("target").join(format!("{unique}-target"));
 
-    let _ = fs::remove_dir_all(&crate_dir);
     fs::create_dir_all(crate_dir.join("src")).expect("create child crate");
 
     let workspace_path = workspace
@@ -35,8 +43,6 @@ xdrs = {{ path = "{workspace_path}", features = ["derive"] }}
 "#
     );
     fs::write(crate_dir.join("Cargo.toml"), manifest).expect("write child manifest");
-    fs::copy(workspace.join("Cargo.lock"), crate_dir.join("Cargo.lock"))
-        .expect("copy workspace lockfile");
 
     fs::write(
         crate_dir.join("src/main.rs"),
@@ -211,9 +217,27 @@ fn main() {
     .expect("write child main");
 
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let lock_output = Command::new(&cargo)
+        .arg("generate-lockfile")
+        .arg("--offline")
+        .current_dir(&crate_dir)
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .output()
+        .expect("generate child lockfile");
+
+    let lock_stdout = String::from_utf8_lossy(&lock_output.stdout);
+    let lock_stderr = String::from_utf8_lossy(&lock_output.stderr);
+    assert!(
+        lock_output.status.success(),
+        "child cargo lockfile generation failed with status {}\nstdout:\n{lock_stdout}\nstderr:\n{lock_stderr}",
+        lock_output.status
+    );
+
     let output = Command::new(cargo)
         .arg("run")
         .arg("--release")
+        .arg("--locked")
+        .arg("--offline")
         .arg("--quiet")
         .current_dir(&crate_dir)
         .env("CARGO_TARGET_DIR", &target_dir)
