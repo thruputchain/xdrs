@@ -51,12 +51,26 @@ use core::ops::Deref;
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     all(feature = "serde", feature = "alloc"),
-    derive(serde_with::SerializeDisplay, serde_with::DeserializeFromStr)
+    derive(serde_with::DeserializeFromStr)
 )]
 pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
 use hex::{FromHex, ToHex};
+
+#[cfg(all(feature = "serde", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
+impl<const MAX: u32> Serialize for BytesM<MAX> {
+    fn serialize<S>(&self, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.0.len() > Self::MAX_LEN {
+            return Err(<S::Error as SerError>::custom(Error::LengthExceedsMax));
+        }
+        ser.collect_str(self)
+    }
+}
 
 impl<const MAX: u32> core::fmt::Display for BytesM<MAX> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -453,6 +467,23 @@ mod tests {
         assert!(re.is_match(""), "pattern should accept empty string");
         assert!(!re.is_match("f"), "pattern must reject odd-length hex");
         assert!(!re.is_match("abc"), "pattern must reject odd-length hex");
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_bytesm_serde_serialize_rejects_overlimit() {
+        let value = BytesM::<1>(vec![0xaa, 0xbb]);
+        let err = serde_json::to_value(&value).unwrap_err();
+        let msg = alloc::format!("{err}");
+        assert!(msg.contains("max length exceeded"), "{msg}");
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_bytesm_serde_serialize_accepts_at_max() {
+        let value = BytesM::<2>(vec![0xaa, 0xbb]);
+        let json = serde_json::to_value(&value).unwrap();
+        assert_eq!(json, serde_json::json!("aabb"));
     }
 
     #[test]

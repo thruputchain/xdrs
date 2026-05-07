@@ -8,7 +8,7 @@ pub(crate) use serde::de::{
     Deserialize, Deserializer, Error as DeError, IgnoredAny, SeqAccess, Visitor,
 };
 #[cfg(all(feature = "serde", feature = "alloc"))]
-pub(crate) use serde::ser::{Serialize, Serializer};
+pub(crate) use serde::ser::{Error as SerError, Serialize, Serializer};
 
 #[cfg(feature = "alloc")]
 pub(crate) use alloc::{

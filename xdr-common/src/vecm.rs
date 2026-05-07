@@ -72,6 +72,9 @@ where
     where
         S: Serializer,
     {
+        if self.0.len() > Self::MAX_LEN {
+            return Err(<S::Error as SerError>::custom(Error::LengthExceedsMax));
+        }
         self.0.serialize(ser)
     }
 }
@@ -470,6 +473,23 @@ mod tests {
         let err = serde_json::from_str::<VecM<u32, 0>>("[1]").unwrap_err();
         let msg = alloc::format!("{err}");
         assert!(msg.contains("length at most 0"), "{msg}");
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_vecm_serde_serialize_rejects_overlimit() {
+        let value = VecM::<u32, 1>(vec![1, 2]);
+        let err = serde_json::to_value(&value).unwrap_err();
+        let msg = alloc::format!("{err}");
+        assert!(msg.contains("max length exceeded"), "{msg}");
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_vecm_serde_serialize_accepts_at_max() {
+        let value = VecM::<u32, 2>(vec![1, 2]);
+        let json = serde_json::to_value(&value).unwrap();
+        assert_eq!(json, serde_json::json!([1, 2]));
     }
 
     #[test]
