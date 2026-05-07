@@ -78,20 +78,7 @@ pub fn option_tok(opt: Option<TokenStream>) -> TokenStream {
 }
 
 pub fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
-    let ty_lifetimes = generics.params.iter().filter_map(|g| {
-        if let syn::GenericParam::Lifetime(param) = g {
-            Some(&param.lifetime)
-        } else {
-            None
-        }
-    });
-
-    let mut lifetime_param: syn::LifetimeParam = syn::parse_quote! { '_r };
-    for lt in ty_lifetimes {
-        // Add each of the item's lifetime params as a bound on the reader lifetime
-        lifetime_param.bounds.push(lt.clone())
-    }
-
+    let lifetime_param: syn::LifetimeParam = syn::parse_quote! { '_r };
     generics
         .params
         .push(syn::GenericParam::Lifetime(lifetime_param));
