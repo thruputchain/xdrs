@@ -110,14 +110,16 @@ where
                     buf.reserve(len);
                 }
 
-                while let Some(value) = seq.next_element::<T>()? {
-                    if buf.len() >= VecM::<T, MAX>::MAX_LEN {
-                        return Err(<A::Error as DeError>::invalid_length(buf.len() + 1, &self));
+                while buf.len() < VecM::<T, MAX>::MAX_LEN {
+                    match seq.next_element::<T>()? {
+                        Some(value) => buf.push(value),
+                        None => return Ok(VecM(buf)),
                     }
-                    buf.push(value);
                 }
-
-                VecM::<T, MAX>::try_from(buf).map_err(<A::Error as DeError>::custom)
+                if seq.next_element::<IgnoredAny>()?.is_some() {
+                    return Err(<A::Error as DeError>::invalid_length(buf.len() + 1, &self));
+                }
+                Ok(VecM(buf))
             }
         }
 
@@ -447,6 +449,27 @@ mod tests {
         // Test length exceeds max
         let too_long: Result<VecM<u32, 5>, _> = vec![1, 2, 3, 4, 5, 6].try_into();
         assert!(too_long.is_err());
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_vecm_serde_deser_rejects_overlimit() {
+        let ok: VecM<u32, 3> = serde_json::from_str("[1,2,3]").unwrap();
+        assert_eq!(ok.as_vec(), &vec![1, 2, 3]);
+
+        let under: VecM<u32, 5> = serde_json::from_str("[1]").unwrap();
+        assert_eq!(under.as_vec(), &vec![1]);
+
+        let empty: VecM<u32, 0> = serde_json::from_str("[]").unwrap();
+        assert!(empty.is_empty());
+
+        let err = serde_json::from_str::<VecM<u32, 2>>("[1,2,3]").unwrap_err();
+        let msg = alloc::format!("{err}");
+        assert!(msg.contains("length at most 2"), "{msg}");
+
+        let err = serde_json::from_str::<VecM<u32, 0>>("[1]").unwrap_err();
+        let msg = alloc::format!("{err}");
+        assert!(msg.contains("length at most 0"), "{msg}");
     }
 
     #[test]
