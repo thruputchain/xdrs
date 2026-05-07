@@ -136,6 +136,9 @@ pub fn has_xdr_discrim_type(input: &syn::DeriveInput) -> bool {
             if meta.path.is_ident("discrim_type") {
                 found = true;
             }
+            if meta.input.peek(syn::Token![=]) {
+                meta.value()?.parse::<syn::Lit>()?;
+            }
             Ok(())
         });
         found
