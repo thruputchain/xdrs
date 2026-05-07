@@ -44,10 +44,10 @@ fn heapless_vec_generic_declares_bounded_array() {
     assert_eq!(decl.to_string(), "unsigned int nums<4>");
     assert_eq!(
         decl.get_type_json(),
-        r#"{ "type": "variable array", "element_type": { "type": "unsigned int" }, "max": 4 }"#,
+        r#"{ "type": "variable array", "element_type": { "type": "unsigned" }, "max": 4 }"#,
     );
     assert_eq!(
         only_field_type_json::<heapless::Vec<u32, 4>>(),
-        r#"{ "type": "variable array", "element_type": { "type": "unsigned int" }, "max": 4 }"#,
+        r#"{ "type": "variable array", "element_type": { "type": "unsigned" }, "max": 4 }"#,
     );
 }
