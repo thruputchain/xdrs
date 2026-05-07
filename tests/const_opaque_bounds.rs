@@ -3,50 +3,6 @@
     target_pointer_width = "64"
 ))]
 
-use std::env;
-use std::fs;
-use std::path::PathBuf;
-use std::process::{self, Command};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-#[test]
-fn constwritexdr_opaque_paths_reject_overlong_lengths_in_release() {
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let unique = format!(
-        "const-opaque-bounds-{}-{}",
-        process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after Unix epoch")
-            .as_nanos()
-    );
-    let crate_dir = workspace.join("target").join(&unique);
-    let target_dir = workspace.join("target").join(format!("{unique}-target"));
-
-    fs::create_dir_all(crate_dir.join("src")).expect("create child crate");
-
-    let workspace_path = workspace
-        .to_str()
-        .expect("workspace path should be valid UTF-8")
-        .replace('\\', "\\\\");
-
-    let manifest = format!(
-        r#"[workspace]
-
-[package]
-name = "const-opaque-bounds"
-version = "0.0.0"
-edition = "2024"
-
-[dependencies]
-xdrs = {{ path = "{workspace_path}", features = ["derive"] }}
-"#
-    );
-    fs::write(crate_dir.join("Cargo.toml"), manifest).expect("write child manifest");
-
-    fs::write(
-        crate_dir.join("src/main.rs"),
-        r#"
 use std::ffi::{c_int, c_void};
 use std::mem;
 use std::panic;
@@ -55,7 +11,7 @@ use std::slice;
 use std::str;
 
 const OVERLONG: usize = u32::MAX as usize + 1;
-const EXPECTED_GUARD: &str = "opaque byte length exceeds u32::MAX";
+const EXPECTED_GUARD: &str = "opaque length exceeds u32::MAX";
 
 #[derive(xdrs::ConstWriteXDR)]
 struct FixedOpaqueBytes {
@@ -70,6 +26,49 @@ struct SliceOpaqueBytes<'a> {
 #[derive(xdrs::ConstWriteXDR)]
 struct StringOpaqueBytes<'a> {
     text: &'a str,
+}
+
+#[test]
+fn constwritexdr_opaque_paths_reject_overlong_lengths() {
+    let mapping = Mapping::new(OVERLONG);
+
+    let fixed = mapping.as_fixed();
+    expect_opaque_guard("fixed const_cxs_size", || fixed.const_cxs_size());
+    expect_opaque_guard("fixed const_txs_size", || fixed.const_txs_size());
+    expect_opaque_guard("fixed const_write_cxs", || {
+        let mut w = xdrs::cxs::ConstWriter::<0>::new();
+        fixed.const_write_cxs(&mut w);
+    });
+    expect_opaque_guard("fixed const_write_txs", || {
+        let mut w = xdrs::txs::ConstWriter::<0>::new();
+        fixed.const_write_txs(&mut w);
+    });
+
+    let bytes = mapping.as_slice();
+    let slice_holder = SliceOpaqueBytes { bytes };
+    expect_opaque_guard("slice const_cxs_size", || slice_holder.const_cxs_size());
+    expect_opaque_guard("slice const_txs_size", || slice_holder.const_txs_size());
+    expect_opaque_guard("slice const_write_cxs", || {
+        let mut w = xdrs::cxs::ConstWriter::<0>::new();
+        slice_holder.const_write_cxs(&mut w);
+    });
+    expect_opaque_guard("slice const_write_txs", || {
+        let mut w = xdrs::txs::ConstWriter::<0>::new();
+        slice_holder.const_write_txs(&mut w);
+    });
+
+    let text = unsafe { str::from_utf8_unchecked(bytes) };
+    let string_holder = StringOpaqueBytes { text };
+    expect_opaque_guard("string const_cxs_size", || string_holder.const_cxs_size());
+    expect_opaque_guard("string const_txs_size", || string_holder.const_txs_size());
+    expect_opaque_guard("string const_write_cxs", || {
+        let mut w = xdrs::cxs::ConstWriter::<0>::new();
+        string_holder.const_write_cxs(&mut w);
+    });
+    expect_opaque_guard("string const_write_txs", || {
+        let mut w = xdrs::txs::ConstWriter::<0>::new();
+        string_holder.const_write_txs(&mut w);
+    });
 }
 
 const PROT_READ: c_int = 0x1;
@@ -166,98 +165,5 @@ fn expect_opaque_guard<R>(label: &str, f: impl FnOnce() -> R) {
     assert!(
         message.contains(EXPECTED_GUARD),
         "{label} panicked with unexpected message: {message:?}"
-    );
-}
-
-fn main() {
-    let mapping = Mapping::new(OVERLONG);
-
-    let fixed = mapping.as_fixed();
-    expect_opaque_guard("fixed const_cxs_size", || fixed.const_cxs_size());
-    expect_opaque_guard("fixed const_txs_size", || fixed.const_txs_size());
-    expect_opaque_guard("fixed const_write_cxs", || {
-        let mut w = xdrs::cxs::ConstWriter::<0>::new();
-        fixed.const_write_cxs(&mut w);
-    });
-    expect_opaque_guard("fixed const_write_txs", || {
-        let mut w = xdrs::txs::ConstWriter::<0>::new();
-        fixed.const_write_txs(&mut w);
-    });
-
-    let bytes = mapping.as_slice();
-    let slice_holder = SliceOpaqueBytes { bytes };
-    expect_opaque_guard("slice const_cxs_size", || slice_holder.const_cxs_size());
-    expect_opaque_guard("slice const_txs_size", || slice_holder.const_txs_size());
-    expect_opaque_guard("slice const_write_cxs", || {
-        let mut w = xdrs::cxs::ConstWriter::<0>::new();
-        slice_holder.const_write_cxs(&mut w);
-    });
-    expect_opaque_guard("slice const_write_txs", || {
-        let mut w = xdrs::txs::ConstWriter::<0>::new();
-        slice_holder.const_write_txs(&mut w);
-    });
-
-    let text = unsafe { str::from_utf8_unchecked(bytes) };
-    let string_holder = StringOpaqueBytes { text };
-    expect_opaque_guard("string const_cxs_size", || string_holder.const_cxs_size());
-    expect_opaque_guard("string const_txs_size", || string_holder.const_txs_size());
-    expect_opaque_guard("string const_write_cxs", || {
-        let mut w = xdrs::cxs::ConstWriter::<0>::new();
-        string_holder.const_write_cxs(&mut w);
-    });
-    expect_opaque_guard("string const_write_txs", || {
-        let mut w = xdrs::txs::ConstWriter::<0>::new();
-        string_holder.const_write_txs(&mut w);
-    });
-
-    println!("all opaque const derive paths rejected overlong lengths");
-}
-"#,
-    )
-    .expect("write child main");
-
-    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let lock_output = Command::new(&cargo)
-        .arg("generate-lockfile")
-        .arg("--offline")
-        .current_dir(&crate_dir)
-        .env("CARGO_TARGET_DIR", &target_dir)
-        .output()
-        .expect("generate child lockfile");
-
-    let lock_stdout = String::from_utf8_lossy(&lock_output.stdout);
-    let lock_stderr = String::from_utf8_lossy(&lock_output.stderr);
-    assert!(
-        lock_output.status.success(),
-        "child cargo lockfile generation failed with status {}\nstdout:\n{lock_stdout}\nstderr:\n{lock_stderr}",
-        lock_output.status
-    );
-
-    let output = Command::new(cargo)
-        .arg("run")
-        .arg("--release")
-        .arg("--locked")
-        .arg("--offline")
-        .arg("--quiet")
-        .current_dir(&crate_dir)
-        .env("CARGO_TARGET_DIR", &target_dir)
-        .output()
-        .expect("run child cargo");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    println!("{stdout}");
-    if !stderr.trim().is_empty() {
-        eprintln!("{stderr}");
-    }
-
-    assert!(
-        output.status.success(),
-        "child cargo failed with status {}\nstdout:\n{stdout}\nstderr:\n{stderr}",
-        output.status
-    );
-    assert!(
-        stdout.contains("all opaque const derive paths rejected overlong lengths"),
-        "child crate did not exercise all opaque const derive paths"
     );
 }

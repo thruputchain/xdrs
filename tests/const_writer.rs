@@ -1054,52 +1054,38 @@ fn enum_tuple_variants_sizes_match() {
 mod overlong_length_bound {
     use super::*;
 
-    #[derive(Clone, Copy)]
-    struct Zst;
-
-    impl Zst {
-        pub const fn const_write_cxs<const N: usize>(&self, _: &mut xdrs::cxs::ConstWriter<N>) {}
-        pub const fn const_write_txs<const N: usize>(&self, _: &mut xdrs::txs::ConstWriter<N>) {}
-        pub const fn const_cxs_size(&self) -> usize {
-            0
-        }
-        pub const fn const_txs_size(&self) -> usize {
-            0
-        }
-    }
-
-    impl xdrs::WriteXDR for Zst {
-        fn write_xdr<F, W: xdrs::Writer<F>>(&self, _: &mut W) -> xdrs::WriteResult<()> {
-            Ok(())
-        }
-    }
+    const OVERLONG: usize = u32::MAX as usize + 1;
+    static OVERLONG_UNITS: [(); OVERLONG] = [(); OVERLONG];
 
     #[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
-    struct ZstSliceHolder<'a> {
-        items: &'a [Zst],
+    struct UnitSliceHolder<'a> {
+        items: &'a [()],
     }
 
     #[test]
     #[should_panic(expected = "u32")]
     fn const_slice_txs_size_rejects_overlong() {
-        let items = vec![Zst; u32::MAX as usize + 1];
-        let holder = ZstSliceHolder { items: &items };
+        let holder = UnitSliceHolder {
+            items: &OVERLONG_UNITS,
+        };
         let _ = holder.const_txs_size();
     }
 
     #[test]
     #[should_panic(expected = "u32")]
     fn const_slice_cxs_size_rejects_overlong() {
-        let items = vec![Zst; u32::MAX as usize + 1];
-        let holder = ZstSliceHolder { items: &items };
+        let holder = UnitSliceHolder {
+            items: &OVERLONG_UNITS,
+        };
         let _ = holder.const_cxs_size();
     }
 
     #[test]
     #[should_panic(expected = "u32")]
     fn const_slice_txs_write_rejects_overlong() {
-        let items = vec![Zst; u32::MAX as usize + 1];
-        let holder = ZstSliceHolder { items: &items };
+        let holder = UnitSliceHolder {
+            items: &OVERLONG_UNITS,
+        };
         let mut w = xdrs::txs::ConstWriter::<4>::new();
         holder.const_write_txs(&mut w);
     }
@@ -1107,22 +1093,21 @@ mod overlong_length_bound {
     #[test]
     #[should_panic(expected = "u32")]
     fn const_slice_cxs_write_rejects_overlong() {
-        let items = vec![Zst; u32::MAX as usize + 1];
-        let holder = ZstSliceHolder { items: &items };
+        let holder = UnitSliceHolder {
+            items: &OVERLONG_UNITS,
+        };
         let mut w = xdrs::cxs::ConstWriter::<1>::new();
         holder.const_write_cxs(&mut w);
     }
 
-    const OVERLONG: usize = u32::MAX as usize + 1;
-
     #[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]
-    struct ZstArrayHolder {
-        items: [Zst; OVERLONG],
+    struct UnitArrayHolder {
+        items: [(); OVERLONG],
     }
 
-    fn make_overlong_array() -> ZstArrayHolder {
-        ZstArrayHolder {
-            items: [Zst; OVERLONG],
+    fn make_overlong_array() -> UnitArrayHolder {
+        UnitArrayHolder {
+            items: [(); OVERLONG],
         }
     }
 
