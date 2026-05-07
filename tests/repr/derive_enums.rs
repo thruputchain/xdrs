@@ -425,6 +425,38 @@ pub mod empty_variants {
     }
 }
 
+pub mod multi_field_tuple {
+    use super::*;
+
+    #[derive(XDR)]
+    #[repr(i32)]
+    pub enum MultiTuple {
+        Data(u32, u64) = 0,
+        Empty = 1,
+    }
+
+    check_format! { derive_multi_field_tuple
+        MultiTuple::spec()
+        =>
+            "enum MultiTupleType {"
+            "	Data = 0,"
+            "	Empty = 1,"
+            "};"
+            ""
+            "union MultiTuple switch (MultiTupleType which)"
+            "{"
+            "case Data:"
+            "	struct {"
+            "		unsigned int f0;"
+            "		unsigned hyper f1;"
+            "	} data;"
+            "case Empty:"
+            "	void;"
+            "};"
+            ""
+    }
+}
+
 pub mod custom_name {
     use super::*;
 
