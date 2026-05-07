@@ -126,7 +126,30 @@ fn first_field_is_i32(variant: &syn::Variant) -> bool {
         .unwrap_or(false)
 }
 
-pub fn check_variants(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<()> {
+pub fn has_xdr_discrim_type(input: &syn::DeriveInput) -> bool {
+    input.attrs.iter().any(|attr| {
+        if !attr.path().is_ident("xdr") {
+            return false;
+        }
+        let mut found = false;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("discrim_type") {
+                found = true;
+            }
+            if meta.input.peek(syn::Token![=]) {
+                meta.value()?.parse::<syn::Lit>()?;
+            }
+            Ok(())
+        });
+        found
+    })
+}
+
+pub fn check_variants(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    has_discrim_type: bool,
+) -> Result<()> {
     let variants = &item.variants;
     let default_variant = item.variants.iter().find(|v| variant_is_default(v));
 
@@ -134,6 +157,15 @@ pub fn check_variants(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<
     let n_explicit = variants.iter().filter(|v| v.discriminant.is_some()).count();
     let n_default = if default_variant.is_some() { 1 } else { 0 };
     let n_implicit = n_variants - n_explicit - n_default;
+
+    if has_discrim_type && n_implicit > 0 {
+        return err(
+            input,
+            "derive XDR: all payload variants must have explicit discriminants \
+             when `discrim_type` is set \
+             (e.g. `VariantName { ... } = ExternalEnum::VariantName as i32`)",
+        );
+    }
 
     if n_explicit > 0 && n_implicit > 0 {
         err(

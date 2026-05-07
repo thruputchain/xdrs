@@ -135,3 +135,37 @@ fn bad_enum() {
     let expected = &hex!("05");
     CXS::check_codec(&val, expected);
 }
+
+#[cfg(feature = "repr")]
+mod external_discrim {
+    use super::*;
+    use xdrs::xdr_repr::*;
+
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR, xdrs::XDR)]
+    #[repr(i32)]
+    enum Status {
+        Ready = 10,
+        Failed = 11,
+    }
+
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR, xdrs::XDR)]
+    #[xdr(discrim_type = "Status")]
+    #[repr(i32)]
+    enum Message {
+        Ready { value: u32 } = Status::Ready as i32,
+        Failed { code: u32 } = Status::Failed as i32,
+    }
+
+    #[test]
+    fn enum_external_discrim_explicit() {
+        // Status::Ready = 10 = 0x0a, value = 7
+        let ready = Message::Ready { value: 7 };
+        TXS::check_codec(&ready, &hex!("0000000a00000007"));
+        CXS::check_codec(&ready, &hex!("0a07"));
+
+        // Status::Failed = 11 = 0x0b, code = 3
+        let failed = Message::Failed { code: 3 };
+        TXS::check_codec(&failed, &hex!("0000000b00000003"));
+        CXS::check_codec(&failed, &hex!("0b03"));
+    }
+}
