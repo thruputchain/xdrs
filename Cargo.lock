@@ -1055,6 +1055,7 @@ dependencies = [
 name = "xdr-repr"
 version = "0.5.8"
 dependencies = [
+ "heapless",
  "pretty_assertions",
  "serde_json",
  "xdr-common",
