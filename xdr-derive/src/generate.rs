@@ -439,6 +439,8 @@ fn add_read_bounds_for_enum_variants(
     input: &syn::DeriveInput,
     item: &syn::DataEnum,
 ) {
+    // Keep this aligned with read_variant: enum variant fields are read as their
+    // declared types today, while field-level from_type/via attrs are struct-only.
     for variant in &item.variants {
         let is_default = variant_is_default(variant);
 
