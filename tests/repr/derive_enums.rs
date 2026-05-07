@@ -503,3 +503,35 @@ pub mod custom_name {
         ""
     }
 }
+
+pub mod default_tuple_payload {
+    use super::*;
+
+    #[derive(XDR)]
+    #[repr(i32)]
+    pub enum DefaultTuplePayload {
+        Alpha { a: u32 } = 10,
+        Beta = 20,
+        Default(i32, u32),
+    }
+
+    check_format! { derive_default_tuple_payload
+        DefaultTuplePayload::spec()
+        =>
+            "enum DefaultTuplePayloadType {"
+            "	Alpha = 10,"
+            "	Beta = 20,"
+            "};"
+            ""
+            "union DefaultTuplePayload switch (DefaultTuplePayloadType which)"
+            "{"
+            "case Alpha:"
+            "	unsigned int a;"
+            "case Beta:"
+            "	void;"
+            "default:"
+            "	unsigned int default;"
+            "};"
+            ""
+    }
+}
