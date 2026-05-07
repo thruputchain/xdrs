@@ -1,8 +1,9 @@
 use crate::util::*;
 use darling::*;
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::Result;
+use syn::visit::{self, Visit};
 
 #[derive(Clone, Debug, Default, FromDeriveInput, FromField)]
 #[darling(attributes(xdrs), default)]
@@ -321,9 +322,10 @@ fn read_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
 // Target type must impl From<from_type>
 fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<TokenStream> {
     let ty_ident = &input.ident;
-    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
-    let generics = modify_for_reader_impl(input.generics.clone());
-    let (impl_generics, _, _) = generics.split_for_impl();
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let mut generics = modify_for_reader_impl(input.generics.clone());
+    add_read_bound_if_lifetime_dependent(&mut generics, from_type, input);
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
@@ -338,9 +340,10 @@ fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<Tok
 fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
     let ty_ident = &input.ident;
 
-    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
-    let generics = modify_for_reader_impl(input.generics.clone());
-    let (impl_generics, _, _) = generics.split_for_impl();
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let mut generics = modify_for_reader_impl(input.generics.clone());
+    add_read_bounds_for_struct_fields(&mut generics, input, &item.fields)?;
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     let read_fields = read_fields(&item.fields)?;
 
@@ -391,15 +394,131 @@ fn read_field(_index: usize, field: &syn::Field) -> Result<TokenStream> {
     Ok(quote! { #field_spec #field_value })
 }
 
+fn add_read_bound(generics: &mut syn::Generics, ty: &syn::Type) {
+    let where_clause = generics.make_where_clause();
+    where_clause
+        .predicates
+        .push(syn::parse_quote! { #ty: __xdrs::ReadXDR<'_r> });
+}
+
+fn add_read_bound_if_lifetime_dependent(
+    generics: &mut syn::Generics,
+    ty: &syn::Type,
+    input: &syn::DeriveInput,
+) {
+    let lifetimes = generic_lifetime_idents(&input.generics);
+    if !lifetimes.is_empty()
+        && type_contains_lifetime(ty, &lifetimes)
+        && !type_mentions_ident(ty, &input.ident)
+    {
+        add_read_bound(generics, ty);
+    }
+}
+
+fn add_read_bounds_for_struct_fields(
+    generics: &mut syn::Generics,
+    input: &syn::DeriveInput,
+    fields: &syn::Fields,
+) -> Result<()> {
+    for field in fields {
+        let attrs = Attrs::from_field(field)?;
+        attrs.check(field)?;
+
+        if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
+            add_read_bound_if_lifetime_dependent(generics, from_type, input);
+        } else {
+            add_read_bound_if_lifetime_dependent(generics, &field.ty, input);
+        }
+    }
+
+    Ok(())
+}
+
+fn add_read_bounds_for_enum_variants(
+    generics: &mut syn::Generics,
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+) {
+    for variant in &item.variants {
+        let is_default = variant_is_default(variant);
+
+        for (index, field) in variant.fields.iter().enumerate() {
+            if is_default && index == 0 {
+                continue;
+            }
+
+            add_read_bound_if_lifetime_dependent(generics, &field.ty, input);
+        }
+    }
+}
+
+fn generic_lifetime_idents(generics: &syn::Generics) -> Vec<Ident> {
+    generics
+        .lifetimes()
+        .map(|param| param.lifetime.ident.clone())
+        .collect()
+}
+
+fn lifetime_matches_any(lifetime: &syn::Lifetime, lifetimes: &[Ident]) -> bool {
+    lifetimes.iter().any(|ident| lifetime.ident == *ident)
+}
+
+struct LifetimeUse<'a> {
+    lifetimes: &'a [Ident],
+    found: bool,
+}
+
+impl<'ast> Visit<'ast> for LifetimeUse<'_> {
+    fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
+        if lifetime_matches_any(lifetime, self.lifetimes) {
+            self.found = true;
+        }
+    }
+}
+
+fn type_contains_lifetime(ty: &syn::Type, lifetimes: &[Ident]) -> bool {
+    let mut visitor = LifetimeUse {
+        lifetimes,
+        found: false,
+    };
+    visitor.visit_type(ty);
+    visitor.found
+}
+
+struct IdentUse<'a> {
+    ident: &'a Ident,
+    found: bool,
+}
+
+impl<'ast> Visit<'ast> for IdentUse<'_> {
+    fn visit_path_segment(&mut self, segment: &'ast syn::PathSegment) {
+        if segment.ident == *self.ident {
+            self.found = true;
+        }
+
+        visit::visit_path_segment(self, segment);
+    }
+}
+
+fn type_mentions_ident(ty: &syn::Type, ident: &Ident) -> bool {
+    let mut visitor = IdentUse {
+        ident,
+        found: false,
+    };
+    visitor.visit_type(ty);
+    visitor.found
+}
+
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
     let default_variant = find_default_variant(item);
 
     let ty_ident = &input.ident;
-    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
-    let generics = modify_for_reader_impl(input.generics.clone());
-    let (impl_generics, _, _) = generics.split_for_impl();
+    let (_, ty_generics, _) = input.generics.split_for_impl();
+    let mut generics = modify_for_reader_impl(input.generics.clone());
+    add_read_bounds_for_enum_variants(&mut generics, input, item);
+    let (impl_generics, _, where_clause) = generics.split_for_impl();
 
     let read_variants = item
         .variants
