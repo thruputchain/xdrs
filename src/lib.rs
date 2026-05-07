@@ -71,6 +71,9 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(hidden_glob_reexports)]
 
+#[cfg(target_pointer_width = "16")]
+compile_error!("xdrs does not support 16-bit targets");
+
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
