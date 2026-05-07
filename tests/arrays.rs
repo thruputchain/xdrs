@@ -7,6 +7,9 @@ extern crate alloc;
 #[cfg(feature = "alloc")]
 use alloc::{vec, vec::Vec};
 
+#[cfg(feature = "heapless")]
+use xdrs::ReadError;
+
 #[test]
 fn byte_slice() {
     let arr: [u8; 3] = [0, 1, 2];
@@ -73,6 +76,28 @@ fn heapless_vec() {
 
     CXS::check_codec(&v, &hex!("0766726f626f7a7a"));
     TXS::check_codec(&v, &hex!("0000000766726f626f7a7a00"));
+}
+
+#[cfg(feature = "heapless")]
+#[test]
+fn heapless_vec_generic_u32() {
+    let mut v = heapless::Vec::<u32, 4>::new();
+    v.extend_from_slice(&[1, 2, 3]).unwrap();
+
+    CXS::check_codec(&v, &hex!("03010203"));
+    TXS::check_codec(&v, &hex!("00000003000000010000000200000003"));
+}
+
+#[cfg(feature = "heapless")]
+#[test]
+fn heapless_vec_generic_rejects_overlength_decode() {
+    let txs_err =
+        TXS::decode::<heapless::Vec<u32, 2>>(&hex!("00000003000000010000000200000003"))
+            .unwrap_err();
+    assert!(matches!(txs_err, ReadError::MaxLengthExceeded));
+
+    let cxs_err = CXS::decode::<heapless::Vec<u32, 2>>(&hex!("03010203")).unwrap_err();
+    assert!(matches!(cxs_err, ReadError::MaxLengthExceeded));
 }
 
 #[test]
