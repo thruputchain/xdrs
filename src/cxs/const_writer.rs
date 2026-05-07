@@ -73,10 +73,12 @@ impl<const N: usize> ConstWriter<N> {
 
     // -- opaque writes --
 
-    // Callers must ensure bytes.len() <= u32::MAX; only debug-asserted.
     #[doc(hidden)]
     pub const fn write_opaque_fixed(&mut self, bytes: &[u8]) {
-        debug_assert!(bytes.len() <= u32::MAX as usize);
+        assert!(
+            bytes.len() <= u32::MAX as usize,
+            "opaque length exceeds u32::MAX"
+        );
         self.put_bytes(bytes);
     }
 
@@ -332,13 +334,14 @@ const fn size_u8(n: u8) -> usize {
 
 /// Returns the CXS encoded size of fixed-length opaque data (raw bytes, no padding).
 pub const fn size_opaque_fixed(len: usize) -> usize {
-    debug_assert!(len <= u32::MAX as usize);
+    assert!(len <= u32::MAX as usize, "opaque length exceeds u32::MAX");
     len
 }
 
 /// Returns the CXS encoded size of variable-length opaque data
 /// (CXS-encoded u32 length prefix + raw bytes).
 pub const fn size_opaque_variable(len: usize) -> usize {
+    assert!(len <= u32::MAX as usize, "opaque length exceeds u32::MAX");
     size_u32(len as u32) + len
 }
 
