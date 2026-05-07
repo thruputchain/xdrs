@@ -164,6 +164,28 @@ pub mod vec_variable {
     }
 }
 
+#[cfg(feature = "heapless")]
+pub mod heapless_variable {
+    use super::*;
+
+    #[derive(ReadXDR, WriteXDR, XDR)]
+    struct HeaplessPacket {
+        bytes: heapless::Vec<u8, 8>,
+        text: heapless::String<16>,
+        nums: heapless::Vec<u32, 4>,
+    }
+
+    check_format! { derive_heapless_packet
+        HeaplessPacket::def()
+        =>
+            "struct HeaplessPacket {"
+            "\topaque bytes<8>;"
+            "\tstring text<16>;"
+            "\tunsigned int nums<4>;"
+            "};"
+    }
+}
+
 pub mod variable_array_of_variable_array {
     use super::*;
 
