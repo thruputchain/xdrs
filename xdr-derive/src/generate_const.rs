@@ -186,15 +186,42 @@ fn const_size_value_expr(
     }
 
     if is_u8_array(ty) {
-        return Ok(quote! { #mod_path::size_opaque_fixed((#expr_ref).len()) });
+        return Ok(quote! {
+            {
+                let bytes = #expr_ref;
+                assert!(
+                    bytes.len() <= u32::MAX as usize,
+                    "opaque byte length exceeds u32::MAX"
+                );
+                #mod_path::size_opaque_fixed(bytes.len())
+            }
+        });
     }
 
     if is_u8_slice_ref(ty) {
-        return Ok(quote! { #mod_path::size_opaque_variable((*#expr_ref).len()) });
+        return Ok(quote! {
+            {
+                let bytes = *#expr_ref;
+                assert!(
+                    bytes.len() <= u32::MAX as usize,
+                    "opaque byte length exceeds u32::MAX"
+                );
+                #mod_path::size_opaque_variable(bytes.len())
+            }
+        });
     }
 
     if is_str_ref(ty) {
-        return Ok(quote! { #mod_path::size_opaque_variable((*#expr_ref).as_bytes().len()) });
+        return Ok(quote! {
+            {
+                let bytes = (*#expr_ref).as_bytes();
+                assert!(
+                    bytes.len() <= u32::MAX as usize,
+                    "opaque byte length exceeds u32::MAX"
+                );
+                #mod_path::size_opaque_variable(bytes.len())
+            }
+        });
     }
 
     if is_phantom_data(ty) {
@@ -301,15 +328,42 @@ fn const_write_value_expr(
     }
 
     if is_u8_array(ty) {
-        return Ok(quote! { w.write_opaque_fixed(#expr_ref); });
+        return Ok(quote! {
+            {
+                let bytes = #expr_ref;
+                assert!(
+                    bytes.len() <= u32::MAX as usize,
+                    "opaque byte length exceeds u32::MAX"
+                );
+                w.write_opaque_fixed(bytes);
+            }
+        });
     }
 
     if is_u8_slice_ref(ty) {
-        return Ok(quote! { w.write_opaque_variable(*#expr_ref); });
+        return Ok(quote! {
+            {
+                let bytes = *#expr_ref;
+                assert!(
+                    bytes.len() <= u32::MAX as usize,
+                    "opaque byte length exceeds u32::MAX"
+                );
+                w.write_opaque_variable(bytes);
+            }
+        });
     }
 
     if is_str_ref(ty) {
-        return Ok(quote! { w.write_opaque_variable((*#expr_ref).as_bytes()); });
+        return Ok(quote! {
+            {
+                let bytes = (*#expr_ref).as_bytes();
+                assert!(
+                    bytes.len() <= u32::MAX as usize,
+                    "opaque byte length exceeds u32::MAX"
+                );
+                w.write_opaque_variable(bytes);
+            }
+        });
     }
 
     if is_phantom_data(ty) {

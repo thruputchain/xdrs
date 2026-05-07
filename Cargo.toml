@@ -117,6 +117,10 @@ name = "const_writer"
 required-features = ["alloc", "derive"]
 
 [[test]]
+name = "const_opaque_bounds"
+required-features = ["alloc", "derive"]
+
+[[test]]
 name = "borrowed_slices_baseline"
 required-features = ["alloc", "derive"]
 
