@@ -334,8 +334,6 @@ pub mod enum_implicit {
     }
 }
 
-// TODO: unnamed fields
-#[cfg(any())]
 pub mod unnamed_fields {
     use super::*;
 
@@ -351,10 +349,10 @@ pub mod unnamed_fields {
         =>
             "enum UnnamedType {"
             "	Beta = 0,"
-            "   Omega = 1,"
+            "	Omega = 1,"
             "};"
             ""
-            "union Unnamed switch(UnnamedType which)"
+            "union Unnamed switch (UnnamedType which)"
             "{"
             "case Beta:"
             "	int beta;"
