@@ -334,8 +334,6 @@ pub mod enum_implicit {
     }
 }
 
-// TODO: unnamed fields
-#[cfg(any())]
 pub mod unnamed_fields {
     use super::*;
 
@@ -351,10 +349,10 @@ pub mod unnamed_fields {
         =>
             "enum UnnamedType {"
             "	Beta = 0,"
-            "   Omega = 1,"
+            "	Omega = 1,"
             "};"
             ""
-            "union Unnamed switch(UnnamedType which)"
+            "union Unnamed switch (UnnamedType which)"
             "{"
             "case Beta:"
             "	int beta;"
@@ -427,6 +425,38 @@ pub mod empty_variants {
     }
 }
 
+pub mod multi_field_tuple {
+    use super::*;
+
+    #[derive(XDR)]
+    #[repr(i32)]
+    pub enum MultiTuple {
+        Data(u32, u64) = 0,
+        Empty = 1,
+    }
+
+    check_format! { derive_multi_field_tuple
+        MultiTuple::spec()
+        =>
+            "enum MultiTupleType {"
+            "	Data = 0,"
+            "	Empty = 1,"
+            "};"
+            ""
+            "union MultiTuple switch (MultiTupleType which)"
+            "{"
+            "case Data:"
+            "	struct {"
+            "		unsigned int f0;"
+            "		unsigned hyper f1;"
+            "	} data;"
+            "case Empty:"
+            "	void;"
+            "};"
+            ""
+    }
+}
+
 pub mod custom_name {
     use super::*;
 
@@ -471,5 +501,37 @@ pub mod custom_name {
         "	void;"
         "};"
         ""
+    }
+}
+
+pub mod default_tuple_payload {
+    use super::*;
+
+    #[derive(XDR)]
+    #[repr(i32)]
+    pub enum DefaultTuplePayload {
+        Alpha { a: u32 } = 10,
+        Beta = 20,
+        Default(i32, u32),
+    }
+
+    check_format! { derive_default_tuple_payload
+        DefaultTuplePayload::spec()
+        =>
+            "enum DefaultTuplePayloadType {"
+            "	Alpha = 10,"
+            "	Beta = 20,"
+            "};"
+            ""
+            "union DefaultTuplePayload switch (DefaultTuplePayloadType which)"
+            "{"
+            "case Alpha:"
+            "	unsigned int a;"
+            "case Beta:"
+            "	void;"
+            "default:"
+            "	unsigned int default;"
+            "};"
+            ""
     }
 }

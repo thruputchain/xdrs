@@ -343,13 +343,24 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
             }
         }
         syn::Fields::Unnamed(fields_unnamed) => {
-            // Handle empty tuple variants (e.g., Variant())
             if fields_unnamed.unnamed.is_empty() {
                 return quote! { __xdrs::Declaration::Void };
             }
 
-            // TODO: Implement support for tuple variants with fields
-            unimplemented!("Tuple variants with fields are not yet supported");
+            let decls = fields_unnamed.unnamed.iter().enumerate().map(|(i, field)| {
+                let field_ty = &field.ty;
+                let field_name = format!("f{i}");
+                quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) }
+            });
+            if decls.len() == 1 {
+                let field_ty = &fields_unnamed.unnamed[0].ty;
+                quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#variant_name)) }
+            } else {
+                quote! {
+                    __xdrs::declare_type(#variant_name,
+                        __xdrs::struct_type(__xdrs::vec![ #(#decls),* ]))
+                }
+            }
         }
     }
 }
@@ -383,7 +394,32 @@ fn default_variant_payload_decl(variant: &syn::Variant) -> TokenStream {
                 }
             }
         }
-        syn::Fields::Unnamed(_) | syn::Fields::Unit => {
+        syn::Fields::Unnamed(fields_unnamed) => {
+            let payload_fields: Vec<_> = fields_unnamed.unnamed.iter().skip(1).collect();
+            if payload_fields.is_empty() {
+                return quote! { __xdrs::declare_void() };
+            }
+            let variant_name = variant.ident.to_string().to_lowercase();
+            let decls: Vec<_> = payload_fields
+                .iter()
+                .enumerate()
+                .map(|(i, field)| {
+                    let field_ty = &field.ty;
+                    let field_name = format!("f{i}");
+                    quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) }
+                })
+                .collect();
+            if decls.len() == 1 {
+                let field_ty = &payload_fields[0].ty;
+                quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#variant_name)) }
+            } else {
+                quote! {
+                    __xdrs::declare_type(#variant_name,
+                        __xdrs::struct_type(__xdrs::vec![ #(#decls),* ]))
+                }
+            }
+        }
+        syn::Fields::Unit => {
             quote! { __xdrs::declare_void() }
         }
     }
