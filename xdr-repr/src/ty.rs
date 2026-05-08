@@ -543,6 +543,18 @@ const _: () = {
             BytesM::<MAX>::type_spec()
         }
     }
+
+    impl<T: HasTypeSpec> Declare for Box<Option<T>> {
+        fn declare(name: Ident) -> Declaration {
+            <Option<T>>::declare(name)
+        }
+    }
+
+    impl<T: HasTypeSpec> HasTypeSpec for Box<Option<T>> {
+        fn type_spec() -> TypeSpec {
+            <Option<T>>::type_spec()
+        }
+    }
 };
 
 #[cfg(feature = "heapless")]
