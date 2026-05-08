@@ -1,6 +1,6 @@
 use crate::read_xdr::ReadXDR;
 use crate::serialize::reader::{ReadError, ReadResult, Reader};
-use crate::serialize::writer::{WriteError, WriteResult, Writer};
+use crate::serialize::writer::{WriteResult, Writer};
 use crate::valid_u32::*;
 use crate::write_xdr::WriteXDR;
 
@@ -24,10 +24,6 @@ impl<'r, const N: usize> ReadXDR<'r> for Vec<u8, N> {
 impl<const N: usize> WriteXDR for Vec<u8, N> {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         let () = ValidU32::<N>::OK;
-
-        if self.len() > N {
-            return Err(WriteError::InvalidArrayLength);
-        }
 
         w.write_opaque_variable(self.as_slice())
     }
@@ -62,10 +58,6 @@ where
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         let () = ValidU32::<N>::OK;
 
-        if self.len() > N {
-            return Err(WriteError::InvalidArrayLength);
-        }
-
         w.write_u32(self.len() as u32)?;
         for elt in self {
             elt.write_xdr(w)?;
@@ -92,10 +84,6 @@ impl<'r, const N: usize> ReadXDR<'r> for String<N> {
 impl<const N: usize> WriteXDR for String<N> {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         let () = ValidU32::<N>::OK;
-
-        if self.len() > N {
-            return Err(WriteError::InvalidArrayLength);
-        }
 
         w.write_opaque_variable(self.as_bytes())
     }

@@ -295,6 +295,15 @@ fn empty_heapless_vec() {
 
 #[cfg(feature = "heapless")]
 #[test]
+fn empty_heapless_generic_vec() {
+    let v = heapless::Vec::<u32, 4>::new();
+
+    CXS::check_codec(&v, &hex!("00"));
+    TXS::check_codec(&v, &hex!("00000000"));
+}
+
+#[cfg(feature = "heapless")]
+#[test]
 fn empty_heapless_string() {
     let s = heapless::String::<10>::new();
 
