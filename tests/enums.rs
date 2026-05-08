@@ -137,6 +137,44 @@ fn bad_enum() {
 }
 
 #[cfg(feature = "repr")]
+#[test]
+fn enum_variant_field_via() {
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    struct Wrapper(u32);
+
+    impl From<u32> for Wrapper {
+        fn from(n: u32) -> Self {
+            Self(n)
+        }
+    }
+
+    impl From<Wrapper> for u32 {
+        fn from(w: Wrapper) -> Self {
+            w.0
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum WithVia {
+        A(#[xdrs(via = "u32")] Wrapper),
+        B {
+            #[xdrs(via = "u32")]
+            val: Wrapper,
+        },
+    }
+
+    let a = WithVia::A(Wrapper(5));
+    // discriminant 0 + payload 5
+    CXS::check_codec(&a, &hex!("0005"));
+    TXS::check_codec(&a, &hex!("0000000000000005"));
+
+    let b = WithVia::B { val: Wrapper(9) };
+    // discriminant 1 + payload 9
+    CXS::check_codec(&b, &hex!("0109"));
+    TXS::check_codec(&b, &hex!("0000000100000009"));
+}
+
 mod external_discrim {
     use super::*;
     use xdrs::xdr_repr::*;

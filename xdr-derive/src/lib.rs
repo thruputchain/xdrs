@@ -256,11 +256,36 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///
 /// # Limitations
 ///
-/// - Does not support `#[xdrs(into_type)]` or `#[xdrs(via)]` attributes
+/// - Does not support `#[xdrs(into_type)]` or `#[xdrs(via)]` attributes on the
+///   derive input, struct fields, or enum variant fields. The `via`/`into_type`
+///   conversions require `Into::into()` which is not `const fn`.
 /// - Supports lifetime and const generics, but not type parameters
 /// - Field types may use recursive concrete shapes inline, including `Option<T>`,
 ///   `Result<T, E>`, `&[T]`, `[T; N]`, and tuples, as long as leaf types are
 ///   concrete and const-encodable
+///
+/// # Generated code hygiene
+///
+/// The generated `const fn` methods are syntax-directed: type recognition uses
+/// raw identifiers rather than Rust's resolved types, and generated code emits
+/// unqualified names into the call site scope. This means:
+///
+/// - **Use bare primitive names.** `u32` is recognized; `core::primitive::u32`
+///   is not and will be treated as a named leaf type.
+/// - **Do not shadow built-in types.** A local `type u8 = MyType;` will cause
+///   the opaque byte fast-path to misfire. Similarly, shadowing `str` will
+///   confuse string detection.
+/// - Length guards use `::core::assert!()` to resist call-site macro shadowing.
+/// - **Do not use `__N`-prefixed names in discriminant expressions.** The
+///   generated methods introduce a buffer-size const generic with an
+///   `__N`-prefixed name; discriminant expressions referencing a same-named
+///   constant will resolve to the wrong binding.
+/// - **Avoid naming const generics `i`, `arr`, `slice`, or `total`.** The
+///   generated array/slice iteration uses these as local bindings, and Rust
+///   does not allow a `let` binding to shadow an in-scope const parameter.
+/// - **Avoid naming modules `cxs` or `txs` in discriminant paths.** The
+///   generated const block imports `use xdrs::cxs; use xdrs::txs;`, which can
+///   capture discriminant expressions whose paths start with those segments.
 ///
 /// # Standard library type recognition
 ///
