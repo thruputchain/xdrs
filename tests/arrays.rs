@@ -91,9 +91,8 @@ fn heapless_vec_generic_u32() {
 #[cfg(feature = "heapless")]
 #[test]
 fn heapless_vec_generic_rejects_overlength_decode() {
-    let txs_err =
-        TXS::decode::<heapless::Vec<u32, 2>>(&hex!("00000003000000010000000200000003"))
-            .unwrap_err();
+    let txs_err = TXS::decode::<heapless::Vec<u32, 2>>(&hex!("00000003000000010000000200000003"))
+        .unwrap_err();
     assert!(matches!(txs_err, ReadError::MaxLengthExceeded));
 
     let cxs_err = CXS::decode::<heapless::Vec<u32, 2>>(&hex!("03010203")).unwrap_err();

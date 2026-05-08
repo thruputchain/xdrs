@@ -82,7 +82,8 @@ impl<'r, const N: usize> ReadXDR<'r> for String<N> {
         let slice = str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)?;
 
         let mut s = String::new();
-        s.push_str(slice).map_err(|_| ReadError::MaxLengthExceeded)?;
+        s.push_str(slice)
+            .map_err(|_| ReadError::MaxLengthExceeded)?;
 
         Ok(s)
     }
