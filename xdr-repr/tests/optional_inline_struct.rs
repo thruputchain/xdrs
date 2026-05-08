@@ -16,8 +16,7 @@ fn option_tuple_emits_inline_struct_pointer() {
     let decl = <Option<(u32, i32)>>::declare(ident("pair"));
     let formatted = decl.to_string();
     assert_eq!(
-        formatted,
-        "struct {\n\tunsigned int unnamed_0;\n\tint unnamed_1;\n} *pair",
+        formatted, "struct {\n\tunsigned int unnamed_0;\n\tint unnamed_1;\n} *pair",
         "Option<(u32, i32)> should emit inline struct in pointer position (valid RFC 4506)"
     );
 }
