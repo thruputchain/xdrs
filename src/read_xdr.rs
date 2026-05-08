@@ -4,6 +4,27 @@
 //! converting [XDR][RFC-4506]-encoded data (as defined in RFC 4506)
 //! into Rust values.
 //!
+//! # Stack usage
+//!
+//! Decoding does not enforce a recursion depth limit. Types that are
+//! recursive through a heap-allocated container (e.g.
+//! `Vec<Node>` where `Node` contains another `Vec<Node>`) will
+//! recurse once per nesting level in the input, and a sufficiently
+//! deep input can exhaust the call stack.
+//!
+//! Similarly, decoding a large fixed-size array `[T; N]` or a
+//! `heapless::Vec<T, N>` with a large `N` requires corresponding
+//! stack space, because those types are stack-allocated by
+//! definition.
+//!
+//! The recommended approach for untrusted input is to define types
+//! with static nesting depth (e.g. a fixed chain of structs instead
+//! of a recursive `Vec<Node>`) so that stack usage is bounded at
+//! compile time. When recursive types are unavoidable, callers
+//! should apply their own resource limits (e.g. capping input length
+//! or running the decoder on a thread with a sized stack) rather
+//! than relying on the decoder to bound stack usage.
+//!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 use crate::mu;
