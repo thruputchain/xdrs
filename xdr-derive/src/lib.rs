@@ -105,9 +105,12 @@
 //! - `#[xdrs(from_type = "Type")]` - Deserialize to the intermediate type
 //!   "Type" before converting into the target type via `Into`.
 //! - `#[xdrs(via = "Type")]` - Same as above.
-//! - The lifetime name `'_r` is reserved for the generated reader lifetime.
-//!   Types deriving `ReadXDR` must not declare their own generic lifetime with
-//!   that name.
+//!
+//! ### ReadXDR Notes
+//!
+//! The lifetime name `'_r` is reserved for the generated reader lifetime. Types
+//! deriving `ReadXDR` must not declare their own generic lifetime with that
+//! name.
 //!
 //! When deriving `WriteXDR`:
 //!
