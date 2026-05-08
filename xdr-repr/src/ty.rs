@@ -545,6 +545,120 @@ const _: () = {
     }
 };
 
+#[cfg(feature = "heapless")]
+const _: () = {
+    use heapless::{String, Vec};
+
+    fn heapless_max_value<const N: usize>() -> Value {
+        const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
+        Value::Const(Constant::Unsigned(N as u32))
+    }
+
+    impl<const N: usize> HasTypeSpec for Vec<u8, N> {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::VariableOpaque {
+                name: ident("unnamed_0"),
+                max: heapless_max_value::<N>(),
+            }]))
+        }
+    }
+
+    impl<const N: usize> Declare for Vec<u8, N> {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::VariableOpaque {
+                name,
+                max: heapless_max_value::<N>(),
+            }
+        }
+    }
+
+    impl<const N: usize> Declare for &Vec<u8, N> {
+        fn declare(name: Ident) -> Declaration {
+            Vec::<u8, N>::declare(name)
+        }
+    }
+
+    impl<const N: usize> Declare for &mut Vec<u8, N> {
+        fn declare(name: Ident) -> Declaration {
+            Vec::<u8, N>::declare(name)
+        }
+    }
+
+    impl<T, const N: usize> HasTypeSpec for Vec<T, N>
+    where
+        T: HasTypeSpec,
+    {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::VariableArray {
+                name: ident("unnamed_0"),
+                elt_ty: T::type_spec(),
+                max: heapless_max_value::<N>(),
+            }]))
+        }
+    }
+
+    impl<T, const N: usize> Declare for Vec<T, N>
+    where
+        T: HasTypeSpec,
+    {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::VariableArray {
+                name,
+                elt_ty: T::type_spec(),
+                max: heapless_max_value::<N>(),
+            }
+        }
+    }
+
+    impl<T, const N: usize> Declare for &Vec<T, N>
+    where
+        T: HasTypeSpec,
+    {
+        fn declare(name: Ident) -> Declaration {
+            Vec::<T, N>::declare(name)
+        }
+    }
+
+    impl<T, const N: usize> Declare for &mut Vec<T, N>
+    where
+        T: HasTypeSpec,
+    {
+        fn declare(name: Ident) -> Declaration {
+            Vec::<T, N>::declare(name)
+        }
+    }
+
+    impl<const N: usize> HasTypeSpec for String<N> {
+        fn type_spec() -> TypeSpec {
+            TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::String {
+                name: ident("unnamed_0"),
+                max: heapless_max_value::<N>(),
+            }]))
+        }
+    }
+
+    impl<const N: usize> Declare for String<N> {
+        fn declare(name: Ident) -> Declaration {
+            Declaration::String {
+                name,
+                max: heapless_max_value::<N>(),
+            }
+        }
+    }
+
+    impl<const N: usize> Declare for &String<N> {
+        fn declare(name: Ident) -> Declaration {
+            String::<N>::declare(name)
+        }
+    }
+
+    impl<const N: usize> Declare for &mut String<N> {
+        fn declare(name: Ident) -> Declaration {
+            String::<N>::declare(name)
+        }
+    }
+};
+
 const _: () = {
     use alloc::vec::Vec;
 

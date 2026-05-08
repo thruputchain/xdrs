@@ -18,6 +18,7 @@ doctest = true
 [dependencies]
 xdr-derive = { workspace = true, optional = true }
 xdr-common = { workspace = true }
+heapless = { workspace = true, optional = true }
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -25,6 +26,7 @@ unsafe_code = "forbid"
 [features]
 default = []
 derive = ["dep:xdr-derive"] # derive the XDR trait
+heapless = ["dep:heapless"] # schema traits for types from the `heapless` package
 ns = [] # C++-like namespaces for XDR specs
 int128 = []
 

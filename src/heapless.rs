@@ -14,9 +14,8 @@ impl<'r, const N: usize> ReadXDR<'r> for Vec<u8, N> {
         let bytes = r.read_opaque_variable(N as u32)?;
 
         let mut s = Vec::new();
-        // Cannot fail: read_opaque_variable(N) returns at most N bytes,
-        // which is exactly the capacity of Vec<u8, N>.
-        s.extend_from_slice(bytes).unwrap();
+        s.extend_from_slice(bytes)
+            .map_err(|_| ReadError::MaxLengthExceeded)?;
 
         Ok(s)
     }
@@ -24,9 +23,46 @@ impl<'r, const N: usize> ReadXDR<'r> for Vec<u8, N> {
 
 impl<const N: usize> WriteXDR for Vec<u8, N> {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
-        let s = self.as_slice();
+        let () = ValidU32::<N>::OK;
 
-        s.write_xdr(w)
+        w.write_opaque_variable(self.as_slice())
+    }
+}
+
+impl<'r, T, const N: usize> ReadXDR<'r> for Vec<T, N>
+where
+    T: ReadXDR<'r>,
+{
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+        let () = ValidU32::<N>::OK;
+
+        let len = r.read_u32()? as usize;
+        if len > N {
+            return Err(ReadError::MaxLengthExceeded);
+        }
+
+        let mut vec = Vec::new();
+        for _ in 0..len {
+            vec.push(<T as ReadXDR>::read_xdr(r)?)
+                .map_err(|_| ReadError::MaxLengthExceeded)?;
+        }
+
+        Ok(vec)
+    }
+}
+
+impl<T, const N: usize> WriteXDR for Vec<T, N>
+where
+    T: WriteXDR,
+{
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+        let () = ValidU32::<N>::OK;
+
+        w.write_u32(self.len() as u32)?;
+        for elt in self {
+            elt.write_xdr(w)?;
+        }
+        Ok(())
     }
 }
 
@@ -38,9 +74,8 @@ impl<'r, const N: usize> ReadXDR<'r> for String<N> {
         let slice = str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)?;
 
         let mut s = String::new();
-        // Cannot fail: read_opaque_variable(N) returns at most N bytes,
-        // which is exactly the capacity of String<N>.
-        s.push_str(slice).unwrap();
+        s.push_str(slice)
+            .map_err(|_| ReadError::MaxLengthExceeded)?;
 
         Ok(s)
     }
@@ -48,8 +83,8 @@ impl<'r, const N: usize> ReadXDR<'r> for String<N> {
 
 impl<const N: usize> WriteXDR for String<N> {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
-        let s = self.as_str();
+        let () = ValidU32::<N>::OK;
 
-        s.write_xdr(w)
+        w.write_opaque_variable(self.as_bytes())
     }
 }

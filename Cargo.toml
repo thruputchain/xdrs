@@ -79,7 +79,7 @@ schemars = ["xdr-common/schemars"] # schemars JsonSchema support for xdr-common 
 # Enable optional dependencies
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
 repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
-heapless = ["dep:heapless"] # serialization for types from the `heapless` package
+heapless = ["dep:heapless", "xdr-repr?/heapless"] # serialization and schema support for types from the `heapless` package
 
 # Enable optional features of related dependencies
 ns = ["xdr-repr?/ns"]
