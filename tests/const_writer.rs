@@ -1,5 +1,5 @@
 //! Tests that const writers produce the same output as runtime encoders.
-#![allow(dead_code, unused_imports)]
+#![allow(dead_code, unused_imports, unused_parens)]
 
 /// Helper: runtime-encode a value with CXS, return the bytes.
 fn cxs_runtime_encode<T: xdrs::WriteXDR>(val: &T) -> Vec<u8> {
@@ -490,6 +490,59 @@ fn derive_recursive_concrete_shapes() {
     assert_eq!(
         RECURSIVE.const_cxs_size(),
         cxs_runtime_encode(&RECURSIVE).len()
+    );
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct ParenthesizedShapes<'a> {
+    count: (u32),
+    tag: [(u8); 4],
+    label: (&'a str),
+    bytes: (&'a [(u8)]),
+    maybe: Option<(u32)>,
+    choice: Result<(Leaf), (Leaf)>,
+    pair: ((Leaf, (u32))),
+}
+
+const PARENTHESIZED: ParenthesizedShapes<'static> = ParenthesizedShapes {
+    count: 7,
+    tag: *b"XRAY",
+    label: "ok",
+    bytes: &[0x10, 0x20, 0x30],
+    maybe: Some(9),
+    choice: Ok(LEAF_A),
+    pair: (LEAF_B, 11),
+};
+
+const PARENTHESIZED_TXS: [u8; PARENTHESIZED.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ PARENTHESIZED.const_txs_size() }>::new();
+    PARENTHESIZED.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const PARENTHESIZED_CXS: [u8; PARENTHESIZED.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ PARENTHESIZED.const_cxs_size() }>::new();
+    PARENTHESIZED.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn parenthesized_type_forms_const_match_runtime() {
+    assert_eq!(
+        &PARENTHESIZED_TXS,
+        txs_runtime_encode(&PARENTHESIZED).as_slice()
+    );
+    assert_eq!(
+        &PARENTHESIZED_CXS,
+        cxs_runtime_encode(&PARENTHESIZED).as_slice()
+    );
+    assert_eq!(
+        PARENTHESIZED.const_txs_size(),
+        txs_runtime_encode(&PARENTHESIZED).len()
+    );
+    assert_eq!(
+        PARENTHESIZED.const_cxs_size(),
+        cxs_runtime_encode(&PARENTHESIZED).len()
     );
 }
 
