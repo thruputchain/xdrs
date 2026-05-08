@@ -19,6 +19,11 @@ fn const_wire_bits(c: &Constant) -> u32 {
 
 /// Creates an identifier from a string.
 ///
+/// Validates that `s` conforms to the ASCII identifier shape required by
+/// RFC 4506 but does **not** reject reserved keywords (see
+/// [`validate_xdr_identifier`](crate::xdr::validate_xdr_identifier) for the
+/// full list).  Callers are responsible for avoiding reserved words.
+///
 /// # Panics
 ///
 /// Panics if `s` is not a valid XDR identifier (ASCII letters, digits,
@@ -216,6 +221,15 @@ pub fn enum_def(name: &str, variants: Vec<(Ident, Value)>) -> TypeDef {
 /// the same underlying constant (e.g. `case ZERO:` vs `case 0:` when
 /// `const ZERO = 0`).  Callers that mix symbolic and literal case values in
 /// the same union should verify uniqueness externally.
+///
+/// # Payload name caveat
+///
+/// This function does **not** validate that payload declaration names are
+/// unique across case arms and the default arm.  If two arms carry a
+/// payload field with the same name (e.g., both called `value`), the
+/// resulting XDR-IDL contains duplicate member names in the union body,
+/// which downstream XDR compilers may reject.  Callers should ensure
+/// payload names are distinct.
 pub fn union_def(
     name: &str,
     discrim_name: &str,
