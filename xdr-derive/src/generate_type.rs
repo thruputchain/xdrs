@@ -92,6 +92,21 @@ fn from_input(input: &syn::DeriveInput) -> Result<TokenStream> {
     }
 }
 
+fn named_type_reference_methods(ty_name: String) -> TokenStream {
+    quote! {
+        fn type_ident() -> __xdrs::Ident {
+            __xdrs::ident(#ty_name)
+        }
+
+        fn named_declaration(name: __xdrs::Ident) -> __xdrs::Declaration {
+            __xdrs::Declaration::Named {
+                name,
+                ty: __xdrs::TypeSpec::Ident(__xdrs::ident(#ty_name)),
+            }
+        }
+    }
+}
+
 fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
     // Structs with no fields are allowed per RFC4506:
     // ```
@@ -108,6 +123,7 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     // The XDR struct has the same name as the rust type, unless the attrs override that
     let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let type_reference_methods = named_type_reference_methods(ty_name.clone());
     let declare_fields = if item.fields.is_empty() {
         vec![quote! { __xdrs::declare_void() }]
     } else {
@@ -129,6 +145,8 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
             fn type_def() -> __xdrs::TypeDef {
                 #struct_typedef
             }
+
+            #type_reference_methods
         }
     })
 }
@@ -153,6 +171,8 @@ fn from_enum_fieldless(
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
+    let type_reference_methods = named_type_reference_methods(ty_name.clone());
 
     let enum_typedef = enum_typedef(input, item, attrs)?;
 
@@ -162,6 +182,8 @@ fn from_enum_fieldless(
             fn type_def() -> __xdrs::TypeDef {
                 #enum_typedef
             }
+
+            #type_reference_methods
         }
     })
 }
@@ -173,6 +195,8 @@ fn from_enum_with_fields(
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
+    let type_reference_methods = named_type_reference_methods(ty_name.clone());
 
     let mut impls = vec![];
 
@@ -183,6 +207,8 @@ fn from_enum_with_fields(
             fn type_def() -> __xdrs::TypeDef {
                 #union_typedef
             }
+
+            #type_reference_methods
         }
     });
 

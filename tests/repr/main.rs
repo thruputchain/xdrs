@@ -4,3 +4,4 @@ pub mod derive_floats;
 pub mod derive_refs;
 pub mod derive_results;
 pub mod derive_structs;
+pub mod recursive_schemas;
