@@ -790,22 +790,14 @@ const _: () = {
     }
 };
 
-impl HasTypeDef for () {
-    fn type_def() -> TypeDef {
-        TypeDef::Def(Declaration::Void)
-    }
-
-    fn named_declaration(_name: Ident) -> Declaration {
+impl Declare for () {
+    fn declare(_name: Ident) -> Declaration {
         Declaration::Void
     }
 }
 
-impl<T> HasTypeDef for core::marker::PhantomData<T> {
-    fn type_def() -> TypeDef {
-        TypeDef::Def(Declaration::Void)
-    }
-
-    fn named_declaration(_name: Ident) -> Declaration {
+impl<T> Declare for core::marker::PhantomData<T> {
+    fn declare(_name: Ident) -> Declaration {
         Declaration::Void
     }
 }
