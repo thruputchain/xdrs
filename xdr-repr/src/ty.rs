@@ -262,6 +262,30 @@ impl<const N: usize> HasTypeSpec for [u8; N] {
     }
 }
 
+impl<const N: usize> Declare for &[u8; N] {
+    fn declare(name: Ident) -> Declaration {
+        <[u8; N]>::declare(name)
+    }
+}
+
+impl<const N: usize> HasTypeSpec for &[u8; N] {
+    fn type_spec() -> TypeSpec {
+        <[u8; N]>::type_spec()
+    }
+}
+
+impl<const N: usize> Declare for &mut [u8; N] {
+    fn declare(name: Ident) -> Declaration {
+        <[u8; N]>::declare(name)
+    }
+}
+
+impl<const N: usize> HasTypeSpec for &mut [u8; N] {
+    fn type_spec() -> TypeSpec {
+        <[u8; N]>::type_spec()
+    }
+}
+
 impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
     fn declare(name: Ident) -> Declaration {
         const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
