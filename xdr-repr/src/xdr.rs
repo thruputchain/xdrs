@@ -28,6 +28,23 @@ pub struct Namespace {
 ///
 /// A specification contains a list of definitions (types and constants)
 /// that together form a complete XDR specification document.
+///
+/// # RFC 4506 namespace rules
+///
+/// RFC 4506 section 6.1 defines a single flat namespace for all identifiers in
+/// a specification: type names, constant names, and enum member names all share
+/// the same scope.  This crate does **not** enforce cross-definition uniqueness
+/// at construction time.  It is the caller's responsibility to ensure that:
+///
+/// - No two top-level definitions use the same name.
+/// - Enum member names do not collide with type names or constant names.
+/// - Enum member names are unique across *all* enums in the specification,
+///   not just within a single enum (see also [`EnumBody`]).
+/// - [`TypeSpec::Ident`] references do not collide with constant names in the
+///   same specification.
+///
+/// Violating these rules produces XDR-IDL text that is ambiguous or rejected by
+/// downstream XDR compilers and code generators.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Specification {
     /// The list of definitions in this specification.
@@ -78,6 +95,22 @@ pub struct ConstDef {
 /// An identifier (name) in XDR.
 ///
 /// Identifiers are used for type names, field names, constant names, etc.
+///
+/// # Constructing identifiers
+///
+/// Use the [`ident`](crate::ident) constructor function, which validates that
+/// the string conforms to RFC 4506 (ASCII letters, digits, and underscores;
+/// must start with a letter or underscore).
+///
+/// The inner field is public for pattern-matching convenience, but constructing
+/// an `Ident` directly (e.g. `Ident(s.into())`) **bypasses validation** and may
+/// produce malformed XDR-IDL output.  Prefer [`ident`](crate::ident) for safe
+/// construction.
+///
+/// When using the `#[derive(HasTypeDef)]` macro, Rust identifiers are passed
+/// through [`ident`](crate::ident) at schema-generation time.  Non-ASCII Rust
+/// identifiers (enabled by `#![feature(non_ascii_idents)]`) will panic at
+/// runtime; ensure all type and variant names are pure ASCII.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident(pub String);
 
@@ -106,6 +139,22 @@ impl StructBody {
 /// The body of an enum type definition.
 ///
 /// Contains pairs of identifier names and their associated values.
+///
+/// # Namespace uniqueness
+///
+/// RFC 4506 places enum member names in the same flat namespace as type names
+/// and constant names.  This means:
+///
+/// - Member names must be unique **across all enums** in a
+///   [`Specification`], not just within this body.
+/// - Member names must not collide with any type name or constant name in
+///   the same specification.
+///
+/// These constraints are **not** enforced at construction time.  Violating them
+/// produces XDR-IDL that is ambiguous or rejected by downstream tools.
+///
+/// XDR enum values are signed 32-bit integers.  The [`enum_def`](crate::enum_def)
+/// constructor panics if any [`Constant::Unsigned`] value exceeds `i32::MAX`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnumBody(pub Vec<(Ident, Value)>);
 
@@ -241,6 +290,15 @@ impl TypeJsonRepr {
 ///
 /// Note: Leading underscores are allowed as an extension for Rust compatibility,
 /// though strict RFC 4506 requires starting with a letter.
+///
+/// # Derive macros and non-ASCII identifiers
+///
+/// The `#[derive(HasTypeDef)]` macro passes Rust type and variant names through
+/// [`ident`](crate::ident) (which calls this function) at schema-generation
+/// time, not at compile time.  Rust identifiers containing non-ASCII characters
+/// (enabled by `#![feature(non_ascii_idents)]`) will compile successfully but
+/// **panic at runtime** when the generated `type_def()` or `spec()` method is
+/// first called.
 ///
 /// # Panics
 ///
@@ -572,6 +630,10 @@ pub enum TypeSpec {
     /// Inline union type definition.
     Union(Box<UnionBody>),
     /// Reference to a named type.
+    ///
+    /// RFC 4506 shares a single namespace for type names, constant names, and
+    /// enum member names.  Ensure the identifier used here does not collide
+    /// with a constant or enum member name in the same [`Specification`].
     Ident(Ident),
 }
 
