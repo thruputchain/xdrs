@@ -99,8 +99,10 @@ fn write_into_type(input: &syn::DeriveInput, into_type: &syn::Type) -> TokenStre
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
-                let into_val: #into_type = ::core::convert::Into::into(::core::clone::Clone::clone(self));
-                <#into_type as __xdrs::WriteXDR>::write_xdr(&into_val, w)
+                <#into_type as __xdrs::WriteXDR>::write_xdr(
+                    &::core::convert::Into::into(::core::clone::Clone::clone(self)),
+                    w,
+                )
             }
         }
     }
@@ -616,9 +618,7 @@ fn read_variant(
     Ok(quote! {
         #var_match => {
             #(#read_fields)*
-            let value = #ty_ident::#var_ident #init_fields;
-
-            Ok(value)
+            Ok(#ty_ident::#var_ident #init_fields)
         }
     })
 }
