@@ -99,8 +99,8 @@ fn write_into_type(input: &syn::DeriveInput, into_type: &syn::Type) -> TokenStre
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
-                let into_val: #into_type = self.clone().into();
-                into_val.write_xdr(w)
+                let into_val: #into_type = ::core::convert::Into::into(::core::clone::Clone::clone(self));
+                <#into_type as __xdrs::WriteXDR>::write_xdr(&into_val, w)
             }
         }
     }
@@ -133,9 +133,8 @@ fn write_field(index: usize, field: &syn::Field) -> Result<TokenStream> {
     attrs.check(field)?;
 
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
-        // field type must impl Clone and Into<into_type>
         Ok(quote! {
-            let v: #into_type = self.#fa.clone().into();
+            let v: #into_type = ::core::convert::Into::into(::core::clone::Clone::clone(&self.#fa));
             <#into_type as __xdrs::WriteXDR>::write_xdr(&v, w)?;
         })
     } else {
@@ -257,7 +256,7 @@ fn write_binding(index: usize, field: &syn::Field) -> Result<TokenStream> {
 
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
         Ok(quote! {
-            let v: #into_type = #bind.clone().into();
+            let v: #into_type = ::core::convert::Into::into(::core::clone::Clone::clone(#bind));
             <#into_type as __xdrs::WriteXDR>::write_xdr(&v, __write_xdr_writer)?;
         })
     } else {
@@ -345,7 +344,7 @@ fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<Tok
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let from_val: #from_type = __xdrs::read_xdr(r)?;
-                Ok(from_val.into())
+                Ok(::core::convert::Into::into(from_val))
             }
         }
     })
@@ -397,7 +396,7 @@ fn read_field(_index: usize, field: &syn::Field) -> Result<TokenStream> {
     let field_value = if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
         quote! { {
             let from_value: #from_type = __xdrs::read_xdr(r)?;
-            from_value.into()
+            ::core::convert::Into::into(from_value)
         } }
     } else {
         quote! {

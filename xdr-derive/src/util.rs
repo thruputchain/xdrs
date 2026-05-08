@@ -91,6 +91,14 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
     v.fields.is_empty()
 }
 
+/// A variant named `Default` with no explicit discriminant is the XDR
+/// union default arm.  Its first `i32` field stores the wire discriminant.
+///
+/// The writer emits the stored `i32` verbatim and does **not** check
+/// whether it collides with a concrete variant's discriminant.  If a
+/// `Default(d, ..)` is encoded where `d` matches a concrete arm, the
+/// reader will decode it as that concrete variant — not as `Default`.
+/// Callers are responsible for avoiding this overlap.
 pub fn variant_is_default(v: &syn::Variant) -> bool {
     v.discriminant.is_none()
         // TODO: use #[xdrs(default)]

@@ -155,6 +155,11 @@ use proc_macro::TokenStream;
 ///   parameters. For example, `#[xdrs(into_type = "VecM<T, 8>")]` on a generic
 ///   `Wrapper<T>` will not automatically add `T: WriteXDR`; you must supply the
 ///   bound yourself.
+/// - **Default variant discriminant is not validated.** When a `Default(i32, ..)`
+///   variant is encoded, the writer emits the stored discriminant without
+///   checking whether it collides with a concrete variant. Encoding a `Default`
+///   with a known discriminant value will produce bytes that the reader decodes
+///   as the concrete variant, not as `Default`.
 ///
 #[proc_macro_derive(WriteXDR, attributes(xdrs))]
 pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
