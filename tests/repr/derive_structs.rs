@@ -357,4 +357,17 @@ pub mod boxed_fields {
             "	Inner *maybe;"
             "};"
     }
+
+    #[derive(XDR)]
+    pub struct BoxedOptionPrimitive {
+        pub maybe: Box<Option<u32>>,
+    }
+
+    check_format! { boxed_option_primitive
+        BoxedOptionPrimitive::def()
+        =>
+            "struct BoxedOptionPrimitive {"
+            "	unsigned int *maybe;"
+            "};"
+    }
 }

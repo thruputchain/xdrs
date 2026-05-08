@@ -291,6 +291,21 @@ impl TypeJsonRepr {
 /// Note: Leading underscores are allowed as an extension for Rust compatibility,
 /// though strict RFC 4506 requires starting with a letter.
 ///
+/// # Reserved keywords
+///
+/// This function does **not** reject RFC 4506 reserved keywords.  The following
+/// identifiers are reserved by the XDR language grammar (RFC 4506 §6.3) and
+/// must not be used as type names, field names, or constant names:
+///
+/// `bool`, `case`, `const`, `default`, `double`, `enum`, `float`, `hyper`,
+/// `int`, `opaque`, `program`, `string`, `struct`, `switch`, `typedef`,
+/// `union`, `unsigned`, `version`, `void`.
+///
+/// Callers — including the `#[derive(XDR)]` macro, which lowercases Rust
+/// variant names to produce union payload wrapper identifiers — are
+/// responsible for ensuring generated identifiers do not collide with
+/// reserved keywords.
+///
 /// # Derive macros and non-ASCII identifiers
 ///
 /// The `#[derive(HasTypeDef)]` macro passes Rust type and variant names through

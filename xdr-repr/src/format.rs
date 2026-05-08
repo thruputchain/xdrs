@@ -246,6 +246,10 @@ impl Format for Declaration {
                 }
                 f.write_str(">");
             }
+            // RFC 4506 allows any type-specifier before `*name`, including
+            // inline struct-body.  Types like Vec<u8> and tuples produce
+            // TypeSpec::Struct here, yielding e.g. `struct { opaque f<>; } *name`.
+            // Some tools (rpcgen) reject this, but the grammar is valid.
             Declaration::Optional { name, opt_ty } => {
                 opt_ty.fmt(f);
                 f.write_str(" *");

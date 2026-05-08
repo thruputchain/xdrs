@@ -262,6 +262,30 @@ impl<const N: usize> HasTypeSpec for [u8; N] {
     }
 }
 
+impl<const N: usize> Declare for &[u8; N] {
+    fn declare(name: Ident) -> Declaration {
+        <[u8; N]>::declare(name)
+    }
+}
+
+impl<const N: usize> HasTypeSpec for &[u8; N] {
+    fn type_spec() -> TypeSpec {
+        <[u8; N]>::type_spec()
+    }
+}
+
+impl<const N: usize> Declare for &mut [u8; N] {
+    fn declare(name: Ident) -> Declaration {
+        <[u8; N]>::declare(name)
+    }
+}
+
+impl<const N: usize> HasTypeSpec for &mut [u8; N] {
+    fn type_spec() -> TypeSpec {
+        <[u8; N]>::type_spec()
+    }
+}
+
 impl<const N: usize, T: HasTypeSpec> Declare for [T; N] {
     fn declare(name: Ident) -> Declaration {
         const { assert!(N <= u32::MAX as usize, "N exceeds u32::MAX") }
@@ -543,6 +567,18 @@ const _: () = {
             BytesM::<MAX>::type_spec()
         }
     }
+
+    impl<T: HasTypeSpec> Declare for Box<Option<T>> {
+        fn declare(name: Ident) -> Declaration {
+            <Option<T>>::declare(name)
+        }
+    }
+
+    impl<T: HasTypeSpec> HasTypeSpec for Box<Option<T>> {
+        fn type_spec() -> TypeSpec {
+            <Option<T>>::type_spec()
+        }
+    }
 };
 
 #[cfg(feature = "heapless")]
@@ -754,22 +790,14 @@ const _: () = {
     }
 };
 
-impl HasTypeDef for () {
-    fn type_def() -> TypeDef {
-        TypeDef::Def(Declaration::Void)
-    }
-
-    fn named_declaration(_name: Ident) -> Declaration {
+impl Declare for () {
+    fn declare(_name: Ident) -> Declaration {
         Declaration::Void
     }
 }
 
-impl<T> HasTypeDef for core::marker::PhantomData<T> {
-    fn type_def() -> TypeDef {
-        TypeDef::Def(Declaration::Void)
-    }
-
-    fn named_declaration(_name: Ident) -> Declaration {
+impl<T> Declare for core::marker::PhantomData<T> {
+    fn declare(_name: Ident) -> Declaration {
         Declaration::Void
     }
 }
