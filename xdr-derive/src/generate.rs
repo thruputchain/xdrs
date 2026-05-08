@@ -156,7 +156,8 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let write_variants: Vec<_> = item.variants
+    let write_variants: Vec<_> = item
+        .variants
         .iter()
         .enumerate()
         .map(|(i, v)| write_variant(i, v, input))
@@ -212,7 +213,8 @@ fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> Re
     let ty_ident = &input.ident;
 
     let var_bindings = var_bindings(&v.fields);
-    let write_bindings: Vec<_> = v.fields
+    let write_bindings: Vec<_> = v
+        .fields
         .iter()
         .enumerate()
         .map(|(i, field)| {
@@ -567,7 +569,11 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     })
 }
 
-fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput) -> Result<TokenStream> {
+fn read_variant(
+    index_u: usize,
+    variant: &syn::Variant,
+    input: &syn::DeriveInput,
+) -> Result<TokenStream> {
     let index = index_u as i32;
     let is_default = variant_is_default(variant);
     let var_match = if is_default {
@@ -581,7 +587,8 @@ fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput
     };
     let ty_ident = &input.ident;
     let var_ident = &variant.ident;
-    let read_fields: Vec<_> = variant.fields
+    let read_fields: Vec<_> = variant
+        .fields
         .iter()
         .enumerate()
         .map(|(i, field)| {
