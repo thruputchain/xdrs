@@ -175,7 +175,27 @@ pub fn struct_def(name: &str, fields: Vec<Declaration>) -> TypeDef {
 }
 
 /// Creates an enum type definition.
+///
+/// # Panics
+///
+/// Panics if any variant value is a [`Constant::Unsigned`] that exceeds
+/// `i32::MAX` (2 147 483 647).  XDR enums are signed 32-bit integers per
+/// RFC 4506, and this crate's derive macros and runtime codecs enforce the
+/// `i32` domain.
 pub fn enum_def(name: &str, variants: Vec<(Ident, Value)>) -> TypeDef {
+    for (id, val) in &variants {
+        if let Value::Const(Constant::Unsigned(n)) = val {
+            assert!(
+                *n <= i32::MAX as u32,
+                "XDR Enum '{}': variant '{}' has unsigned value {} which exceeds \
+                 i32::MAX ({}). XDR enums use signed 32-bit integers.",
+                name,
+                id.0,
+                n,
+                i32::MAX,
+            );
+        }
+    }
     TypeDef::Enum(ident(name), EnumBody(variants))
 }
 
@@ -187,6 +207,15 @@ pub fn enum_def(name: &str, variants: Vec<(Ident, Value)>) -> TypeDef {
 /// as XDR unions must have at least one arm.
 /// Also panics if any `CaseSpec` has an empty `cases` vector,
 /// or if any discriminant value appears more than once across all arms.
+///
+/// # Symbolic label caveat
+///
+/// Duplicate detection compares concrete [`Value::Const`] pairs by their
+/// 32-bit wire representation and [`Value::Ident`] pairs by name equality.
+/// It **cannot** detect that a symbolic label and a numeric literal refer to
+/// the same underlying constant (e.g. `case ZERO:` vs `case 0:` when
+/// `const ZERO = 0`).  Callers that mix symbolic and literal case values in
+/// the same union should verify uniqueness externally.
 pub fn union_def(
     name: &str,
     discrim_name: &str,
