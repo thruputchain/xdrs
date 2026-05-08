@@ -2,6 +2,15 @@
 //!
 //! This module provides types for representing RPC program definitions
 //! as specified in [RFC 5531, section 12](https://datatracker.ietf.org/doc/html/rfc5531#section-12).
+//!
+//! These types are data holders, not validated builders. Callers are
+//! responsible for ensuring RFC 5531 structural constraints beyond what
+//! the type system enforces — in particular:
+//!
+//! - Version identifiers and numbers must be unique within a [`Program`].
+//! - Procedure identifiers and numbers must be unique within a [`Version`].
+//! - [`Arg::name`] is rendered inside a C-style comment in the formatted
+//!   output; values containing `*/` will break the comment boundary.
 
 pub use super::xdr::TypeSpec;
 use super::xdr::validate_xdr_identifier;
@@ -35,7 +44,10 @@ impl Id {
 }
 
 /// A constant value in an RPC program definition.
-pub struct Constant(pub usize);
+///
+/// RFC 4506 unsigned integers are 32-bit, so RPC program, version,
+/// and procedure numbers are bounded to `u32`.
+pub struct Constant(pub u32);
 
 /// An RPC program definition.
 ///

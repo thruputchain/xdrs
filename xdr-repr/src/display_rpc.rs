@@ -23,20 +23,26 @@ impl Display for Procedure {
         } else {
             "void".fmt(f)?;
         }
-        writeln!(f, " {} (", self.id)?;
+        write!(f, " {}(", self.id)?;
 
-        let mut arg_types = self.arg_types.iter().peekable();
-        while let Some(arg_type) = arg_types.next() {
-            let ty = &arg_type.ty;
-            let name = arg_type.name.as_str();
-            write!(f, "\t\t\t{ty} /* {name} */")?;
-            if arg_types.peek().is_some() {
-                f.write_str(",")?;
-            }
+        if self.arg_types.is_empty() {
+            write!(f, "void")?;
+        } else {
             f.write_str("\n")?;
+            let mut arg_types = self.arg_types.iter().peekable();
+            while let Some(arg_type) = arg_types.next() {
+                let ty = &arg_type.ty;
+                let name = arg_type.name.as_str();
+                write!(f, "\t\t\t{ty} /* {name} */")?;
+                if arg_types.peek().is_some() {
+                    f.write_str(",")?;
+                }
+                f.write_str("\n")?;
+            }
+            f.write_str("\t\t")?;
         }
 
-        writeln!(f, "\t\t) = {};", self.value)
+        writeln!(f, ") = {};", self.value)
     }
 }
 

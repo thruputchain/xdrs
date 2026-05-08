@@ -40,12 +40,11 @@ fn show_prog() {
 
     let expected = "program PingPong {
 \tversion v0_1_0 {
-\t\tvoid ping (
+\t\tvoid ping(
 \t\t\tint /* num */,
 \t\t\tbool /* okay */
 \t\t) = 1;
-\t\tunsigned int pong (
-\t\t) = 2;
+\t\tunsigned int pong(void) = 2;
 \t} = 10;
 } = 42;
 ";
