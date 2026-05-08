@@ -148,9 +148,9 @@ fn enum_variant_field_via() {
         }
     }
 
-    impl Into<u32> for Wrapper {
-        fn into(self) -> u32 {
-            self.0
+    impl From<Wrapper> for u32 {
+        fn from(w: Wrapper) -> Self {
+            w.0
         }
     }
 

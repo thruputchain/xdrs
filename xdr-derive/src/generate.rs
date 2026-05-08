@@ -601,9 +601,10 @@ fn read_variant(
             let bind = tmp_binding(i);
 
             if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
+                let ty = &field.ty;
                 Ok(quote! {
                     let #bind: #from_type = __xdrs::read_xdr(r)?;
-                    let #bind = <_ as ::core::convert::Into<_>>::into(#bind);
+                    let #bind: #ty = <_ as ::core::convert::Into<_>>::into(#bind);
                 })
             } else {
                 let ty = &field.ty;
