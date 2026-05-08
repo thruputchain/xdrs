@@ -231,7 +231,7 @@ fn const_size_value_expr(
         return Ok(quote! {
             {
                 let slice = *#expr_ref;
-                assert!(slice.len() <= u32::MAX as usize, "slice length exceeds u32::MAX");
+                ::core::assert!(slice.len() <= u32::MAX as usize, "slice length exceeds u32::MAX");
                 let mut total = #mod_path::size_u32(slice.len() as u32);
                 let mut i = 0;
                 while i < slice.len() {
@@ -248,7 +248,7 @@ fn const_size_value_expr(
         return Ok(quote! {
             {
                 let arr = #expr_ref;
-                assert!(arr.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
+                ::core::assert!(arr.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
                 let mut total = 0;
                 let mut i = 0;
                 while i < arr.len() {
@@ -355,7 +355,7 @@ fn const_write_value_expr(
         return Ok(quote! {
             {
                 let slice = *#expr_ref;
-                assert!(slice.len() <= u32::MAX as usize, "slice length exceeds u32::MAX");
+                ::core::assert!(slice.len() <= u32::MAX as usize, "slice length exceeds u32::MAX");
                 w.write_u32(slice.len() as u32);
                 let mut i = 0;
                 while i < slice.len() {
@@ -371,7 +371,7 @@ fn const_write_value_expr(
         return Ok(quote! {
             {
                 let arr = #expr_ref;
-                assert!(arr.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
+                ::core::assert!(arr.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
                 let mut i = 0;
                 while i < arr.len() {
                     #inner_write
@@ -613,6 +613,8 @@ fn const_write_variant(
             .iter()
             .enumerate()
             .map(|(i, field)| {
+                let attrs = Attrs::from_field(field)?;
+                attrs.check_no_conversion(field)?;
                 let bind = tmp_binding(i);
                 let ty = &field.ty;
                 const_write_binding_expr(&bind, ty, fmt)
@@ -664,6 +666,8 @@ fn const_size_variant(
             .iter()
             .enumerate()
             .map(|(i, field)| {
+                let attrs = Attrs::from_field(field)?;
+                attrs.check_no_conversion(field)?;
                 let bind = tmp_binding(i);
                 let ty = &field.ty;
                 const_size_binding_expr(&bind, ty, fmt)

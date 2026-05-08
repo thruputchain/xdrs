@@ -156,13 +156,17 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let write_variants = token_reduce(&item.variants, |i, v| write_variant(i, v, input));
+    let write_variants: Vec<_> = item.variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| write_variant(i, v, input))
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::WriteResult<()> {
                 match self {
-                    #write_variants
+                    #(#write_variants)*
                 }
                 Ok(())
             }
@@ -201,25 +205,24 @@ fn write_enum_fast(_input: &syn::DeriveInput, _item: &syn::DataEnum) -> Option<T
     */
 }
 
-fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
+fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> Result<TokenStream> {
     let is_default_arm = variant_is_default(v);
 
     let var_ident = &v.ident;
     let ty_ident = &input.ident;
 
     let var_bindings = var_bindings(&v.fields);
-    let write_bindings = if is_default_arm {
-        // Field 0 is the discriminant (already written above); write payload fields 1..N
-        token_reduce(&v.fields, |i, field| {
-            if i == 0 {
-                quote! {}
+    let write_bindings: Vec<_> = v.fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            if is_default_arm && i == 0 {
+                Ok(quote! {})
             } else {
                 write_binding(i, field)
             }
         })
-    } else {
-        token_reduce(&v.fields, write_binding)
-    };
+        .collect::<Result<Vec<_>>>()?;
 
     let variant_idx = index as i32;
     let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
@@ -235,21 +238,30 @@ fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> To
         quote! { #variant_idx }
     };
 
-    quote! {
+    Ok(quote! {
         #ty_ident::#var_ident #var_bindings => {
             __write_xdr_writer.write_i32(#discriminant)?;
 
-            #write_bindings
+            #(#write_bindings)*
         }
-    }
+    })
 }
 
-fn write_binding(index: usize, field: &syn::Field) -> TokenStream {
+fn write_binding(index: usize, field: &syn::Field) -> Result<TokenStream> {
     let ty = &field.ty;
     let bind = tmp_binding(index);
+    let attrs = Attrs::from_field(field)?;
+    attrs.check(field)?;
 
-    quote! {
-        <#ty as __xdrs::WriteXDR>::write_xdr(#bind, __write_xdr_writer)?;
+    if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
+        Ok(quote! {
+            let v: #into_type = #bind.clone().into();
+            <#into_type as __xdrs::WriteXDR>::write_xdr(&v, __write_xdr_writer)?;
+        })
+    } else {
+        Ok(quote! {
+            <#ty as __xdrs::WriteXDR>::write_xdr(#bind, __write_xdr_writer)?;
+        })
     }
 }
 
@@ -439,8 +451,6 @@ fn add_read_bounds_for_enum_variants(
     input: &syn::DeriveInput,
     item: &syn::DataEnum,
 ) {
-    // Keep this aligned with read_variant: enum variant fields are read as their
-    // declared types today, while field-level from_type/via attrs are struct-only.
     for variant in &item.variants {
         let is_default = variant_is_default(variant);
 
@@ -449,7 +459,15 @@ fn add_read_bounds_for_enum_variants(
                 continue;
             }
 
-            add_read_bound_if_lifetime_dependent(generics, &field.ty, input);
+            let attrs = Attrs::from_field(field).ok();
+            let from_type = attrs
+                .as_ref()
+                .and_then(|a| a.from_type.as_ref().or(a.via.as_ref()));
+            if let Some(from_type) = from_type {
+                add_read_bound_if_lifetime_dependent(generics, from_type, input);
+            } else {
+                add_read_bound_if_lifetime_dependent(generics, &field.ty, input);
+            }
         }
     }
 }
@@ -522,11 +540,12 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     add_read_bounds_for_enum_variants(&mut generics, input, item);
     let (impl_generics, _, where_clause) = generics.split_for_impl();
 
-    let read_variants = item
+    let read_variants: Vec<_> = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| read_variant(i, v, input));
+        .map(|(i, v)| read_variant(i, v, input))
+        .collect::<Result<Vec<_>>>()?;
 
     let catch_bad_index = if default_variant.is_none() {
         quote! { _ => Err(__xdrs::ReadError::BadDiscriminator(d)) }
@@ -548,7 +567,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     })
 }
 
-fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput) -> TokenStream {
+fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput) -> Result<TokenStream> {
     let index = index_u as i32;
     let is_default = variant_is_default(variant);
     let var_match = if is_default {
@@ -562,26 +581,39 @@ fn read_variant(index_u: usize, variant: &syn::Variant, input: &syn::DeriveInput
     };
     let ty_ident = &input.ident;
     let var_ident = &variant.ident;
-    let read_fields = token_reduce(&variant.fields, |i, field| {
-        if is_default && i == 0 {
-            // Field 0 is the discriminant; initialized from `d` in init_fields
-            return quote! {};
-        }
+    let read_fields: Vec<_> = variant.fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            if is_default && i == 0 {
+                return Ok(quote! {});
+            }
 
-        let bind = tmp_binding(i);
-        let ty = &field.ty;
-        quote! { let #bind: #ty = __xdrs::read_xdr(r)?; }
-    });
+            let attrs = Attrs::from_field(field)?;
+            attrs.check(field)?;
+            let bind = tmp_binding(i);
+
+            if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
+                Ok(quote! {
+                    let #bind: #from_type = __xdrs::read_xdr(r)?;
+                    let #bind = <_ as ::core::convert::Into<_>>::into(#bind);
+                })
+            } else {
+                let ty = &field.ty;
+                Ok(quote! { let #bind: #ty = __xdrs::read_xdr(r)?; })
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
     let init_fields = init_fields(&variant.fields, is_default);
 
-    quote! {
+    Ok(quote! {
         #var_match => {
-            #read_fields
+            #(#read_fields)*
             let value = #ty_ident::#var_ident #init_fields;
 
             Ok(value)
         }
-    }
+    })
 }
 
 fn init_fields(fields: &syn::Fields, is_default: bool) -> TokenStream {
