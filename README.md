@@ -26,6 +26,8 @@ Please see `cargo doc` for the detailed API.
 
 - Provide an out-parameter (i.e., in-place) decoding interface
 
-- Limit stack depth when reading potentially-recursive datastructures
+- Consider adding an optional recursion depth limit for decoding
+  potentially-recursive datastructures (see `read_xdr` module docs
+  for current guidance on bounding stack usage externally)
 
 [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
