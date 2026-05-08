@@ -171,10 +171,7 @@ fn from_enum_fieldless(
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let ty_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| ty_ident.to_string());
+    let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
     let type_reference_methods = named_type_reference_methods(ty_name.clone());
 
     let enum_typedef = enum_typedef(input, item, attrs)?;
@@ -198,10 +195,7 @@ fn from_enum_with_fields(
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let ty_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| ty_ident.to_string());
+    let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
     let type_reference_methods = named_type_reference_methods(ty_name.clone());
 
     let mut impls = vec![];
