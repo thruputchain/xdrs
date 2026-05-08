@@ -171,6 +171,7 @@ fn const_size_value_expr(
     fmt: Format,
 ) -> Result<TokenStream> {
     check_supported_const_shape(ty)?;
+    let ty = transparent_type(ty);
 
     let mod_path = match fmt {
         Format::Cxs => quote! { cxs::const_writer },
@@ -290,6 +291,7 @@ fn const_write_value_expr(
     fmt: Format,
 ) -> Result<TokenStream> {
     check_supported_const_shape(ty)?;
+    let ty = transparent_type(ty);
 
     let method = match fmt {
         Format::Cxs => quote! { const_write_cxs },
@@ -714,7 +716,16 @@ fn const_var_bindings(fields: &syn::Fields) -> TokenStream {
 
 // -- Type detection helpers --
 
+fn transparent_type(ty: &syn::Type) -> &syn::Type {
+    match ty {
+        syn::Type::Paren(paren) => transparent_type(&paren.elem),
+        syn::Type::Group(group) => transparent_type(&group.elem),
+        _ => ty,
+    }
+}
+
 fn primitive_size_fn(ty: &syn::Type) -> Option<TokenStream> {
+    let ty = transparent_type(ty);
     let path = match ty {
         syn::Type::Path(p) => p,
         _ => return None,
@@ -740,6 +751,7 @@ fn primitive_size_fn(ty: &syn::Type) -> Option<TokenStream> {
 }
 
 fn primitive_write_method(ty: &syn::Type) -> Option<TokenStream> {
+    let ty = transparent_type(ty);
     let path = match ty {
         syn::Type::Path(p) => p,
         _ => return None,
@@ -765,6 +777,8 @@ fn primitive_write_method(ty: &syn::Type) -> Option<TokenStream> {
 }
 
 fn check_supported_const_shape(ty: &syn::Type) -> Result<()> {
+    let ty = transparent_type(ty);
+
     if primitive_size_fn(ty).is_some() || is_u8_array(ty) || is_u8_slice_ref(ty) || is_str_ref(ty) {
         return Ok(());
     }
@@ -805,6 +819,7 @@ fn check_supported_const_shape(ty: &syn::Type) -> Result<()> {
 }
 
 fn is_path_ident(ty: &syn::Type, name: &str) -> bool {
+    let ty = transparent_type(ty);
     if let syn::Type::Path(p) = ty
         && let Some(ident) = p.path.get_ident()
     {
@@ -849,22 +864,25 @@ fn result_inners(ty: &syn::Type) -> Option<(&syn::Type, &syn::Type)> {
 }
 
 fn slice_ref_inner(ty: &syn::Type) -> Option<&syn::Type> {
+    let ty = transparent_type(ty);
     if let syn::Type::Reference(r) = ty
-        && let syn::Type::Slice(s) = &*r.elem
+        && let syn::Type::Slice(s) = transparent_type(r.elem.as_ref())
     {
-        return Some(&s.elem);
+        return Some(transparent_type(s.elem.as_ref()));
     }
     None
 }
 
 fn array_inner(ty: &syn::Type) -> Option<(&syn::Type, &syn::Expr)> {
+    let ty = transparent_type(ty);
     if let syn::Type::Array(arr) = ty {
-        return Some((&arr.elem, &arr.len));
+        return Some((transparent_type(arr.elem.as_ref()), &arr.len));
     }
     None
 }
 
 fn tuple_elems(ty: &syn::Type) -> Option<&syn::punctuated::Punctuated<syn::Type, syn::Token![,]>> {
+    let ty = transparent_type(ty);
     if let syn::Type::Tuple(tuple) = ty {
         return Some(&tuple.elems);
     }
@@ -877,6 +895,7 @@ fn tuple_elem_ref(expr_ref: &TokenStream, index: usize) -> TokenStream {
 }
 
 fn path_segment<'a>(ty: &'a syn::Type, name: &str) -> Option<&'a syn::PathSegment> {
+    let ty = transparent_type(ty);
     let path = match ty {
         syn::Type::Path(path) if path.qself.is_none() => path,
         _ => return None,
@@ -895,24 +914,27 @@ fn angle_bracketed_args(seg: &syn::PathSegment) -> Option<&syn::AngleBracketedGe
 }
 
 fn is_u8_array(ty: &syn::Type) -> bool {
+    let ty = transparent_type(ty);
     if let syn::Type::Array(arr) = ty {
-        return is_path_ident(&arr.elem, "u8");
+        return is_path_ident(arr.elem.as_ref(), "u8");
     }
     false
 }
 
 fn is_u8_slice_ref(ty: &syn::Type) -> bool {
+    let ty = transparent_type(ty);
     if let syn::Type::Reference(r) = ty
-        && let syn::Type::Slice(s) = &*r.elem
+        && let syn::Type::Slice(s) = transparent_type(r.elem.as_ref())
     {
-        return is_path_ident(&s.elem, "u8");
+        return is_path_ident(s.elem.as_ref(), "u8");
     }
     false
 }
 
 fn is_str_ref(ty: &syn::Type) -> bool {
+    let ty = transparent_type(ty);
     if let syn::Type::Reference(r) = ty {
-        return is_path_ident(&r.elem, "str");
+        return is_path_ident(r.elem.as_ref(), "str");
     }
     false
 }
