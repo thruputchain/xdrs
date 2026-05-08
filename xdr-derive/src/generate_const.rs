@@ -232,7 +232,7 @@ fn const_size_value_expr(
         return Ok(quote! {
             {
                 let slice = *#expr_ref;
-                ::core::assert!(slice.len() <= u32::MAX as usize, "slice length exceeds u32::MAX");
+                ::core::assert!(slice.len() <= ::core::primitive::u32::MAX as usize, "slice length exceeds u32::MAX");
                 let mut total = #mod_path::size_u32(slice.len() as u32);
                 let mut i = 0;
                 while i < slice.len() {
@@ -249,7 +249,7 @@ fn const_size_value_expr(
         return Ok(quote! {
             {
                 let arr = #expr_ref;
-                ::core::assert!(arr.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
+                ::core::assert!(arr.len() <= ::core::primitive::u32::MAX as usize, "array length exceeds u32::MAX");
                 let mut total = 0;
                 let mut i = 0;
                 while i < arr.len() {
@@ -357,7 +357,7 @@ fn const_write_value_expr(
         return Ok(quote! {
             {
                 let slice = *#expr_ref;
-                ::core::assert!(slice.len() <= u32::MAX as usize, "slice length exceeds u32::MAX");
+                ::core::assert!(slice.len() <= ::core::primitive::u32::MAX as usize, "slice length exceeds u32::MAX");
                 w.write_u32(slice.len() as u32);
                 let mut i = 0;
                 while i < slice.len() {
@@ -373,7 +373,7 @@ fn const_write_value_expr(
         return Ok(quote! {
             {
                 let arr = #expr_ref;
-                ::core::assert!(arr.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
+                ::core::assert!(arr.len() <= ::core::primitive::u32::MAX as usize, "array length exceeds u32::MAX");
                 let mut i = 0;
                 while i < arr.len() {
                     #inner_write
@@ -583,6 +583,46 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("generic types") || msg.contains("type parameters"));
     }
+
+    #[test]
+    fn array_guard_uses_qualified_u32_max() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct WithArray {
+                items: [Leaf; 3],
+            }
+        };
+
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        assert!(
+            toks.contains(":: core :: primitive :: u32 :: MAX"),
+            "array guard must use fully qualified ::core::primitive::u32::MAX, got:\n{toks}"
+        );
+        let bare = toks.replace(":: core :: primitive :: u32 :: MAX", "");
+        assert!(
+            !bare.contains("u32 :: MAX"),
+            "no bare u32::MAX should remain in generated code"
+        );
+    }
+
+    #[test]
+    fn slice_guard_uses_qualified_u32_max() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct WithSlice<'a> {
+                items: &'a [Leaf],
+            }
+        };
+
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        assert!(
+            toks.contains(":: core :: primitive :: u32 :: MAX"),
+            "slice guard must use fully qualified ::core::primitive::u32::MAX, got:\n{toks}"
+        );
+        let bare = toks.replace(":: core :: primitive :: u32 :: MAX", "");
+        assert!(
+            !bare.contains("u32 :: MAX"),
+            "no bare u32::MAX should remain in generated code"
+        );
+    }
 }
 
 fn const_write_variant(
@@ -607,23 +647,23 @@ fn const_write_variant(
 
     let write_discrim = quote! { w.write_i32(#discriminant); };
 
-    let write_fields = if is_default_arm {
-        quote! {}
-    } else {
-        let field_writes: Vec<_> = v
-            .fields
-            .iter()
-            .enumerate()
-            .map(|(i, field)| {
+    let field_writes: Vec<_> = v
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            if is_default_arm && i == 0 {
+                Ok(quote! {})
+            } else {
                 let attrs = Attrs::from_field(field)?;
                 attrs.check_no_conversion(field)?;
                 let bind = tmp_binding(i);
                 let ty = &field.ty;
                 const_write_binding_expr(&bind, ty, fmt)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        quote! { #(#field_writes)* }
-    };
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let write_fields = quote! { #(#field_writes)* };
 
     Ok(quote! {
         #ty_ident::#var_ident #var_bindings => {
@@ -660,26 +700,26 @@ fn const_size_variant(
 
     let discrim_size = quote! { #mod_path::size_i32(#discriminant) };
 
-    let fields_size = if is_default_arm {
-        quote! { 0 }
-    } else {
-        let field_sizes: Vec<_> = v
-            .fields
-            .iter()
-            .enumerate()
-            .map(|(i, field)| {
+    let field_sizes: Vec<_> = v
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            if is_default_arm && i == 0 {
+                Ok(quote! { 0 })
+            } else {
                 let attrs = Attrs::from_field(field)?;
                 attrs.check_no_conversion(field)?;
                 let bind = tmp_binding(i);
                 let ty = &field.ty;
                 const_size_binding_expr(&bind, ty, fmt)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        if field_sizes.is_empty() {
-            quote! { 0 }
-        } else {
-            quote! { 0 #(+ #field_sizes)* }
-        }
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let fields_size = if field_sizes.is_empty() {
+        quote! { 0 }
+    } else {
+        quote! { 0 #(+ #field_sizes)* }
     };
 
     Ok(quote! {

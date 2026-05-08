@@ -1395,3 +1395,87 @@ fn infallible_const_matches_runtime() {
         txs_runtime_encode(&WITH_INFALLIBLE).len()
     );
 }
+
+// -- Default variant payload tests (issue #208) --
+// Default variants use field 0 as the captured discriminant; fields 1..N are
+// real payload and must be written by the const encoder just like runtime.
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[allow(dead_code)]
+enum DefaultPayloadTuple {
+    Known = 0,
+    Default(i32, u32),
+}
+
+const DPT_VAL: DefaultPayloadTuple = DefaultPayloadTuple::Default(7, 9);
+
+const DPT_CXS: [u8; DPT_VAL.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ DPT_VAL.const_cxs_size() }>::new();
+    DPT_VAL.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const DPT_TXS: [u8; DPT_VAL.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ DPT_VAL.const_txs_size() }>::new();
+    DPT_VAL.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn default_variant_payload_const_matches_runtime() {
+    assert_eq!(&DPT_CXS, cxs_runtime_encode(&DPT_VAL).as_slice());
+    assert_eq!(&DPT_TXS, txs_runtime_encode(&DPT_VAL).as_slice());
+    assert_eq!(DPT_VAL.const_cxs_size(), cxs_runtime_encode(&DPT_VAL).len());
+    assert_eq!(DPT_VAL.const_txs_size(), txs_runtime_encode(&DPT_VAL).len());
+}
+
+#[test]
+fn default_variant_payload_roundtrips() {
+    let cxs_decoded: DefaultPayloadTuple = xdrs::cxs::decode(&DPT_CXS).unwrap();
+    assert_eq!(cxs_decoded, DPT_VAL);
+    let txs_decoded: DefaultPayloadTuple = xdrs::txs::decode(&DPT_TXS).unwrap();
+    assert_eq!(txs_decoded, DPT_VAL);
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[allow(dead_code)]
+enum DefaultPayloadNamed {
+    Known { x: u32 } = 0,
+    Default { disc: i32, a: u32, b: u32 },
+}
+
+const DPN_VAL: DefaultPayloadNamed = DefaultPayloadNamed::Default {
+    disc: 99,
+    a: 11,
+    b: 22,
+};
+
+const DPN_CXS: [u8; DPN_VAL.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ DPN_VAL.const_cxs_size() }>::new();
+    DPN_VAL.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const DPN_TXS: [u8; DPN_VAL.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ DPN_VAL.const_txs_size() }>::new();
+    DPN_VAL.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn default_variant_named_payload_const_matches_runtime() {
+    assert_eq!(&DPN_CXS, cxs_runtime_encode(&DPN_VAL).as_slice());
+    assert_eq!(&DPN_TXS, txs_runtime_encode(&DPN_VAL).as_slice());
+    assert_eq!(DPN_VAL.const_cxs_size(), cxs_runtime_encode(&DPN_VAL).len());
+    assert_eq!(DPN_VAL.const_txs_size(), txs_runtime_encode(&DPN_VAL).len());
+}
+
+#[test]
+fn default_variant_named_payload_roundtrips() {
+    let cxs_decoded: DefaultPayloadNamed = xdrs::cxs::decode(&DPN_CXS).unwrap();
+    assert_eq!(cxs_decoded, DPN_VAL);
+    let txs_decoded: DefaultPayloadNamed = xdrs::txs::decode(&DPN_TXS).unwrap();
+    assert_eq!(txs_decoded, DPN_VAL);
+}
