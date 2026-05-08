@@ -78,6 +78,7 @@ pub fn option_tok(opt: Option<TokenStream>) -> TokenStream {
 }
 
 pub fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
+    // `ReadXDR` derive reserves this reader lifetime name in its public docs.
     let lifetime_param: syn::LifetimeParam = syn::parse_quote! { '_r };
     generics
         .params

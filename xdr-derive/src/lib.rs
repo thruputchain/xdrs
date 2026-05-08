@@ -106,6 +106,12 @@
 //!   "Type" before converting into the target type via `Into`.
 //! - `#[xdrs(via = "Type")]` - Same as above.
 //!
+//! ### ReadXDR Notes
+//!
+//! The lifetime name `'_r` is reserved for the generated reader lifetime. Types
+//! deriving `ReadXDR` must not declare their own generic lifetime with that
+//! name.
+//!
 //! When deriving `WriteXDR`:
 //!
 //! - `#[xdrs(into_type = "Type")]` - Convert (via `Into`) a different type before
@@ -187,6 +193,10 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///   parameters. For example, `#[xdrs(from_type = "VecM<T, 8>")]` on a generic
 ///   `Wrapper<T>` will not automatically add `T: ReadXDR`; you must supply the
 ///   bound yourself.
+/// - **The lifetime name `'_r` is reserved.** The generated `ReadXDR` impl uses
+///   `'_r` as its reader lifetime. A type deriving `ReadXDR` must not declare a
+///   generic lifetime parameter with that same name; choose another name for
+///   user-defined lifetimes.
 ///
 #[proc_macro_derive(ReadXDR, attributes(xdrs))]
 pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
