@@ -120,7 +120,12 @@ where
                     }
                 }
                 if seq.next_element::<IgnoredAny>()?.is_some() {
-                    return Err(<A::Error as DeError>::invalid_length(buf.len() + 1, &self));
+                    return Err(match buf.len().checked_add(1) {
+                        Some(overlimit) => <A::Error as DeError>::invalid_length(overlimit, &self),
+                        None => DeError::custom(format_args!(
+                            "sequence length exceeds maximum of {MAX}"
+                        )),
+                    });
                 }
                 Ok(VecM(buf))
             }
