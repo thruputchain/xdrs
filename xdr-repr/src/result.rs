@@ -70,6 +70,46 @@ where
     }
 }
 
+impl<T, E> HasTypeSpec for &Result<T, E>
+where
+    T: Declare,
+    E: Declare,
+{
+    fn type_spec() -> TypeSpec {
+        Result::<T, E>::type_spec()
+    }
+}
+
+impl<T, E> Declare for &Result<T, E>
+where
+    T: Declare,
+    E: Declare,
+{
+    fn declare(name: Ident) -> Declaration {
+        Result::<T, E>::declare(name)
+    }
+}
+
+impl<T, E> HasTypeSpec for &mut Result<T, E>
+where
+    T: Declare,
+    E: Declare,
+{
+    fn type_spec() -> TypeSpec {
+        Result::<T, E>::type_spec()
+    }
+}
+
+impl<T, E> Declare for &mut Result<T, E>
+where
+    T: Declare,
+    E: Declare,
+{
+    fn declare(name: Ident) -> Declaration {
+        Result::<T, E>::declare(name)
+    }
+}
+
 /// Trait for extracting the error type from a `Result` type.
 ///
 /// This trait allows querying the error type of a `Result<T, E>` for
