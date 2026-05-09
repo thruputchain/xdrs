@@ -227,7 +227,9 @@
 //!
 //! - **`#[xdr(discrim_type = "TypeName")]`**: For enums (discriminated unions), specify
 //!   the name of an existing XDR type to use as the discriminant type instead of
-//!   auto-generating one. The default is `{EnumName}Type`.
+//!   auto-generating one. The default is `{EnumName}Type`.  Rust variant names
+//!   are used as `case` labels in the emitted IDL, so they must match the
+//!   member names of the external discriminant enum.
 //!
 //! - **`#[xdr(discrim_var = "field_name")]`**: For enums (discriminated unions), specify
 //!   the name of the discriminant field. The default is `"which"`.
