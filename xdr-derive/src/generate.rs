@@ -99,8 +99,10 @@ fn write_into_type(input: &syn::DeriveInput, into_type: &syn::Type) -> TokenStre
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
-                let into_val: #into_type = ::core::convert::Into::into(::core::clone::Clone::clone(self));
-                <#into_type as __xdrs::WriteXDR>::write_xdr(&into_val, w)
+                <#into_type as __xdrs::WriteXDR>::write_xdr(
+                    &::core::convert::Into::into(::core::clone::Clone::clone(self)),
+                    w,
+                )
             }
         }
     }
@@ -134,13 +136,14 @@ fn write_field(index: usize, field: &syn::Field) -> Result<TokenStream> {
 
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
         Ok(quote! {
-            let v: #into_type = ::core::convert::Into::into(::core::clone::Clone::clone(&self.#fa));
-            <#into_type as __xdrs::WriteXDR>::write_xdr(&v, w)?;
+            <#into_type as __xdrs::WriteXDR>::write_xdr(
+                &::core::convert::Into::into(::core::clone::Clone::clone(&self.#fa)),
+                w,
+            )?;
         })
     } else {
         Ok(quote! {
-            let v: &#ty = &(self.#fa);
-            <#ty as __xdrs::WriteXDR>::write_xdr(v, w)?;
+            <#ty as __xdrs::WriteXDR>::write_xdr(&self.#fa, w)?;
         })
     }
 }
@@ -256,8 +259,10 @@ fn write_binding(index: usize, field: &syn::Field) -> Result<TokenStream> {
 
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
         Ok(quote! {
-            let v: #into_type = ::core::convert::Into::into(::core::clone::Clone::clone(#bind));
-            <#into_type as __xdrs::WriteXDR>::write_xdr(&v, __write_xdr_writer)?;
+            <#into_type as __xdrs::WriteXDR>::write_xdr(
+                &::core::convert::Into::into(::core::clone::Clone::clone(#bind)),
+                __write_xdr_writer,
+            )?;
         })
     } else {
         Ok(quote! {
@@ -616,9 +621,7 @@ fn read_variant(
     Ok(quote! {
         #var_match => {
             #(#read_fields)*
-            let value = #ty_ident::#var_ident #init_fields;
-
-            Ok(value)
+            Ok(#ty_ident::#var_ident #init_fields)
         }
     })
 }

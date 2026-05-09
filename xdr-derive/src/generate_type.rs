@@ -39,6 +39,10 @@ struct CrateAttr {
 }
 
 impl Attrs {
+    /// Returns the XDR name for the auto-generated discriminant enum.
+    /// Defaults to `{RustEnumName}Type`.  Do not set `#[xdr(name)]` to
+    /// this value — it will collide with the discriminant enum in the
+    /// generated specification.
     fn discrim_type_name(&self, rust_enum_name: &str) -> String {
         self.discrim_type
             .clone()
@@ -215,7 +219,7 @@ fn from_enum_with_fields(
     // We'll also implement HasSpecification for the type, as we may require
     // multiple definitions.  It will contain at least the union definition,
     // which, instead of generating again, we can get via the above HasTypeDef impl:
-    let mut spec_definitions = vec![quote! { #ty_ident::def() }];
+    let mut spec_definitions = vec![quote! { Self::def() }];
 
     if attrs.discrim_type.is_none() {
         // No existing discriminant type was provided, so we also define
