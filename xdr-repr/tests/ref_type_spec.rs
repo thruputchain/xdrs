@@ -9,22 +9,46 @@ fn ref_primitive_has_type_spec() {
 
 #[test]
 fn ref_bytesm_has_type_spec() {
-    assert_eq!(<&xdr_common::BytesM<256>>::type_spec(), xdr_common::BytesM::<256>::type_spec());
-    assert_eq!(<&mut xdr_common::BytesM<256>>::type_spec(), xdr_common::BytesM::<256>::type_spec());
+    assert_eq!(
+        <&xdr_common::BytesM<256>>::type_spec(),
+        xdr_common::BytesM::<256>::type_spec()
+    );
+    assert_eq!(
+        <&mut xdr_common::BytesM<256>>::type_spec(),
+        xdr_common::BytesM::<256>::type_spec()
+    );
 }
 
 #[test]
 fn ref_stringm_has_type_spec() {
-    assert_eq!(<&xdr_common::StringM<128>>::type_spec(), xdr_common::StringM::<128>::type_spec());
-    assert_eq!(<&mut xdr_common::StringM<128>>::type_spec(), xdr_common::StringM::<128>::type_spec());
+    assert_eq!(
+        <&xdr_common::StringM<128>>::type_spec(),
+        xdr_common::StringM::<128>::type_spec()
+    );
+    assert_eq!(
+        <&mut xdr_common::StringM<128>>::type_spec(),
+        xdr_common::StringM::<128>::type_spec()
+    );
 }
 
 #[test]
 fn ref_vecm_has_type_spec() {
-    assert_eq!(<&xdr_common::VecM<u32, 10>>::type_spec(), xdr_common::VecM::<u32, 10>::type_spec());
-    assert_eq!(<&mut xdr_common::VecM<u32, 10>>::type_spec(), xdr_common::VecM::<u32, 10>::type_spec());
-    assert_eq!(<&xdr_common::VecM<u8, 64>>::type_spec(), xdr_common::VecM::<u8, 64>::type_spec());
-    assert_eq!(<&mut xdr_common::VecM<u8, 64>>::type_spec(), xdr_common::VecM::<u8, 64>::type_spec());
+    assert_eq!(
+        <&xdr_common::VecM<u32, 10>>::type_spec(),
+        xdr_common::VecM::<u32, 10>::type_spec()
+    );
+    assert_eq!(
+        <&mut xdr_common::VecM<u32, 10>>::type_spec(),
+        xdr_common::VecM::<u32, 10>::type_spec()
+    );
+    assert_eq!(
+        <&xdr_common::VecM<u8, 64>>::type_spec(),
+        xdr_common::VecM::<u8, 64>::type_spec()
+    );
+    assert_eq!(
+        <&mut xdr_common::VecM<u8, 64>>::type_spec(),
+        xdr_common::VecM::<u8, 64>::type_spec()
+    );
 }
 
 #[test]
