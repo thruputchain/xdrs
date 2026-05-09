@@ -121,6 +121,8 @@ pub struct Ident(pub String);
 /// The body of a struct type definition.
 ///
 /// Contains the list of field declarations that make up the struct.
+/// Field names must be unique within a struct body; this is **not**
+/// enforced at construction time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructBody(Vec<Declaration>);
 
