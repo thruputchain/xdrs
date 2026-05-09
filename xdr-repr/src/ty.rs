@@ -175,8 +175,18 @@ impl_declare_named! {
     u128 => <(u64, u64)>::type_spec(),
 }
 
-macro_rules! impl_declare_for_refs {
+macro_rules! impl_refs {
     ($($ty:ty),* $(,)?) => {$(
+        impl HasTypeSpec for &$ty {
+            fn type_spec() -> TypeSpec {
+                <$ty>::type_spec()
+            }
+        }
+        impl HasTypeSpec for &mut $ty {
+            fn type_spec() -> TypeSpec {
+                <$ty>::type_spec()
+            }
+        }
         impl Declare for &$ty {
             fn declare(name: Ident) -> Declaration {
                 <$ty>::declare(name)
@@ -190,13 +200,13 @@ macro_rules! impl_declare_for_refs {
     )*};
 }
 
-impl_declare_for_refs! {
+impl_refs! {
     i32, u32, i64, u64, bool, f32, f64,
 }
 
 #[cfg(feature = "int128")]
 #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
-impl_declare_for_refs! {
+impl_refs! {
     i128, u128,
 }
 
@@ -312,6 +322,30 @@ impl<const N: usize, T: HasTypeSpec> HasTypeSpec for [T; N] {
     }
 }
 
+impl<const N: usize, T: HasTypeSpec> HasTypeSpec for &[T; N] {
+    fn type_spec() -> TypeSpec {
+        <[T; N]>::type_spec()
+    }
+}
+
+impl<const N: usize, T: HasTypeSpec> Declare for &[T; N] {
+    fn declare(name: Ident) -> Declaration {
+        <[T; N]>::declare(name)
+    }
+}
+
+impl<const N: usize, T: HasTypeSpec> HasTypeSpec for &mut [T; N] {
+    fn type_spec() -> TypeSpec {
+        <[T; N]>::type_spec()
+    }
+}
+
+impl<const N: usize, T: HasTypeSpec> Declare for &mut [T; N] {
+    fn declare(name: Ident) -> Declaration {
+        <[T; N]>::declare(name)
+    }
+}
+
 impl HasTypeSpec for &[u8] {
     fn type_spec() -> TypeSpec {
         TypeSpec::Struct(StructBody::new(alloc::vec![Declaration::VariableOpaque {
@@ -327,6 +361,12 @@ impl Declare for &[u8] {
             name,
             max: Value::Const(Constant::Unsigned(u32::MAX)),
         }
+    }
+}
+
+impl HasTypeSpec for &mut [u8] {
+    fn type_spec() -> TypeSpec {
+        <&[u8]>::type_spec()
     }
 }
 
@@ -353,9 +393,23 @@ impl Declare for &str {
     }
 }
 
+impl HasTypeSpec for &mut str {
+    fn type_spec() -> TypeSpec {
+        <&str>::type_spec()
+    }
+}
+
 impl Declare for &mut str {
     fn declare(name: Ident) -> Declaration {
         <&str>::declare(name)
+    }
+}
+
+impl<T: HasTypeSpec> HasTypeSpec for &[T] {
+    fn type_spec() -> TypeSpec {
+        TypeSpec::Struct(StructBody::new(alloc::vec![<&[T] as Declare>::declare(
+            ident("unnamed_0"),
+        )]))
     }
 }
 
@@ -366,6 +420,12 @@ impl<T: HasTypeSpec> Declare for &[T] {
             elt_ty: T::type_spec(),
             max: Value::Const(Constant::Unsigned(u32::MAX)),
         }
+    }
+}
+
+impl<T: HasTypeSpec> HasTypeSpec for &mut [T] {
+    fn type_spec() -> TypeSpec {
+        <&[T]>::type_spec()
     }
 }
 
@@ -455,9 +515,21 @@ const _: () = {
         }
     }
 
+    impl<const MAX: u32> HasTypeSpec for &BytesM<MAX> {
+        fn type_spec() -> TypeSpec {
+            BytesM::<MAX>::type_spec()
+        }
+    }
+
     impl<const MAX: u32> Declare for &BytesM<MAX> {
         fn declare(name: Ident) -> Declaration {
             BytesM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> HasTypeSpec for &mut BytesM<MAX> {
+        fn type_spec() -> TypeSpec {
+            BytesM::<MAX>::type_spec()
         }
     }
 
@@ -467,9 +539,21 @@ const _: () = {
         }
     }
 
+    impl<const MAX: u32> HasTypeSpec for &StringM<MAX> {
+        fn type_spec() -> TypeSpec {
+            StringM::<MAX>::type_spec()
+        }
+    }
+
     impl<const MAX: u32> Declare for &StringM<MAX> {
         fn declare(name: Ident) -> Declaration {
             StringM::<MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> HasTypeSpec for &mut StringM<MAX> {
+        fn type_spec() -> TypeSpec {
+            StringM::<MAX>::type_spec()
         }
     }
 
@@ -479,9 +563,21 @@ const _: () = {
         }
     }
 
+    impl<const MAX: u32> HasTypeSpec for &VecM<u8, MAX> {
+        fn type_spec() -> TypeSpec {
+            VecM::<u8, MAX>::type_spec()
+        }
+    }
+
     impl<const MAX: u32> Declare for &VecM<u8, MAX> {
         fn declare(name: Ident) -> Declaration {
             VecM::<u8, MAX>::declare(name)
+        }
+    }
+
+    impl<const MAX: u32> HasTypeSpec for &mut VecM<u8, MAX> {
+        fn type_spec() -> TypeSpec {
+            VecM::<u8, MAX>::type_spec()
         }
     }
 
@@ -491,12 +587,30 @@ const _: () = {
         }
     }
 
+    impl<T, const MAX: u32> HasTypeSpec for &VecM<T, MAX>
+    where
+        T: HasTypeSpec + StaticIfNoAlloc,
+    {
+        fn type_spec() -> TypeSpec {
+            VecM::<T, MAX>::type_spec()
+        }
+    }
+
     impl<T, const MAX: u32> Declare for &VecM<T, MAX>
     where
         T: HasTypeSpec + StaticIfNoAlloc,
     {
         fn declare(name: Ident) -> Declaration {
             VecM::<T, MAX>::declare(name)
+        }
+    }
+
+    impl<T, const MAX: u32> HasTypeSpec for &mut VecM<T, MAX>
+    where
+        T: HasTypeSpec + StaticIfNoAlloc,
+    {
+        fn type_spec() -> TypeSpec {
+            VecM::<T, MAX>::type_spec()
         }
     }
 
@@ -608,9 +722,21 @@ const _: () = {
         }
     }
 
+    impl<const N: usize> HasTypeSpec for &Vec<u8, N> {
+        fn type_spec() -> TypeSpec {
+            Vec::<u8, N>::type_spec()
+        }
+    }
+
     impl<const N: usize> Declare for &Vec<u8, N> {
         fn declare(name: Ident) -> Declaration {
             Vec::<u8, N>::declare(name)
+        }
+    }
+
+    impl<const N: usize> HasTypeSpec for &mut Vec<u8, N> {
+        fn type_spec() -> TypeSpec {
+            Vec::<u8, N>::type_spec()
         }
     }
 
@@ -646,12 +772,30 @@ const _: () = {
         }
     }
 
+    impl<T, const N: usize> HasTypeSpec for &Vec<T, N>
+    where
+        T: HasTypeSpec,
+    {
+        fn type_spec() -> TypeSpec {
+            Vec::<T, N>::type_spec()
+        }
+    }
+
     impl<T, const N: usize> Declare for &Vec<T, N>
     where
         T: HasTypeSpec,
     {
         fn declare(name: Ident) -> Declaration {
             Vec::<T, N>::declare(name)
+        }
+    }
+
+    impl<T, const N: usize> HasTypeSpec for &mut Vec<T, N>
+    where
+        T: HasTypeSpec,
+    {
+        fn type_spec() -> TypeSpec {
+            Vec::<T, N>::type_spec()
         }
     }
 
@@ -682,9 +826,21 @@ const _: () = {
         }
     }
 
+    impl<const N: usize> HasTypeSpec for &String<N> {
+        fn type_spec() -> TypeSpec {
+            String::<N>::type_spec()
+        }
+    }
+
     impl<const N: usize> Declare for &String<N> {
         fn declare(name: Ident) -> Declaration {
             String::<N>::declare(name)
+        }
+    }
+
+    impl<const N: usize> HasTypeSpec for &mut String<N> {
+        fn type_spec() -> TypeSpec {
+            String::<N>::type_spec()
         }
     }
 
@@ -753,9 +909,21 @@ const _: () = {
         }
     }
 
+    impl HasTypeSpec for &Vec<u8> {
+        fn type_spec() -> TypeSpec {
+            Vec::<u8>::type_spec()
+        }
+    }
+
     impl Declare for &Vec<u8> {
         fn declare(name: Ident) -> Declaration {
             Vec::<u8>::declare(name)
+        }
+    }
+
+    impl HasTypeSpec for &mut Vec<u8> {
+        fn type_spec() -> TypeSpec {
+            Vec::<u8>::type_spec()
         }
     }
 
@@ -765,9 +933,21 @@ const _: () = {
         }
     }
 
+    impl<T: HasTypeSpec> HasTypeSpec for &Vec<T> {
+        fn type_spec() -> TypeSpec {
+            Vec::<T>::type_spec()
+        }
+    }
+
     impl<T: HasTypeSpec> Declare for &Vec<T> {
         fn declare(name: Ident) -> Declaration {
             Vec::<T>::declare(name)
+        }
+    }
+
+    impl<T: HasTypeSpec> HasTypeSpec for &mut Vec<T> {
+        fn type_spec() -> TypeSpec {
+            Vec::<T>::type_spec()
         }
     }
 
@@ -777,9 +957,21 @@ const _: () = {
         }
     }
 
+    impl HasTypeSpec for &alloc::string::String {
+        fn type_spec() -> TypeSpec {
+            alloc::string::String::type_spec()
+        }
+    }
+
     impl Declare for &alloc::string::String {
         fn declare(name: Ident) -> Declaration {
             alloc::string::String::declare(name)
+        }
+    }
+
+    impl HasTypeSpec for &mut alloc::string::String {
+        fn type_spec() -> TypeSpec {
+            alloc::string::String::type_spec()
         }
     }
 
