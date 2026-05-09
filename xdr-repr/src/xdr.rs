@@ -14,6 +14,10 @@ use alloc::vec::Vec;
 ///
 /// Namespaces provide C++-like scoping for XDR definitions, allowing multiple
 /// specifications with the same type names to coexist.
+///
+/// The `name` field is not validated as an XDR identifier at construction
+/// time.  Callers should use [`ident`](crate::ident)-validated strings or
+/// otherwise ensure the name is well-formed before emitting IDL.
 #[cfg(feature = "ns")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ns")))]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +166,20 @@ pub struct EnumBody(pub Vec<(Ident, Value)>);
 ///
 /// Unions are discriminated by a discriminant field and contain
 /// case specifications for each possible discriminant value.
+///
+/// # Payload name uniqueness
+///
+/// XDR union members share a single scope: each case arm's declaration
+/// name and the default arm's declaration name (if any) must be distinct
+/// from each other and from the discriminant variable name.  This crate
+/// does **not** enforce intra-union name uniqueness at construction time.
+/// Violating this produces XDR-IDL that is rejected by downstream
+/// compilers.
+///
+/// When using `#[derive(XDR)]`, the derive macro lowercases Rust variant
+/// names to form payload wrapper identifiers.  Two variants whose names
+/// differ only in casing (e.g. `Foo` and `FOO`) will collide in the
+/// emitted IDL.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnionBody {
     /// The declaration of the discriminant field.
