@@ -67,7 +67,7 @@ impl<'a> BufReader<'a> {
             //   data.len() - pos < requested <= u32::MAX.
             // - checked_add overflow (32-bit only): pos <= data.len() <= isize::MAX,
             //   so data.len() - pos <= isize::MAX < u32::MAX.
-            let remaining: u32 = (self.data.len() - self.pos) as u32;
+            let remaining: usize = self.data.len() - self.pos;
             return Err(ReadError::SourceEmpty {
                 requested,
                 remaining,
@@ -112,12 +112,17 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
         }
 
         let padlen = 4 - rem;
+
         // SAFETY: padlen <= 3 and get_input(len + padlen) returns exactly
         // len + padlen initialized bytes. The first `len` bytes are
-        // payload, the trailing `padlen` bytes are padding. The addition
-        // cannot overflow because if len > u32::MAX - 3 then get_input
-        // will fail (no buffer exceeds 4 GiB).
-        let buf = self.get_input(len + padlen)?;
+        // payload, the trailing `padlen` bytes are padding.
+        let combined = len.checked_add(padlen).ok_or(ReadError::SourceEmpty {
+            // TODO(geoff): The actual requested amount if this overflow fails
+            // is 2^32, i.e. one more than u32::MAX
+            requested: u32::MAX,
+            remaining: self.data.len() - self.pos,
+        })?;
+        let buf = self.get_input(combined)?;
         let payload = unsafe { buf.get_unchecked(..len as usize) };
 
         #[cfg(not(feature = "permissive"))]
