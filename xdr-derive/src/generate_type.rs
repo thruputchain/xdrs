@@ -1,5 +1,5 @@
 use crate::util::*;
-use darling::{FromDeriveInput, FromField};
+use darling::{FromDeriveInput, FromField, FromVariant};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
 use syn::Result;
@@ -13,7 +13,7 @@ fn paths_equal(a: &syn::Path, b: &syn::Path) -> bool {
             .all(|(x, y)| x.ident == y.ident)
 }
 
-#[derive(Clone, Debug, FromField, FromDeriveInput)]
+#[derive(Clone, Debug, FromField, FromDeriveInput, FromVariant)]
 #[darling(attributes(xdr))]
 struct Attrs {
     // The name for the XDR item, if different from the rust name
@@ -135,7 +135,7 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
             .iter()
             .enumerate()
             .map(|(i, field)| declare_struct_field(i, field))
-            .collect()
+            .collect::<Result<Vec<_>>>()?
     };
 
     let struct_typedef = quote! {
@@ -268,11 +268,12 @@ fn enum_typedef(
         .clone()
         .unwrap_or_else(|| input.ident.to_string());
 
-    let declare_variants = item
+    let declare_variants: Vec<TokenStream> = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| declare_enum_variant(i, v));
+        .map(|(i, v)| declare_enum_variant(i, v))
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(quote! {
         __xdrs::enum_def(
@@ -309,10 +310,20 @@ fn union_typedef(
     let discrim_typespec = quote! { __xdrs::named_type(#discrim_type_name) };
     let discrim_var = attrs.discrim_var_name();
 
-    let specs = item.variants.iter().filter_map(variant_case_spec);
+    let specs: Vec<TokenStream> = item
+        .variants
+        .iter()
+        .map(variant_case_spec)
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
     let case_specs = quote! { __xdrs::vec![#(#specs),*] };
     let default_variant = find_default_variant(item);
-    let default_decl = option_tok(default_variant.map(default_variant_payload_decl));
+    let default_decl = match default_variant {
+        Some(v) => option_tok(Some(default_variant_payload_decl(v)?)),
+        None => option_tok(None),
+    };
 
     Ok(quote! {
         __xdrs::union_def(
@@ -325,56 +336,56 @@ fn union_typedef(
     })
 }
 
-fn variant_case_spec(variant: &syn::Variant) -> Option<TokenStream> {
+fn variant_case_spec(variant: &syn::Variant) -> Result<Option<TokenStream>> {
     if variant_is_default(variant) {
-        return None;
+        return Ok(None);
     }
 
-    let variant_name = variant.ident.to_string();
-    let decl = variant_fields_decl(variant);
+    let attrs = Attrs::from_variant(variant)?;
+    let variant_name = attrs.name.unwrap_or_else(|| variant.ident.to_string());
+    let decl = variant_fields_decl(variant)?;
 
-    Some(quote! {
+    Ok(Some(quote! {
         __xdrs::single_case_spec(#variant_name, #decl)
-    })
+    }))
 }
 
-fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
+fn variant_fields_decl(variant: &syn::Variant) -> Result<TokenStream> {
     let fields = &variant.fields;
     let variant_name = variant.ident.to_string().to_lowercase();
 
     match fields {
         syn::Fields::Unit => {
-            quote! { __xdrs::Declaration::Void }
+            Ok(quote! { __xdrs::Declaration::Void })
         }
         syn::Fields::Named(fields_named) => {
-            // Handle empty struct variants (e.g., Variant {})
             if fields_named.named.is_empty() {
-                return quote! { __xdrs::Declaration::Void };
+                return Ok(quote! { __xdrs::Declaration::Void });
             }
 
             let mut decls = fields_named.named.iter().map(|field| {
                 let field_ty = &field.ty;
-                let field_name = field
-                    .ident
-                    .as_ref()
-                    .map(|i| i.to_string())
-                    .unwrap_or("inner".to_string());
-                quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) }
-            });
+                let attrs = Attrs::from_field(field)?;
+                let field_name = attrs.name.unwrap_or_else(|| {
+                    field.ident
+                        .as_ref()
+                        .map(|i| i.to_string())
+                        .unwrap_or("inner".to_string())
+                });
+                Ok(quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) })
+            }).collect::<Result<Vec<_>>>()?;
             if decls.len() == 1 {
-                decls.next().unwrap()
+                Ok(decls.pop().unwrap())
             } else {
-                // A variant with multiple named fields gets a struct
-                // declaration containing them.
-                quote! {
+                Ok(quote! {
                     __xdrs::declare_type(#variant_name,
                         __xdrs::struct_type(__xdrs::vec![ #(#decls),* ]))
-                }
+                })
             }
         }
         syn::Fields::Unnamed(fields_unnamed) => {
             if fields_unnamed.unnamed.is_empty() {
-                return quote! { __xdrs::Declaration::Void };
+                return Ok(quote! { __xdrs::Declaration::Void });
             }
 
             let decls = fields_unnamed.unnamed.iter().enumerate().map(|(i, field)| {
@@ -384,50 +395,52 @@ fn variant_fields_decl(variant: &syn::Variant) -> TokenStream {
             });
             if decls.len() == 1 {
                 let field_ty = &fields_unnamed.unnamed[0].ty;
-                quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#variant_name)) }
+                Ok(quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#variant_name)) })
             } else {
-                quote! {
+                Ok(quote! {
                     __xdrs::declare_type(#variant_name,
                         __xdrs::struct_type(__xdrs::vec![ #(#decls),* ]))
-                }
+                })
             }
         }
     }
 }
 
-fn default_variant_payload_decl(variant: &syn::Variant) -> TokenStream {
+fn default_variant_payload_decl(variant: &syn::Variant) -> Result<TokenStream> {
     match &variant.fields {
         syn::Fields::Named(fields_named) => {
             let payload_fields: Vec<_> = fields_named.named.iter().skip(1).collect();
             if payload_fields.is_empty() {
-                return quote! { __xdrs::declare_void() };
+                return Ok(quote! { __xdrs::declare_void() });
             }
             let variant_name = variant.ident.to_string().to_lowercase();
-            let decls: Vec<_> = payload_fields
+            let decls = payload_fields
                 .iter()
                 .map(|field| {
                     let field_ty = &field.ty;
-                    let field_name = field
-                        .ident
-                        .as_ref()
-                        .map(|i| i.to_string())
-                        .unwrap_or("inner".to_string());
-                    quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) }
+                    let attrs = Attrs::from_field(field)?;
+                    let field_name = attrs.name.unwrap_or_else(|| {
+                        field.ident
+                            .as_ref()
+                            .map(|i| i.to_string())
+                            .unwrap_or("inner".to_string())
+                    });
+                    Ok(quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) })
                 })
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
             if decls.len() == 1 {
-                decls.into_iter().next().unwrap()
+                Ok(decls.into_iter().next().unwrap())
             } else {
-                quote! {
+                Ok(quote! {
                     __xdrs::declare_type(#variant_name,
                         __xdrs::struct_type(__xdrs::vec![ #(#decls),* ]))
-                }
+                })
             }
         }
         syn::Fields::Unnamed(fields_unnamed) => {
             let payload_fields: Vec<_> = fields_unnamed.unnamed.iter().skip(1).collect();
             if payload_fields.is_empty() {
-                return quote! { __xdrs::declare_void() };
+                return Ok(quote! { __xdrs::declare_void() });
             }
             let variant_name = variant.ident.to_string().to_lowercase();
             let decls: Vec<_> = payload_fields
@@ -441,44 +454,43 @@ fn default_variant_payload_decl(variant: &syn::Variant) -> TokenStream {
                 .collect();
             if decls.len() == 1 {
                 let field_ty = &payload_fields[0].ty;
-                quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#variant_name)) }
+                Ok(quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#variant_name)) })
             } else {
-                quote! {
+                Ok(quote! {
                     __xdrs::declare_type(#variant_name,
                         __xdrs::struct_type(__xdrs::vec![ #(#decls),* ]))
-                }
+                })
             }
         }
         syn::Fields::Unit => {
-            quote! { __xdrs::declare_void() }
+            Ok(quote! { __xdrs::declare_void() })
         }
     }
 }
 
 // Generate a field declaration for an XDR struct
-fn declare_struct_field(i: usize, field: &syn::Field) -> TokenStream {
+fn declare_struct_field(i: usize, field: &syn::Field) -> Result<TokenStream> {
     let ty = &field.ty;
+    let attrs = Attrs::from_field(field)?;
     let ident = field.ident.clone().unwrap_or(format_ident!("f{}", i));
-    let name = ident.to_string();
-    // let fa = FieldAccess::new(index, field);
-    // let attrs = FieldAttrs::from_field(field).unwrap();
+    let name = attrs.name.unwrap_or_else(|| ident.to_string());
 
-    quote! {
+    Ok(quote! {
         {
             <#ty as __xdrs::Declare>::declare(
                 __xdrs::ident(#name))
         },
-    }
+    })
 }
 
 // Generate a variant declaration for an XDR enumeration
-fn declare_enum_variant(index: usize, variant: &syn::Variant) -> TokenStream {
+fn declare_enum_variant(index: usize, variant: &syn::Variant) -> Result<TokenStream> {
     if variant_is_default(variant) {
-        // Ignore default arm
-        return quote! {};
+        return Ok(quote! {});
     }
 
-    let ident = &variant.ident.to_string();
+    let attrs = Attrs::from_variant(variant)?;
+    let ident = attrs.name.unwrap_or_else(|| variant.ident.to_string());
 
     let index = index as i32;
     let index_expr = quote! { #index };
@@ -488,7 +500,7 @@ fn declare_enum_variant(index: usize, variant: &syn::Variant) -> TokenStream {
         .map(|(_, expr)| expr.to_token_stream());
     let discriminant = discriminant_expr.as_ref().unwrap_or(&index_expr);
 
-    quote! {
+    Ok(quote! {
         (__xdrs::ident(#ident), __xdrs::signed(#discriminant)),
-    }
+    })
 }

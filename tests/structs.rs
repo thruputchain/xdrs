@@ -3,6 +3,51 @@ use common::*;
 use core::ops::Deref;
 use xdrs::{ReadResult, ReadXDR, Reader, WriteXDR, read_xdr};
 
+#[cfg(feature = "repr")]
+mod xdr_field_rename {
+    use xdrs::xdr_repr::*;
+
+    #[test]
+    fn struct_field_xdr_name_honored() {
+        #[allow(dead_code)]
+        #[derive(xdrs::XDR)]
+        struct Packet {
+            #[xdr(name = "wire_count")]
+            rust_count: u32,
+        }
+
+        let type_def = <Packet as HasTypeDef>::type_def();
+        let formatted = Definition::Type(type_def.clone()).to_string();
+
+        let TypeDef::Struct(_, body) = &type_def else {
+            panic!("derive should emit a struct type definition");
+        };
+        let fields = body.fields();
+
+        assert_eq!(fields.len(), 1);
+        let Declaration::Named { name, .. } = &fields[0] else {
+            panic!("expected a named declaration");
+        };
+
+        assert_eq!(name.0, "wire_count");
+        assert!(formatted.contains("unsigned int wire_count;"));
+        assert!(!formatted.contains("rust_count"));
+    }
+
+    #[test]
+    fn struct_field_without_rename_uses_rust_name() {
+        #[allow(dead_code)]
+        #[derive(xdrs::XDR)]
+        struct Packet {
+            count: u32,
+        }
+
+        let type_def = <Packet as HasTypeDef>::type_def();
+        let formatted = Definition::Type(type_def).to_string();
+        assert!(formatted.contains("unsigned int count;"));
+    }
+}
+
 #[test]
 fn struct_foo() {
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]

@@ -175,6 +175,97 @@ fn enum_variant_field_via() {
     TXS::check_codec(&b, &hex!("0000000100000009"));
 }
 
+mod xdr_variant_rename {
+    use xdrs::xdr_repr::*;
+
+    #[test]
+    fn fieldless_enum_variant_xdr_name_honored() {
+        #[allow(dead_code)]
+        #[derive(xdrs::XDR)]
+        #[repr(i32)]
+        enum Status {
+            #[xdr(name = "OK")]
+            Success = 0,
+            #[xdr(name = "ERR")]
+            Failure = 1,
+        }
+
+        let schema = Status::def().to_string();
+        assert!(schema.contains("\tOK = 0,"), "schema:\n{schema}");
+        assert!(schema.contains("\tERR = 1,"), "schema:\n{schema}");
+        assert!(!schema.contains("Success"), "schema:\n{schema}");
+        assert!(!schema.contains("Failure"), "schema:\n{schema}");
+    }
+
+    #[test]
+    fn data_enum_variant_xdr_name_honored() {
+        #[allow(dead_code)]
+        #[derive(xdrs::XDR)]
+        #[repr(i32)]
+        enum Response {
+            #[xdr(name = "OK")]
+            Success { value: u32 } = 0,
+            #[xdr(name = "ERR")]
+            Failure = 1,
+        }
+
+        let spec = <Response as HasSpecification>::spec();
+        let schema = spec.to_string();
+
+        assert!(schema.contains("\tOK = 0,"), "schema:\n{schema}");
+        assert!(schema.contains("case OK:"), "schema:\n{schema}");
+        assert!(schema.contains("\tERR = 1,"), "schema:\n{schema}");
+        assert!(!schema.contains("Success"), "schema:\n{schema}");
+        assert!(!schema.contains("Failure"), "schema:\n{schema}");
+    }
+
+    #[test]
+    fn enum_payload_field_xdr_name_honored() {
+        #[allow(dead_code)]
+        #[derive(xdrs::XDR)]
+        #[repr(i32)]
+        enum Reply {
+            Value {
+                #[xdr(name = "wire_code")]
+                code: u32,
+            } = 0,
+        }
+
+        let spec = <Reply as HasSpecification>::spec();
+        let schema = spec.to_string();
+
+        assert!(
+            schema.contains("wire_code"),
+            "payload field rename should be honored:\n{schema}"
+        );
+        assert!(
+            !schema.contains("unsigned int code;"),
+            "schema should not contain Rust field name:\n{schema}"
+        );
+    }
+
+    #[test]
+    fn combined_variant_and_field_rename() {
+        #[allow(dead_code)]
+        #[derive(xdrs::XDR)]
+        #[repr(i32)]
+        enum Msg {
+            #[xdr(name = "DATA")]
+            Data {
+                #[xdr(name = "payload_len")]
+                len: u32,
+            } = 0,
+        }
+
+        let spec = <Msg as HasSpecification>::spec();
+        let schema = spec.to_string();
+
+        assert!(schema.contains("case DATA:"), "schema:\n{schema}");
+        assert!(schema.contains("payload_len"), "schema:\n{schema}");
+        assert!(!schema.contains("unsigned int len;"), "schema:\n{schema}");
+    }
+}
+
 mod external_discrim {
     use super::*;
     use xdrs::xdr_repr::*;
