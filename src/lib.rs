@@ -37,6 +37,11 @@
 //!     for growable buffers
 //!   - `encode()` functions that return owned `Vec<u8>`
 //!
+//!   **`xdr_common` owned types require `alloc`.** Without the `alloc` feature,
+//!   `BytesM<MAX>`, `StringM<MAX>`, and `VecM<T, MAX>` compile but their
+//!   `ReadXDR` implementations panic unconditionally at runtime. Do not call
+//!   the decode APIs for these types in a no-alloc build.
+//!
 //! ### Extended types
 //!
 //! - **`int128`**: Enables convenient extensions to the XDR specification:

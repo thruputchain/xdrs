@@ -222,7 +222,9 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
 /// - `#[xdr(name = "XdrName")]` - Use a different name in the XDR
 ///   specification
 /// - `#[xdr(discrim_type = "TypeName")]` - Specify a custom discriminant type
-///   for enums
+///   for enums; the value must be a single XDR identifier (e.g. `"MyEnumType"`),
+///   not a multi-word type expression such as `"unsigned int"`. Passing a
+///   multi-word string causes a panic during schema emission.
 /// - `#[xdr(discrim_var = "field_name")]` - Specify a custom discriminant
 ///   field name
 ///
@@ -230,6 +232,27 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
 ///
 /// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
+///
+/// # Limitations
+///
+/// - **Raw identifiers produce invalid XDR IDL.** A field declared as
+///   `r#type: u32` emits `r#type` into the schema, which is not a valid XDR
+///   identifier. Use `#[xdr(name = "type_field")]` (or a rename that avoids the
+///   reserved Rust keyword entirely) to give the field a valid XDR name.
+///
+/// - **Reference fields support only one indirection layer.** `xdr-repr`
+///   implements `HasTypeSpec` for `&T` and `&mut T`, but not for `&&T` or
+///   deeper nesting. A struct field of type `&&u32` or `&&bool` compiles for
+///   `WriteXDR` (which delegates recursively) but fails to derive `XDR` schema
+///   metadata. Flatten the reference to a single `&T` if schema support is
+///   needed.
+///
+/// - **Const-generic monomorphs share the XDR type name.** When a struct
+///   contains two fields of the same generic wrapper type with different const
+///   bounds — for example `Packet<4>` and `Packet<8>` — the generated XDR
+///   schema names both parent fields `Packet`, creating a collision. Define
+///   distinct concrete type aliases (`type Packet4 = Packet<4>;`) so each
+///   monomorph gets its own XDR name.
 ///
 #[proc_macro_derive(XDR, attributes(xdr, xdrs))]
 pub fn derive_xdr(input: TokenStream) -> TokenStream {
