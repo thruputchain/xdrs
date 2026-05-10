@@ -90,9 +90,15 @@ impl<'a> BufReader<'a> {
 
             n = match s {
                 0 => self.read_byte()? as i8 as i64,
-                1 => i16::from_le(unsafe { core::ptr::read_unaligned(self.get_input(2)?.as_ptr().cast::<i16>()) }) as i64,
-                2 => i32::from_le(unsafe { core::ptr::read_unaligned(self.get_input(4)?.as_ptr().cast::<i32>()) }) as i64,
-                3 => i64::from_le(unsafe { core::ptr::read_unaligned(self.get_input(8)?.as_ptr().cast::<i64>()) }),
+                1 => i16::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(2)?.as_ptr().cast::<i16>())
+                }) as i64,
+                2 => i32::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(4)?.as_ptr().cast::<i32>())
+                }) as i64,
+                3 => i64::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(8)?.as_ptr().cast::<i64>())
+                }),
                 _ => unreachable!(),
             };
 
@@ -146,9 +152,15 @@ impl<'a> BufReader<'a> {
 
             let uint = match s {
                 0 => self.read_byte()? as u64,
-                1 => u16::from_le(unsafe { core::ptr::read_unaligned(self.get_input(2)?.as_ptr().cast::<u16>()) }) as u64,
-                2 => u32::from_le(unsafe { core::ptr::read_unaligned(self.get_input(4)?.as_ptr().cast::<u32>()) }) as u64,
-                3 => u64::from_le(unsafe { core::ptr::read_unaligned(self.get_input(8)?.as_ptr().cast::<u64>()) }),
+                1 => u16::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(2)?.as_ptr().cast::<u16>())
+                }) as u64,
+                2 => u32::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(4)?.as_ptr().cast::<u32>())
+                }) as u64,
+                3 => u64::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(8)?.as_ptr().cast::<u64>())
+                }),
                 _ => unreachable!(),
             };
 
