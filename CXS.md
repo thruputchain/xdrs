@@ -28,6 +28,11 @@ The changes from TXS in detail:
   integer bytes, using two's complement for the signed XDR types.  Encodings
   other than the shortest possible are invalid.
 
+- XDR _Floating-Point_ and _Double-Precision Floating-Point_ are encoded as
+  fixed-size raw IEEE 754 bytes in little-endian byte order (4 bytes for
+  _Floating-Point_, 8 bytes for _Double-Precision Floating-Point_), rather than
+  the big-endian byte order specified in RFC 4506.
+
 - XDR _Fixed-Length Opaque Data_ : same as TXS, but with no padding
 
 - XDR _Variable-Length Opaque Data_ / _String_ :
