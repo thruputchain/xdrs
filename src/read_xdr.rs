@@ -210,9 +210,8 @@ impl<'r> ReadXDR<'r> for &'r str {
 impl<'r> ReadXDR<'r> for alloc::string::String {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
-        let v = alloc::vec::Vec::from(bytes);
-        let s = alloc::string::String::from_utf8(v).map_err(|_| ReadError::BadUTF8)?;
-        Ok(s)
+        let s = str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)?;
+        Ok(alloc::string::String::from(s))
     }
 }
 
