@@ -78,7 +78,7 @@ impl<'a> BufReader<'a> {
         Ok(unsafe { *byte.get_unchecked(0) })
     }
 
-    #[inline]
+    #[inline(always)]
     fn read_signed(&mut self) -> ReadResult<i64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
@@ -88,28 +88,22 @@ impl<'a> BufReader<'a> {
         if v == 63 {
             // The number is encoded in the following bytes
 
-            const N_BYTES_MAP: [usize; 4] = [1, 2, 4, 8];
-            let n_bytes = N_BYTES_MAP[s as usize];
-
-            let input = self.read_opaque_fixed(n_bytes as u32)?;
-
-            let mut int_bytes = [0u8; 8];
-
-            // SAFETY: read_opaque_fixed returns exactly n_bytes bytes,
-            // and n_bytes is in {1, 2, 4, 8}, so both slices are valid.
-            unsafe {
-                core::ptr::copy_nonoverlapping(input.as_ptr(), int_bytes.as_mut_ptr(), n_bytes);
-            }
-
-            // SAFETY: n_bytes >= 1 and input has exactly n_bytes elements.
-            if unsafe { *input.get_unchecked(n_bytes - 1) } & 0x80 != 0 {
-                // the high bit is set, so sign-extend remaining bytes
-                for b in int_bytes.iter_mut().skip(n_bytes) {
-                    *b = 0xff;
-                }
-            }
-
-            n = i64::from_le_bytes(int_bytes);
+            // SAFETY: get_input(N) returns exactly N initialized bytes
+            // on success, so the pointer from as_ptr() is valid for an
+            // N-byte read_unaligned.
+            n = match s {
+                0 => self.read_byte()? as i8 as i64,
+                1 => i16::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(2)?.as_ptr().cast::<i16>())
+                }) as i64,
+                2 => i32::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(4)?.as_ptr().cast::<i32>())
+                }) as i64,
+                3 => i64::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(8)?.as_ptr().cast::<i64>())
+                }),
+                _ => unreachable!(),
+            };
 
             #[cfg(not(feature = "permissive"))]
             {
@@ -150,7 +144,7 @@ impl<'a> BufReader<'a> {
         Ok(n)
     }
 
-    #[inline]
+    #[inline(always)]
     fn read_unsigned(&mut self) -> ReadResult<u64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
@@ -159,19 +153,22 @@ impl<'a> BufReader<'a> {
         if v == 63 {
             // The number is encoded in the following bytes
 
-            const N_BYTES_MAP: [usize; 4] = [1, 2, 4, 8];
-            let n_bytes = N_BYTES_MAP[s as usize];
-
-            let input = self.read_opaque_fixed(n_bytes as u32)?;
-
-            let mut int_bytes = [0u8; 8];
-
-            // SAFETY: read_opaque_fixed returns exactly n_bytes bytes,
-            // and n_bytes is in {1, 2, 4, 8}, so both slices are valid.
-            unsafe {
-                core::ptr::copy_nonoverlapping(input.as_ptr(), int_bytes.as_mut_ptr(), n_bytes);
-            }
-            let uint = u64::from_le_bytes(int_bytes);
+            // SAFETY: get_input(N) returns exactly N initialized bytes
+            // on success, so the pointer from as_ptr() is valid for an
+            // N-byte read_unaligned.
+            let uint = match s {
+                0 => self.read_byte()? as u64,
+                1 => u16::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(2)?.as_ptr().cast::<u16>())
+                }) as u64,
+                2 => u32::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(4)?.as_ptr().cast::<u32>())
+                }) as u64,
+                3 => u64::from_le(unsafe {
+                    core::ptr::read_unaligned(self.get_input(8)?.as_ptr().cast::<u64>())
+                }),
+                _ => unreachable!(),
+            };
 
             #[cfg(not(feature = "permissive"))]
             {
@@ -276,7 +273,7 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
         self.get_input(len)
     }
 
-    #[inline]
+    #[inline(always)]
     fn read_opaque_variable(&mut self, max: u32) -> ReadResult<&'r [u8]> {
         let len = self.read_u32()?;
 
