@@ -54,7 +54,7 @@ impl<'a> BufReader<'a> {
             //   data.len() - pos < requested <= u32::MAX.
             // - checked_add overflow (32-bit only): pos <= data.len() <= isize::MAX,
             //   so data.len() - pos <= isize::MAX < u32::MAX.
-            let remaining: u32 = (self.data.len() - self.pos) as u32;
+            let remaining: usize = self.data.len() - self.pos;
             return Err(ReadError::SourceEmpty {
                 requested,
                 remaining,
