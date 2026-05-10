@@ -32,6 +32,7 @@ impl<const N: usize> UninitBuf<N> {
     ///
     /// The function most-recently passed to init, if any,
     /// must have initialized the buffer prefix it claimed to.
+    #[allow(dead_code)]
     pub unsafe fn assume_init(&self) -> &[u8] {
         unsafe { mu::assume_init_ref(&self.buf[..self.valid_len]) }
     }
