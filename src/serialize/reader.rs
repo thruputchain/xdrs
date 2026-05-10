@@ -58,7 +58,7 @@ pub unsafe trait Reader<'r>: Sized {
     ///
     /// On success, the returned slice must have exactly `len` bytes.
     /// Callers may rely on this invariant for soundness.
-    fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]>;
+    fn read_opaque_fixed(&mut self, len: usize) -> ReadResult<&'r [u8]>;
 
     /// Reads a byte sequence of variable length (not exceeding `max`), borrowing the contents from the reader.
     fn read_opaque_variable(&mut self, max: u32) -> ReadResult<&'r [u8]>;
@@ -85,7 +85,13 @@ pub unsafe trait Reader<'r>: Sized {
     ) -> ReadResult<&'a mut [u8]> {
         debug_assert_eq!(dst.len(), len as usize);
 
-        let data = self.read_opaque_fixed(len)?;
+        // Compile-time assertion: usize must be at least as large as u32.
+        const _: () = {
+            // If this fails, the following will error due to array of negative size.
+            let _ = [0u8; (core::mem::size_of::<usize>() >= core::mem::size_of::<u32>()) as usize - 1];
+        };
+
+        let data = self.read_opaque_fixed(len as usize)?;
 
         // SAFETY: read_opaque_fixed returns exactly `len` bytes, and
         // dst.len() == len as usize (caller invariant).
@@ -122,7 +128,7 @@ pub unsafe trait Reader<'r>: Sized {
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     fn read_opaque_fixed_owned(&mut self, len: u32) -> ReadResult<Vec<u8>> {
-        let bytes = self.read_opaque_fixed(len)?;
+        let bytes = self.read_opaque_fixed(len as usize)?;
         let buf = Vec::from(bytes); // copy from input
         Ok(buf)
     }
@@ -150,7 +156,7 @@ pub enum ReadError {
         requested,
         remaining
     )]
-    SourceEmpty { requested: u32, remaining: usize },
+    SourceEmpty { requested: usize, remaining: usize },
 
     #[error("input remaining after decoding: {} bytes", remaining)]
     SourceRemaining { remaining: u64 },

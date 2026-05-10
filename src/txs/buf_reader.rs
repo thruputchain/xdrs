@@ -54,10 +54,10 @@ impl<'a> BufReader<'a> {
     }
 
     #[inline]
-    fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
+    fn get_input(&mut self, requested: usize) -> ReadResult<&'a [u8]> {
         let Some(extent) = self
             .pos
-            .checked_add(requested as usize)
+            .checked_add(requested)
             .filter(|&e| e <= self.data.len())
         else {
             // requested <= u32::MAX, so if pos + requested > data.len()
@@ -82,30 +82,12 @@ impl<'a> BufReader<'a> {
 
         Ok(buf)
     }
-
-    /// Skips the specified number of bytes in the input.
-    ///
-    /// This is used internally for padding. The number of bytes to skip
-    /// must be at most 3 (for 4-byte alignment padding).
-    #[inline]
-    pub fn skip_input(&mut self, skip_bytes: u32) -> ReadResult<()> {
-        debug_assert!(skip_bytes <= 3);
-
-        let _bytes = self.get_input(skip_bytes)?;
-
-        #[cfg(not(feature = "permissive"))]
-        if _bytes.iter().any(|&b| b != 0) {
-            return Err(ReadError::NonZeroPadding);
-        }
-
-        Ok(())
-    }
 }
 
 // SAFETY: read_opaque_fixed returns exactly `len` bytes (or an error).
 unsafe impl<'r> Reader<'r> for BufReader<'r> {
     #[inline]
-    fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
+    fn read_opaque_fixed(&mut self, len: usize) -> ReadResult<&'r [u8]> {
         let rem = len % 4;
         if rem == 0 {
             return self.get_input(len);
@@ -118,8 +100,10 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
         // payload, the trailing `padlen` bytes are padding.
         let combined = len.checked_add(padlen).ok_or(ReadError::SourceEmpty {
             // TODO(geoff): The actual requested amount if this overflow fails
-            // is 2^32, i.e. one more than u32::MAX
-            requested: u32::MAX,
+            // is 2^32, i.e. one more than u32::MAX, on 32-bit targets
+            // This check overflows for i.e. len = u32::MAX, padding=1 on 32-bit targets,
+            // but on such targets we cannot have a buffer of size usize::MAX anyways.
+            requested: usize::MAX,
             remaining: self.data.len() - self.pos,
         })?;
         let buf = self.get_input(combined)?;
@@ -144,7 +128,7 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
             return Err(ReadError::MaxLengthExceeded);
         }
 
-        self.read_opaque_fixed(len)
+        self.read_opaque_fixed(len as usize)
     }
 
     #[inline]

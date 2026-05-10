@@ -56,7 +56,7 @@ impl<'a> BufReader<'a> {
             //   so data.len() - pos <= isize::MAX < u32::MAX.
             let remaining: usize = self.data.len() - self.pos;
             return Err(ReadError::SourceEmpty {
-                requested,
+                requested: requested as usize,
                 remaining,
             });
         };
@@ -269,8 +269,9 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
     }
 
     #[inline]
-    fn read_opaque_fixed(&mut self, len: u32) -> ReadResult<&'r [u8]> {
-        self.get_input(len)
+    fn read_opaque_fixed(&mut self, len: usize) -> ReadResult<&'r [u8]> {
+        debug_assert!(len <= u32::MAX as usize);
+        self.get_input(len as u32)
     }
 
     #[inline(always)]
@@ -281,6 +282,6 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
             return Err(ReadError::MaxLengthExceeded);
         }
 
-        self.read_opaque_fixed(len)
+        self.read_opaque_fixed(len as usize)
     }
 }
