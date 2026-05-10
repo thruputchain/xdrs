@@ -982,6 +982,12 @@ const _: () = {
     }
 };
 
+/// Unit declares as `void`, which is valid as a standalone struct
+/// field or union arm but produces invalid XDR-IDL when nested inside
+/// container types (`Option<()>`, `Vec<()>`, `VecM<()>`, `[(); N]`,
+/// etc.).  The runtime codecs handle these compositions correctly,
+/// but the schema output is not meaningful.  Avoid `()` inside
+/// generic wrappers in types that require schema generation.
 impl Declare for () {
     fn declare(_name: Ident) -> Declaration {
         Declaration::Void
