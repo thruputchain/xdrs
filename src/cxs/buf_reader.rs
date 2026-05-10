@@ -88,6 +88,9 @@ impl<'a> BufReader<'a> {
         if v == 63 {
             // The number is encoded in the following bytes
 
+            // SAFETY: get_input(N) returns exactly N initialized bytes
+            // on success, so the pointer from as_ptr() is valid for an
+            // N-byte read_unaligned.
             n = match s {
                 0 => self.read_byte()? as i8 as i64,
                 1 => i16::from_le(unsafe {
@@ -150,6 +153,9 @@ impl<'a> BufReader<'a> {
         if v == 63 {
             // The number is encoded in the following bytes
 
+            // SAFETY: get_input(N) returns exactly N initialized bytes
+            // on success, so the pointer from as_ptr() is valid for an
+            // N-byte read_unaligned.
             let uint = match s {
                 0 => self.read_byte()? as u64,
                 1 => u16::from_le(unsafe {
