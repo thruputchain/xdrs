@@ -270,6 +270,8 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
 
     #[inline]
     fn read_opaque_fixed(&mut self, len: usize) -> ReadResult<&'r [u8]> {
+        // SAFETY precondition: len must fit in u32 (all callers originate
+        // from u32 values: read_u32, ValidU32, or small literals).
         debug_assert!(len <= u32::MAX as usize);
         self.get_input(len as u32)
     }
