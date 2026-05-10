@@ -85,11 +85,7 @@ pub unsafe trait Reader<'r>: Sized {
     ) -> ReadResult<&'a mut [u8]> {
         debug_assert_eq!(dst.len(), len as usize);
 
-        // Compile-time assertion: usize must be at least as large as u32.
-        const _: () = {
-            // If this fails, the following will error due to array of negative size.
-            let _ = [0u8; (core::mem::size_of::<usize>() >= core::mem::size_of::<u32>()) as usize - 1];
-        };
+        const _: () = assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<u32>());
 
         let data = self.read_opaque_fixed(len as usize)?;
 

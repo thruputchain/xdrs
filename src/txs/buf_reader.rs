@@ -60,13 +60,6 @@ impl<'a> BufReader<'a> {
             .checked_add(requested)
             .filter(|&e| e <= self.data.len())
         else {
-            // requested <= u32::MAX, so if pos + requested > data.len()
-            // then data.len() - pos <= u32::MAX
-            // SAFETY: the cast is lossless in both cases that reach this branch:
-            // - Non-overflow: pos + requested > data.len() implies
-            //   data.len() - pos < requested <= u32::MAX.
-            // - checked_add overflow (32-bit only): pos <= data.len() <= isize::MAX,
-            //   so data.len() - pos <= isize::MAX < u32::MAX.
             let remaining: usize = self.data.len() - self.pos;
             return Err(ReadError::SourceEmpty {
                 requested,
@@ -107,13 +100,10 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
             remaining: self.data.len() - self.pos,
         })?;
         let buf = self.get_input(combined)?;
-        let payload = unsafe { buf.get_unchecked(..len as usize) };
+        let payload = unsafe { buf.get_unchecked(..len) };
 
         #[cfg(not(feature = "permissive"))]
-        if unsafe { buf.get_unchecked(len as usize..) }
-            .iter()
-            .any(|&b| b != 0)
-        {
+        if unsafe { buf.get_unchecked(len..) }.iter().any(|&b| b != 0) {
             return Err(ReadError::NonZeroPadding);
         }
 
