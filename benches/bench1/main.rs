@@ -19,7 +19,10 @@ fn bench_codec(c: &mut Criterion) {
     group.bench_with_input(id, &VALUES, |b, values| {
         const BUFLEN: usize = 2500;
         let mut buf = UninitBuf::<BUFLEN>::new();
-        b.iter(|| buf.init(|buf| cxs::encode_into(black_box(values), buf)).unwrap());
+        b.iter(|| {
+            buf.init(|buf| cxs::encode_into(black_box(values), buf))
+                .unwrap()
+        });
     });
 
     let id = BenchmarkId::new("decode_cxs", format!("input {cxs_size}B"));
@@ -39,7 +42,10 @@ fn bench_codec(c: &mut Criterion) {
     group.bench_with_input(id, &VALUES, |b, values| {
         const BUFLEN: usize = 3000;
         let mut buf = UninitBuf::<BUFLEN>::new();
-        b.iter(|| buf.init(|buf| txs::encode_into(black_box(values), buf)).unwrap());
+        b.iter(|| {
+            buf.init(|buf| txs::encode_into(black_box(values), buf))
+                .unwrap()
+        });
     });
 
     let id = BenchmarkId::new("decode_txs", format!("input {txs_size}B"));
@@ -105,8 +111,7 @@ fn bench_vecm_struct_decode(c: &mut Criterion) {
         let id = BenchmarkId::new("decode_txs", format!("len={len}"));
         group.bench_with_input(id, txs_input, |b, input| {
             b.iter(|| {
-                let output: VecM<Entry, { u32::MAX }> =
-                    txs::decode(black_box(input)).unwrap();
+                let output: VecM<Entry, { u32::MAX }> = txs::decode(black_box(input)).unwrap();
                 black_box(&output);
             })
         });
@@ -118,8 +123,7 @@ fn bench_vecm_struct_decode(c: &mut Criterion) {
         let id = BenchmarkId::new("decode_cxs", format!("len={len}"));
         group.bench_with_input(id, cxs_input, |b, input| {
             b.iter(|| {
-                let output: VecM<Entry, { u32::MAX }> =
-                    cxs::decode(black_box(input)).unwrap();
+                let output: VecM<Entry, { u32::MAX }> = cxs::decode(black_box(input)).unwrap();
                 black_box(&output);
             })
         });
