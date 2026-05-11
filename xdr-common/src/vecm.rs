@@ -119,12 +119,14 @@ where
             where
                 A: SeqAccess<'de>,
             {
+                const MAX_PREALLOC_BYTES: usize = 0x1_0000;
                 let mut buf = Vec::new();
                 if let Some(len) = seq.size_hint() {
                     if len > VecM::<T, MAX>::MAX_LEN {
                         return Err(<A::Error as DeError>::invalid_length(len, &self));
                     }
-                    buf.reserve(len);
+                    let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
+                    buf.reserve(cap);
                 }
 
                 while buf.len() < VecM::<T, MAX>::MAX_LEN {
