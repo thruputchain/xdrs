@@ -40,10 +40,16 @@ use core::ops::Deref;
 /// - **With `alloc` feature**: `Vec<u8>` is heap-allocated, supporting dynamic data
 /// - **Without `alloc` feature**: `Vec<u8>` is `&'static [u8]`, for static data only
 ///
-/// # Display Format
+/// # Display Format and Serde Representation
 ///
 /// When displayed or serialized (with `serde` feature), strings are shown
-/// as escaped printable ASCII using [`core::fmt::Display`]/`ToString`/[`core::str::FromStr`].
+/// as escaped printable ASCII using [`core::fmt::Display`]/`ToString`. Non-ASCII
+/// bytes are hex-escaped (e.g. `\xc3\xa9` for `é`).
+///
+/// Deserialization via [`core::str::FromStr`] is intentionally permissive: it
+/// accepts both the canonical escaped form and raw UTF-8 input. This means
+/// `"café"` and `"caf\xc3\xa9"` both deserialize to the same byte sequence,
+/// but serialization always produces the escaped form.
 ///
 /// # Type Parameters
 ///
