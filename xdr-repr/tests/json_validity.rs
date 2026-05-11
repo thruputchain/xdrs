@@ -489,6 +489,65 @@ fn embedded_union_json_is_valid() {
 }
 
 #[test]
+fn symbolic_bounds_produce_valid_json() {
+    let cases: Vec<(Declaration, &str, &str)> = vec![
+        (
+            Declaration::FixedOpaque {
+                name: ident("fixed_data"),
+                size: name_ref("MAX_BYTES"),
+            },
+            "len",
+            "MAX_BYTES",
+        ),
+        (
+            Declaration::VariableOpaque {
+                name: ident("variable_data"),
+                max: name_ref("MAX_BYTES"),
+            },
+            "max",
+            "MAX_BYTES",
+        ),
+        (
+            Declaration::String {
+                name: ident("text"),
+                max: name_ref("MAX_TEXT"),
+            },
+            "max",
+            "MAX_TEXT",
+        ),
+        (
+            Declaration::FixedArray {
+                name: ident("fixed_items"),
+                elt_ty: TypeSpec::Unsigned,
+                len: name_ref("MAX_ITEMS"),
+            },
+            "len",
+            "MAX_ITEMS",
+        ),
+        (
+            Declaration::VariableArray {
+                name: ident("variable_items"),
+                elt_ty: TypeSpec::Int,
+                max: name_ref("MAX_ITEMS"),
+            },
+            "max",
+            "MAX_ITEMS",
+        ),
+    ];
+
+    for (decl, bound_field, symbol) in cases {
+        let json = decl.get_type_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap_or_else(|e| {
+            panic!("symbolic bound {symbol} produced invalid JSON: {e}\n  json: {json}")
+        });
+        assert_eq!(
+            parsed[bound_field], symbol,
+            "bound field {bound_field} should be the quoted identifier {symbol}"
+        );
+    }
+}
+
+#[test]
 fn embedded_union_identifier_cases_and_default_json_are_valid() {
     let union = TypeSpec::Union(std::boxed::Box::new(UnionBody {
         discriminant_decl: declare_int("which"),
