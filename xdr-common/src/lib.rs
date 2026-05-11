@@ -47,6 +47,9 @@ pub use cfg::{Box, Vec};
 mod error;
 pub use error::*;
 
+#[cfg(feature = "alloc")]
+pub const MAX_PREALLOC_BYTES: usize = 0x1_0000;
+
 mod vecm;
 pub use vecm::*;
 

@@ -34,7 +34,7 @@ use core::convert::Infallible;
 use core::mem::MaybeUninit as MU;
 
 #[cfg(feature = "alloc")]
-const MAX_PREALLOC_BYTES: usize = 0x1_0000;
+use xdr_common::MAX_PREALLOC_BYTES;
 
 struct PartialInitGuard<'a, T> {
     slice: &'a mut [MU<T>],

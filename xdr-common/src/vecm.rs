@@ -124,7 +124,8 @@ where
                     if len > VecM::<T, MAX>::MAX_LEN {
                         return Err(<A::Error as DeError>::invalid_length(len, &self));
                     }
-                    buf.reserve(len);
+                    let cap = len.min(crate::MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
+                    buf.reserve(cap);
                 }
 
                 while buf.len() < VecM::<T, MAX>::MAX_LEN {
