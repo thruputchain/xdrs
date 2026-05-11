@@ -4,9 +4,10 @@
 //!
 //! This crate allows you to turn Rust structs, enums, and other types into
 //! corresponding [XDR][RFC-4506] specifications. By implementing the
-//! [`HasTypeDef`] trait (or using the `#[derive(XDR)]` macro with the `derive`
-//! feature), your Rust types can describe their XDR representation, enabling
-//! automatic generation of XDR specification documents.
+//! [`HasTypeDef`] trait (or using the `#[derive(xdrs::XDR)]` macro via the
+//! umbrella `xdrs` crate with `derive` + `repr` features), your Rust types can
+//! describe their XDR representation, enabling automatic generation of XDR
+//! specification documents.
 //!
 //! ## Overview
 //!
@@ -18,17 +19,16 @@
 //!
 //! ## Examples
 //!
-//! The easiest way to use this crate is with the `derive` feature, which provides
-//! the `#[derive(XDR)]` macro to automatically generate XDR type representations.
+//! The easiest way to use this crate is through the `xdrs` umbrella crate with
+//! `derive` + `repr` features, which provides the `#[derive(xdrs::XDR)]` macro
+//! to automatically generate XDR type representations.
 //!
 //! ### Example 1: Simple Struct
 //!
 //! ```rust
-//! # #[cfg(feature = "derive")]
-//! # {
-//! use xdr_repr::XDR;
+//! use xdrs::xdr_repr::XDR;
 //!
-//! #[derive(XDR)]
+//! #[derive(xdrs::XDR)]
 //! pub struct Person {
 //!     pub name: [u8; 20],  // Fixed-length opaque data
 //!     pub age: u32,
@@ -43,17 +43,14 @@
 //! };
 //! "#;
 //! assert_eq!(expected, formatted);
-//! # }
 //! ```
 //!
 //! ### Example 2: Struct with Arrays
 //!
 //! ```rust
-//! # #[cfg(feature = "derive")]
-//! # {
-//! use xdr_repr::XDR;
+//! use xdrs::xdr_repr::XDR;
 //!
-//! #[derive(XDR)]
+//! #[derive(xdrs::XDR)]
 //! pub struct Message {
 //!     pub id: u32,
 //!     pub data: [u8; 16],
@@ -70,7 +67,6 @@
 //! };
 //! "#;
 //! assert_eq!(expected, formatted);
-//! # }
 //! ```
 //!
 //! ### Example 3: Using Attributes
@@ -78,12 +74,10 @@
 //! You can customize the generated XDR specification using attributes:
 //!
 //! ```rust
-//! # #[cfg(feature = "derive")]
-//! # {
-//! use xdr_repr::XDR;
+//! use xdrs::xdr_repr::{XDR, HasSpecification};
 //!
 //! // Use a different name in the XDR specification
-//! #[derive(XDR)]
+//! #[derive(xdrs::XDR)]
 //! #[xdr(name = "PersonRecord")]
 //! pub struct Person {
 //!     pub name: xdr_common::BytesM,
@@ -100,7 +94,7 @@
 //! assert_eq!(expected_person, person_spec);
 //!
 //! // For enums (discriminated unions), customize the discriminant type and field name
-//! #[derive(XDR)]
+//! #[derive(xdrs::XDR)]
 //! #[repr(i32)]
 //! pub enum Status {
 //!     Ok = 0,
@@ -115,7 +109,7 @@
 //! "#;
 //! assert_eq!(expected_status, status_spec);
 //!
-//! #[derive(XDR)]
+//! #[derive(xdrs::XDR)]
 //! #[xdr(discrim_type = "Status", discrim_var = "stat")]
 //! #[repr(i32)]
 //! pub enum Message {
@@ -123,7 +117,6 @@
 //!     Err { err_msg: Vec<u8> } = -1,
 //! }
 //!
-//! use xdr_repr::HasSpecification;
 //! let message_spec = Message::spec().to_string();
 //! // The spec contains both the enum and union definitions
 //! let expected_message = r#"union Message switch (Status stat)
@@ -136,7 +129,6 @@
 //!
 //! "#;
 //! assert_eq!(expected_message, message_spec);
-//! # }
 //! ```
 //!
 //! ### Example 4: Enum with Default Case
@@ -144,11 +136,9 @@
 //! You can mark an enum variant as the default case using `#[xdr(enum_default)]`:
 //!
 //! ```rust
-//! # #[cfg(feature = "derive")]
-//! # {
-//! use xdr_repr::{XDR, HasSpecification};
+//! use xdrs::xdr_repr::{XDR, HasSpecification};
 //!
-//! #[derive(XDR)]
+//! #[derive(xdrs::XDR)]
 //! #[repr(i32)]
 //! pub enum Response {
 //!     Success { data: [u8; 100] } = 0,
@@ -180,7 +170,6 @@
 //!
 //! "#;
 //! assert_eq!(expected, formatted);
-//! # }
 //! ```
 //!
 //! ### Manual Implementation
@@ -654,8 +643,3 @@ pub use construct::*;
 // export the traits that produce XDR representations
 pub use result::*;
 pub use ty::*;
-
-// Re-export XDR derive-macro
-#[cfg(feature = "derive")]
-#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
-pub use xdr_derive::XDR;

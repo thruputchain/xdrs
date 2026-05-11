@@ -1047,7 +1047,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
- "xdr-repr",
  "xdrs",
 ]
 
@@ -1059,7 +1058,6 @@ dependencies = [
  "pretty_assertions",
  "serde_json",
  "xdr-common",
- "xdr-derive",
  "xdrs",
 ]
 
