@@ -48,9 +48,9 @@
 //! ### XDR Type Representation
 //!
 //! ```rust
-//! use xdr_repr::XDR;
+//! use xdrs::xdr_repr::XDR;
 //!
-//! #[derive(XDR)]
+//! #[derive(xdrs::XDR)]
 //! struct Message {
 //!     id: u32,
 //!     data: [u8; 16],

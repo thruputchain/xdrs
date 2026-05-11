@@ -655,7 +655,3 @@ pub use construct::*;
 pub use result::*;
 pub use ty::*;
 
-// Re-export XDR derive-macro
-#[cfg(feature = "derive")]
-#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
-pub use xdr_derive::XDR;

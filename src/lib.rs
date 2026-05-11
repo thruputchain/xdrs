@@ -118,7 +118,11 @@ pub use xdr_repr;
 
 #[cfg(feature = "derive")]
 #[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
-pub use xdr_derive::*;
+pub use xdr_derive::{ConstWriteXDR, ReadXDR, WriteXDR};
+
+#[cfg(all(feature = "derive", feature = "repr"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "derive", feature = "repr"))))]
+pub use xdr_derive::XDR;
 
 #[cfg(feature = "int128")]
 #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
