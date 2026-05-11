@@ -161,7 +161,7 @@ use proc_macro::TokenStream;
 ///   with a known discriminant value will produce bytes that the reader decodes
 ///   as the concrete variant, not as `Default`.
 ///
-#[proc_macro_derive(WriteXDR, attributes(xdrs))]
+#[proc_macro_derive(WriteXDR, attributes(xdr, xdrs))]
 pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
@@ -203,7 +203,7 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///   generic lifetime parameter with that same name; choose another name for
 ///   user-defined lifetimes.
 ///
-#[proc_macro_derive(ReadXDR, attributes(xdrs))]
+#[proc_macro_derive(ReadXDR, attributes(xdr, xdrs))]
 pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 

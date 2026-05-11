@@ -4,15 +4,6 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
 use syn::Result;
 
-fn paths_equal(a: &syn::Path, b: &syn::Path) -> bool {
-    a.leading_colon == b.leading_colon
-        && a.segments.len() == b.segments.len()
-        && a.segments
-            .iter()
-            .zip(b.segments.iter())
-            .all(|(x, y)| x.ident == y.ident)
-}
-
 #[derive(Clone, Debug, FromField, FromDeriveInput, FromVariant)]
 #[darling(attributes(xdr))]
 struct Attrs {
@@ -60,7 +51,7 @@ pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let attrs = Attrs::from_derive_input(input)?;
     let crate_attr = CrateAttr::from_derive_input(input)?;
     if let (Some(a), Some(b)) = (&attrs.krate, &crate_attr.krate)
-        && !paths_equal(a, b)
+        && a != b
     {
         return err(
             input,

@@ -21,12 +21,6 @@ struct Attrs {
 }
 
 impl Attrs {
-    fn crate_path(&self) -> syn::Path {
-        self.krate
-            .clone()
-            .unwrap_or_else(|| syn::parse_quote!(::xdrs))
-    }
-
     fn check<S: syn::spanned::Spanned>(&self, item: &S) -> Result<()> {
         if self.via.is_some() {
             if self.into_type.is_some() {
@@ -58,12 +52,37 @@ impl Attrs {
     }
 }
 
+#[derive(Clone, Debug, Default, FromDeriveInput)]
+#[darling(attributes(xdr), default, allow_unknown_fields)]
+struct XdrCrateAttr {
+    #[darling(rename = "crate")]
+    krate: Option<syn::Path>,
+}
+
+fn resolve_crate_path(attrs: &Attrs, input: &syn::DeriveInput) -> Result<syn::Path> {
+    let xdr_attr = XdrCrateAttr::from_derive_input(input)?;
+    if let (Some(a), Some(b)) = (&attrs.krate, &xdr_attr.krate)
+        && a != b
+    {
+        return err(
+            input,
+            "conflicting crate paths: `#[xdr(crate = \"...\")]` and \
+             `#[xdrs(crate = \"...\")]` must match if both are specified",
+        );
+    }
+    Ok(attrs
+        .krate
+        .clone()
+        .or(xdr_attr.krate)
+        .unwrap_or_else(|| syn::parse_quote!(::xdrs)))
+}
+
 // ---- derive WriteXDR ------------------------------------------------------
 
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let attrs = Attrs::from_derive_input(input)?;
     attrs.check(input)?;
-    let krate = attrs.crate_path();
+    let krate = resolve_crate_path(&attrs, input)?;
     let impls = write_data(input, &attrs)?;
 
     Ok(quote! {
@@ -309,7 +328,7 @@ fn named_field_binding(index: usize, field: &syn::Field) -> TokenStream {
 pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let attrs = Attrs::from_derive_input(input)?;
     attrs.check(input)?;
-    let krate = attrs.crate_path();
+    let krate = resolve_crate_path(&attrs, input)?;
     let impls = read_data(input, &attrs)?;
 
     Ok(quote! {
