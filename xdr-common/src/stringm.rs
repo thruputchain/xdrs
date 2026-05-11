@@ -116,6 +116,11 @@ impl<const MAX: u32> core::fmt::Debug for StringM<MAX> {
 impl<const MAX: u32> core::str::FromStr for StringM<MAX> {
     type Err = Error;
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        // Each escaped byte is at most 4 input chars (\xNN), so if the input
+        // exceeds MAX * 4, the unescaped output will certainly exceed MAX.
+        if s.len() > Self::MAX_LEN.saturating_mul(4) {
+            return Err(Error::LengthExceedsMax);
+        }
         escape_bytes::unescape(s.as_bytes())
             .map_err(|_| Error::Invalid)?
             .try_into()
@@ -136,7 +141,8 @@ impl<const MAX: u32> schemars::JsonSchema for StringM<MAX> {
     fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "type": "string",
-            "maxLength": MAX,
+            "x-max-unescaped-bytes": MAX,
+            "description": "XDR string with escape_bytes encoding. x-max-unescaped-bytes is the byte limit of the unescaped XDR payload, not the character count of the JSON value.",
         })
     }
 }
