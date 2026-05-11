@@ -651,9 +651,6 @@ pub use xdr::*;
 // export XDR-spec constructors
 pub use construct::*;
 
-// Re-export `alloc::vec` so derive-generated code can use `vec!` without `std`.
-pub use alloc::vec;
-
 // export the traits that produce XDR representations
 pub use result::*;
 pub use ty::*;
