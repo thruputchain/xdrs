@@ -61,5 +61,5 @@ jobs:
         run: cargo clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
       - name: Test Documentation Examples
         run: |
-          cargo test --doc -p xdr-repr --features "derive,ns,int128"
+          cargo test --doc -p xdr-repr --features "ns,int128"
           cargo test --doc --features "alloc,derive,repr,ns,int128"
