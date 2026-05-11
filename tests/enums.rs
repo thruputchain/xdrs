@@ -175,6 +175,7 @@ fn enum_variant_field_via() {
     TXS::check_codec(&b, &hex!("0000000100000009"));
 }
 
+#[cfg(feature = "repr")]
 mod xdr_variant_rename {
     use xdrs::xdr_repr::*;
 
