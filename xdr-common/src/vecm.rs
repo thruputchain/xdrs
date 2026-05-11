@@ -31,6 +31,20 @@ use core::ops::Deref;
 /// - `T` - The element type
 /// - `MAX` - Maximum number of elements (defaults to `u32::MAX`)
 ///
+/// # Schema note — `VecM<u8>` vs `BytesM`
+///
+/// `VecM<u8, MAX>` and `BytesM<MAX>` share the same XDR wire format
+/// (variable-length opaque) and the same `xdr-repr` metadata, but their
+/// `schemars` JSON schemas differ: `BytesM` advertises a hex-encoded string
+/// while `VecM<u8>` advertises a JSON array of integers. This is intentional —
+/// each schema faithfully describes its own serde JSON shape. If you need the
+/// hex-string schema, use `BytesM` directly.
+///
+/// The same applies to `VecM<Vec<u8>, MAX>`: the inner `Vec<u8>` element
+/// schema is the standard schemars array-of-integers, not the XDR opaque
+/// representation. Prefer `VecM<BytesM<INNER>, MAX>` when the JSON schema
+/// must reflect opaque byte semantics.
+///
 /// # Examples
 ///
 /// ```ignore
