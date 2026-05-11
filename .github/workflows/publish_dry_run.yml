@@ -5,6 +5,11 @@ on:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  PUBLISH_PACKAGES: >-
+    xdr-common
+    xdr-derive
+    xdr-repr
+    xdrs
 
 jobs:
  publish:
@@ -37,3 +42,5 @@ jobs:
 
       - name: publish dry run
         uses: ./actions/cargo-publish-dry-run
+        with:
+          packages: ${{ env.PUBLISH_PACKAGES }}

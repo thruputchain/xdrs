@@ -5,6 +5,11 @@ on:
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  PUBLISH_PACKAGES: >-
+    xdr-common
+    xdr-derive
+    xdr-repr
+    xdrs
 
 jobs:
   publish:
@@ -42,10 +47,14 @@ jobs:
 
       - name: dry run
         uses: ./actions/cargo-publish-dry-run
+        with:
+          packages: ${{ env.PUBLISH_PACKAGES }}
 
       - name: tag commit with version
         id: publish-tag
         uses: ./actions/cargo-version-tag
+        with:
+          packages: ${{ env.PUBLISH_PACKAGES }}
 
       - name: push tag
         run: |
@@ -56,6 +65,7 @@ jobs:
       - name: publish
         uses: ./actions/cargo-publish
         with:
+          packages: ${{ env.PUBLISH_PACKAGES }}
           git-tag: ${{ steps.publish-tag.outputs.tag }}
           registry-name: groundhog
           registry-token: ${{ secrets.CARGO_PUBLISH_TOKEN }}
