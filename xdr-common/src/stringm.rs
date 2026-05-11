@@ -40,10 +40,16 @@ use core::ops::Deref;
 /// - **With `alloc` feature**: `Vec<u8>` is heap-allocated, supporting dynamic data
 /// - **Without `alloc` feature**: `Vec<u8>` is `&'static [u8]`, for static data only
 ///
-/// # Display Format
+/// # Display Format and Serde Representation
 ///
 /// When displayed or serialized (with `serde` feature), strings are shown
-/// as escaped printable ASCII using [`core::fmt::Display`]/`ToString`/[`core::str::FromStr`].
+/// as escaped printable ASCII using [`core::fmt::Display`]/`ToString`. Non-ASCII
+/// bytes are hex-escaped (e.g. `\xc3\xa9` for `é`).
+///
+/// Deserialization via [`core::str::FromStr`] is intentionally permissive: it
+/// accepts both the canonical escaped form and raw UTF-8 input. This means
+/// `"café"` and `"caf\xc3\xa9"` both deserialize to the same byte sequence,
+/// but serialization always produces the escaped form.
 ///
 /// # Type Parameters
 ///
@@ -116,6 +122,11 @@ impl<const MAX: u32> core::fmt::Debug for StringM<MAX> {
 impl<const MAX: u32> core::str::FromStr for StringM<MAX> {
     type Err = Error;
     fn from_str(s: &str) -> core::result::Result<Self, Self::Err> {
+        // Each escaped byte is at most 4 input chars (\xNN), so if the input
+        // exceeds MAX * 4, the unescaped output will certainly exceed MAX.
+        if s.len() > Self::MAX_LEN.saturating_mul(4) {
+            return Err(Error::LengthExceedsMax);
+        }
         escape_bytes::unescape(s.as_bytes())
             .map_err(|_| Error::Invalid)?
             .try_into()
@@ -136,7 +147,8 @@ impl<const MAX: u32> schemars::JsonSchema for StringM<MAX> {
     fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({
             "type": "string",
-            "maxLength": MAX,
+            "x-max-unescaped-bytes": MAX,
+            "description": "XDR string with escape_bytes encoding. x-max-unescaped-bytes is the byte limit of the unescaped XDR payload, not the character count of the JSON value.",
         })
     }
 }
