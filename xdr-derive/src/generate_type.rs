@@ -55,7 +55,8 @@ pub fn xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
             mod __xdrs {
                 pub use #krate::*;
                 pub use #krate::xdr_repr::*;
-                pub use ::std::vec;
+                extern crate alloc;
+                pub use alloc::vec;
             }
 
             #imp
