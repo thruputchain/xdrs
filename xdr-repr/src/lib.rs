@@ -654,4 +654,3 @@ pub use construct::*;
 // export the traits that produce XDR representations
 pub use result::*;
 pub use ty::*;
-
