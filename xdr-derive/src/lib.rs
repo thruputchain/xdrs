@@ -118,6 +118,11 @@
 //!   serializing.
 //! - `#[xdrs(via = "Type")]` - Same as above.
 //!
+//! ### Crate path override
+//!
+//! All three derives accept `#[xdrs(crate = "path")]` to override the default
+//! `::xdrs` import path (useful when the dependency is renamed or re-exported).
+//!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 mod generate;
