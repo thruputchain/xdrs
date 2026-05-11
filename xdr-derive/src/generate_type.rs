@@ -355,9 +355,7 @@ fn variant_fields_decl(variant: &syn::Variant) -> Result<TokenStream> {
     let variant_name = variant.ident.to_string().to_lowercase();
 
     match fields {
-        syn::Fields::Unit => {
-            Ok(quote! { __xdrs::Declaration::Void })
-        }
+        syn::Fields::Unit => Ok(quote! { __xdrs::Declaration::Void }),
         syn::Fields::Named(fields_named) => {
             if fields_named.named.is_empty() {
                 return Ok(quote! { __xdrs::Declaration::Void });
@@ -462,9 +460,7 @@ fn default_variant_payload_decl(variant: &syn::Variant) -> Result<TokenStream> {
                 })
             }
         }
-        syn::Fields::Unit => {
-            Ok(quote! { __xdrs::declare_void() })
-        }
+        syn::Fields::Unit => Ok(quote! { __xdrs::declare_void() }),
     }
 }
 
