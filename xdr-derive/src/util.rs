@@ -93,13 +93,14 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
     v.fields.is_empty()
 }
 
-/// A variant named `Default` with no explicit discriminant is the XDR
-/// union default arm.  Its first `i32` field stores the wire discriminant.
+/// A variant marked `#[xdr(default_variant)]` (which must have no explicit
+/// discriminant) becomes the XDR union's default arm.  Its first `i32`
+/// field stores the wire discriminant.
 ///
 /// The writer emits the stored `i32` verbatim and does **not** check
 /// whether it collides with a concrete variant's discriminant.  If a
-/// `Default(d, ..)` is encoded where `d` matches a concrete arm, the
-/// reader will decode it as that concrete variant — not as `Default`.
+/// variant `Default(d, ..)` is encoded where `d` matches a concrete arm,
+/// the reader will decode it as that concrete variant — not as `Default`.
 /// Callers are responsible for avoiding this overlap.
 pub fn variant_is_default(v: &syn::Variant) -> bool {
     let attrs = VariantAttrs::from_variant(v).unwrap();
@@ -179,8 +180,8 @@ pub fn check_variants(
             input,
             "derive XDR: enum discriminants must be all implicit or \
              all explicit, and may optionally also include a default \
-             variant (with no explicit discriminant) marked `#[default_variant]`, \
-             whose first field must be i32",
+             variant (with no explicit discriminant) marked \
+             `#[xdr(default_variant)]`, whose first field must be i32",
         )
     } else if let Some(dv) = default_variant {
         // RFC 4506 requires the default arm of a union to be trailing.
