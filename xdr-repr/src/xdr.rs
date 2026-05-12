@@ -338,7 +338,7 @@ impl TypeJsonRepr {
 /// # Panics
 ///
 /// Panics if the string is not a valid identifier, with a descriptive error message.
-pub(crate) fn validate_xdr_identifier(s: &str) {
+pub fn validate_xdr_identifier(s: &str) {
     if s.is_empty() {
         panic!("XDR identifier cannot be empty");
     }
