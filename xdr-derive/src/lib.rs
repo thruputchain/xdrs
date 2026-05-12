@@ -102,9 +102,9 @@
 //!
 //! When deriving `ReadXDR`:
 //!
-//! - `#[xdrs(from_type = "Type")]` - Deserialize to the intermediate type
+//! - `#[xdr(from_type = "Type")]` - Deserialize to the intermediate type
 //!   "Type" before converting into the target type via `Into`.
-//! - `#[xdrs(via = "Type")]` - Same as above.
+//! - `#[xdr(via = "Type")]` - Same as above.
 //!
 //! ### ReadXDR Notes
 //!
@@ -114,13 +114,13 @@
 //!
 //! When deriving `WriteXDR`:
 //!
-//! - `#[xdrs(into_type = "Type")]` - Convert (via `Into`) a different type before
+//! - `#[xdr(into_type = "Type")]` - Convert (via `Into`) a different type before
 //!   serializing.
-//! - `#[xdrs(via = "Type")]` - Same as above.
+//! - `#[xdr(via = "Type")]` - Same as above.
 //!
 //! ### Crate path override
 //!
-//! All three derives accept `#[xdrs(crate = "path")]` to override the default
+//! All three derives accept `#[xdr(crate = "path")]` to override the default
 //! `::xdrs` import path (useful when the dependency is renamed or re-exported).
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
@@ -140,17 +140,17 @@ use proc_macro::TokenStream;
 ///
 /// # Attributes
 ///
-/// - `#[xdrs(into_type = "Type")]` - Convert (via `Into`) a different type before
+/// - `#[xdr(into_type = "Type")]` - Convert (via `Into`) a different type before
 ///   serializing.
-/// - `#[xdrs(via = "Type")]` - Same as above (also implies `from_type`).
-/// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
+/// - `#[xdr(via = "Type")]` - Same as above (also implies `from_type`).
+/// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
 /// # Limitations
 ///
 /// - **No recursive types.** XDR encoding is not self-describing; a recursive
 ///   type will loop at runtime. The macro does not detect or reject recursion.
-///   In particular, `#[xdrs(into_type = "Self")]` is an infinite loop — the
+///   In particular, `#[xdr(into_type = "Self")]` is an infinite loop — the
 ///   generated impl converts `self` into `Self` (a no-op) and re-enters the
 ///   same encoder until the stack overflows. The surrogate type must always be
 ///   a **distinct**, non-recursive type.
@@ -158,7 +158,7 @@ use proc_macro::TokenStream;
 ///   type, when using `into_type`/`via`) must independently satisfy `WriteXDR`.
 ///   The macro copies the input type's generic bounds verbatim — it does **not**
 ///   infer or propagate trait bounds required by a surrogate type's own generic
-///   parameters. For example, `#[xdrs(into_type = "VecM<T, 8>")]` on a generic
+///   parameters. For example, `#[xdr(into_type = "VecM<T, 8>")]` on a generic
 ///   `Wrapper<T>` will not automatically add `T: WriteXDR`; you must supply the
 ///   bound yourself.
 /// - **Default variant discriminant is not validated.** When a `Default(i32, ..)`
@@ -183,17 +183,17 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///
 /// # Attributes
 ///
-/// - `#[xdrs(from_type = "Type")]` - Deserialize to the intermediate type
+/// - `#[xdr(from_type = "Type")]` - Deserialize to the intermediate type
 ///   "Type" before converting into the target type via `Into`.
-/// - `#[xdrs(via = "Type")]` - Same as above (also implies `into_type`).
-/// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
+/// - `#[xdr(via = "Type")]` - Same as above (also implies `into_type`).
+/// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
 /// # Limitations
 ///
 /// - **No recursive types.** XDR decoding is not self-describing; a recursive
 ///   type will loop at runtime. The macro does not detect or reject recursion.
-///   In particular, `#[xdrs(from_type = "Self")]` is an infinite loop — the
+///   In particular, `#[xdr(from_type = "Self")]` is an infinite loop — the
 ///   generated impl reads a `Self` and converts it into `Self` (a no-op),
 ///   re-entering the same decoder until the stack overflows. The surrogate type
 ///   must always be a **distinct**, non-recursive type.
@@ -201,7 +201,7 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///   type, when using `from_type`/`via`) must independently satisfy `ReadXDR`.
 ///   The macro copies the input type's generic bounds verbatim — it does **not**
 ///   infer or propagate trait bounds required by a surrogate type's own generic
-///   parameters. For example, `#[xdrs(from_type = "VecM<T, 8>")]` on a generic
+///   parameters. For example, `#[xdr(from_type = "VecM<T, 8>")]` on a generic
 ///   `Wrapper<T>` will not automatically add `T: ReadXDR`; you must supply the
 ///   bound yourself.
 /// - **The lifetime name `'_r` is reserved.** The generated `ReadXDR` impl uses
@@ -236,7 +236,7 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
 ///
 /// All three derive macros (`ReadXDR`, `WriteXDR`, `XDR`) accept:
 ///
-/// - `#[xdrs(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
+/// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
 /// # Limitations
@@ -290,7 +290,7 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///
 /// # Limitations
 ///
-/// - Does not support `#[xdrs(into_type)]` or `#[xdrs(via)]` attributes on the
+/// - Does not support `#[xdr(into_type)]` or `#[xdr(via)]` attributes on the
 ///   derive input, struct fields, or enum variant fields. The `via`/`into_type`
 ///   conversions require `Into::into()` which is not `const fn`.
 /// - Supports lifetime and const generics, but not type parameters

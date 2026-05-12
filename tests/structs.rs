@@ -132,7 +132,7 @@ fn struct_into_from_type() {
     // Serialize a u8 as a u32
 
     #[derive(Debug, Clone, PartialEq, Eq, ReadXDR, WriteXDR)]
-    #[xdrs(into_type = "u32", from_type = "u32")]
+    #[xdr(into_type = "u32", from_type = "u32")]
     struct U32(u8);
 
     impl Into<u32> for U32 {
@@ -161,7 +161,7 @@ fn struct_via_type() {
     // Serialize a u8 as a u32
 
     #[derive(Debug, Clone, PartialEq, Eq, ReadXDR, WriteXDR)]
-    #[xdrs(via = "u32")]
+    #[xdr(via = "u32")]
     struct U32(u8);
 
     impl Into<u32> for U32 {
@@ -205,7 +205,7 @@ fn field_into_from_type() {
 
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct Container {
-        #[xdrs(into_type = "u32", from_type = "u32")]
+        #[xdr(into_type = "u32", from_type = "u32")]
         item: U32,
     }
 
@@ -238,7 +238,7 @@ fn field_via_type() {
 
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]
     struct Container {
-        #[xdrs(via = "u32")]
+        #[xdr(via = "u32")]
         item: U32,
     }
 
