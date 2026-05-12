@@ -1,6 +1,7 @@
 #!/bin/bash
 
 export RUSTFLAGS="--deny warnings"
+export RUSTDOCFLAGS="--deny warnings"
 set -e
 set -x
 

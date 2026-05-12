@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "--deny warnings"
+      RUSTDOCFLAGS: "--deny warnings"
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: webfactory/ssh-agent@v0.9.1
