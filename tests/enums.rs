@@ -29,7 +29,7 @@ fn enum_foo() {
         A(&'a [u8]) = FOO_A,
         B { x: i32, y: u32 } = 7,
         C = 2,
-        #[xdrs(default_variant)]
+        #[xdr(default_variant)]
         Other(i32),
     }
 
@@ -74,7 +74,7 @@ fn enum_default_variant_encode() {
         A { a: u32 } = 1,
         B { b: i32 } = 2,
         C = 3,
-        #[xdrs(default_variant)]
+        #[xdr(default_variant)]
         Other { d: i32 },
     }
 
@@ -94,7 +94,7 @@ fn enum_default_variant_with_payload_roundtrip() {
     enum UnnamedPayload {
         Known = 0,
 
-        #[xdrs(default_variant)]
+        #[xdr(default_variant)]
         Unknown(i32, u32),
     }
 
@@ -110,7 +110,7 @@ fn enum_default_variant_with_payload_roundtrip() {
     enum NamedPayload {
         Known { val: u32 } = 0,
 
-        #[xdrs(default_variant)]
+        #[xdr(default_variant)]
         Unknown { code: i32, data: u32 },
     }
 
@@ -163,9 +163,9 @@ fn enum_variant_field_via() {
     #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[repr(i32)]
     enum WithVia {
-        A(#[xdrs(via = "u32")] Wrapper),
+        A(#[xdr(via = "u32")] Wrapper),
         B {
-            #[xdrs(via = "u32")]
+            #[xdr(via = "u32")]
             val: Wrapper,
         },
     }

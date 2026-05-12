@@ -5,7 +5,7 @@ use crate::util::*;
 #[derive(Clone, Debug, Default, FromDeriveInput)]
 #[darling(attributes(xdr, xdrs), default)]
 pub struct InputAttrs {
-    /// Override the path to the `xdrs` crate, e.g. `#[xdrs(crate = "my_sdk::xdrs")]`.
+    /// Override the path to the `xdrs` crate, e.g. `#[xdr(crate = "my_sdk::xdrs")]`.
     #[darling(rename = "crate")]
     pub krate: Option<syn::Path>,
 
@@ -56,7 +56,7 @@ impl InputAttrs {
             if self.into_type.is_some() {
                 err(
                     item,
-                    "Attributes `xdrs(via)` and `xdrs(into_type)` may not be combined, \
+                    "Attributes `xdr(via)` and `xdr(into_type)` may not be combined, \
                     as `via` implies both `from_type` and `into_type`.",
                 )?;
             }
@@ -64,7 +64,7 @@ impl InputAttrs {
             if self.from_type.is_some() {
                 err(
                     item,
-                    "Attributes `xdrs(via)` and `xdrs(from_type)` may not be combined, \
+                    "Attributes `xdr(via)` and `xdr(from_type)` may not be combined, \
                     as `via` implies both `from_type` and `into_type`.",
                 )?;
             }
@@ -80,7 +80,7 @@ impl FieldAttrs {
             if self.into_type.is_some() {
                 err(
                     item,
-                    "Attributes `xdrs(via)` and `xdrs(into_type)` may not be combined, \
+                    "Attributes `xdr(via)` and `xdr(into_type)` may not be combined, \
                     as `via` implies both `from_type` and `into_type`.",
                 )?;
             }
@@ -88,7 +88,7 @@ impl FieldAttrs {
             if self.from_type.is_some() {
                 err(
                     item,
-                    "Attributes `xdrs(via)` and `xdrs(from_type)` may not be combined, \
+                    "Attributes `xdr(via)` and `xdr(from_type)` may not be combined, \
                     as `via` implies both `from_type` and `into_type`.",
                 )?;
             }
