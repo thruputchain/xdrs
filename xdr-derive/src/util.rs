@@ -109,7 +109,7 @@ pub fn variant_is_default(v: &syn::Variant) -> bool {
         assert!(
             v.discriminant.is_none(),
             "variant `{}`: A default variant may not specify a discriminant",
-            &v.ident,
+            v.ident,
         );
         true
     } else {
