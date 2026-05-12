@@ -1,9 +1,9 @@
+use crate::attrs::*;
+use darling::*;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::spanned::Spanned;
 use syn::{Error, Result};
-use crate::attrs::*;
-use darling::*;
 
 // Produce an error result referencing a particular code span
 pub fn err<T, S, M>(item: &S, msg: M) -> Result<T>

@@ -1444,10 +1444,16 @@ fn default_variant_payload_roundtrips() {
 #[repr(i32)]
 #[allow(dead_code)]
 enum DefaultPayloadNamed {
-    Known { x: u32 } = 0,
+    Known {
+        x: u32,
+    } = 0,
 
     #[xdr(default_variant)]
-    Unknown { disc: i32, a: u32, b: u32 },
+    Unknown {
+        disc: i32,
+        a: u32,
+        b: u32,
+    },
 }
 
 const DPN_VAL: DefaultPayloadNamed = DefaultPayloadNamed::Unknown {

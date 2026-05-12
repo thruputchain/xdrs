@@ -1,10 +1,10 @@
 use crate::attrs::*;
 use crate::util::*;
+use darling::*;
 use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::Result;
 use syn::visit::{self, Visit};
-use darling::*;
 
 // ---- derive WriteXDR ------------------------------------------------------
 

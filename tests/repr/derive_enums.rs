@@ -249,11 +249,16 @@ pub mod default_with_payload {
     #[derive(XDR)]
     #[repr(i32)]
     pub enum DefaultPayload {
-        Alpha { a: u32 } = 10,
+        Alpha {
+            a: u32,
+        } = 10,
         Beta = 20,
 
         #[xdr(default_variant)]
-        Default { code: i32, data: u32 },
+        Default {
+            code: i32,
+            data: u32,
+        },
     }
 
     check_format! { derive_default_payload
@@ -513,7 +518,9 @@ pub mod default_tuple_payload {
     #[derive(XDR)]
     #[repr(i32)]
     pub enum DefaultTuplePayload {
-        Alpha { a: u32 } = 10,
+        Alpha {
+            a: u32,
+        } = 10,
         Beta = 20,
 
         #[xdr(default_variant)]

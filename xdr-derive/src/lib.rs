@@ -125,11 +125,11 @@
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
+mod attrs;
 mod generate;
 mod generate_const;
 mod generate_type;
 mod util;
-mod attrs;
 
 use proc_macro::TokenStream;
 

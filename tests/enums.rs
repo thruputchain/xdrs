@@ -27,7 +27,10 @@ fn enum_foo() {
     #[repr(i32)]
     enum Foo<'a> {
         A(&'a [u8]) = FOO_A,
-        B { x: i32, y: u32 } = 7,
+        B {
+            x: i32,
+            y: u32,
+        } = 7,
         C = 2,
         #[xdr(default_variant)]
         Other(i32),
@@ -71,11 +74,17 @@ fn enum_default_variant_encode() {
     #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[repr(i32)]
     enum FooDefault {
-        A { a: u32 } = 1,
-        B { b: i32 } = 2,
+        A {
+            a: u32,
+        } = 1,
+        B {
+            b: i32,
+        } = 2,
         C = 3,
         #[xdr(default_variant)]
-        Other { d: i32 },
+        Other {
+            d: i32,
+        },
     }
 
     let discriminant: i32 = 0x0ABBCCDD;
@@ -108,10 +117,15 @@ fn enum_default_variant_with_payload_roundtrip() {
     #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[repr(i32)]
     enum NamedPayload {
-        Known { val: u32 } = 0,
+        Known {
+            val: u32,
+        } = 0,
 
         #[xdr(default_variant)]
-        Unknown { code: i32, data: u32 },
+        Unknown {
+            code: i32,
+            data: u32,
+        },
     }
 
     let original = NamedPayload::Unknown { code: 7, data: 9 };
