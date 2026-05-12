@@ -1,6 +1,6 @@
+use crate::util::*;
 use darling::*;
 use syn::Result;
-use crate::util::*;
 
 #[derive(Clone, Debug, Default, FromDeriveInput)]
 #[darling(attributes(xdr, xdrs), default)]
@@ -41,7 +41,7 @@ pub struct VariantAttrs {
     // The name for the XDR item, if different from the rust name
     pub name: Option<String>,
 
-    pub default_variant: bool
+    pub default_variant: bool,
 }
 
 impl InputAttrs {
