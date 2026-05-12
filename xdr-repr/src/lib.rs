@@ -133,7 +133,7 @@
 //!
 //! ### Example 4: Enum with Default Case
 //!
-//! You can mark an enum variant as the default case using `#[xdr(enum_default)]`:
+//! You can mark an enum variant as the default case using `#[xdr(default_variant)]`:
 //!
 //! ```rust
 //! use xdrs::xdr_repr::{XDR, HasSpecification};
@@ -146,7 +146,7 @@
 //!
 //!     // This variant handles all other discriminant values
 //!     // It must have exactly one i32 field
-//!     #[xdr(enum_default)]
+//!     #[xdr(default_variant)]
 //!     Default { code: i32 },
 //! }
 //!
@@ -223,7 +223,7 @@
 //! - **`#[xdr(discrim_var = "field_name")]`**: For enums (discriminated unions), specify
 //!   the name of the discriminant field. The default is `"which"`.
 //!
-//! - **`#[xdr(enum_default)]`**: Mark an enum variant as the default case in a
+//! - **`#[xdr(default_variant)]`**: Mark an enum variant as the default case in a
 //!   discriminated union. Applied to individual enum variants.
 //!
 //! ## Traits

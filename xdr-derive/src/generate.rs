@@ -1,67 +1,15 @@
+use crate::attrs::*;
 use crate::util::*;
-use darling::*;
 use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::Result;
 use syn::visit::{self, Visit};
-
-#[derive(Clone, Debug, Default, FromDeriveInput, FromField)]
-#[darling(attributes(xdrs), default)]
-struct Attrs {
-    pub into_type: Option<syn::Type>,
-    pub from_type: Option<syn::Type>,
-    pub via: Option<syn::Type>,
-
-    /// Override the path to the `xdrs` crate, e.g. `#[xdrs(crate = "my_sdk::xdrs")]`.
-    #[darling(rename = "crate")]
-    pub krate: Option<syn::Path>,
-
-    // Deprecated
-    pub as_type: Option<syn::Type>,
-}
-
-impl Attrs {
-    fn crate_path(&self) -> syn::Path {
-        self.krate
-            .clone()
-            .unwrap_or_else(|| syn::parse_quote!(::xdrs))
-    }
-
-    fn check<S: syn::spanned::Spanned>(&self, item: &S) -> Result<()> {
-        if self.via.is_some() {
-            if self.into_type.is_some() {
-                err(
-                    item,
-                    "Attributes `xdrs(via)` and `xdrs(into_type)` may not be combined, \
-                    as `via` implies both `from_type` and `into_type`.",
-                )?;
-            }
-
-            if self.from_type.is_some() {
-                err(
-                    item,
-                    "Attributes `xdrs(via)` and `xdrs(from_type)` may not be combined, \
-                    as `via` implies both `from_type` and `into_type`.",
-                )?;
-            }
-        }
-
-        if self.as_type.is_some() {
-            err(
-                item,
-                "Attribute `xdrs(as_ref = ...)` has been removed. \
-                Please consider `xdrs(from_type = ...)` or `xdrs(into_type = ...)`.",
-            )?;
-        }
-
-        Ok(())
-    }
-}
+use darling::*;
 
 // ---- derive WriteXDR ------------------------------------------------------
 
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
-    let attrs = Attrs::from_derive_input(input)?;
+    let attrs = InputAttrs::from_derive_input(input)?;
     attrs.check(input)?;
     let krate = attrs.crate_path();
     let impls = write_data(input, &attrs)?;
@@ -79,7 +27,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     })
 }
 
-fn write_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
+fn write_data(input: &syn::DeriveInput, attrs: &InputAttrs) -> Result<TokenStream> {
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
         return Ok(write_into_type(input, into_type));
     }
@@ -131,7 +79,7 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Toke
 fn write_field(index: usize, field: &syn::Field) -> Result<TokenStream> {
     let ty = &field.ty;
     let fa = FieldAccess::new(index, field);
-    let attrs = Attrs::from_field(field)?;
+    let attrs = FieldAttrs::from_field(field)?;
     attrs.check(field)?;
 
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
@@ -254,7 +202,7 @@ fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> Re
 fn write_binding(index: usize, field: &syn::Field) -> Result<TokenStream> {
     let ty = &field.ty;
     let bind = tmp_binding(index);
-    let attrs = Attrs::from_field(field)?;
+    let attrs = FieldAttrs::from_field(field)?;
     attrs.check(field)?;
 
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
@@ -307,7 +255,7 @@ fn named_field_binding(index: usize, field: &syn::Field) -> TokenStream {
 // ---- derive ReadXDR ------------------------------------------------------
 
 pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
-    let attrs = Attrs::from_derive_input(input)?;
+    let attrs = InputAttrs::from_derive_input(input)?;
     attrs.check(input)?;
     let krate = attrs.crate_path();
     let impls = read_data(input, &attrs)?;
@@ -325,7 +273,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     })
 }
 
-fn read_data(input: &syn::DeriveInput, attrs: &Attrs) -> Result<TokenStream> {
+fn read_data(input: &syn::DeriveInput, attrs: &InputAttrs) -> Result<TokenStream> {
     if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
         return read_from_type(input, from_type);
     }
@@ -389,7 +337,7 @@ fn read_fields(fields: &syn::Fields) -> Result<TokenStream> {
 }
 
 fn read_field(_index: usize, field: &syn::Field) -> Result<TokenStream> {
-    let attrs = Attrs::from_field(field)?;
+    let attrs = FieldAttrs::from_field(field)?;
     attrs.check(field)?;
 
     let field_spec = if let Some(field_ident) = field.ident.as_ref() {
@@ -439,7 +387,7 @@ fn add_read_bounds_for_struct_fields(
     fields: &syn::Fields,
 ) -> Result<()> {
     for field in fields {
-        let attrs = Attrs::from_field(field)?;
+        let attrs = FieldAttrs::from_field(field)?;
         attrs.check(field)?;
 
         if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
@@ -465,7 +413,7 @@ fn add_read_bounds_for_enum_variants(
                 continue;
             }
 
-            let attrs = Attrs::from_field(field).ok();
+            let attrs = FieldAttrs::from_field(field).ok();
             let from_type = attrs
                 .as_ref()
                 .and_then(|a| a.from_type.as_ref().or(a.via.as_ref()));
@@ -600,7 +548,7 @@ fn read_variant(
                 return Ok(quote! {});
             }
 
-            let attrs = Attrs::from_field(field)?;
+            let attrs = FieldAttrs::from_field(field)?;
             attrs.check(field)?;
             let bind = tmp_binding(i);
 

@@ -29,7 +29,8 @@ fn enum_foo() {
         A(&'a [u8]) = FOO_A,
         B { x: i32, y: u32 } = 7,
         C = 2,
-        Default(i32), // sole implicit arm with one i32 field is a default
+        #[xdrs(default_variant)]
+        Other(i32),
     }
 
     let bytes = b"\r\n";
@@ -43,11 +44,11 @@ fn enum_foo() {
     CXS::check_codec(&val, &hex!("02"));
     TXS::check_codec(&val, &hex!("00000002"));
 
-    let val = Foo::Default(3);
+    let val = Foo::Other(3);
     CXS::check_codec(&val, &hex!("03"));
     TXS::check_codec(&val, &hex!("00000003"));
 
-    let val = Foo::Default(10);
+    let val = Foo::Other(10);
     CXS::check_decode(&val, &hex!("0a"));
     TXS::check_decode(&val, &hex!("0000000a"));
 }
@@ -73,14 +74,15 @@ fn enum_default_variant_encode() {
         A { a: u32 } = 1,
         B { b: i32 } = 2,
         C = 3,
-        Default { d: i32 },
+        #[xdrs(default_variant)]
+        Other { d: i32 },
     }
 
     let discriminant: i32 = 0x0ABBCCDD;
     CXS::check_encode(&discriminant, &hex!("bfddccbb0a"));
     TXS::check_encode(&discriminant, &hex!("0ABBCCDD"));
 
-    let val = FooDefault::Default { d: discriminant };
+    let val = FooDefault::Other { d: discriminant };
     CXS::check_codec(&val, &hex!("bfddccbb0a"));
     TXS::check_codec(&val, &hex!("0ABBCCDD"));
 }
@@ -91,10 +93,12 @@ fn enum_default_variant_with_payload_roundtrip() {
     #[repr(i32)]
     enum UnnamedPayload {
         Known = 0,
-        Default(i32, u32),
+
+        #[xdrs(default_variant)]
+        Unknown(i32, u32),
     }
 
-    let original = UnnamedPayload::Default(7, 9);
+    let original = UnnamedPayload::Unknown(7, 9);
     TXS::check_codec(&original, &hex!("0000000700000009"));
 
     let cxs_encoded = xdrs::cxs::encode(&original).unwrap();
@@ -105,10 +109,12 @@ fn enum_default_variant_with_payload_roundtrip() {
     #[repr(i32)]
     enum NamedPayload {
         Known { val: u32 } = 0,
-        Default { code: i32, data: u32 },
+
+        #[xdrs(default_variant)]
+        Unknown { code: i32, data: u32 },
     }
 
-    let original = NamedPayload::Default { code: 7, data: 9 };
+    let original = NamedPayload::Unknown { code: 7, data: 9 };
     TXS::check_codec(&original, &hex!("0000000700000009"));
 
     let cxs_encoded = xdrs::cxs::encode(&original).unwrap();
@@ -269,16 +275,15 @@ mod xdr_variant_rename {
 
 mod external_discrim {
     use super::*;
-    use xdrs::xdr_repr::*;
 
-    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR, xdrs::XDR)]
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[repr(i32)]
     enum Status {
         Ready = 10,
         Failed = 11,
     }
 
-    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR, xdrs::XDR)]
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
     #[xdr(discrim_type = "Status")]
     #[repr(i32)]
     enum Message {

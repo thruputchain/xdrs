@@ -2,6 +2,8 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::spanned::Spanned;
 use syn::{Error, Result};
+use crate::attrs::*;
+use darling::*;
 
 // Produce an error result referencing a particular code span
 pub fn err<T, S, M>(item: &S, msg: M) -> Result<T>
@@ -100,9 +102,18 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
 /// reader will decode it as that concrete variant — not as `Default`.
 /// Callers are responsible for avoiding this overlap.
 pub fn variant_is_default(v: &syn::Variant) -> bool {
-    v.discriminant.is_none()
-        // TODO: use #[xdrs(default)]
-        && v.ident.to_string().as_str() == "Default"
+    let attrs = VariantAttrs::from_variant(v).unwrap();
+
+    if attrs.default_variant {
+        assert!(
+            v.discriminant.is_none(),
+            "variant `{}`: A default variant may not specify a discriminant",
+            &v.ident,
+        );
+        true
+    } else {
+        false
+    }
 }
 
 pub fn enum_is_fieldless(e: &syn::DataEnum) -> bool {
@@ -168,7 +179,7 @@ pub fn check_variants(
             input,
             "derive XDR: enum discriminants must be all implicit or \
              all explicit, and may optionally also include a default \
-             variant (with no explicit discriminant) named \"Default\", \
+             variant (with no explicit discriminant) marked `#[default_variant]`, \
              whose first field must be i32",
         )
     } else if let Some(dv) = default_variant {

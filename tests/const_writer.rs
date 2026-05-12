@@ -1405,10 +1405,12 @@ fn infallible_const_matches_runtime() {
 #[allow(dead_code)]
 enum DefaultPayloadTuple {
     Known = 0,
-    Default(i32, u32),
+
+    #[xdr(default_variant)]
+    Unknown(i32, u32),
 }
 
-const DPT_VAL: DefaultPayloadTuple = DefaultPayloadTuple::Default(7, 9);
+const DPT_VAL: DefaultPayloadTuple = DefaultPayloadTuple::Unknown(7, 9);
 
 const DPT_CXS: [u8; DPT_VAL.const_cxs_size()] = {
     let mut w = xdrs::cxs::ConstWriter::<{ DPT_VAL.const_cxs_size() }>::new();
@@ -1443,10 +1445,12 @@ fn default_variant_payload_roundtrips() {
 #[allow(dead_code)]
 enum DefaultPayloadNamed {
     Known { x: u32 } = 0,
-    Default { disc: i32, a: u32, b: u32 },
+
+    #[xdr(default_variant)]
+    Unknown { disc: i32, a: u32, b: u32 },
 }
 
-const DPN_VAL: DefaultPayloadNamed = DefaultPayloadNamed::Default {
+const DPN_VAL: DefaultPayloadNamed = DefaultPayloadNamed::Unknown {
     disc: 99,
     a: 11,
     b: 22,

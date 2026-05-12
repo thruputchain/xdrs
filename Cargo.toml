@@ -98,7 +98,7 @@ required-features = ["alloc", "int128"]
 
 [[test]]
 name = "repr"
-required-features = ["repr", "alloc", "derive"]
+required-features = ["alloc", "derive", "repr"]
 
 [[test]]
 name = "enums"
