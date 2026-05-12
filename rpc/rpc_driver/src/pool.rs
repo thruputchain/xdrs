@@ -811,9 +811,7 @@ fn detect_llc_topology() -> (usize, Vec<usize>) {
         }
     }
     // Fallback: one connection total (no topology info)
-    let num_cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
+    let num_cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
     let cpu_map = vec![0; num_cpus];
     (1, cpu_map)
 }

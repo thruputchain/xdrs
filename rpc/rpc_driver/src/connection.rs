@@ -33,7 +33,7 @@ pub(crate) struct BufPool(StdMutex<Vec<Vec<u8>>>);
 
 impl std::fmt::Debug for BufPool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let len = self.0.lock().map(|v| v.len()).unwrap_or(0);
+        let len = self.0.lock().map_or(0, |v| v.len());
         f.debug_tuple("BufPool").field(&len).finish()
     }
 }

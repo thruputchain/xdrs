@@ -48,10 +48,10 @@ impl From<rpc_msg::accepted_reply_reply_data> for RpcError {
                 }
             }
             rpc_msg::accepted_reply_reply_data::Default { stat } => match stat {
-                s if s == rpc_msg::accept_stat::PROC_UNAVAIL as i32 => RpcError::InvalidProcedure,
-                s if s == rpc_msg::accept_stat::PROG_UNAVAIL as i32 => RpcError::ProgUnavail,
-                s if s == rpc_msg::accept_stat::GARBAGE_ARGS as i32 => RpcError::GarbageArguments,
-                s if s == rpc_msg::accept_stat::SYSTEM_ERR as i32 => RpcError::SystemError,
+                s if s == rpc_msg::accept_stat::PROC_UNAVAIL.0 => RpcError::InvalidProcedure,
+                s if s == rpc_msg::accept_stat::PROG_UNAVAIL.0 => RpcError::ProgUnavail,
+                s if s == rpc_msg::accept_stat::GARBAGE_ARGS.0 => RpcError::GarbageArguments,
+                s if s == rpc_msg::accept_stat::SYSTEM_ERR.0 => RpcError::SystemError,
                 _ => RpcError::SystemError,
             },
             _ => RpcError::SystemError,
@@ -85,7 +85,7 @@ impl RpcError {
                         areply: rpc_msg::accepted_reply {
                             verf: DEFAULT_OPAQUE_AUTH,
                             reply_data: rpc_msg::accepted_reply_reply_data::Default {
-                                stat: rpc_msg::accept_stat::PROC_UNAVAIL as i32,
+                                stat: rpc_msg::accept_stat::PROC_UNAVAIL.0,
                             },
                         },
                     },
@@ -111,7 +111,7 @@ impl RpcError {
                         areply: rpc_msg::accepted_reply {
                             verf: DEFAULT_OPAQUE_AUTH,
                             reply_data: rpc_msg::accepted_reply_reply_data::Default {
-                                stat: rpc_msg::accept_stat::GARBAGE_ARGS as i32,
+                                stat: rpc_msg::accept_stat::GARBAGE_ARGS.0,
                             },
                         },
                     },
@@ -124,7 +124,7 @@ impl RpcError {
                         areply: rpc_msg::accepted_reply {
                             verf: DEFAULT_OPAQUE_AUTH,
                             reply_data: rpc_msg::accepted_reply_reply_data::Default {
-                                stat: rpc_msg::accept_stat::SYSTEM_ERR as i32,
+                                stat: rpc_msg::accept_stat::SYSTEM_ERR.0,
                             },
                         },
                     },
@@ -147,7 +147,7 @@ impl RpcError {
                         areply: rpc_msg::accepted_reply {
                             verf: DEFAULT_OPAQUE_AUTH,
                             reply_data: rpc_msg::accepted_reply_reply_data::Default {
-                                stat: rpc_msg::accept_stat::PROG_UNAVAIL as i32,
+                                stat: rpc_msg::accept_stat::PROG_UNAVAIL.0,
                             },
                         },
                     },

@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "bench-compare"
-version = "0.7.3"
+version = "0.8.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-smoke"
-version = "0.7.3"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "clap",
@@ -359,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "rpc_driver"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "async-trait",
  "libc",
@@ -641,9 +641,9 @@ dependencies = [
 
 [[package]]
 name = "xdr-common"
-version = "0.5.0"
+version = "0.7.0"
 source = "sparse+https://groundhog.dev/crates/api/v1/crates/"
-checksum = "5f37325215270fa9b7a3aa00b09d6aa5c9d23e520a89e0f5ebddb07eecb032af"
+checksum = "d6a09cd532914989e25036409a038573ca45881183d2d250b83d71ab01acf27d"
 dependencies = [
  "escape-bytes",
  "hex",
@@ -651,9 +651,9 @@ dependencies = [
 
 [[package]]
 name = "xdr-derive"
-version = "0.5.0"
+version = "0.7.0"
 source = "sparse+https://groundhog.dev/crates/api/v1/crates/"
-checksum = "2b094c7ca2f5cf454287d2270cf61eb81570f83c4c5a1e11100c61979bee589e"
+checksum = "e2105435f51f90e8b8b1a2e03e23c6144e53ed8f6f2fc6e0ad5ed2ffac3712f1"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -663,9 +663,9 @@ dependencies = [
 
 [[package]]
 name = "xdrs"
-version = "0.5.0"
+version = "0.7.0"
 source = "sparse+https://groundhog.dev/crates/api/v1/crates/"
-checksum = "d84dbebd0fbc1229f3daef973bdc0bafca67fe8f7ed9597b6ec53cbc0028748f"
+checksum = "8d871b4bd4865ec7b24226a4305d51e5ac86a7c89244267ca623ac5a23e6ded2"
 dependencies = [
  "thiserror",
  "xdr-common",

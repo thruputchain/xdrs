@@ -7,7 +7,11 @@ fi
 
 echo "-- Using XDRC=${XDRC} --" >&2
 
-$XDRC --rust -o "rpc_driver/src/rpc_msg.rs" "xdr/rpc_msg.x"
-$XDRC --rust -o "rpc_driver/tests/echo.rs" "xdr/echo.x"
-
-
+$XDRC --rust \
+    --rust-feature xdrs \
+    --rust-no-feature std \
+    --rust-no-feature serde \
+    --rust-no-feature spec \
+    --rust-no-feature schema \
+    -o "rpc_driver/src/rpc_msg.rs" \
+    "xdr/rpc_msg.x"

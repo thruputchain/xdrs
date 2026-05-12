@@ -1,15 +1,13 @@
 // -*-Rust-*-
 // Generated Code: DO NOT CHECK IN
 
-// Generated from xdrc commit: 3cd9e334c60beb16595adcfdea7eee069fb92456
-// Modifications: remove unneeded features, force enable xdrs feature
+// Generated from xdrc commit: 
 
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![allow(unused_imports)]
 #![allow(dead_code)]
-#![allow(unexpected_cfgs)]
 #![allow(unused_variables)]
 #![allow(clippy::unnecessary_cast)]
 
@@ -17,35 +15,45 @@ use crate::*;
 use core::option::Option;
 use core::ops::{Deref, DerefMut};
 
+
 use xdrs::*;
 
+
+
+
+
+
+
+
+
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
-#[repr(i32)]
-pub enum auth_flavor {
-    AUTH_NONE = 0 as i32,
-    AUTH_SYS = 1 as i32,
-    AUTH_SHORT = 2 as i32,
-    AUTH_DH = 3 as i32,
-    RPCSEC_GSS = 6 as i32,
+#[repr(transparent)]
+pub struct auth_flavor(pub i32);
+
+impl auth_flavor {
+    pub const AUTH_NONE: Self = Self(0);
+    pub const AUTH_SYS: Self = Self(1);
+    pub const AUTH_SHORT: Self = Self(2);
+    pub const AUTH_DH: Self = Self(3);
+    pub const RPCSEC_GSS: Self = Self(6);
 }
-impl TryFrom<i32> for auth_flavor {
-    type Error = ();
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::AUTH_NONE),
-            1 => Ok(Self::AUTH_SYS),
-            2 => Ok(Self::AUTH_SHORT),
-            3 => Ok(Self::AUTH_DH),
-            6 => Ok(Self::RPCSEC_GSS),
-            _ => Err(()),
-        }
+impl From<i32> for auth_flavor {
+    fn from(v: i32) -> Self {
+        Self(v)
     }
 }
 
 
+
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct opaque_auth {
@@ -53,203 +61,199 @@ pub struct opaque_auth {
     pub body: BytesM<400>,
 }
 
+
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
-#[repr(i32)]
-pub enum msg_type {
-    CALL = 0 as i32,
-    REPLY = 1 as i32,
+#[repr(transparent)]
+pub struct msg_type(pub i32);
+
+impl msg_type {
+    pub const CALL: Self = Self(0);
+    pub const REPLY: Self = Self(1);
 }
-impl TryFrom<i32> for msg_type {
-    type Error = ();
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::CALL),
-            1 => Ok(Self::REPLY),
-            _ => Err(()),
-        }
+impl From<i32> for msg_type {
+    fn from(v: i32) -> Self {
+        Self(v)
     }
 }
+
 
 
 /* A reply to a call message can take on two forms: the message was
    either accepted or rejected. */
+
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
-#[repr(i32)]
-pub enum reply_stat {
-    MSG_ACCEPTED = 0 as i32,
-    MSG_DENIED = 1 as i32,
+#[repr(transparent)]
+pub struct reply_stat(pub i32);
+
+impl reply_stat {
+    pub const MSG_ACCEPTED: Self = Self(0);
+    pub const MSG_DENIED: Self = Self(1);
 }
-impl TryFrom<i32> for reply_stat {
-    type Error = ();
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::MSG_ACCEPTED),
-            1 => Ok(Self::MSG_DENIED),
-            _ => Err(()),
-        }
+impl From<i32> for reply_stat {
+    fn from(v: i32) -> Self {
+        Self(v)
     }
 }
+
 
 
 /* Given that a call message was accepted, the following is the status
    of an attempt to call a remote procedure. */
+
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
-#[repr(i32)]
-pub enum accept_stat {
+#[repr(transparent)]
+pub struct accept_stat(pub i32);
+
+impl accept_stat {
     /* RPC executed successfully       */
-    SUCCESS = 0 as i32,
+    pub const SUCCESS: Self = Self(0);
 
     /* remote hasn't exported program  */
-    PROG_UNAVAIL = 1 as i32,
+    pub const PROG_UNAVAIL: Self = Self(1);
 
     /* remote can't support version #  */
-    PROG_MISMATCH = 2 as i32,
+    pub const PROG_MISMATCH: Self = Self(2);
 
     /* program can't support procedure */
-    PROC_UNAVAIL = 3 as i32,
+    pub const PROC_UNAVAIL: Self = Self(3);
 
     /* procedure can't decode params   */
-    GARBAGE_ARGS = 4 as i32,
+    pub const GARBAGE_ARGS: Self = Self(4);
 
     /* e.g. memory allocation failure  */
-    SYSTEM_ERR = 5 as i32,
+    pub const SYSTEM_ERR: Self = Self(5);
 }
-impl TryFrom<i32> for accept_stat {
-    type Error = ();
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::SUCCESS),
-            1 => Ok(Self::PROG_UNAVAIL),
-            2 => Ok(Self::PROG_MISMATCH),
-            3 => Ok(Self::PROC_UNAVAIL),
-            4 => Ok(Self::GARBAGE_ARGS),
-            5 => Ok(Self::SYSTEM_ERR),
-            _ => Err(()),
-        }
+impl From<i32> for accept_stat {
+    fn from(v: i32) -> Self {
+        Self(v)
     }
 }
+
 
 
 /* Reasons why a call message was rejected: */
+
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
-#[repr(i32)]
-pub enum reject_stat {
+#[repr(transparent)]
+pub struct reject_stat(pub i32);
+
+impl reject_stat {
     /* RPC version number != 2          */
-    RPC_MISMATCH = 0 as i32,
+    pub const RPC_MISMATCH: Self = Self(0);
 
     /* remote can't authenticate caller */
-    AUTH_ERROR = 1 as i32,
+    pub const AUTH_ERROR: Self = Self(1);
 }
-impl TryFrom<i32> for reject_stat {
-    type Error = ();
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::RPC_MISMATCH),
-            1 => Ok(Self::AUTH_ERROR),
-            _ => Err(()),
-        }
+impl From<i32> for reject_stat {
+    fn from(v: i32) -> Self {
+        Self(v)
     }
 }
 
 
+
 /* Why authentication failed: */
+
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Copy)]
-#[repr(i32)]
-pub enum auth_stat {
+#[repr(transparent)]
+pub struct auth_stat(pub i32);
+
+impl auth_stat {
     /* success                        */
-    AUTH_OK = 0 as i32,
+    pub const AUTH_OK: Self = Self(0);
 
     /*
      * failed at remote end
      */
     /* bad credential (seal broken)   */
-    AUTH_BADCRED = 1 as i32,
+    pub const AUTH_BADCRED: Self = Self(1);
 
     /* client must begin new session  */
-    AUTH_REJECTEDCRED = 2 as i32,
+    pub const AUTH_REJECTEDCRED: Self = Self(2);
 
     /* bad verifier (seal broken)     */
-    AUTH_BADVERF = 3 as i32,
+    pub const AUTH_BADVERF: Self = Self(3);
 
     /* verifier expired or replayed   */
-    AUTH_REJECTEDVERF = 4 as i32,
+    pub const AUTH_REJECTEDVERF: Self = Self(4);
 
     /* rejected for security reasons  */
-    AUTH_TOOWEAK = 5 as i32,
+    pub const AUTH_TOOWEAK: Self = Self(5);
 
     /*
      * failed locally
      */
     /* bogus response verifier        */
-    AUTH_INVALIDRESP = 6 as i32,
+    pub const AUTH_INVALIDRESP: Self = Self(6);
 
     /* reason unknown                 */
-    AUTH_FAILED = 7 as i32,
+    pub const AUTH_FAILED: Self = Self(7);
 
     /*
      * AUTH_KERB errors; deprecated.  See [RFC2695]
      */
     /* kerberos generic error */
-    AUTH_KERB_GENERIC = 8 as i32,
+    pub const AUTH_KERB_GENERIC: Self = Self(8);
 
     /* time of credential expired */
-    AUTH_TIMEEXPIRE = 9 as i32,
+    pub const AUTH_TIMEEXPIRE: Self = Self(9);
 
     /* problem with ticket file */
-    AUTH_TKT_FILE = 10 as i32,
+    pub const AUTH_TKT_FILE: Self = Self(10);
 
     /* can't decode authenticator */
-    AUTH_DECODE = 11 as i32,
+    pub const AUTH_DECODE: Self = Self(11);
 
     /* wrong net address in ticket */
-    AUTH_NET_ADDR = 12 as i32,
+    pub const AUTH_NET_ADDR: Self = Self(12);
 
     /*
      * RPCSEC_GSS GSS related errors
      */
     /* no credentials for user */
-    RPCSEC_GSS_CREDPROBLEM = 13 as i32,
+    pub const RPCSEC_GSS_CREDPROBLEM: Self = Self(13);
 
     /* problem with context */
-    RPCSEC_GSS_CTXPROBLEM = 14 as i32,
+    pub const RPCSEC_GSS_CTXPROBLEM: Self = Self(14);
 }
-impl TryFrom<i32> for auth_stat {
-    type Error = ();
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::AUTH_OK),
-            1 => Ok(Self::AUTH_BADCRED),
-            2 => Ok(Self::AUTH_REJECTEDCRED),
-            3 => Ok(Self::AUTH_BADVERF),
-            4 => Ok(Self::AUTH_REJECTEDVERF),
-            5 => Ok(Self::AUTH_TOOWEAK),
-            6 => Ok(Self::AUTH_INVALIDRESP),
-            7 => Ok(Self::AUTH_FAILED),
-            8 => Ok(Self::AUTH_KERB_GENERIC),
-            9 => Ok(Self::AUTH_TIMEEXPIRE),
-            10 => Ok(Self::AUTH_TKT_FILE),
-            11 => Ok(Self::AUTH_DECODE),
-            12 => Ok(Self::AUTH_NET_ADDR),
-            13 => Ok(Self::RPCSEC_GSS_CREDPROBLEM),
-            14 => Ok(Self::RPCSEC_GSS_CTXPROBLEM),
-            _ => Err(()),
-        }
+impl From<i32> for auth_stat {
+    fn from(v: i32) -> Self {
+        Self(v)
     }
 }
 
 
+
 /* Body of an RPC call: */
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct call_body {
@@ -263,7 +267,10 @@ pub struct call_body {
 }
 
 /* Reply to an RPC call that was accepted by the server: */
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct accepted_reply_reply_data_mismatch_info {
@@ -272,25 +279,32 @@ pub struct accepted_reply_reply_data_mismatch_info {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[repr(i32)]
+#[non_exhaustive]
 pub enum accepted_reply_reply_data {
     // case SUCCESS:
     //   [u8; 0 as usize] results;
-    SUCCESS { results: [u8; 0 as usize] } = accept_stat::SUCCESS as i32,
+    SUCCESS { results: [u8; 0 as usize] } = accept_stat::SUCCESS.0 as i32,
     // case PROG_MISMATCH:
     //   mismatch_info mismatch_info;
-    PROG_MISMATCH { mismatch_info: accepted_reply_reply_data_mismatch_info } = accept_stat::PROG_MISMATCH as i32,
+    PROG_MISMATCH { mismatch_info: accepted_reply_reply_data_mismatch_info } = accept_stat::PROG_MISMATCH.0 as i32,
     /*
      * Void.  Cases include PROG_UNAVAIL, PROC_UNAVAIL,
      * GARBAGE_ARGS, and SYSTEM_ERR.
      */
     // default:
     //   void;
-    Default { stat: i32 },
+    #[xdr(default_variant)] Default { stat: i32 },
 }
 
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct accepted_reply {
@@ -299,7 +313,10 @@ pub struct accepted_reply {
 }
 
 /* Reply to an RPC call that was rejected by the server: */
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct rejected_reply_mismatch_info {
@@ -308,47 +325,62 @@ pub struct rejected_reply_mismatch_info {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[repr(i32)]
+#[non_exhaustive]
 pub enum rejected_reply {
     // case RPC_MISMATCH:
     //   mismatch_info mismatch_info;
-    RPC_MISMATCH { mismatch_info: rejected_reply_mismatch_info } = reject_stat::RPC_MISMATCH as i32,
+    RPC_MISMATCH { mismatch_info: rejected_reply_mismatch_info } = reject_stat::RPC_MISMATCH.0 as i32,
     // case AUTH_ERROR:
     //   auth_stat rj_why;
-    AUTH_ERROR { rj_why: auth_stat } = reject_stat::AUTH_ERROR as i32,
+    AUTH_ERROR { rj_why: auth_stat } = reject_stat::AUTH_ERROR.0 as i32,
     
 }
 
 /* Body of a reply to an RPC call: */
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[repr(i32)]
+#[non_exhaustive]
 pub enum reply_body {
     // case MSG_ACCEPTED:
     //   accepted_reply areply;
-    MSG_ACCEPTED { areply: accepted_reply } = reply_stat::MSG_ACCEPTED as i32,
+    MSG_ACCEPTED { areply: accepted_reply } = reply_stat::MSG_ACCEPTED.0 as i32,
     // case MSG_DENIED:
     //   rejected_reply rreply;
-    MSG_DENIED { rreply: rejected_reply } = reply_stat::MSG_DENIED as i32,
+    MSG_DENIED { rreply: rejected_reply } = reply_stat::MSG_DENIED.0 as i32,
     
 }
 
 /* The RPC message: */
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[repr(i32)]
+#[non_exhaustive]
 pub enum rpc_msg_body {
     // case CALL:
     //   call_body cbody;
-    CALL { cbody: call_body } = msg_type::CALL as i32,
+    CALL { cbody: call_body } = msg_type::CALL.0 as i32,
     // case REPLY:
     //   reply_body rbody;
-    REPLY { rbody: reply_body } = msg_type::REPLY as i32,
+    REPLY { rbody: reply_body } = msg_type::REPLY.0 as i32,
     
 }
 
+
 #[derive(ReadXDR, WriteXDR)]
+
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct rpc_msg {
@@ -362,38 +394,38 @@ pub struct rpc_msg {
 //
 
 impl accepted_reply_reply_data {
-    pub fn stat(&self) -> i32 {
+    pub fn stat(&self) -> accept_stat {
         match self {
-            accepted_reply_reply_data::Default{ stat } => *stat ,
+            accepted_reply_reply_data::Default{ stat } => (*stat).into(),
 
-            _ => unsafe { *(self as *const Self as *const i32) },
+            _ => (unsafe { *(self as *const Self as *const i32) }).into(),
         }
     }
 }
 
 impl rejected_reply {
-    pub fn stat(&self) -> i32 {
+    pub fn stat(&self) -> reject_stat {
         match self {
             
-            _ => unsafe { *(self as *const Self as *const i32) },
+            _ => (unsafe { *(self as *const Self as *const i32) }).into(),
         }
     }
 }
 
 impl reply_body {
-    pub fn stat(&self) -> i32 {
+    pub fn stat(&self) -> reply_stat {
         match self {
             
-            _ => unsafe { *(self as *const Self as *const i32) },
+            _ => (unsafe { *(self as *const Self as *const i32) }).into(),
         }
     }
 }
 
 impl rpc_msg_body {
-    pub fn mtype(&self) -> i32 {
+    pub fn mtype(&self) -> msg_type {
         match self {
             
-            _ => unsafe { *(self as *const Self as *const i32) },
+            _ => (unsafe { *(self as *const Self as *const i32) }).into(),
         }
     }
 }
