@@ -21,13 +21,14 @@ fn const_wire_bits(c: &Constant) -> u32 {
 ///
 /// Validates that `s` conforms to the ASCII identifier shape required by
 /// RFC 4506 but does **not** reject reserved keywords (see
-/// [`validate_xdr_identifier`](crate::xdr::validate_xdr_identifier) for the
-/// full list).  Callers are responsible for avoiding reserved words.
+/// [`validate_xdr_identifier`] for the full list).  Callers are
+/// responsible for avoiding reserved words.
 ///
 /// # Panics
 ///
 /// Panics if `s` is not a valid XDR identifier (ASCII letters, digits,
 /// and underscores; must start with a letter or underscore).
+///
 pub fn ident(s: &str) -> Ident {
     validate_xdr_identifier(s);
     Ident(s.to_string())
