@@ -43,6 +43,7 @@ cargo test --doc -p xdr-repr --features "ns,int128"
 cargo test --doc --features "alloc,derive,repr,ns,int128"
 
 cargo clippy --workspace --all-features
+cargo +nightly clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
 
 set +x
 
