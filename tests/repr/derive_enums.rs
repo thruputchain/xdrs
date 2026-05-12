@@ -175,8 +175,8 @@ pub mod fieldless_with_default {
         Alpha = 10,
         Beta = 20,
 
-        #[xdr(enum_default)]
-        Default,
+        #[xdr(default_variant)]
+        Other,
     }
 }
 
@@ -191,8 +191,8 @@ pub mod enum_with_default {
         } = 10,
         Beta = 20,
 
-        #[xdr(enum_default)]
-        Default {
+        #[xdr(default_variant)]
+        Other {
             which: i32,
         },
     }
@@ -224,6 +224,7 @@ pub mod default_only {
     #[derive(XDR)]
     #[repr(i32)]
     pub enum CatchAll {
+        #[xdr(default_variant)]
         Default(i32),
     }
 
@@ -250,6 +251,8 @@ pub mod default_with_payload {
     pub enum DefaultPayload {
         Alpha { a: u32 } = 10,
         Beta = 20,
+
+        #[xdr(default_variant)]
         Default { code: i32, data: u32 },
     }
 
@@ -512,6 +515,8 @@ pub mod default_tuple_payload {
     pub enum DefaultTuplePayload {
         Alpha { a: u32 } = 10,
         Beta = 20,
+
+        #[xdr(default_variant)]
         Default(i32, u32),
     }
 
@@ -533,5 +538,33 @@ pub mod default_tuple_payload {
             "	unsigned int default;"
             "};"
             ""
+    }
+}
+
+mod external_discrim {
+    use super::*;
+
+    #[derive(Debug, PartialEq, Eq, xdrs::XDR)]
+    #[repr(i32)]
+    enum Status {
+        Ready = 10,
+        Failed = 11,
+    }
+
+    #[derive(Debug, PartialEq, Eq, xdrs::XDR)]
+    #[xdr(discrim_type = "Status")]
+    #[repr(i32)]
+    enum Message {
+        Ready { value: u32 } = Status::Ready as i32,
+        Failed { code: u32 } = Status::Failed as i32,
+    }
+
+    #[test]
+    fn enum_external_discrim_explicit() {
+        // Status::Ready = 10 = 0x0a, value = 7
+        let _ready = Message::Ready { value: 7 };
+
+        // Status::Failed = 11 = 0x0b, code = 3
+        let _failed = Message::Failed { code: 3 };
     }
 }

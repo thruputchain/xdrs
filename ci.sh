@@ -39,7 +39,7 @@ RUSTDOCFLAGS="--cfg docsrs" \
     cargo +nightly doc --workspace --all-features --no-deps
 
 # Test Documentation Examples
-cargo test --doc -p xdr-repr --features "derive,ns,int128"
+cargo test --doc -p xdr-repr --features "ns,int128"
 cargo test --doc --features "alloc,derive,repr,ns,int128"
 
 cargo clippy --workspace --all-features

@@ -129,6 +129,7 @@ mod generate;
 mod generate_const;
 mod generate_type;
 mod util;
+mod attrs;
 
 use proc_macro::TokenStream;
 
@@ -166,7 +167,7 @@ use proc_macro::TokenStream;
 ///   with a known discriminant value will produce bytes that the reader decodes
 ///   as the concrete variant, not as `Default`.
 ///
-#[proc_macro_derive(WriteXDR, attributes(xdrs))]
+#[proc_macro_derive(WriteXDR, attributes(xdr, xdrs))]
 pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
@@ -208,7 +209,7 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///   generic lifetime parameter with that same name; choose another name for
 ///   user-defined lifetimes.
 ///
-#[proc_macro_derive(ReadXDR, attributes(xdrs))]
+#[proc_macro_derive(ReadXDR, attributes(xdr, xdrs))]
 pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
@@ -332,7 +333,7 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// The same applies to `PhantomData` — if you need a type-alias, wrap it in a
 /// newtype and derive `ConstWriteXDR` on the newtype instead.
 ///
-#[proc_macro_derive(ConstWriteXDR, attributes(xdrs))]
+#[proc_macro_derive(ConstWriteXDR, attributes(xdr, xdrs))]
 pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
