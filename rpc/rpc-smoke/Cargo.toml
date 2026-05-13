@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-rpc_driver = { path = "../rpc_driver", version = "0.8.0", features = ["concurrent-dispatch"] }
+rpc_driver = { workspace = true, features = ["concurrent-dispatch"] }
 tokio = { version = "1.47.1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

@@ -3,6 +3,9 @@ members = ["rpc_driver", "bench-compare", "rpc-smoke"]
 
 resolver = "2"
 
+[workspace.dependencies]
+rpc_driver = { path = "rpc_driver", version = "0.8.1" }
+
 [workspace.package]
 version = "0.8.1"
 
