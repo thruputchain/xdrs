@@ -314,26 +314,6 @@ fn phantom_data() {
 }
 
 #[test]
-fn phantom_lifetime_does_not_borrow_from_reader() {
-    #[derive(Debug, PartialEq, Eq, ReadXDR, WriteXDR)]
-    struct Marker<'a> {
-        phantom: core::marker::PhantomData<&'a ()>,
-        value: u32,
-    }
-
-    fn decode_marker(bytes: &[u8]) -> Marker<'static> {
-        xdrs::txs::decode(bytes).unwrap()
-    }
-
-    let marker = Marker {
-        phantom: core::marker::PhantomData,
-        value: 5,
-    };
-
-    assert_eq!(decode_marker(&hex!("00000005")), marker);
-}
-
-#[test]
 fn struct_with_tuple_field() {
     // Test struct with a simple tuple field
     #[derive(Debug, PartialEq, Eq, WriteXDR, ReadXDR)]

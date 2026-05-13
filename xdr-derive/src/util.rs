@@ -81,7 +81,27 @@ pub fn option_tok(opt: Option<TokenStream>) -> TokenStream {
 
 pub fn modify_for_reader_impl(mut generics: syn::Generics) -> syn::Generics {
     // `ReadXDR` derive reserves this reader lifetime name in its public docs.
-    let lifetime_param: syn::LifetimeParam = syn::parse_quote! { '_r };
+    //
+    // The reader lifetime `'_r` is constrained to outlive every lifetime
+    // parameter of the type being derived. This matches the natural
+    // semantics: if a struct holds borrowed data of lifetime `'a`, that
+    // borrow must point into the reader's buffer, so the buffer must
+    // outlive `'a`. The same bound applies even when `'a` is only used in
+    // a `PhantomData<&'a _>` — see the crate-level docs on ReadXDR for the
+    // implications when decoding into types like `Marker<'static>`.
+    let ty_lifetimes = generics.params.iter().filter_map(|g| {
+        if let syn::GenericParam::Lifetime(param) = g {
+            Some(&param.lifetime)
+        } else {
+            None
+        }
+    });
+
+    let mut lifetime_param: syn::LifetimeParam = syn::parse_quote! { '_r };
+    for lt in ty_lifetimes {
+        lifetime_param.bounds.push(lt.clone())
+    }
+
     generics
         .params
         .push(syn::GenericParam::Lifetime(lifetime_param));

@@ -81,6 +81,21 @@ where
 /// The lifetime parameter `'r` represents the lifetime of data borrowed
 /// from the reader.
 ///
+/// # Derived impls and struct lifetimes
+///
+/// `#[derive(ReadXDR)]` on a type `Foo<'a, 'b, ..>` emits an impl of the
+/// form `impl<'_r: 'a + 'b + .., 'a, 'b, ..> ReadXDR<'_r> for Foo<'a, 'b, ..>`.
+/// That is: **every lifetime parameter on the type must be `<=` the lifetime
+/// of the reader buffer**, regardless of whether that parameter is actually
+/// used to borrow from the buffer. In particular, a phantom lifetime such as
+/// `PhantomData<&'a ()>` is constrained alongside any "real" borrow.
+///
+/// Practical implication: you cannot decode `Foo<'static>` from a buffer
+/// whose lifetime isn't `'static`. If a type has a lifetime parameter that
+/// doesn't actually borrow from the buffer (e.g. it's purely a phantom
+/// marker), let the lifetime be inferred from the buffer rather than
+/// naming it explicitly, or implement `ReadXDR` by hand.
+///
 /// # Example
 ///
 /// ```rust
