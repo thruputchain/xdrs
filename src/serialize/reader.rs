@@ -13,7 +13,6 @@ use alloc::vec::Vec;
 
 use crate::mu;
 use core::mem::MaybeUninit as MU;
-use thiserror::Error;
 
 /// A reader that can produce XDR values, some borrowed with lifetime `'r`.
 ///
@@ -145,39 +144,52 @@ pub unsafe trait Reader<'r>: Sized {
 pub type ReadResult<T> = core::result::Result<T, ReadError>;
 
 /// Errors that can occur when reading XDR data.
-#[derive(Copy, Clone, Debug, Error)]
+#[derive(Copy, Clone, Debug)]
 pub enum ReadError {
-    #[error(
-        "unexpected end of input (requested: {}, remaining: {})",
-        requested,
-        remaining
-    )]
     SourceEmpty { requested: usize, remaining: usize },
 
-    #[error("input remaining after decoding: {} bytes", remaining)]
     SourceRemaining { remaining: u64 },
 
-    #[error("invalid header byte: 0x{h:02x}")]
     InvalidHeaderByte { h: u8 },
 
-    #[error("decoded integer out of range")]
     IntegerOutOfRange,
 
-    #[error("bad bool value")]
     BadBool,
 
-    #[error("unexpected discriminator value: {0}")]
     BadDiscriminator(i32),
 
-    #[error("length exceeds array maximum")]
     MaxLengthExceeded,
 
-    #[error("non-zero XDR padding")]
     NonZeroPadding,
 
-    #[error("bad UTF8")]
     BadUTF8,
 
-    #[error("not the minimal-size encoding")]
     NotMinimalEncoding,
 }
+
+impl core::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ReadError::SourceEmpty {
+                requested,
+                remaining,
+            } => write!(
+                f,
+                "unexpected end of input (requested: {requested}, remaining: {remaining})"
+            ),
+            ReadError::SourceRemaining { remaining } => {
+                write!(f, "input remaining after decoding: {remaining} bytes")
+            }
+            ReadError::InvalidHeaderByte { h } => write!(f, "invalid header byte: 0x{h:02x}"),
+            ReadError::IntegerOutOfRange => write!(f, "decoded integer out of range"),
+            ReadError::BadBool => write!(f, "bad bool value"),
+            ReadError::BadDiscriminator(d) => write!(f, "unexpected discriminator value: {d}"),
+            ReadError::MaxLengthExceeded => write!(f, "length exceeds array maximum"),
+            ReadError::NonZeroPadding => write!(f, "non-zero XDR padding"),
+            ReadError::BadUTF8 => write!(f, "bad UTF8"),
+            ReadError::NotMinimalEncoding => write!(f, "not the minimal-size encoding"),
+        }
+    }
+}
+
+impl core::error::Error for ReadError {}
