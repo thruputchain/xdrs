@@ -1,0 +1,62 @@
+# Manual, idempotent docs (re)generation for a given released version.
+#
+# Normal releases publish docs automatically via the inline "publish docs" step
+# in publish.yml. Use this workflow to rebuild docs for an already-tagged version
+# (e.g. if a publish-time docs build broke). It checks out the tag, asserts it,
+# and re-uploads with force, so it's safe to run any number of times.
+name: Publish docs
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to (re)generate docs for, e.g. 0.5.8'
+        required: true
+      packages:
+        description: 'Optional space-separated package list (default: all publishable)'
+        required: false
+        default: ''
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+jobs:
+  publish-docs:
+    runs-on: hog1
+    steps:
+      - name: Clean up .gitconfig
+        run: rm -f /home/hogci/.gitconfig
+
+      - name: Setup SSH Agent
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: |
+            ${{ secrets.XDRS_TO_ACTIONS_KEY }}
+
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Configure git to use SSH
+        run: git config --global url."git@github.com:".insteadOf "https://github.com/"
+
+      - name: Checkout actions repository
+        uses: actions/checkout@v4
+        with:
+          repository: groundhogchain/actions
+          path: actions
+          ref: main
+
+      - name: Build and publish docs
+        uses: ./actions/cargo-doc
+        with:
+          version: ${{ inputs.version }}
+          packages: ${{ inputs.packages }}
+          registry-name: groundhog
+          registry-token: ${{ secrets.CARGO_PUBLISH_TOKEN }}
+          toolchain: nightly-2026-01-30
+          force: 'true'
+          expected-tag: v${{ inputs.version }}
