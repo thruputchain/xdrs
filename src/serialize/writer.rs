@@ -8,19 +8,26 @@
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
-use thiserror::Error;
-
 /// Errors that can occur when writing XDR data.
-#[derive(Copy, Clone, Debug, Error)]
+#[derive(Copy, Clone, Debug)]
 pub enum WriteError {
     /// The writer has run out of space.
-    #[error("space exhausted")]
     SpaceExhausted,
 
     /// An array length is too large to be represented in XDR.
-    #[error("invalid array length (too large)")]
     InvalidArrayLength,
 }
+
+impl core::fmt::Display for WriteError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            WriteError::SpaceExhausted => write!(f, "space exhausted"),
+            WriteError::InvalidArrayLength => write!(f, "invalid array length (too large)"),
+        }
+    }
+}
+
+impl core::error::Error for WriteError {}
 
 /// A result type for writer operations.
 pub type WriteResult<T = ()> = core::result::Result<T, WriteError>;
