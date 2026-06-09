@@ -49,14 +49,19 @@ use core::ops::Deref;
 /// assert_eq!(parsed.len(), 8);
 /// ```
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(
-    all(feature = "serde", feature = "alloc"),
-    derive(serde_with::DeserializeFromStr)
-)]
 pub struct BytesM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
-use hex::{FromHex, ToHex};
+#[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
+impl<'de, const MAX: u32> Deserialize<'de> for BytesM<MAX> {
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(DeError::custom)
+    }
+}
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
@@ -96,7 +101,22 @@ impl<const MAX: u32> core::str::FromStr for BytesM<MAX> {
         if s.len() / 2 > MAX as usize {
             return Err(Error::LengthExceedsMax);
         }
-        hex::decode(s).map_err(|_| Error::InvalidHex)?.try_into()
+        let mut out = Vec::with_capacity(s.len() / 2);
+        for pair in s.as_bytes().chunks_exact(2) {
+            out.push((hex_digit(pair[0])? << 4) | hex_digit(pair[1])?);
+        }
+        out.try_into()
+    }
+}
+
+/// Decode a single ASCII hex digit (`0-9`, `a-f`, `A-F`) to its 0-15 value.
+#[cfg(feature = "alloc")]
+fn hex_digit(b: u8) -> core::result::Result<u8, Error> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        b'A'..=b'F' => Ok(b - b'A' + 10),
+        _ => Err(Error::InvalidHex),
     }
 }
 
@@ -484,6 +504,29 @@ mod tests {
         let value = BytesM::<2>(vec![0xaa, 0xbb]);
         let json = serde_json::to_value(&value).unwrap();
         assert_eq!(json, serde_json::json!("aabb"));
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_bytesm_serde_roundtrip() {
+        let value = BytesM::<100>(vec![0xde, 0xad, 0xbe, 0xef]);
+        let json = serde_json::to_value(&value).unwrap();
+        let back: BytesM<100> = serde_json::from_value(json).unwrap();
+        assert_eq!(value, back);
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_bytesm_serde_deserialize_rejects_invalid_hex() {
+        let err = serde_json::from_value::<BytesM<100>>(serde_json::json!("zz"));
+        assert!(err.is_err());
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_bytesm_serde_deserialize_rejects_overlimit() {
+        let err = serde_json::from_value::<BytesM<1>>(serde_json::json!("aabb"));
+        assert!(err.is_err());
     }
 
     #[test]

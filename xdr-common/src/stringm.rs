@@ -69,11 +69,19 @@ use core::ops::Deref;
 /// let lossy = bytes.to_utf8_string_lossy(); // Replaces invalid chars
 /// ```
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg_attr(
-    all(feature = "serde", feature = "alloc"),
-    derive(serde_with::DeserializeFromStr)
-)]
 pub struct StringM<const MAX: u32 = { u32::MAX }>(pub Vec<u8>);
+
+#[cfg(all(feature = "serde", feature = "alloc"))]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
+impl<'de, const MAX: u32> Deserialize<'de> for StringM<MAX> {
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(DeError::custom)
+    }
+}
 
 #[cfg(all(feature = "serde", feature = "alloc"))]
 #[cfg_attr(docsrs, doc(cfg(all(feature = "serde", feature = "alloc"))))]
@@ -638,5 +646,22 @@ mod tests {
         let value = StringM::<2>(b"ab".to_vec());
         let json = serde_json::to_value(&value).unwrap();
         assert_eq!(json, serde_json::json!("ab"));
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_stringm_serde_roundtrip() {
+        // Non-UTF8 bytes round-trip via the `\xNN` escape encoding.
+        let value = StringM::<10>(vec![0xc3, 0xa9, b'a']);
+        let json = serde_json::to_value(&value).unwrap();
+        let back: StringM<10> = serde_json::from_value(json).unwrap();
+        assert_eq!(value, back);
+    }
+
+    #[test]
+    #[cfg(all(feature = "serde", feature = "alloc"))]
+    fn test_stringm_serde_deserialize_rejects_overlimit() {
+        let err = serde_json::from_value::<StringM<1>>(serde_json::json!("abc"));
+        assert!(err.is_err());
     }
 }
