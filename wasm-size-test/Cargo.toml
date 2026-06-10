@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 xdrs = { path = "..", default-features = false, features = ["alloc"] }
-lol_alloc = "0.4"
+lol_alloc = "=0.4.1"
 
 [profile.release]
 opt-level = "z"

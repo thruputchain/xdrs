@@ -31,7 +31,7 @@ int128 = []
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 xdrs = { path = "..", features = ["repr", "derive"] }
-serde_json = "1.0"
+serde_json = "=1.0.149"
 
 [[test]]
 name = "ns"
