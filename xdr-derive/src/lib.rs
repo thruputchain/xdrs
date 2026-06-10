@@ -118,12 +118,18 @@
 //!   serializing.
 //! - `#[xdr(via = "Type")]` - Same as above.
 //!
+//! When deriving `ReadXDR`, `WriteXDR`, or `XDR` on an enum, the trailing
+//! variant may be marked `#[xdr(default_variant)]` to act as the union's
+//! default arm; see the individual derive macros for details.
+//!
 //! ### Crate path override
 //!
 //! All three derives accept `#[xdr(crate = "path")]` to override the default
 //! `::xdrs` import path (useful when the dependency is renamed or re-exported).
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
+
+#![warn(missing_docs)]
 
 mod attrs;
 mod generate;
@@ -143,6 +149,10 @@ use proc_macro::TokenStream;
 /// - `#[xdr(into_type = "Type")]` - Convert (via `Into`) a different type before
 ///   serializing.
 /// - `#[xdr(via = "Type")]` - Same as above (also implies `from_type`).
+/// - `#[xdr(default_variant)]` - On an enum variant: mark it as the union's
+///   default arm. The variant must be the trailing variant and must not
+///   specify a discriminant, and its first field must be `i32`, which stores
+///   the wire discriminant and is emitted verbatim when encoding.
 /// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
@@ -186,6 +196,11 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 /// - `#[xdr(from_type = "Type")]` - Deserialize to the intermediate type
 ///   "Type" before converting into the target type via `Into`.
 /// - `#[xdr(via = "Type")]` - Same as above (also implies `into_type`).
+/// - `#[xdr(default_variant)]` - On an enum variant (which must be the
+///   trailing variant): mark it as the union's default arm. Discriminants that
+///   match no other variant decode to this variant, with the wire discriminant
+///   stored in its first field (which must be `i32`). Without a default
+///   variant, unknown discriminants fail with `ReadError::BadDiscriminator`.
 /// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
@@ -233,6 +248,10 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
 ///   multi-word string causes a panic during schema emission.
 /// - `#[xdr(discrim_var = "field_name")]` - Specify a custom discriminant
 ///   field name
+/// - `#[xdr(default_variant)]` - On an enum variant: mark it as the union's
+///   `default:` arm in the generated XDR specification. The variant must be
+///   the trailing variant, must not specify a discriminant, and its first
+///   field must be `i32`.
 ///
 /// All three derive macros (`ReadXDR`, `WriteXDR`, `XDR`) accept:
 ///

@@ -619,6 +619,7 @@
 //! [RFC-5531]: https://datatracker.ietf.org/doc/html/rfc5531
 
 #![no_std]
+#![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 extern crate alloc;

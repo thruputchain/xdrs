@@ -1,3 +1,19 @@
+//! Constructor functions for programmatically building XDR specifications.
+//!
+//! These free functions are shorthand for constructing the types in
+//! [`crate::xdr`] — declarations ([`declare_int`], [`declare_string`],
+//! [`declare_variable_array`], ...), type specs ([`named_type`],
+//! [`struct_type`], [`enum_type`]), definitions ([`struct_def`],
+//! [`enum_def`], [`union_def`], [`def_const`]), and whole
+//! [`specification`]s. They are used by the `XDR` derive macro's
+//! generated code and can be used directly to build specifications by
+//! hand.
+//!
+//! # Panics
+//!
+//! Constructors that take a name validate it with [`ident`] and panic
+//! if it is not a valid XDR identifier.
+
 use crate::xdr::*;
 use alloc::string::*;
 use alloc::vec;

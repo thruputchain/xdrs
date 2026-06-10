@@ -72,6 +72,7 @@
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 #![no_std]
+#![warn(missing_docs)]
 #![allow(ambiguous_glob_reexports)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(hidden_glob_reexports)]

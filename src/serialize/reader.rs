@@ -146,24 +146,49 @@ pub type ReadResult<T> = core::result::Result<T, ReadError>;
 /// Errors that can occur when reading XDR data.
 #[derive(Copy, Clone, Debug)]
 pub enum ReadError {
-    SourceEmpty { requested: usize, remaining: usize },
+    /// The input ended before the requested number of bytes could be read.
+    SourceEmpty {
+        /// The number of bytes the reader tried to consume.
+        requested: usize,
+        /// The number of bytes left in the input.
+        remaining: usize,
+    },
 
-    SourceRemaining { remaining: u64 },
+    /// Decoding completed but bytes remain unconsumed in the input.
+    SourceRemaining {
+        /// The number of unconsumed bytes left in the input.
+        remaining: u64,
+    },
 
-    InvalidHeaderByte { h: u8 },
+    /// A CXS integer header byte used a reserved combination of its
+    /// size/value bit fields (see `CXS.md`).
+    InvalidHeaderByte {
+        /// The invalid header byte.
+        h: u8,
+    },
 
+    /// The decoded integer does not fit in the target integer type.
     IntegerOutOfRange,
 
+    /// A decoded boolean was neither 0 (`FALSE`) nor 1 (`TRUE`).
     BadBool,
 
+    /// A decoded union discriminant did not match any known variant.
     BadDiscriminator(i32),
 
+    /// A decoded length exceeds the maximum declared for the
+    /// variable-length array, opaque data, or string.
     MaxLengthExceeded,
 
+    /// A TXS padding byte was non-zero (rejected unless feature
+    /// `permissive` is enabled).
     NonZeroPadding,
 
+    /// A decoded string was not valid UTF-8.
     BadUTF8,
 
+    /// A CXS integer was not encoded in the minimal number of bytes
+    /// (rejected unless feature `permissive` is enabled).
     NotMinimalEncoding,
 }
 

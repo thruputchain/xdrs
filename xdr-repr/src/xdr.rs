@@ -254,7 +254,12 @@ pub enum Declaration {
         max: Value,
     },
     /// A variable-length string declaration.
-    String { name: Ident, max: Value },
+    String {
+        /// The name of the string.
+        name: Ident,
+        /// The maximum length of the string.
+        max: Value,
+    },
     /// A fixed-length array declaration.
     FixedArray {
         /// The name of the array.

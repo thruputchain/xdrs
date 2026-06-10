@@ -42,6 +42,7 @@ pub mod buf_reader;
 pub mod into_buf_writer;
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub mod buf_writer;
 
 mod put;

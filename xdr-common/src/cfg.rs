@@ -26,6 +26,8 @@ pub(crate) use alloc::{
 #[cfg(feature = "alloc")]
 pub type Box<T> = alloc::boxed::Box<T>;
 
+/// No-`alloc` stand-in for `Box<T>`: an alias for `&'static T`,
+/// requiring static data.
 #[cfg_attr(docsrs, doc(hidden))]
 #[cfg(not(feature = "alloc"))]
 pub type Box<T> = &'static T;
@@ -40,6 +42,8 @@ pub type Box<T> = &'static T;
 #[cfg(feature = "alloc")]
 pub type Vec<T> = alloc::vec::Vec<T>;
 
+/// No-`alloc` stand-in for `Vec<T>`: an alias for `&'static [T]`,
+/// requiring static data.
 #[cfg_attr(docsrs, doc(hidden))]
 #[cfg(not(feature = "alloc"))]
 pub type Vec<T> = &'static [T];

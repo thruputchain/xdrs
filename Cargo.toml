@@ -85,6 +85,10 @@ ns = ["xdr-repr?/ns"]
 [lints]
 workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lib]
 doctest = true
 bench = false # disable libtest benchmarks, in favor of Criterion
