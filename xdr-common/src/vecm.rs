@@ -65,12 +65,21 @@ pub struct VecM<T, const MAX: u32 = { u32::MAX }>(pub Vec<T>)
 where
     T: StaticIfNoAlloc;
 
-// Helper trait to conditionally require 'static for no_alloc
+/// Helper trait bound on [`VecM`] elements that requires `'static` only
+/// in no-`alloc` builds.
+///
+/// With feature `alloc` this is implemented for all types; without it,
+/// only for `'static` types. It is not meant to be implemented manually.
 #[cfg(feature = "alloc")]
 pub trait StaticIfNoAlloc {}
 #[cfg(feature = "alloc")]
 impl<T> StaticIfNoAlloc for T {}
 
+/// Helper trait bound on [`VecM`] elements that requires `'static` only
+/// in no-`alloc` builds.
+///
+/// With feature `alloc` this is implemented for all types; without it,
+/// only for `'static` types. It is not meant to be implemented manually.
 #[cfg(not(feature = "alloc"))]
 pub trait StaticIfNoAlloc: 'static {}
 #[cfg(not(feature = "alloc"))]

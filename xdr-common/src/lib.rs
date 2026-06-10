@@ -34,6 +34,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![no_std]
+#![warn(missing_docs)]
 
 #[cfg(feature = "std")]
 extern crate std;
@@ -47,7 +48,14 @@ pub use cfg::{Box, Vec};
 mod error;
 pub use error::*;
 
+/// The maximum number of bytes a decoder will preallocate for a
+/// variable-length collection before reading its elements.
+///
+/// Decoded lengths are untrusted, so capacity reservations are capped at
+/// this many bytes to prevent memory-exhaustion attacks from maliciously
+/// large length prefixes; collections grow normally beyond it.
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub const MAX_PREALLOC_BYTES: usize = 0x1_0000;
 
 mod vecm;

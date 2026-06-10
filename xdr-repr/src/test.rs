@@ -1,3 +1,8 @@
+//! Test-support macros for asserting on formatted XDR specifications.
+//!
+//! The macros in this module are hidden from documentation and are not
+//! part of the stable public API.
+
 #[macro_export]
 #[doc(hidden)]
 macro_rules! lines {

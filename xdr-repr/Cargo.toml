@@ -22,6 +22,10 @@ heapless = { workspace = true, optional = true }
 [lints.rust]
 unsafe_code = "forbid"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = []
 heapless = ["dep:heapless"] # schema traits for types from the `heapless` package

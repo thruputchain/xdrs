@@ -1,4 +1,4 @@
-// Display impls for XDR-spec types
+//! `Display` impls that render XDR-spec types as RFC 4506 syntax.
 
 use super::xdr::*;
 use alloc::format;

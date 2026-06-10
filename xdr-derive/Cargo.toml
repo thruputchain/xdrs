@@ -27,3 +27,7 @@ xdrs = { path = "..", features = ["alloc", "derive", "repr"] }
 
 [lints.rust]
 unsafe_code = "forbid"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
