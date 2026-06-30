@@ -100,9 +100,9 @@ mod tests {
     use super::*;
     use rpc_driver::ProgramError;
     use rpc_driver::connection::ConnectionHandle;
+    use rpc_driver::pool::DynamicPool;
     use rpc_driver::tasks::launch_read_task;
     use rpc_driver::tcp_connection::connect;
-    use rpc_driver::pool::DynamicPool;
     use rpc_driver::{RpcServer, connect_client, handler::ServiceMap, tcp_connection::accept};
     use std::sync::Arc;
     use tokio::net::TcpListener;
