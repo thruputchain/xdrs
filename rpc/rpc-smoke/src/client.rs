@@ -95,6 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 addr,
                 prof.connections,
                 std::time::Duration::from_secs(300),
+                None,
             ));
             eprintln!(
                 "[client] using DynamicPool (max {} connections)",
