@@ -794,7 +794,7 @@ async fn scenario_dynamic_pool(quick: bool) -> Vec<ScenarioResult> {
     let delay = Duration::from_millis(1);
     let addr = start_server(Box::new(DelayEchoService { delay })).await;
 
-    let pool = Arc::new(DynamicPool::new(addr, 10, Duration::from_secs(30)));
+    let pool = Arc::new(DynamicPool::new(addr, 10, Duration::from_secs(30), None));
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let payload = &[0u8; 64];

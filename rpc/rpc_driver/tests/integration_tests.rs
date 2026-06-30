@@ -601,7 +601,8 @@ mod tests {
     #[tokio::test]
     async fn test_dynamic_pool_drop_eventually_closes_connections() {
         let (addr, closed) = spawn_close_observer().await;
-        let pool = rpc_driver::pool::DynamicPool::new(addr, 2, std::time::Duration::from_secs(60));
+        let pool =
+            rpc_driver::pool::DynamicPool::new(addr, 2, std::time::Duration::from_secs(60), None);
         let _ = pool
             .send_fire_and_forget(ProgVers::new(1, 1), 1, b"open")
             .await;
@@ -616,6 +617,7 @@ mod tests {
             addr,
             2,
             std::time::Duration::from_millis(50),
+            None,
         ));
         let _ = pool
             .send_fire_and_forget(ProgVers::new(1, 1), 1, b"open")
@@ -669,6 +671,7 @@ mod tests {
                 addr,
                 4,
                 std::time::Duration::from_secs(60),
+                None,
             ));
             let mut handles = Vec::new();
             for i in 0..4u32 {
@@ -730,7 +733,7 @@ mod tests {
         });
 
         // Use a very short idle_ttl so the evictor ticks quickly.
-        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_millis(50)));
+        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_millis(50), None));
         let evictor = pool.start_evictor();
 
         // Open the first connection via fire-and-forget.
@@ -814,7 +817,7 @@ mod tests {
             let _ = read_task_2.await;
         });
 
-        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_secs(60)));
+        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_secs(60), None));
 
         // Send a call that blocks on connection 1 (the BlockingEchoService waits
         // for blocker.notify_one()).
@@ -900,7 +903,7 @@ mod tests {
             let _ = launch_read_task(Arc::new(svc), handle, reader).await;
         });
 
-        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_secs(60)));
+        let pool = Arc::new(DynamicPool::new(addr, 4, Duration::from_secs(60), None));
 
         // Open the first connection.
         let _ = pool

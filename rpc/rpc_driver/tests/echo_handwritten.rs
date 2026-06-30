@@ -100,6 +100,7 @@ mod tests {
     use super::*;
     use rpc_driver::ProgramError;
     use rpc_driver::connection::ConnectionHandle;
+    use rpc_driver::pool::DynamicPool;
     use rpc_driver::tasks::launch_read_task;
     use rpc_driver::tcp_connection::connect;
     use rpc_driver::{RpcServer, connect_client, handler::ServiceMap, tcp_connection::accept};
@@ -178,6 +179,60 @@ mod tests {
 
         let res = client.takes_two_ints(1, 2).await.unwrap();
         assert_eq!(res, 3);
+    }
+
+    #[tokio::test]
+    async fn test_echo_client_server_dynamic_pool() {
+        // Set up TCP listener for self-connection
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Create service map
+        let mut service_map = ServiceMap::new();
+        service_map.add_service(Box::new(TestProgram_TestVersion_Dispatcher {
+            inner: Box::new(EchoCallbackService {}),
+        }));
+
+        // server
+        let server = RpcServer::new(listener, service_map);
+        server.start().await;
+
+        // client backed by a dynamic pool instead of a single connection
+        let pool = Arc::new(DynamicPool::new(
+            addr,
+            4,
+            std::time::Duration::from_secs(60),
+            None,
+        ));
+        let client = TestProgram_TestVersion_Client::new(pool.clone());
+
+        // Give tasks a moment to start up
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        client.null().await.unwrap();
+
+        let res = client.takes_int(1).await.unwrap();
+        assert_eq!(res, 1);
+
+        let res = client.takes_two_ints(1, 2).await.unwrap();
+        assert_eq!(res, 3);
+
+        // Drive enough concurrent calls to force the pool to open multiple
+        // connections, then verify every response is correct.
+        let mut handles = Vec::new();
+        for i in 0..16i32 {
+            let client = TestProgram_TestVersion_Client::new(pool.clone());
+            handles.push(tokio::spawn(async move {
+                let res = client.takes_int(i).await.unwrap();
+                assert_eq!(res, i);
+            }));
+        }
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        // The pool should have lazily opened at least one connection.
+        assert!(pool.active_connections().await >= 1);
     }
 
     #[tokio::test]

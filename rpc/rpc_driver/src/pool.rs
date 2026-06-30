@@ -30,7 +30,8 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 use crate::{
-    ConnectionHandle, ProgVers, RpcResponse, RpcSender, connect_client, rpc_error::RpcError,
+    ConnectionConfig, ConnectionHandle, ProgVers, RpcResponse, RpcSender, connect_client,
+    connect_client_with_config, rpc_error::RpcError,
 };
 
 /// A request dispatched through the pool to a worker.
@@ -290,6 +291,7 @@ pub struct DynamicPool {
     addr: SocketAddr,
     max_connections: usize,
     idle_ttl: Duration,
+    config: ConnectionConfig,
     closed: AtomicBool,
     connecting: std::sync::atomic::AtomicUsize,
     connections: tokio::sync::Mutex<Vec<PooledConnection>>,
@@ -316,15 +318,24 @@ impl DynamicPool {
     /// `max_connections` connections will be open simultaneously.
     /// Connections idle longer than `idle_ttl` are eligible for eviction.
     ///
+    /// `config` is applied to every connection the pool opens. Pass `None`
+    /// to use [`ConnectionConfig::default`].
+    ///
     /// # Panics
     ///
     /// Panics if `max_connections` is 0.
-    pub fn new(addr: SocketAddr, max_connections: usize, idle_ttl: Duration) -> Self {
+    pub fn new(
+        addr: SocketAddr,
+        max_connections: usize,
+        idle_ttl: Duration,
+        config: Option<ConnectionConfig>,
+    ) -> Self {
         assert!(max_connections > 0, "max_connections must be at least 1");
         Self {
             addr,
             max_connections,
             idle_ttl,
+            config: config.unwrap_or_default(),
             closed: AtomicBool::new(false),
             connecting: std::sync::atomic::AtomicUsize::new(0),
             connections: tokio::sync::Mutex::new(Vec::new()),
@@ -417,7 +428,10 @@ impl DynamicPool {
             }
 
             if should_connect {
-                let handle = match connect_client(&self.addr).await.map(|c| c.into_handle()) {
+                let handle = match connect_client_with_config(&self.addr, self.config.clone())
+                    .await
+                    .map(|c| c.into_handle())
+                {
                     Ok(handle) => handle,
                     Err(e) => {
                         self.connecting.fetch_sub(1, Ordering::SeqCst);
@@ -1052,7 +1066,7 @@ mod tests {
     #[tokio::test]
     async fn dynamic_pool_shutdown_rejects_new_calls() {
         let addr = start_echo_server().await;
-        let pool = DynamicPool::new(addr, 2, Duration::from_secs(60));
+        let pool = DynamicPool::new(addr, 2, Duration::from_secs(60), None);
 
         let ok = pool
             .send_call(ProgVers::new(1, 1), 1, b"before")
@@ -1111,7 +1125,7 @@ mod tests {
         fixed.shutdown().await;
         fixed.shutdown().await;
 
-        let dynamic = DynamicPool::new(addr, 1, Duration::from_secs(60));
+        let dynamic = DynamicPool::new(addr, 1, Duration::from_secs(60), None);
         dynamic.shutdown().await;
         dynamic.shutdown().await;
 
@@ -1128,7 +1142,7 @@ mod tests {
     async fn dynamic_pool_opens_connections_lazily() {
         let addr = start_echo_server().await;
 
-        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60));
+        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60), None);
         assert_eq!(pool.active_connections().await, 0);
 
         // First call opens a connection.
@@ -1144,7 +1158,7 @@ mod tests {
     async fn dynamic_pool_sequential_reuses_connection() {
         let addr = start_echo_server().await;
 
-        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60));
+        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60), None);
 
         // Sequential calls should reuse the same (idle) connection.
         for i in 0..5u32 {
@@ -1165,7 +1179,7 @@ mod tests {
         let delay = std::time::Duration::from_millis(100);
         let addr = start_slow_server(delay).await;
 
-        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60)));
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60), None));
 
         // Send 6 concurrent calls through a pool with max_connections=3.
         let mut handles = Vec::new();
@@ -1202,7 +1216,7 @@ mod tests {
         let delay = std::time::Duration::from_millis(100);
         let addr = start_slow_server(delay).await;
 
-        let pool = Arc::new(DynamicPool::new(addr, 2, Duration::from_secs(60)));
+        let pool = Arc::new(DynamicPool::new(addr, 2, Duration::from_secs(60), None));
 
         // Send 4 concurrent calls but only allow 2 connections.
         let mut handles = Vec::new();
@@ -1230,7 +1244,7 @@ mod tests {
     async fn dynamic_pool_evicts_idle_connections() {
         let addr = start_echo_server().await;
 
-        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(200)));
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(200), None));
 
         // Make a call to open a connection.
         pool.send_call(ProgVers::new(1, 1), 1, b"open")
@@ -1259,7 +1273,7 @@ mod tests {
         let delay = std::time::Duration::from_millis(500);
         let addr = start_slow_server(delay).await;
 
-        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(100)));
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(100), None));
 
         // Start a slow call.
         let pool2 = pool.clone();
@@ -1295,7 +1309,7 @@ mod tests {
         let delay = std::time::Duration::from_millis(200);
         let addr = start_slow_server(delay).await;
 
-        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60)));
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60), None));
 
         // Before any calls, pending should be 0.
         assert_eq!(pool.pending_count().await, 0);
@@ -1334,7 +1348,7 @@ mod tests {
     async fn dynamic_pool_error_propagation() {
         let addr = start_echo_server().await;
 
-        let pool = DynamicPool::new(addr, 2, Duration::from_secs(60));
+        let pool = DynamicPool::new(addr, 2, Duration::from_secs(60), None);
 
         // Invalid procedure should propagate the error.
         let result = pool.send_call(ProgVers::new(1, 1), 99, b"bad").await;
@@ -1348,7 +1362,7 @@ mod tests {
     #[tokio::test]
     async fn dynamic_pool_connect_failure() {
         let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
-        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60));
+        let pool = DynamicPool::new(addr, 3, Duration::from_secs(60), None);
         let result = pool.send_call(ProgVers::new(1, 1), 1, b"fail").await;
         assert!(result.is_err());
     }
@@ -1357,7 +1371,7 @@ mod tests {
     async fn dynamic_pool_reopens_after_eviction() {
         let addr = start_echo_server().await;
 
-        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(100)));
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(100), None));
 
         // Open a connection.
         pool.send_call(ProgVers::new(1, 1), 1, b"first")
@@ -1398,7 +1412,7 @@ mod tests {
     #[tokio::test]
     async fn dynamic_pool_as_rpc_sender() {
         let addr = start_echo_server().await;
-        let pool = Arc::new(DynamicPool::new(addr, 2, Duration::from_secs(60)));
+        let pool = Arc::new(DynamicPool::new(addr, 2, Duration::from_secs(60), None));
 
         // Use pool through the RpcSender trait object
         let sender: Arc<dyn RpcSender> = pool;
@@ -1482,7 +1496,7 @@ mod tests {
     #[tokio::test]
     async fn dynamic_pool_fire_and_forget() {
         let addr = start_echo_server().await;
-        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60)));
+        let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60), None));
 
         // Fire-and-forget should return Ok immediately.
         pool.send_fire_and_forget(ProgVers::new(1, 1), 1, b"faf-data")
