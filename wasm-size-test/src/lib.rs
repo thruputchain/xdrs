@@ -162,6 +162,6 @@ pub extern "C" fn encode_bytes_unchecked(ptr: *const u8, len: u32, out: *mut u8)
     unsafe {
         let data = core::slice::from_raw_parts(ptr, len as usize);
         let buf = core::slice::from_raw_parts_mut(out as *mut MaybeUninit<u8>, 5 + len as usize);
-        xdrs::cxs::encode_into_unchecked(&data, buf) as u32
+        xdrs::cxs::encode_into_unchecked(data, buf) as u32
     }
 }
