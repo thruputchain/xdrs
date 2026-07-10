@@ -351,8 +351,12 @@ pub const fn max_size_max(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 
 /// Multiplies an element size bound by a fixed array length. `None` if the
 /// element is unbounded, the product overflows `usize`, or the length exceeds
-/// `u32::MAX` (such arrays can never be encoded).
+/// `u32::MAX` (such arrays can never be encoded). A zero-length array encodes
+/// zero bytes regardless of its element type.
 pub const fn max_size_array(len: usize, elem: Option<usize>) -> Option<usize> {
+    if len == 0 {
+        return Some(0);
+    }
     if len > u32::MAX as usize {
         return None;
     }
@@ -461,6 +465,8 @@ mod tests {
         assert_eq!(max_size_max(Some(3), None), None);
         assert_eq!(max_size_array(4, Some(8)), Some(32));
         assert_eq!(max_size_array(0, Some(8)), Some(0));
+        // A zero-length array encodes nothing, even of unbounded elements.
+        assert_eq!(max_size_array(0, None), Some(0));
         assert_eq!(max_size_array(4, None), None);
         #[cfg(target_pointer_width = "64")]
         assert_eq!(max_size_array(usize::MAX, Some(1)), None);

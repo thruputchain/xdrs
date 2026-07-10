@@ -202,6 +202,17 @@ enum MixedEnum<'a> {
 const _: () = assert!(MixedEnum::const_max_cxs_size().is_none());
 const _: () = assert!(MixedEnum::const_max_txs_size().is_none());
 
+// A zero-length array encodes nothing, so it stays bounded even with an
+// unbounded element type.
+#[derive(xdrs::ConstWriteXDR)]
+struct ZeroLen<'a> {
+    n: u32,
+    none_of_them: [&'a [u8]; 0],
+}
+
+const _: () = assert!(matches!(ZeroLen::const_max_cxs_size(), Some(5)));
+const _: () = assert!(matches!(ZeroLen::const_max_txs_size(), Some(4)));
+
 // A finite bound that overflows `usize` reports None instead of failing
 // const evaluation: each element bounds to ~2^32, and 2^16 * 2^16 elements
 // push the product past 2^64. (Compile-time only; never instantiated.)
