@@ -99,12 +99,14 @@ pub mod txs;
 
 pub mod mu; // used by integration tests
 pub mod encoded_max;
+pub mod const_write_xdr;
 
 pub(crate) mod valid_u32;
 
 pub use discrim::*;
 pub use read_xdr::*;
 pub use write_xdr::*;
+pub use const_write_xdr::*;
 
 pub use serialize::reader::ReadError;
 pub use serialize::reader::ReadResult;
