@@ -98,6 +98,7 @@ pub mod cxs;
 pub mod txs;
 
 pub mod mu; // used by integration tests
+pub mod encoded_max;
 
 pub(crate) mod valid_u32;
 
