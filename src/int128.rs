@@ -36,11 +36,11 @@ const _: () = {
         const MAX_CXS_LEN: Option<usize> = Some(18);
         const MAX_TXS_LEN: Option<usize> = Some(16);
         #[inline]
-        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
             w.write_i128(*self)
         }
         #[inline]
-        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
             w.write_i128(*self)
         }
         #[inline]
@@ -57,11 +57,11 @@ const _: () = {
         const MAX_CXS_LEN: Option<usize> = Some(18);
         const MAX_TXS_LEN: Option<usize> = Some(16);
         #[inline]
-        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
             w.write_u128(*self)
         }
         #[inline]
-        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
             w.write_u128(*self)
         }
         #[inline]

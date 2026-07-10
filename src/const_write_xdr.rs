@@ -2,7 +2,7 @@
 //!
 //! [`ConstWriteXDR`] is the runtime companion to the inherent `const fn`
 //! encoders emitted by `#[derive(ConstWriteXDR)]`: non-generic methods over
-//! [`cxs::Cursor`] / [`txs::Cursor`]
+//! [`cxs::ConstWriter`] / [`txs::ConstWriter`]
 //! that panic on buffer overflow instead of returning `Result`, plus
 //! worst-case encoded sizes for compile-time buffer sizing.
 
@@ -15,7 +15,7 @@ use core::marker::PhantomData;
 /// Types with an infallible, cursor-based XDR encoding and a (possibly
 /// unbounded) worst-case encoded size.
 ///
-/// Implementations write through [`cxs::Cursor`] / [`txs::Cursor`], which
+/// Implementations write through [`cxs::ConstWriter`] / [`txs::ConstWriter`], which
 /// panic on buffer overflow. Size a buffer from `MAX_CXS_LEN` /
 /// `MAX_TXS_LEN` (when `Some`) to make encoding infallible:
 ///
@@ -40,7 +40,7 @@ use core::marker::PhantomData;
 ///     None => panic!("unbounded"),
 /// };
 /// let mut buf = [0u8; N];
-/// let mut c = xdrs::cxs::Cursor::new(&mut buf);
+/// let mut c = xdrs::cxs::ConstWriter::new(&mut buf);
 /// 42u64.write_cxs(&mut c);
 /// assert_eq!(c.as_bytes(), &[42]);
 /// ```
@@ -63,9 +63,9 @@ pub trait ConstWriteXDR {
     const MAX_TXS_LEN: Option<usize>;
 
     /// Writes this value in CXS format. Panics on cursor overflow.
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>);
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>);
     /// Writes this value in TXS format. Panics on cursor overflow.
-    fn write_txs(&self, w: &mut txs::Cursor<'_>);
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>);
     /// Exact CXS encoded size of this value in bytes.
     fn cxs_size(&self) -> usize;
     /// Exact TXS encoded size of this value in bytes.
@@ -81,9 +81,9 @@ macro_rules! const_write_xdr_prim_impls {
             const MAX_CXS_LEN: Option<usize> = Some($cxs_max);
             const MAX_TXS_LEN: Option<usize> = Some($txs_max);
             #[inline]
-            fn write_cxs(&self, w: &mut cxs::Cursor<'_>) { w.$write_method(*self) }
+            fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) { w.$write_method(*self) }
             #[inline]
-            fn write_txs(&self, w: &mut txs::Cursor<'_>) { w.$write_method(*self) }
+            fn write_txs(&self, w: &mut txs::ConstWriter<'_>) { w.$write_method(*self) }
             #[inline]
             fn cxs_size(&self) -> usize { cxs::const_writer::$size_fn(*self) }
             #[inline]
@@ -107,10 +107,10 @@ const_write_xdr_prim_impls! {
 impl ConstWriteXDR for [u8] {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         w.write_opaque_variable(self)
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         w.write_opaque_variable(self)
     }
     fn cxs_size(&self) -> usize {
@@ -125,11 +125,11 @@ impl ConstWriteXDR for &[u8] {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
     #[inline]
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         w.write_opaque_variable(self)
     }
     #[inline]
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         w.write_opaque_variable(self)
     }
     #[inline]
@@ -146,12 +146,12 @@ impl<const N: usize> ConstWriteXDR for [u8; N] {
     const MAX_CXS_LEN: Option<usize> = Some(cxs::const_writer::size_opaque_fixed(N));
     const MAX_TXS_LEN: Option<usize> = Some(txs::const_writer::size_opaque_fixed(N));
     #[inline]
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_opaque_fixed(self)
     }
     #[inline]
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_opaque_fixed(self)
     }
@@ -168,7 +168,7 @@ impl<const N: usize> ConstWriteXDR for [u8; N] {
 impl<T: ConstWriteXDR, const N: usize> ConstWriteXDR for [T; N] {
     const MAX_CXS_LEN: Option<usize> = encoded_max::mul(N, T::MAX_CXS_LEN);
     const MAX_TXS_LEN: Option<usize> = encoded_max::mul(N, T::MAX_TXS_LEN);
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         let mut i = 0;
         while i < N {
@@ -176,7 +176,7 @@ impl<T: ConstWriteXDR, const N: usize> ConstWriteXDR for [T; N] {
             i += 1;
         }
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         let mut i = 0;
         while i < N {
@@ -207,7 +207,7 @@ impl<T: ConstWriteXDR, const N: usize> ConstWriteXDR for [T; N] {
 impl<T: ConstWriteXDR> ConstWriteXDR for [T] {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         assert!(
             self.len() <= u32::MAX as usize,
             "array length exceeds u32::MAX"
@@ -217,7 +217,7 @@ impl<T: ConstWriteXDR> ConstWriteXDR for [T] {
             elt.write_cxs(w);
         }
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         assert!(
             self.len() <= u32::MAX as usize,
             "array length exceeds u32::MAX"
@@ -258,11 +258,11 @@ impl<T: ConstWriteXDR> ConstWriteXDR for &T {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
     #[inline]
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         (*self).write_cxs(w)
     }
     #[inline]
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         (*self).write_txs(w)
     }
     #[inline]
@@ -280,11 +280,11 @@ impl<T: ConstWriteXDR> ConstWriteXDR for &mut T {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
     #[inline]
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         (**self).write_cxs(w)
     }
     #[inline]
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         (**self).write_txs(w)
     }
     #[inline]
@@ -301,11 +301,11 @@ impl<T: ConstWriteXDR> ConstWriteXDR for &[T] {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
     #[inline(always)]
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         <[T] as ConstWriteXDR>::write_cxs(*self, w)
     }
     #[inline(always)]
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         <[T] as ConstWriteXDR>::write_txs(*self, w)
     }
     #[inline(always)]
@@ -321,10 +321,10 @@ impl<T: ConstWriteXDR> ConstWriteXDR for &[T] {
 impl ConstWriteXDR for str {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         w.write_opaque_variable(self.as_bytes())
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         w.write_opaque_variable(self.as_bytes())
     }
     fn cxs_size(&self) -> usize {
@@ -338,10 +338,10 @@ impl ConstWriteXDR for str {
 impl ConstWriteXDR for &str {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         w.write_opaque_variable((*self).as_bytes())
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         w.write_opaque_variable((*self).as_bytes())
     }
     fn cxs_size(&self) -> usize {
@@ -357,10 +357,10 @@ impl ConstWriteXDR for &str {
 impl ConstWriteXDR for alloc::string::String {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         self.as_str().write_cxs(w)
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         self.as_str().write_txs(w)
     }
     fn cxs_size(&self) -> usize {
@@ -374,8 +374,8 @@ impl ConstWriteXDR for alloc::string::String {
 impl ConstWriteXDR for () {
     const MAX_CXS_LEN: Option<usize> = Some(0);
     const MAX_TXS_LEN: Option<usize> = Some(0);
-    fn write_cxs(&self, _w: &mut cxs::Cursor<'_>) {}
-    fn write_txs(&self, _w: &mut txs::Cursor<'_>) {}
+    fn write_cxs(&self, _w: &mut cxs::ConstWriter<'_>) {}
+    fn write_txs(&self, _w: &mut txs::ConstWriter<'_>) {}
     fn cxs_size(&self) -> usize {
         0
     }
@@ -387,10 +387,10 @@ impl ConstWriteXDR for () {
 impl ConstWriteXDR for Infallible {
     const MAX_CXS_LEN: Option<usize> = Some(0);
     const MAX_TXS_LEN: Option<usize> = Some(0);
-    fn write_cxs(&self, _w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, _w: &mut cxs::ConstWriter<'_>) {
         match *self {}
     }
-    fn write_txs(&self, _w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, _w: &mut txs::ConstWriter<'_>) {
         match *self {}
     }
     fn cxs_size(&self) -> usize {
@@ -417,11 +417,11 @@ macro_rules! const_write_tuple {
                 $( acc = encoded_max::add(acc, <$t as ConstWriteXDR>::MAX_TXS_LEN); )+
                 acc
             };
-            fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+            fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
                 let ( $($v),+ ) = self;
                 $( $v.write_cxs(w); )+
             }
-            fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+            fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
                 let ( $($v),+ ) = self;
                 $( $v.write_txs(w); )+
             }
@@ -456,11 +456,11 @@ const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5),
 impl<T: ConstWriteXDR> ConstWriteXDR for (T,) {
     const MAX_CXS_LEN: Option<usize> = T::MAX_CXS_LEN;
     const MAX_TXS_LEN: Option<usize> = T::MAX_TXS_LEN;
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         let (t,) = self;
         t.write_cxs(w);
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         let (t,) = self;
         t.write_txs(w);
     }
@@ -478,7 +478,7 @@ impl<T: ConstWriteXDR> ConstWriteXDR for Option<T> {
     // CXS discriminant (i32 0|1) encodes in 1 byte; TXS in 4.
     const MAX_CXS_LEN: Option<usize> = encoded_max::add(Some(1), T::MAX_CXS_LEN);
     const MAX_TXS_LEN: Option<usize> = encoded_max::add(Some(4), T::MAX_TXS_LEN);
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         match self {
             Some(v) => {
                 w.write_i32(1);
@@ -487,7 +487,7 @@ impl<T: ConstWriteXDR> ConstWriteXDR for Option<T> {
             None => w.write_i32(0),
         }
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         match self {
             Some(v) => {
                 w.write_i32(1);
@@ -519,7 +519,7 @@ where
         encoded_max::add(Some(1), encoded_max::max(T::MAX_CXS_LEN, E::MAX_CXS_LEN));
     const MAX_TXS_LEN: Option<usize> =
         encoded_max::add(Some(4), encoded_max::max(T::MAX_TXS_LEN, E::MAX_TXS_LEN));
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         match self {
             Ok(x) => {
                 w.write_i32(0);
@@ -531,7 +531,7 @@ where
             }
         }
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         match self {
             Ok(x) => {
                 w.write_i32(0);
@@ -560,8 +560,8 @@ where
 impl<T> ConstWriteXDR for PhantomData<T> {
     const MAX_CXS_LEN: Option<usize> = Some(0);
     const MAX_TXS_LEN: Option<usize> = Some(0);
-    fn write_cxs(&self, _w: &mut cxs::Cursor<'_>) {}
-    fn write_txs(&self, _w: &mut txs::Cursor<'_>) {}
+    fn write_cxs(&self, _w: &mut cxs::ConstWriter<'_>) {}
+    fn write_txs(&self, _w: &mut txs::ConstWriter<'_>) {}
     fn cxs_size(&self) -> usize {
         0
     }
@@ -588,7 +588,7 @@ const _: () = {
                     encoded_max::add(Some(cxs::const_writer::size_u32(MAX)), Some(MAX as usize));
                 const MAX_TXS_LEN: Option<usize> =
                     encoded_max::add(Some(4), encoded_max::padded4(MAX as usize));
-                fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+                fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
                     let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
                     assert!(
                         bytes.len() <= MAX as usize,
@@ -596,7 +596,7 @@ const _: () = {
                     );
                     w.write_opaque_variable(bytes);
                 }
-                fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+                fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
                     let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
                     assert!(
                         bytes.len() <= MAX as usize,
@@ -633,7 +633,7 @@ const _: () = {
         // at runtime.
         const MAX_CXS_LEN: Option<usize> = None;
         const MAX_TXS_LEN: Option<usize> = None;
-        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
             assert!(
                 slice.len() <= MAX as usize,
@@ -641,7 +641,7 @@ const _: () = {
             );
             <[T] as ConstWriteXDR>::write_cxs(slice, w);
         }
-        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
             assert!(
                 slice.len() <= MAX as usize,
@@ -668,7 +668,7 @@ const _: () = {
         // literal `None`; byte-shaped `VecM<u8, MAX>` keeps its exact bound.
         const MAX_CXS_LEN: Option<usize> = None;
         const MAX_TXS_LEN: Option<usize> = None;
-        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
             assert!(
                 slice.len() <= MAX as usize,
@@ -676,7 +676,7 @@ const _: () = {
             );
             <[T] as ConstWriteXDR>::write_cxs(slice, w);
         }
-        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
             assert!(
                 slice.len() <= MAX as usize,
@@ -701,10 +701,10 @@ const _: () = {
         // Literal `None` keeps recursive `Box<Self>` derives cycle-free.
         const MAX_CXS_LEN: Option<usize> = None;
         const MAX_TXS_LEN: Option<usize> = None;
-        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
             self.as_ref().write_cxs(w)
         }
-        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
             self.as_ref().write_txs(w)
         }
         fn cxs_size(&self) -> usize {
@@ -724,10 +724,10 @@ const _: () = {
     impl ConstWriteXDR for Vec<u8> {
         const MAX_CXS_LEN: Option<usize> = None;
         const MAX_TXS_LEN: Option<usize> = None;
-        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
             w.write_opaque_variable(self.as_ref())
         }
-        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
             w.write_opaque_variable(self.as_ref())
         }
         fn cxs_size(&self) -> usize {
@@ -744,11 +744,11 @@ const _: () = {
     {
         const MAX_CXS_LEN: Option<usize> = None;
         const MAX_TXS_LEN: Option<usize> = None;
-        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
             let slice: &[T] = self.as_ref();
             slice.write_cxs(w)
         }
-        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
             let slice: &[T] = self.as_ref();
             slice.write_txs(w)
         }

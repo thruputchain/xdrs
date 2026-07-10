@@ -12,10 +12,10 @@
 //!   [XDR][RFC-4506] data model and some serialization format.
 //!
 //! - Implementations of [`Reader`] and [`Writer`]:
-//!   - [CXS](cxs) ("Compact XDR Serialization"), including [`cxs::Cursor`] for
-//!     slice-backed infallible const writes
-//!   - [TXS](txs) ("Traditional XDR Serialization"), including [`txs::Cursor`]
+//!   - [CXS](cxs) ("Compact XDR Serialization"), including [`cxs::ConstWriter`]
 //!     for slice-backed infallible const writes
+//!   - [TXS](txs) ("Traditional XDR Serialization"), including
+//!     [`txs::ConstWriter`] for slice-backed infallible const writes
 //!
 //! The library is `no_std`, but a few extra things can be
 //! enabled with feature `alloc`.

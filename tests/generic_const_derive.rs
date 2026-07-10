@@ -33,7 +33,7 @@ fn reference_cxs<T: WriteXDR>(v: &T) -> ([u8; 64], usize) {
 
 // Generic code can bound on the trait — the whole point.
 fn encode_infallible<'a, T: ConstWriteXDR>(v: &T, buf: &'a mut [u8]) -> &'a [u8] {
-    let mut c = xdrs::cxs::Cursor::new(buf);
+    let mut c = xdrs::cxs::ConstWriter::new(buf);
     v.write_cxs(&mut c);
     let n = c.pos();
     &buf[..n]
@@ -73,7 +73,7 @@ fn reference_txs<T: WriteXDR>(v: &T) -> ([u8; 64], usize) {
 }
 
 fn encode_infallible_txs<'a, T: ConstWriteXDR>(v: &T, buf: &'a mut [u8]) -> &'a [u8] {
-    let mut c = xdrs::txs::Cursor::new(buf);
+    let mut c = xdrs::txs::ConstWriter::new(buf);
     v.write_txs(&mut c);
     let n = c.pos();
     &buf[..n]

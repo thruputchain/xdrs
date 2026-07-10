@@ -136,11 +136,11 @@ fn inherent_struct_impl(input: &syn::DeriveInput, item: &syn::DataStruct) -> Res
 
     Ok(quote! {
         impl #impl_generics #ty_ident #ty_generics #where_clause {
-            pub const fn const_write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+            pub const fn const_write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
                 #(#cxs_fields)*
             }
 
-            pub const fn const_write_txs(&self, w: &mut txs::Cursor<'_>) {
+            pub const fn const_write_txs(&self, w: &mut txs::ConstWriter<'_>) {
                 #(#txs_fields)*
             }
 
@@ -543,13 +543,13 @@ fn inherent_enum_impl(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<
 
     Ok(quote! {
         impl #impl_generics #ty_ident #ty_generics #where_clause {
-            pub const fn const_write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+            pub const fn const_write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
                 match self {
                     #(#cxs_arms)*
                 }
             }
 
-            pub const fn const_write_txs(&self, w: &mut txs::Cursor<'_>) {
+            pub const fn const_write_txs(&self, w: &mut txs::ConstWriter<'_>) {
                 match self {
                     #(#txs_arms)*
                 }
@@ -607,11 +607,11 @@ impl Format {
         }
     }
 
-    /// Cursor type for this format.
-    fn cursor_ty(self, krate: &syn::Path) -> TokenStream {
+    /// Writer type for this format.
+    fn writer_ty(self, krate: &syn::Path) -> TokenStream {
         match self {
-            Format::Cxs => quote! { #krate::cxs::Cursor<'_> },
-            Format::Txs => quote! { #krate::txs::Cursor<'_> },
+            Format::Cxs => quote! { #krate::cxs::ConstWriter<'_> },
+            Format::Txs => quote! { #krate::txs::ConstWriter<'_> },
         }
     }
 }
@@ -671,16 +671,16 @@ fn trait_impl_struct(
         )
     };
 
-    let cxs_cursor = Format::Cxs.cursor_ty(krate);
-    let txs_cursor = Format::Txs.cursor_ty(krate);
+    let cxs_writer = Format::Cxs.writer_ty(krate);
+    let txs_writer = Format::Txs.writer_ty(krate);
 
     Ok(quote! {
         impl #impl_generics #krate::ConstWriteXDR for #ty_ident #ty_generics #where_clause {
             const MAX_CXS_LEN: ::core::option::Option<usize> = #max_cxs;
             const MAX_TXS_LEN: ::core::option::Option<usize> = #max_txs;
 
-            fn write_cxs(&self, w: &mut #cxs_cursor) { #write_cxs_body }
-            fn write_txs(&self, w: &mut #txs_cursor) { #write_txs_body }
+            fn write_cxs(&self, w: &mut #cxs_writer) { #write_cxs_body }
+            fn write_txs(&self, w: &mut #txs_writer) { #write_txs_body }
             fn cxs_size(&self) -> usize { #cxs_size_body }
             fn txs_size(&self) -> usize { #txs_size_body }
         }
@@ -788,16 +788,16 @@ fn trait_impl_enum(
         )
     };
 
-    let cxs_cursor = Format::Cxs.cursor_ty(krate);
-    let txs_cursor = Format::Txs.cursor_ty(krate);
+    let cxs_writer = Format::Cxs.writer_ty(krate);
+    let txs_writer = Format::Txs.writer_ty(krate);
 
     Ok(quote! {
         impl #impl_generics #krate::ConstWriteXDR for #ty_ident #ty_generics #where_clause {
             const MAX_CXS_LEN: ::core::option::Option<usize> = #max_cxs;
             const MAX_TXS_LEN: ::core::option::Option<usize> = #max_txs;
 
-            fn write_cxs(&self, w: &mut #cxs_cursor) { #write_cxs_body }
-            fn write_txs(&self, w: &mut #txs_cursor) { #write_txs_body }
+            fn write_cxs(&self, w: &mut #cxs_writer) { #write_cxs_body }
+            fn write_txs(&self, w: &mut #txs_writer) { #write_txs_body }
             fn cxs_size(&self) -> usize { #cxs_size_body }
             fn txs_size(&self) -> usize { #txs_size_body }
         }

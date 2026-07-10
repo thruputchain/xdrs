@@ -32,7 +32,7 @@ fn reference_txs<T: xdrs::WriteXDR>(v: &T) -> ([u8; 64], usize) {
 fn assert_trait_matches<T: ConstWriteXDR + xdrs::WriteXDR + core::fmt::Debug>(v: &T) {
     let (exp, len) = reference_cxs(v);
     let mut buf = [0u8; 64];
-    let mut c = xdrs::cxs::Cursor::new(&mut buf);
+    let mut c = xdrs::cxs::ConstWriter::new(&mut buf);
     v.write_cxs(&mut c);
     assert_eq!(c.as_bytes(), &exp[..len], "cxs bytes for {v:?}");
     assert_eq!(v.cxs_size(), len, "cxs_size for {v:?}");
@@ -42,7 +42,7 @@ fn assert_trait_matches<T: ConstWriteXDR + xdrs::WriteXDR + core::fmt::Debug>(v:
 
     let (exp, len) = reference_txs(v);
     let mut buf = [0u8; 64];
-    let mut c = xdrs::txs::Cursor::new(&mut buf);
+    let mut c = xdrs::txs::ConstWriter::new(&mut buf);
     v.write_txs(&mut c);
     assert_eq!(c.as_bytes(), &exp[..len], "txs bytes for {v:?}");
     assert_eq!(v.txs_size(), len, "txs_size for {v:?}");
@@ -512,7 +512,7 @@ mod no_alloc_const_ctx {
     const SIZE: usize = M.const_cxs_size();
     const ENCODED: [u8; SIZE] = {
         let mut buf = [0u8; SIZE];
-        let mut c = xdrs::cxs::Cursor::new(&mut buf);
+        let mut c = xdrs::cxs::ConstWriter::new(&mut buf);
         M.const_write_cxs(&mut c);
         buf
     };

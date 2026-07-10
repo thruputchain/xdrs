@@ -15,4 +15,4 @@ pub mod buf_writer;
 mod put;
 
 pub mod const_writer;
-pub use const_writer::{ConstWriter, Cursor};
+pub use const_writer::ConstWriter;

@@ -318,3 +318,14 @@ The trait impls in `src/const_write_xdr.rs` and all `MAX_*_LEN` semantics
 `{Box, Vec, String}` (heapless `Vec`/`String` still caught by those segments;
 `Box` and heapless types still need `#[xdrs(runtime_only)]`). The payoff is
 const-context encoding of bounded containers on no-`alloc`.
+
+## Amendment (2026-07-10): single slice-backed `ConstWriter`
+
+The final API collapsed to **one writer type per format**: the slice-backed
+`Cursor<'a>` described above was renamed `cxs::ConstWriter<'a>` /
+`txs::ConstWriter<'a>`, and the legacy owned-buffer `ConstWriter<const N>`
+variant (with `new()` / `into_bytes()`) was removed entirely. There is now no
+`Cursor` name and no `into_bytes` in the crate. Callers construct a writer over
+a caller-provided buffer (`ConstWriter::new(&mut buf)` or `new_uninit`) and, for
+`const` arrays, return the buffer after asserting `w.pos() == N`. All wire-format
+and `MAX_*_LEN` semantics above are otherwise unchanged.

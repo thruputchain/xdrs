@@ -24,7 +24,7 @@ const BORROWED: BorrowedLeafSlice<'static> = BorrowedLeafSlice { items: &LEAF_IT
 
 const BORROWED_CXS: [u8; BORROWED.const_cxs_size()] = {
     let mut buf = [0u8; BORROWED.const_cxs_size()];
-    let mut w = xdrs::cxs::Cursor::new(&mut buf);
+    let mut w = xdrs::cxs::ConstWriter::new(&mut buf);
     BORROWED.const_write_cxs(&mut w);
     assert!(w.pos() == BORROWED.const_cxs_size());
     buf
@@ -32,7 +32,7 @@ const BORROWED_CXS: [u8; BORROWED.const_cxs_size()] = {
 
 const BORROWED_TXS: [u8; BORROWED.const_txs_size()] = {
     let mut buf = [0u8; BORROWED.const_txs_size()];
-    let mut w = xdrs::txs::Cursor::new(&mut buf);
+    let mut w = xdrs::txs::ConstWriter::new(&mut buf);
     BORROWED.const_write_txs(&mut w);
     assert!(w.pos() == BORROWED.const_txs_size());
     buf

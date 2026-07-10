@@ -98,11 +98,11 @@ impl<const N: usize> ConstWriteXDR for Vec<u8, N> {
     // capacity whose padded size would overflow `usize` (32-bit targets) to
     // `None` instead of a const-eval error.
     const MAX_TXS_LEN: Option<usize> = encoded_max::add(Some(4), encoded_max::padded4(N));
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_opaque_variable(self.as_slice());
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_opaque_variable(self.as_slice());
     }
@@ -121,14 +121,14 @@ impl<T: ConstWriteXDR, const N: usize> ConstWriteXDR for Vec<T, N> {
     );
     const MAX_TXS_LEN: Option<usize> =
         encoded_max::add(Some(4), encoded_max::mul(N, T::MAX_TXS_LEN));
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_u32(self.len() as u32);
         for elt in self {
             elt.write_cxs(w);
         }
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_u32(self.len() as u32);
         for elt in self {
@@ -157,11 +157,11 @@ impl<const N: usize> ConstWriteXDR for String<N> {
     // capacity whose padded size would overflow `usize` (32-bit targets) to
     // `None` instead of a const-eval error.
     const MAX_TXS_LEN: Option<usize> = encoded_max::add(Some(4), encoded_max::padded4(N));
-    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+    fn write_cxs(&self, w: &mut cxs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_opaque_variable(self.as_bytes());
     }
-    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+    fn write_txs(&self, w: &mut txs::ConstWriter<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_opaque_variable(self.as_bytes());
     }

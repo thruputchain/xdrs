@@ -42,12 +42,12 @@ fn constwritexdr_opaque_paths_reject_overlong_lengths() {
     expect_opaque_guard("slice const_txs_size", || slice_holder.const_txs_size());
     expect_opaque_guard("slice const_write_cxs", || {
         let mut buf = [0u8; 0];
-        let mut w = xdrs::cxs::Cursor::new(&mut buf);
+        let mut w = xdrs::cxs::ConstWriter::new(&mut buf);
         slice_holder.const_write_cxs(&mut w);
     });
     expect_opaque_guard("slice const_write_txs", || {
         let mut buf = [0u8; 0];
-        let mut w = xdrs::txs::Cursor::new(&mut buf);
+        let mut w = xdrs::txs::ConstWriter::new(&mut buf);
         slice_holder.const_write_txs(&mut w);
     });
 
@@ -57,12 +57,12 @@ fn constwritexdr_opaque_paths_reject_overlong_lengths() {
     expect_opaque_guard("string const_txs_size", || string_holder.const_txs_size());
     expect_opaque_guard("string const_write_cxs", || {
         let mut buf = [0u8; 0];
-        let mut w = xdrs::cxs::Cursor::new(&mut buf);
+        let mut w = xdrs::cxs::ConstWriter::new(&mut buf);
         string_holder.const_write_cxs(&mut w);
     });
     expect_opaque_guard("string const_write_txs", || {
         let mut buf = [0u8; 0];
-        let mut w = xdrs::txs::Cursor::new(&mut buf);
+        let mut w = xdrs::txs::ConstWriter::new(&mut buf);
         string_holder.const_write_txs(&mut w);
     });
 }

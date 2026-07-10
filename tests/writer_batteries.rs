@@ -23,7 +23,7 @@ macro_rules! assert_cursor_matches {
         let v = $val;
         let (expected, len) = reference_cxs(&v);
         let mut buf = [0u8; 64];
-        let mut c = cxs::Cursor::new(&mut buf);
+        let mut c = cxs::ConstWriter::new(&mut buf);
         c.$write_method(v);
         assert_eq!(c.pos(), len, "size mismatch for {:?}", v);
         assert_eq!(c.as_bytes(), &expected[..len], "bytes mismatch for {:?}", v);
@@ -106,12 +106,12 @@ fn cursor_i128_u128() {
     for v in [0i128, -1, i64::MAX as i128 + 1, i128::MAX, i128::MIN] {
         let (expected, len) = reference_cxs(&v);
         let mut buf = [0u8; 64];
-        let mut c = cxs::Cursor::new(&mut buf);
+        let mut c = cxs::ConstWriter::new(&mut buf);
         c.write_i128(v);
         assert_eq!((c.pos(), c.as_bytes()), (len, &expected[..len]));
     }
     let mut buf = [0u8; 64];
-    let mut c = cxs::Cursor::new(&mut buf);
+    let mut c = cxs::ConstWriter::new(&mut buf);
     c.write_u128(u128::MAX);
     let (expected, len) = reference_cxs(&u128::MAX);
     assert_eq!((c.pos(), c.as_bytes()), (len, &expected[..len]));
@@ -123,20 +123,20 @@ fn cursor_opaque() {
     let data = [0xde, 0xad, 0xbe, 0xef];
     let (expected, len) = reference_cxs(&&data[..]); // &[u8] → opaque variable
     let mut buf = [0u8; 64];
-    let mut c = cxs::Cursor::new(&mut buf);
+    let mut c = cxs::ConstWriter::new(&mut buf);
     c.write_opaque_variable(&data);
     assert_eq!((c.pos(), c.as_bytes()), (len, &expected[..len]));
 
     let mut buf2 = [0u8; 4];
-    let mut c2 = cxs::Cursor::new(&mut buf2);
+    let mut c2 = cxs::ConstWriter::new(&mut buf2);
     c2.write_opaque_fixed(&data);
     assert_eq!(c2.as_bytes(), &data);
 }
 
-// Const-context usability: build a const array through Cursor.
+// Const-context usability: build a const array through ConstWriter.
 const CONST_VIA_CURSOR: [u8; 3] = {
     let mut buf = [0u8; 3];
-    let mut c = cxs::Cursor::new(&mut buf);
+    let mut c = cxs::ConstWriter::new(&mut buf);
     c.write_i32(-32); // 0x3f 0xe0
     c.write_i32(1); // 0x01
     assert!(c.pos() == 3);
@@ -152,7 +152,7 @@ fn cursor_const_context() {
 #[should_panic]
 fn cursor_overflow_panics() {
     let mut buf = [0u8; 1];
-    let mut c = cxs::Cursor::new(&mut buf);
+    let mut c = cxs::ConstWriter::new(&mut buf);
     c.write_u32(u32::MAX); // needs 5 bytes
 }
 
@@ -161,7 +161,7 @@ fn cursor_overflow_panics() {
 #[test]
 fn cursor_new_uninit_matches_reference() {
     let mut buf = [MaybeUninit::<u8>::uninit(); 64];
-    let mut c = cxs::Cursor::new_uninit(&mut buf);
+    let mut c = cxs::ConstWriter::new_uninit(&mut buf);
     c.write_u32(300);
     c.write_i32(-32);
     let (expected, len) = reference_cxs(&(300u32, -32i32));
@@ -172,7 +172,7 @@ fn cursor_new_uninit_matches_reference() {
 // new_uninit is usable in const context.
 const CXS_UNINIT_LEN: usize = {
     let mut buf = [MaybeUninit::uninit(); 8];
-    let mut c = cxs::Cursor::new_uninit(&mut buf);
+    let mut c = cxs::ConstWriter::new_uninit(&mut buf);
     c.write_u32(300);
     c.pos()
 };
@@ -186,11 +186,11 @@ fn cursor_new_uninit_const_context() {
 #[should_panic]
 fn cursor_new_uninit_overflow_panics() {
     let mut buf = [MaybeUninit::<u8>::uninit(); 1];
-    let mut c = cxs::Cursor::new_uninit(&mut buf);
+    let mut c = cxs::ConstWriter::new_uninit(&mut buf);
     c.write_u32(u32::MAX); // needs 5 bytes
 }
 
-// -- TXS Cursor tests --
+// -- TXS ConstWriter tests --
 
 use xdrs::txs;
 
@@ -216,7 +216,7 @@ macro_rules! assert_txs_cursor_matches {
         let v = $val;
         let (expected, len) = reference_txs(&v);
         let mut buf = [0u8; 64];
-        let mut c = xdrs::txs::Cursor::new(&mut buf);
+        let mut c = xdrs::txs::ConstWriter::new(&mut buf);
         c.$write_method(v);
         assert_eq!(c.pos(), len);
         assert_eq!(c.as_bytes(), &expected[..len]);
@@ -256,7 +256,7 @@ fn txs_cursor_opaque_padding() {
     let (expected, len) = reference_txs(&&data[..]);
     assert_eq!(len, 12);
     let mut buf = [0u8; 64];
-    let mut c = xdrs::txs::Cursor::new(&mut buf);
+    let mut c = xdrs::txs::ConstWriter::new(&mut buf);
     c.write_opaque_variable(&data);
     assert_eq!((c.pos(), c.as_bytes()), (len, &expected[..len]));
 }
@@ -266,7 +266,7 @@ fn txs_cursor_opaque_padding() {
 #[test]
 fn txs_cursor_new_uninit_matches_reference() {
     let mut buf = [MaybeUninit::<u8>::uninit(); 64];
-    let mut c = txs::Cursor::new_uninit(&mut buf);
+    let mut c = txs::ConstWriter::new_uninit(&mut buf);
     c.write_u32(300);
     c.write_i32(-32);
     let (expected, len) = reference_txs(&(300u32, -32i32));
@@ -277,7 +277,7 @@ fn txs_cursor_new_uninit_matches_reference() {
 // new_uninit is usable in const context.
 const TXS_UNINIT_LEN: usize = {
     let mut buf = [MaybeUninit::uninit(); 8];
-    let mut c = txs::Cursor::new_uninit(&mut buf);
+    let mut c = txs::ConstWriter::new_uninit(&mut buf);
     c.write_u32(300);
     c.pos()
 };

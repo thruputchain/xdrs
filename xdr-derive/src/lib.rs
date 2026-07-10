@@ -14,7 +14,7 @@
 //!   for structs and enums, enabling serialization to XDR-encoded data.
 //!
 //! - **`#[derive(ConstWriteXDR)]`**: Implements the `ConstWriteXDR` trait and
-//!   emits inherent `const fn` encoders via `cxs::Cursor` / `txs::Cursor` plus
+//!   emits inherent `const fn` encoders via `cxs::ConstWriter` / `txs::ConstWriter` plus
 //!   `MAX_CXS_LEN` / `MAX_TXS_LEN` size constants for compile-time buffer
 //!   sizing.  A whole type whose fields lack inherent const encoders may be
 //!   marked with the type-level attribute `#[xdrs(runtime_only)]` to emit only
@@ -300,20 +300,20 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///
 /// For types **without** type parameters, generates four inherent `const fn`
 /// methods on the type:
-/// - `const_write_cxs(&self, w: &mut cxs::Cursor<'_>)`
-/// - `const_write_txs(&self, w: &mut txs::Cursor<'_>)`
+/// - `const_write_cxs(&self, w: &mut cxs::ConstWriter<'_>)`
+/// - `const_write_txs(&self, w: &mut txs::ConstWriter<'_>)`
 /// - `const_cxs_size(&self) -> usize`
 /// - `const_txs_size(&self) -> usize`
 ///
 /// These methods can be used in `const` blocks to encode values at compile
-/// time. The writers are slice-backed `cxs::Cursor` / `txs::Cursor` rather
-/// than the buffer-const-generic `ConstWriter`; construct one over a
-/// stack buffer whose length is taken from the size methods:
+/// time. The writers are the slice-backed `cxs::ConstWriter` /
+/// `txs::ConstWriter`; construct one over a stack buffer whose length is taken
+/// from the size methods:
 ///
 /// ```rust,ignore
 /// static ENCODED: [u8; MY_VAL.const_txs_size()] = {
 ///     let mut buf = [0u8; MY_VAL.const_txs_size()];
-///     let mut w = xdrs::txs::Cursor::new(&mut buf);
+///     let mut w = xdrs::txs::ConstWriter::new(&mut buf);
 ///     MY_VAL.const_write_txs(&mut w);
 ///     assert!(w.pos() == MY_VAL.const_txs_size());
 ///     buf
