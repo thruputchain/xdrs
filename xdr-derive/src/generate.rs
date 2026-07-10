@@ -7,6 +7,38 @@ use syn::Result;
 
 // ---- derive WriteXDR ------------------------------------------------------
 
+/// Which of `WriteXDR`'s two write methods a generated fragment targets.
+///
+/// The checked and unchecked write paths emit structurally identical code,
+/// differing only in the method called and whether errors propagate:
+/// `Checked` fragments call `write_xdr(...)?` while `Unchecked` fragments
+/// call `write_xdr_unchecked(...)` with no `?` (the enclosing method wraps
+/// them in an `unsafe` block).
+#[derive(Copy, Clone)]
+enum Mode {
+    Checked,
+    Unchecked,
+}
+
+impl Mode {
+    /// The `WriteXDR` method name a fragment calls.
+    fn method(self) -> TokenStream {
+        match self {
+            Mode::Checked => quote! { write_xdr },
+            Mode::Unchecked => quote! { write_xdr_unchecked },
+        }
+    }
+
+    /// The error-propagation operator: `?` for checked, nothing for
+    /// unchecked (whose calls are infallible).
+    fn q(self) -> TokenStream {
+        match self {
+            Mode::Checked => quote! { ? },
+            Mode::Unchecked => quote! {},
+        }
+    }
+}
+
 pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     let attrs = InputAttrs::from_derive_input(input)?;
     attrs.check(input)?;
@@ -72,14 +104,14 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Toke
         .fields
         .iter()
         .enumerate()
-        .map(|(i, f)| write_field(i, f))
+        .map(|(i, f)| write_field(i, f, Mode::Checked))
         .collect::<Result<Vec<_>>>()?;
 
     let write_fields_unchecked = item
         .fields
         .iter()
         .enumerate()
-        .map(|(i, f)| write_field_unchecked(i, f))
+        .map(|(i, f)| write_field(i, f, Mode::Unchecked))
         .collect::<Result<Vec<_>>>()?;
 
     Ok(quote! {
@@ -99,42 +131,25 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Toke
     })
 }
 
-fn write_field(index: usize, field: &syn::Field) -> Result<TokenStream> {
+fn write_field(index: usize, field: &syn::Field, mode: Mode) -> Result<TokenStream> {
     let ty = &field.ty;
     let fa = FieldAccess::new(index, field);
     let attrs = FieldAttrs::from_field(field)?;
     attrs.check(field)?;
 
-    if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
-        Ok(quote! {
-            <#into_type as __xdrs::WriteXDR>::write_xdr(
-                &::core::convert::Into::into(::core::clone::Clone::clone(&self.#fa)),
-                w,
-            )?;
-        })
-    } else {
-        Ok(quote! {
-            <#ty as __xdrs::WriteXDR>::write_xdr(&self.#fa, w)?;
-        })
-    }
-}
-
-fn write_field_unchecked(index: usize, field: &syn::Field) -> Result<TokenStream> {
-    let ty = &field.ty;
-    let fa = FieldAccess::new(index, field);
-    let attrs = FieldAttrs::from_field(field)?;
-    attrs.check(field)?;
+    let method = mode.method();
+    let q = mode.q();
 
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
         Ok(quote! {
-            <#into_type as __xdrs::WriteXDR>::write_xdr_unchecked(
+            <#into_type as __xdrs::WriteXDR>::#method(
                 &::core::convert::Into::into(::core::clone::Clone::clone(&self.#fa)),
                 w,
-            );
+            )#q;
         })
     } else {
         Ok(quote! {
-            <#ty as __xdrs::WriteXDR>::write_xdr_unchecked(&self.#fa, w);
+            <#ty as __xdrs::WriteXDR>::#method(&self.#fa, w)#q;
         })
     }
 }
@@ -153,14 +168,14 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| write_variant(i, v, input))
+        .map(|(i, v)| write_variant(i, v, input, Mode::Checked))
         .collect::<Result<Vec<_>>>()?;
 
     let write_variants_unchecked: Vec<_> = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| write_variant_unchecked(i, v, input))
+        .map(|(i, v)| write_variant(i, v, input, Mode::Unchecked))
         .collect::<Result<Vec<_>>>()?;
 
     Ok(quote! {
@@ -215,73 +230,11 @@ fn write_enum_fast(_input: &syn::DeriveInput, _item: &syn::DataEnum) -> Option<T
     */
 }
 
-fn write_variant(index: usize, v: &syn::Variant, input: &syn::DeriveInput) -> Result<TokenStream> {
-    let is_default_arm = variant_is_default(v);
-
-    let var_ident = &v.ident;
-    let ty_ident = &input.ident;
-
-    let var_bindings = var_bindings(&v.fields);
-    let write_bindings: Vec<_> = v
-        .fields
-        .iter()
-        .enumerate()
-        .map(|(i, field)| {
-            if is_default_arm && i == 0 {
-                Ok(quote! {})
-            } else {
-                write_binding(i, field)
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    let variant_idx = index as i32;
-    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
-        // An explicit-discriminant variant should never be considered a default arm
-        assert!(!is_default_arm);
-
-        quote! { #d }
-    } else if is_default_arm {
-        // Use the default-arm value as the discriminant
-        quote! { *_self_0 }
-    } else {
-        // Use the zero-based index
-        quote! { #variant_idx }
-    };
-
-    Ok(quote! {
-        #ty_ident::#var_ident #var_bindings => {
-            __write_xdr_writer.write_i32(#discriminant)?;
-
-            #(#write_bindings)*
-        }
-    })
-}
-
-fn write_binding(index: usize, field: &syn::Field) -> Result<TokenStream> {
-    let ty = &field.ty;
-    let bind = tmp_binding(index);
-    let attrs = FieldAttrs::from_field(field)?;
-    attrs.check(field)?;
-
-    if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
-        Ok(quote! {
-            <#into_type as __xdrs::WriteXDR>::write_xdr(
-                &::core::convert::Into::into(::core::clone::Clone::clone(#bind)),
-                __write_xdr_writer,
-            )?;
-        })
-    } else {
-        Ok(quote! {
-            <#ty as __xdrs::WriteXDR>::write_xdr(#bind, __write_xdr_writer)?;
-        })
-    }
-}
-
-fn write_variant_unchecked(
+fn write_variant(
     index: usize,
     v: &syn::Variant,
     input: &syn::DeriveInput,
+    mode: Mode,
 ) -> Result<TokenStream> {
     let is_default_arm = variant_is_default(v);
 
@@ -297,7 +250,7 @@ fn write_variant_unchecked(
             if is_default_arm && i == 0 {
                 Ok(quote! {})
             } else {
-                write_binding_unchecked(i, field)
+                write_binding(i, field, mode)
             }
         })
         .collect::<Result<Vec<_>>>()?;
@@ -316,31 +269,36 @@ fn write_variant_unchecked(
         quote! { #variant_idx }
     };
 
+    let q = mode.q();
+
     Ok(quote! {
         #ty_ident::#var_ident #var_bindings => {
-            __write_xdr_writer.write_i32(#discriminant);
+            __write_xdr_writer.write_i32(#discriminant)#q;
 
             #(#write_bindings)*
         }
     })
 }
 
-fn write_binding_unchecked(index: usize, field: &syn::Field) -> Result<TokenStream> {
+fn write_binding(index: usize, field: &syn::Field, mode: Mode) -> Result<TokenStream> {
     let ty = &field.ty;
     let bind = tmp_binding(index);
     let attrs = FieldAttrs::from_field(field)?;
     attrs.check(field)?;
 
+    let method = mode.method();
+    let q = mode.q();
+
     if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
         Ok(quote! {
-            <#into_type as __xdrs::WriteXDR>::write_xdr_unchecked(
+            <#into_type as __xdrs::WriteXDR>::#method(
                 &::core::convert::Into::into(::core::clone::Clone::clone(#bind)),
                 __write_xdr_writer,
-            );
+            )#q;
         })
     } else {
         Ok(quote! {
-            <#ty as __xdrs::WriteXDR>::write_xdr_unchecked(#bind, __write_xdr_writer);
+            <#ty as __xdrs::WriteXDR>::#method(#bind, __write_xdr_writer)#q;
         })
     }
 }
