@@ -129,6 +129,10 @@ name = "const_writer_noalloc"
 required-features = ["derive"]
 
 [[test]]
+name = "const_size_bounds"
+required-features = ["derive"]
+
+[[test]]
 name = "borrowed_slices_baseline"
 required-features = ["alloc", "derive"]
 

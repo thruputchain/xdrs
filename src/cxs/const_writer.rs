@@ -2,7 +2,8 @@
 //!
 //! This module provides [`ConstWriter`], which encodes CXS data into a
 //! fixed-size buffer in `const` contexts, along with `size_*` functions
-//! that compute the encoded size of each primitive type.
+//! that compute the encoded size of each primitive type and `max_size_*`
+//! functions that compute worst-case size bounds over all values.
 
 /// A const-compatible writer for CXS (Compact XDR Serialization).
 ///
@@ -355,6 +356,119 @@ pub const fn size_opaque_variable(len: usize) -> usize {
     size_u32(len as u32) + len
 }
 
+// -- Worst-case size helpers --
+// Type-level maximums over all values of a type, used by
+// `#[derive(ConstWriteXDR)]` to fold `const_max_cxs_size()` bounds.
+// `None` means unbounded, or a bound that overflows `usize` on this target.
+
+/// Worst-case CXS encoded size of a boolean (always 1: header byte only).
+pub const fn max_size_bool() -> usize {
+    1
+}
+
+/// Worst-case CXS encoded size of a 32-bit float (always 4).
+pub const fn max_size_f32() -> usize {
+    4
+}
+
+/// Worst-case CXS encoded size of a 64-bit double (always 8).
+pub const fn max_size_f64() -> usize {
+    8
+}
+
+/// Worst-case CXS encoded size of a signed 16-bit integer (1 header + 2 data).
+pub const fn max_size_i16() -> usize {
+    3
+}
+
+/// Worst-case CXS encoded size of an unsigned 16-bit integer (1 header + 2 data).
+pub const fn max_size_u16() -> usize {
+    3
+}
+
+/// Worst-case CXS encoded size of a signed 32-bit integer (1 header + 4 data).
+pub const fn max_size_i32() -> usize {
+    5
+}
+
+/// Worst-case CXS encoded size of an unsigned 32-bit integer (1 header + 4 data).
+pub const fn max_size_u32() -> usize {
+    5
+}
+
+/// Worst-case CXS encoded size of a signed 64-bit integer (1 header + 8 data).
+pub const fn max_size_i64() -> usize {
+    9
+}
+
+/// Worst-case CXS encoded size of an unsigned 64-bit integer (1 header + 8 data).
+pub const fn max_size_u64() -> usize {
+    9
+}
+
+/// Worst-case CXS encoded size of a signed 128-bit integer (two 64-bit halves).
+#[cfg(feature = "int128")]
+#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
+pub const fn max_size_i128() -> usize {
+    18
+}
+
+/// Worst-case CXS encoded size of an unsigned 128-bit integer (two 64-bit halves).
+#[cfg(feature = "int128")]
+#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
+pub const fn max_size_u128() -> usize {
+    18
+}
+
+/// Worst-case CXS encoded size of fixed-length opaque data, or `None` if the
+/// length exceeds `u32::MAX` (such data can never be encoded).
+pub const fn max_size_opaque_fixed(len: usize) -> Option<usize> {
+    if len > u32::MAX as usize {
+        None
+    } else {
+        Some(len)
+    }
+}
+
+/// Worst-case CXS encoded size of variable-length opaque data with declared
+/// bound `max_len`, or `None` if the bound overflows `usize` on this target.
+pub const fn max_size_opaque_variable(max_len: u32) -> Option<usize> {
+    size_u32(max_len).checked_add(max_len as usize)
+}
+
+/// Adds two size bounds. `None` (unbounded) and `usize` overflow propagate.
+pub const fn max_size_add(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (Some(a), Some(b)) => a.checked_add(b),
+        _ => None,
+    }
+}
+
+/// Takes the larger of two size bounds. `None` (unbounded) propagates.
+pub const fn max_size_max(a: Option<usize>, b: Option<usize>) -> Option<usize> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(if a > b { a } else { b }),
+        _ => None,
+    }
+}
+
+/// Multiplies an element size bound by a fixed array length. `None` if the
+/// element is unbounded, the product overflows `usize`, or the length exceeds
+/// `u32::MAX` (such arrays can never be encoded). A zero-length array encodes
+/// zero bytes regardless of its element type.
+pub const fn max_size_array(len: usize, elem: Option<usize>) -> Option<usize> {
+    if len == 0 {
+        return Some(0);
+    }
+    if len > u32::MAX as usize {
+        return None;
+    }
+    match elem {
+        Some(elem) => elem.checked_mul(len),
+        None => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,5 +561,57 @@ mod tests {
     #[test]
     fn const_encode_bool() {
         assert_eq!(BOOL_TRUE, [0x01]);
+    }
+
+    #[test]
+    fn max_sizes_dominate_worst_case_values() {
+        assert_eq!(max_size_i16(), size_i16(i16::MAX));
+        assert_eq!(max_size_u16(), size_u16(u16::MAX));
+        assert_eq!(max_size_i32(), size_i32(i32::MAX));
+        assert_eq!(max_size_u32(), size_u32(u32::MAX));
+        assert_eq!(max_size_i64(), size_i64(i64::MAX));
+        assert_eq!(max_size_u64(), size_u64(u64::MAX));
+        assert_eq!(max_size_bool(), size_bool(true));
+        assert_eq!(max_size_f32(), size_f32(0.0));
+        assert_eq!(max_size_f64(), size_f64(0.0));
+    }
+
+    #[cfg(feature = "int128")]
+    #[test]
+    fn max_sizes_dominate_worst_case_int128() {
+        assert_eq!(max_size_i128(), size_i128(i128::MAX));
+        assert_eq!(max_size_u128(), size_u128(u128::MAX));
+    }
+
+    #[test]
+    fn max_size_opaque() {
+        assert_eq!(max_size_opaque_fixed(0), Some(0));
+        assert_eq!(max_size_opaque_fixed(7), Some(7));
+        assert_eq!(max_size_opaque_variable(2), Some(size_opaque_variable(2)));
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(
+                max_size_opaque_variable(u32::MAX),
+                Some(5 + u32::MAX as usize)
+            );
+        }
+    }
+
+    #[test]
+    fn max_size_folds() {
+        assert_eq!(max_size_add(Some(3), Some(4)), Some(7));
+        assert_eq!(max_size_add(Some(3), None), None);
+        assert_eq!(max_size_add(None, Some(4)), None);
+        assert_eq!(max_size_add(Some(usize::MAX), Some(1)), None);
+        assert_eq!(max_size_max(Some(3), Some(4)), Some(4));
+        assert_eq!(max_size_max(Some(3), None), None);
+        assert_eq!(max_size_array(4, Some(9)), Some(36));
+        assert_eq!(max_size_array(0, Some(9)), Some(0));
+        // A zero-length array encodes nothing, even of unbounded elements.
+        assert_eq!(max_size_array(0, None), Some(0));
+        assert_eq!(max_size_array(4, None), None);
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(max_size_array(usize::MAX, Some(1)), None);
+        assert_eq!(max_size_array(2, Some(usize::MAX)), None);
     }
 }
