@@ -202,6 +202,17 @@ enum MixedEnum<'a> {
 const _: () = assert!(MixedEnum::const_max_cxs_size().is_none());
 const _: () = assert!(MixedEnum::const_max_txs_size().is_none());
 
+// A finite bound that overflows `usize` reports None instead of failing
+// const evaluation: each element bounds to ~2^32, and 2^16 * 2^16 elements
+// push the product past 2^64. (Compile-time only; never instantiated.)
+#[derive(xdrs::ConstWriteXDR)]
+struct Overflowing {
+    blobs: [[BytesM; 65536]; 65536],
+}
+
+const _: () = assert!(Overflowing::const_max_cxs_size().is_none());
+const _: () = assert!(Overflowing::const_max_txs_size().is_none());
+
 // -- The point of the pointer cut: recursive types derive and bound to None
 // without a const-eval cycle --
 
