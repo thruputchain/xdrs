@@ -4,20 +4,48 @@
 //! fixed-size buffer in `const` contexts, along with `size_*` functions
 //! that compute the encoded size of each primitive type.
 
+use core::mem::MaybeUninit;
+
 /// A slice-backed, infallible TXS cursor.
 ///
 /// The canonical const-compatible TXS writer: writes into a caller-provided
-/// byte slice, panicking on overflow (a compile-time error in `const`
-/// contexts). [`ConstWriter`] delegates to this type; the TXS encoding rules
-/// live here exactly once.
+/// buffer, panicking on overflow (a compile-time error in `const` contexts).
+/// [`ConstWriter`] delegates to this type; the TXS encoding rules live here
+/// exactly once.
+///
+/// Two entry points are provided: [`new`](Self::new) accepts an initialized
+/// `&mut [u8]`, while [`new_uninit`](Self::new_uninit) accepts a
+/// `&mut [MaybeUninit<u8>]` and avoids the cost of zero-initializing the
+/// backing buffer.
+///
+/// The backing storage is held as `MaybeUninit<u8>`, but the cursor only ever
+/// stores initialized bytes: `buf[..pos]` is always fully initialized because
+/// `pos` advances only over bytes just written.
 pub struct Cursor<'a> {
-    buf: &'a mut [u8],
+    buf: &'a mut [MaybeUninit<u8>],
     pos: usize,
 }
 
 impl<'a> Cursor<'a> {
     /// Creates a cursor writing into `buf`, starting at position 0.
     pub const fn new(buf: &'a mut [u8]) -> Self {
+        // SAFETY: `MaybeUninit<u8>` has the same layout as `u8`, so reinterpreting
+        // `&mut [u8]` as `&mut [MaybeUninit<u8>]` (same length metadata) is sound.
+        // This direction never de-initializes the caller's buffer: the cursor only
+        // ever writes fully-initialized bytes into the slice (see `put_byte`/
+        // `put_bytes`) and never reads or exposes an uninitialized element, so
+        // every byte the caller passed in remains initialized for its own use.
+        let buf = unsafe { &mut *(buf as *mut [u8] as *mut [MaybeUninit<u8>]) };
+        Self { buf, pos: 0 }
+    }
+
+    /// Creates a cursor writing into an uninitialized `buf`, starting at position 0.
+    ///
+    /// This is the zero-init-free entry point: unlike [`new`](Self::new), it does
+    /// not require the caller to zero-initialize the backing buffer first, avoiding
+    /// the `memset` of a `[0u8; N]` allocation on hot paths (for example, encoding a
+    /// contract abort message).
+    pub const fn new_uninit(buf: &'a mut [MaybeUninit<u8>]) -> Self {
         Self { buf, pos: 0 }
     }
 
@@ -28,20 +56,31 @@ impl<'a> Cursor<'a> {
 
     /// Returns the bytes written so far (the filled prefix of the buffer).
     pub const fn as_bytes(&self) -> &[u8] {
-        self.buf.split_at(self.pos).0
+        let init = self.buf.split_at(self.pos).0;
+        // SAFETY: cursor invariant — `buf[..pos]` is always initialized because
+        // `pos` only advances over bytes just written by `put_byte`/`put_bytes`.
+        unsafe { crate::mu::assume_init_ref(init) }
     }
 
     // -- internal helpers --
 
+    /// Constructs a cursor from initialized `&mut [u8]` parts, resuming at `pos`.
+    /// Used by [`ConstWriter`] to delegate into the shared encoding rules.
+    const fn from_u8_parts(buf: &'a mut [u8], pos: usize) -> Self {
+        let mut c = Self::new(buf);
+        c.pos = pos;
+        c
+    }
+
     const fn put_byte(&mut self, b: u8) {
-        self.buf[self.pos] = b;
+        self.buf[self.pos] = MaybeUninit::new(b);
         self.pos += 1;
     }
 
     const fn put_bytes(&mut self, bytes: &[u8]) {
         let mut i = 0;
         while i < bytes.len() {
-            self.buf[self.pos + i] = bytes[i];
+            self.buf[self.pos + i] = MaybeUninit::new(bytes[i]);
             i += 1;
         }
         self.pos += bytes.len();
@@ -207,40 +246,28 @@ impl<const N: usize> ConstWriter<N> {
 
     /// Writes a signed 32-bit integer in big-endian format (4 bytes).
     pub const fn write_i32(&mut self, n: i32) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_i32(n);
         self.pos = c.pos;
     }
 
     /// Writes an unsigned 32-bit integer in big-endian format (4 bytes).
     pub const fn write_u32(&mut self, n: u32) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_u32(n);
         self.pos = c.pos;
     }
 
     /// Writes a signed 64-bit integer in big-endian format (8 bytes).
     pub const fn write_i64(&mut self, n: i64) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_i64(n);
         self.pos = c.pos;
     }
 
     /// Writes an unsigned 64-bit integer in big-endian format (8 bytes).
     pub const fn write_u64(&mut self, n: u64) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_u64(n);
         self.pos = c.pos;
     }
@@ -249,10 +276,7 @@ impl<const N: usize> ConstWriter<N> {
     #[cfg(feature = "int128")]
     #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
     pub const fn write_i128(&mut self, n: i128) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_i128(n);
         self.pos = c.pos;
     }
@@ -261,60 +285,42 @@ impl<const N: usize> ConstWriter<N> {
     #[cfg(feature = "int128")]
     #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
     pub const fn write_u128(&mut self, n: u128) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_u128(n);
         self.pos = c.pos;
     }
 
     /// Writes a signed 16-bit integer, promoted to i32 (4 bytes).
     pub const fn write_i16(&mut self, n: i16) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_i16(n);
         self.pos = c.pos;
     }
 
     /// Writes an unsigned 16-bit integer, promoted to u32 (4 bytes).
     pub const fn write_u16(&mut self, n: u16) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_u16(n);
         self.pos = c.pos;
     }
 
     /// Writes a boolean as i32: 1 for true, 0 for false (4 bytes).
     pub const fn write_bool(&mut self, v: bool) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_bool(v);
         self.pos = c.pos;
     }
 
     /// Writes a 32-bit IEEE 754 float in big-endian format (4 bytes).
     pub const fn write_f32(&mut self, n: f32) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_f32(n);
         self.pos = c.pos;
     }
 
     /// Writes a 64-bit IEEE 754 double in big-endian format (8 bytes).
     pub const fn write_f64(&mut self, n: f64) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_f64(n);
         self.pos = c.pos;
     }
@@ -322,10 +328,7 @@ impl<const N: usize> ConstWriter<N> {
     /// Writes fixed-length opaque bytes (raw bytes, padded to 4-byte boundary).
     #[doc(hidden)]
     pub const fn write_opaque_fixed(&mut self, bytes: &[u8]) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_opaque_fixed(bytes);
         self.pos = c.pos;
     }
@@ -333,10 +336,7 @@ impl<const N: usize> ConstWriter<N> {
     /// Writes variable-length opaque data: 4-byte big-endian length prefix,
     /// then the data padded to a 4-byte boundary.
     pub const fn write_opaque_variable(&mut self, bytes: &[u8]) {
-        let mut c = Cursor {
-            buf: &mut self.buf,
-            pos: self.pos,
-        };
+        let mut c = Cursor::from_u8_parts(&mut self.buf, self.pos);
         c.write_opaque_variable(bytes);
         self.pos = c.pos;
     }

@@ -52,7 +52,7 @@ on `cxs::ConstWriter<N>` and `txs::ConstWriter<N>`. Implemented with
 ### 2. Non-generic slice cursor: `cxs::Cursor<'a>` and `txs::Cursor<'a>`
 
 ```rust
-pub struct Cursor<'a> { buf: &'a mut [u8], pos: usize }
+pub struct Cursor<'a> { buf: &'a mut [MaybeUninit<u8>], pos: usize }
 ```
 
 - All methods are `const fn`, panic on overflow (same contract as
@@ -60,8 +60,12 @@ pub struct Cursor<'a> { buf: &'a mut [u8], pos: usize }
 - Full vocabulary mirroring `ConstWriter`: `write_bool`, `write_i16/32/64`,
   `write_u16/32/64`, `write_i128/u128` (feature `int128`), `write_f32/f64`,
   `write_opaque_fixed`, `write_opaque_variable`.
-- `new(&'a mut [u8]) -> Self`, `pos(&self) -> usize`,
-  `as_bytes(&self) -> &[u8]` (written prefix).
+- `new(&'a mut [u8]) -> Self`, `new_uninit(&'a mut [MaybeUninit<u8>]) -> Self`,
+  `pos(&self) -> usize`, `as_bytes(&self) -> &[u8]` (written prefix).
+  `new_uninit` is the zero-init-free entry point: it skips the `memset` of a
+  zeroed `[0u8; N]` buffer on hot paths (e.g. contract abort encoding). The
+  backing storage is `MaybeUninit<u8>`, but the cursor only ever stores
+  initialized bytes, so `as_bytes` (the `..pos` prefix) is always sound.
 - **The width/format rules live exactly once.** The encoding logic moves to
   shared `const` helpers (private free fns or equivalent); both `Cursor` and
   `ConstWriter` become thin delegates. No duplicated format logic.

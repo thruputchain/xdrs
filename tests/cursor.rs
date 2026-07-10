@@ -156,6 +156,40 @@ fn cursor_overflow_panics() {
     c.write_u32(u32::MAX); // needs 5 bytes
 }
 
+// new_uninit: byte-equality against the encode_into reference, over an
+// uninitialized backing buffer (no zero-init).
+#[test]
+fn cursor_new_uninit_matches_reference() {
+    let mut buf = [MaybeUninit::<u8>::uninit(); 64];
+    let mut c = cxs::Cursor::new_uninit(&mut buf);
+    c.write_u32(300);
+    c.write_i32(-32);
+    let (expected, len) = reference_cxs(&(300u32, -32i32));
+    assert_eq!(c.pos(), len);
+    assert_eq!(c.as_bytes(), &expected[..len]);
+}
+
+// new_uninit is usable in const context.
+const CXS_UNINIT_LEN: usize = {
+    let mut buf = [MaybeUninit::uninit(); 8];
+    let mut c = cxs::Cursor::new_uninit(&mut buf);
+    c.write_u32(300);
+    c.pos()
+};
+
+#[test]
+fn cursor_new_uninit_const_context() {
+    assert_eq!(CXS_UNINIT_LEN, 3); // 0x7f 0x2c 0x01
+}
+
+#[test]
+#[should_panic]
+fn cursor_new_uninit_overflow_panics() {
+    let mut buf = [MaybeUninit::<u8>::uninit(); 1];
+    let mut c = cxs::Cursor::new_uninit(&mut buf);
+    c.write_u32(u32::MAX); // needs 5 bytes
+}
+
 // -- TXS Cursor tests --
 
 use xdrs::txs;
@@ -225,4 +259,30 @@ fn txs_cursor_opaque_padding() {
     let mut c = xdrs::txs::Cursor::new(&mut buf);
     c.write_opaque_variable(&data);
     assert_eq!((c.pos(), c.as_bytes()), (len, &expected[..len]));
+}
+
+// new_uninit: byte-equality against the encode_into reference, over an
+// uninitialized backing buffer (no zero-init).
+#[test]
+fn txs_cursor_new_uninit_matches_reference() {
+    let mut buf = [MaybeUninit::<u8>::uninit(); 64];
+    let mut c = txs::Cursor::new_uninit(&mut buf);
+    c.write_u32(300);
+    c.write_i32(-32);
+    let (expected, len) = reference_txs(&(300u32, -32i32));
+    assert_eq!(c.pos(), len);
+    assert_eq!(c.as_bytes(), &expected[..len]);
+}
+
+// new_uninit is usable in const context.
+const TXS_UNINIT_LEN: usize = {
+    let mut buf = [MaybeUninit::uninit(); 8];
+    let mut c = txs::Cursor::new_uninit(&mut buf);
+    c.write_u32(300);
+    c.pos()
+};
+
+#[test]
+fn txs_cursor_new_uninit_const_context() {
+    assert_eq!(TXS_UNINIT_LEN, 4); // big-endian u32 is always 4 bytes
 }
