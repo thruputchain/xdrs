@@ -133,6 +133,10 @@ name = "const_size_bounds"
 required-features = ["derive"]
 
 [[test]]
+name = "unchecked_writer"
+required-features = ["alloc", "derive"]
+
+[[test]]
 name = "borrowed_slices_baseline"
 required-features = ["alloc", "derive"]
 
