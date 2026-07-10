@@ -692,7 +692,7 @@ dependencies = [
 
 [[package]]
 name = "xdr-common"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "escape-bytes",
  "regex-lite",
@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "xdr-derive"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -714,7 +714,7 @@ dependencies = [
 
 [[package]]
 name = "xdr-repr"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "heapless",
  "pretty_assertions",
@@ -725,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "xdrs"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "criterion",
  "heapless",

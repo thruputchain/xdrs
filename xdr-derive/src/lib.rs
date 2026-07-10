@@ -13,6 +13,12 @@
 //! - **`#[derive(WriteXDR)]`**: Automatically implements the `WriteXDR` trait
 //!   for structs and enums, enabling serialization to XDR-encoded data.
 //!
+//! - **`#[derive(ConstWriteXDR)]`**: Implements the `ConstWriteXDR` trait and
+//!   emits inherent `const fn` encoders via `cxs::Cursor` / `txs::Cursor` plus
+//!   `MAX_CXS_LEN` / `MAX_TXS_LEN` size constants for compile-time buffer
+//!   sizing.  Fields with unbounded or runtime-only sizes may be marked
+//!   `#[xdrs(runtime_only)]`.
+//!
 //! - **`#[derive(XDR)]`**: Automatically implements the `XDR` and `HasTypeDef`
 //!   traits, allowing types to describe their XDR type representation for
 //!   generation of specifications.

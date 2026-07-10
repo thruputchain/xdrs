@@ -284,7 +284,10 @@ impl<const N: usize> ConstWriter<N> {
     /// Writes fixed-length opaque bytes (raw bytes, no length prefix).
     #[doc(hidden)]
     pub const fn write_opaque_fixed(&mut self, bytes: &[u8]) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_opaque_fixed(bytes);
         self.pos = c.pos;
     }
@@ -292,14 +295,20 @@ impl<const N: usize> ConstWriter<N> {
     /// Writes variable-length opaque data: CXS-encoded u32 length prefix,
     /// then raw bytes.
     pub const fn write_opaque_variable(&mut self, bytes: &[u8]) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_opaque_variable(bytes);
         self.pos = c.pos;
     }
 
     /// Writes a boolean as CXS-encoded i32 (0 or 1).
     pub const fn write_bool(&mut self, v: bool) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_bool(v);
         self.pos = c.pos;
     }
@@ -310,7 +319,10 @@ impl<const N: usize> ConstWriter<N> {
     /// encoding — the bit pattern is written as-is. Little-endian byte order
     /// follows CXS convention (not RFC 4506 big-endian).
     pub const fn write_f32(&mut self, n: f32) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_f32(n);
         self.pos = c.pos;
     }
@@ -321,28 +333,40 @@ impl<const N: usize> ConstWriter<N> {
     /// encoding — the bit pattern is written as-is. Little-endian byte order
     /// follows CXS convention (not RFC 4506 big-endian).
     pub const fn write_f64(&mut self, n: f64) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_f64(n);
         self.pos = c.pos;
     }
 
     /// Writes a signed 64-bit integer using CXS variable-width encoding.
     pub const fn write_i64(&mut self, n: i64) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_i64(n);
         self.pos = c.pos;
     }
 
     /// Writes a signed 32-bit integer using CXS variable-width encoding.
     pub const fn write_i32(&mut self, n: i32) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_i32(n);
         self.pos = c.pos;
     }
 
     /// Writes a signed 16-bit integer using CXS variable-width encoding.
     pub const fn write_i16(&mut self, n: i16) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_i16(n);
         self.pos = c.pos;
     }
@@ -351,7 +375,10 @@ impl<const N: usize> ConstWriter<N> {
     #[cfg(feature = "int128")]
     #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
     pub const fn write_i128(&mut self, n: i128) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_i128(n);
         self.pos = c.pos;
     }
@@ -360,28 +387,40 @@ impl<const N: usize> ConstWriter<N> {
     #[cfg(feature = "int128")]
     #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
     pub const fn write_u128(&mut self, n: u128) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_u128(n);
         self.pos = c.pos;
     }
 
     /// Writes an unsigned 64-bit integer using CXS variable-width encoding.
     pub const fn write_u64(&mut self, n: u64) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_u64(n);
         self.pos = c.pos;
     }
 
     /// Writes an unsigned 32-bit integer using CXS variable-width encoding.
     pub const fn write_u32(&mut self, n: u32) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_u32(n);
         self.pos = c.pos;
     }
 
     /// Writes an unsigned 16-bit integer using CXS variable-width encoding.
     pub const fn write_u16(&mut self, n: u16) {
-        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        let mut c = Cursor {
+            buf: &mut self.buf,
+            pos: self.pos,
+        };
         c.write_u16(n);
         self.pos = c.pos;
     }

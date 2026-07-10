@@ -33,8 +33,25 @@ macro_rules! assert_cursor_matches {
 #[test]
 fn cursor_i32_width_boundaries() {
     for v in [
-        0i32, 1, -1, 31, 32, -31, -32, 62, 63, 127, 128, 255, 256, 32767, 32768, 65535, 65536,
-        i32::MAX, i32::MIN,
+        0i32,
+        1,
+        -1,
+        31,
+        32,
+        -31,
+        -32,
+        62,
+        63,
+        127,
+        128,
+        255,
+        256,
+        32767,
+        32768,
+        65535,
+        65536,
+        i32::MAX,
+        i32::MIN,
     ] {
         assert_cursor_matches!(write_i32, v);
     }
@@ -45,7 +62,15 @@ fn cursor_u32_u64_i64_boundaries() {
     for v in [0u32, 62, 63, 255, 256, 65535, 65536, u32::MAX] {
         assert_cursor_matches!(write_u32, v);
     }
-    for v in [0u64, 62, 63, 65536, u32::MAX as u64, u32::MAX as u64 + 1, u64::MAX] {
+    for v in [
+        0u64,
+        62,
+        63,
+        65536,
+        u32::MAX as u64,
+        u32::MAX as u64 + 1,
+        u64::MAX,
+    ] {
         assert_cursor_matches!(write_u64, v);
     }
     for v in [
@@ -166,12 +191,24 @@ macro_rules! assert_txs_cursor_matches {
 
 #[test]
 fn txs_cursor_all_primitives() {
-    for v in [0i32, -1, i32::MAX, i32::MIN] { assert_txs_cursor_matches!(write_i32, v); }
-    for v in [0u32, u32::MAX] { assert_txs_cursor_matches!(write_u32, v); }
-    for v in [0i64, i64::MAX, i64::MIN] { assert_txs_cursor_matches!(write_i64, v); }
-    for v in [0u64, u64::MAX] { assert_txs_cursor_matches!(write_u64, v); }
-    for v in [0i16, i16::MIN] { assert_txs_cursor_matches!(write_i16, v); }
-    for v in [0u16, u16::MAX] { assert_txs_cursor_matches!(write_u16, v); }
+    for v in [0i32, -1, i32::MAX, i32::MIN] {
+        assert_txs_cursor_matches!(write_i32, v);
+    }
+    for v in [0u32, u32::MAX] {
+        assert_txs_cursor_matches!(write_u32, v);
+    }
+    for v in [0i64, i64::MAX, i64::MIN] {
+        assert_txs_cursor_matches!(write_i64, v);
+    }
+    for v in [0u64, u64::MAX] {
+        assert_txs_cursor_matches!(write_u64, v);
+    }
+    for v in [0i16, i16::MIN] {
+        assert_txs_cursor_matches!(write_i16, v);
+    }
+    for v in [0u16, u16::MAX] {
+        assert_txs_cursor_matches!(write_u16, v);
+    }
     assert_txs_cursor_matches!(write_bool, true);
     assert_txs_cursor_matches!(write_f32, 1.5f32);
     assert_txs_cursor_matches!(write_f64, -2.75f64);

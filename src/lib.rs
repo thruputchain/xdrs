@@ -5,12 +5,17 @@
 //! - Traits [`ReadXDR`] and [`WriteXDR`], for converting between Rust values
 //!   and the [XDR][RFC-4506] data model.
 //!
+//! - Trait [`ConstWriteXDR`], for infallible cursor-based encoding and
+//!   compile-time worst-case encoded sizes.
+//!
 //! - Traits [`Reader`] and [`Writer`], for converting between the
 //!   [XDR][RFC-4506] data model and some serialization format.
 //!
 //! - Implementations of [`Reader`] and [`Writer`]:
-//!   - [CXS](cxs) ("Compact XDR Serialization")
-//!   - [TXS](txs) ("Traditional XDR Serialization")
+//!   - [CXS](cxs) ("Compact XDR Serialization"), including [`cxs::Cursor`] for
+//!     slice-backed infallible const writes
+//!   - [TXS](txs) ("Traditional XDR Serialization"), including [`txs::Cursor`]
+//!     for slice-backed infallible const writes
 //!
 //! The library is `no_std`, but a few extra things can be
 //! enabled with feature `alloc`.
@@ -60,9 +65,10 @@
 //!   specification representation. Provides types and traits for describing XDR
 //!   type definitions.
 //!
-//! - **`xdr_common`**: Enables support for types from the `xdr_common` crate:
-//!   - `xdr_common::Box<T>` implementations
-//!   - `xdr_common::BytesM<MAX>` and `xdr_common::VecM<T, MAX>` implementations
+//! - **`xdr_common` types** (always available; `xdr-common` is a required
+//!   dependency): `ReadXDR`, `WriteXDR`, and `ConstWriteXDR` implementations for
+//!   `xdr_common::Box<T>`, `xdr_common::BytesM<MAX>`, `xdr_common::StringM<MAX>`,
+//!   and `xdr_common::VecM<T, MAX>`.
 //!
 //! - **`heapless`**: Enables support for types from the `heapless` package.
 //!
@@ -97,16 +103,16 @@ pub mod cxs;
 // TXS serialization
 pub mod txs;
 
-pub mod mu; // used by integration tests
-pub mod encoded_max;
 pub mod const_write_xdr;
+pub mod encoded_max;
+pub mod mu; // used by integration tests
 
 pub(crate) mod valid_u32;
 
+pub use const_write_xdr::*;
 pub use discrim::*;
 pub use read_xdr::*;
 pub use write_xdr::*;
-pub use const_write_xdr::*;
 
 pub use serialize::reader::ReadError;
 pub use serialize::reader::ReadResult;

@@ -6,9 +6,9 @@
 //! that panic on buffer overflow instead of returning `Result`, plus
 //! worst-case encoded sizes for compile-time buffer sizing.
 
-use crate::{cxs, txs};
 use crate::encoded_max;
 use crate::valid_u32::ValidU32;
+use crate::{cxs, txs};
 use core::convert::Infallible;
 use core::marker::PhantomData;
 
@@ -184,14 +184,20 @@ impl<T: ConstWriteXDR> ConstWriteXDR for [T] {
     const MAX_CXS_LEN: Option<usize> = None;
     const MAX_TXS_LEN: Option<usize> = None;
     fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
-        assert!(self.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
+        assert!(
+            self.len() <= u32::MAX as usize,
+            "array length exceeds u32::MAX"
+        );
         w.write_u32(self.len() as u32);
         for elt in self {
             elt.write_cxs(w);
         }
     }
     fn write_txs(&self, w: &mut txs::Cursor<'_>) {
-        assert!(self.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
+        assert!(
+            self.len() <= u32::MAX as usize,
+            "array length exceeds u32::MAX"
+        );
         w.write_u32(self.len() as u32);
         for elt in self {
             elt.write_txs(w);
@@ -533,20 +539,24 @@ const _: () = {
     use xdr_common::*;
 
     impl<const MAX: u32> ConstWriteXDR for BytesM<MAX> {
-        const MAX_CXS_LEN: Option<usize> = encoded_max::add(
-            Some(cxs::const_writer::size_u32(MAX)),
-            Some(MAX as usize),
-        );
+        const MAX_CXS_LEN: Option<usize> =
+            encoded_max::add(Some(cxs::const_writer::size_u32(MAX)), Some(MAX as usize));
         const MAX_TXS_LEN: Option<usize> =
             Some(4 + txs::const_writer::size_opaque_fixed(MAX as usize));
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
-            assert!(bytes.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                bytes.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             w.write_opaque_variable(bytes);
         }
         fn write_txs(&self, w: &mut txs::Cursor<'_>) {
             let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
-            assert!(bytes.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                bytes.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             w.write_opaque_variable(bytes);
         }
         fn cxs_size(&self) -> usize {
@@ -560,20 +570,24 @@ const _: () = {
     // Make VecM<u8> work like BytesM.
     #[cfg(feature = "alloc")]
     impl<const MAX: u32> ConstWriteXDR for VecM<u8, MAX> {
-        const MAX_CXS_LEN: Option<usize> = encoded_max::add(
-            Some(cxs::const_writer::size_u32(MAX)),
-            Some(MAX as usize),
-        );
+        const MAX_CXS_LEN: Option<usize> =
+            encoded_max::add(Some(cxs::const_writer::size_u32(MAX)), Some(MAX as usize));
         const MAX_TXS_LEN: Option<usize> =
             Some(4 + txs::const_writer::size_opaque_fixed(MAX as usize));
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
-            assert!(bytes.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                bytes.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             w.write_opaque_variable(bytes);
         }
         fn write_txs(&self, w: &mut txs::Cursor<'_>) {
             let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
-            assert!(bytes.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                bytes.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             w.write_opaque_variable(bytes);
         }
         fn cxs_size(&self) -> usize {
@@ -585,20 +599,24 @@ const _: () = {
     }
     #[cfg(not(feature = "alloc"))]
     impl<const MAX: u32> ConstWriteXDR for VecM<u8, MAX> {
-        const MAX_CXS_LEN: Option<usize> = encoded_max::add(
-            Some(cxs::const_writer::size_u32(MAX)),
-            Some(MAX as usize),
-        );
+        const MAX_CXS_LEN: Option<usize> =
+            encoded_max::add(Some(cxs::const_writer::size_u32(MAX)), Some(MAX as usize));
         const MAX_TXS_LEN: Option<usize> =
             Some(4 + txs::const_writer::size_opaque_fixed(MAX as usize));
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
-            assert!(bytes.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                bytes.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             w.write_opaque_variable(bytes);
         }
         fn write_txs(&self, w: &mut txs::Cursor<'_>) {
             let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
-            assert!(bytes.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                bytes.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             w.write_opaque_variable(bytes);
         }
         fn cxs_size(&self) -> usize {
@@ -610,20 +628,24 @@ const _: () = {
     }
 
     impl<const MAX: u32> ConstWriteXDR for StringM<MAX> {
-        const MAX_CXS_LEN: Option<usize> = encoded_max::add(
-            Some(cxs::const_writer::size_u32(MAX)),
-            Some(MAX as usize),
-        );
+        const MAX_CXS_LEN: Option<usize> =
+            encoded_max::add(Some(cxs::const_writer::size_u32(MAX)), Some(MAX as usize));
         const MAX_TXS_LEN: Option<usize> =
             Some(4 + txs::const_writer::size_opaque_fixed(MAX as usize));
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
-            assert!(bytes.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                bytes.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             w.write_opaque_variable(bytes);
         }
         fn write_txs(&self, w: &mut txs::Cursor<'_>) {
             let bytes: &[u8] = <Self as AsRef<[u8]>>::as_ref(self);
-            assert!(bytes.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                bytes.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             w.write_opaque_variable(bytes);
         }
         fn cxs_size(&self) -> usize {
@@ -643,18 +665,22 @@ const _: () = {
             Some(cxs::const_writer::size_u32(MAX)),
             encoded_max::mul(MAX as usize, T::MAX_CXS_LEN),
         );
-        const MAX_TXS_LEN: Option<usize> = encoded_max::add(
-            Some(4),
-            encoded_max::mul(MAX as usize, T::MAX_TXS_LEN),
-        );
+        const MAX_TXS_LEN: Option<usize> =
+            encoded_max::add(Some(4), encoded_max::mul(MAX as usize, T::MAX_TXS_LEN));
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
-            assert!(slice.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                slice.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             <[T] as ConstWriteXDR>::write_cxs(slice, w);
         }
         fn write_txs(&self, w: &mut txs::Cursor<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
-            assert!(slice.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                slice.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             <[T] as ConstWriteXDR>::write_txs(slice, w);
         }
         fn cxs_size(&self) -> usize {
@@ -676,18 +702,22 @@ const _: () = {
             Some(cxs::const_writer::size_u32(MAX)),
             encoded_max::mul(MAX as usize, T::MAX_CXS_LEN),
         );
-        const MAX_TXS_LEN: Option<usize> = encoded_max::add(
-            Some(4),
-            encoded_max::mul(MAX as usize, T::MAX_TXS_LEN),
-        );
+        const MAX_TXS_LEN: Option<usize> =
+            encoded_max::add(Some(4), encoded_max::mul(MAX as usize, T::MAX_TXS_LEN));
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
-            assert!(slice.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                slice.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             <[T] as ConstWriteXDR>::write_cxs(slice, w);
         }
         fn write_txs(&self, w: &mut txs::Cursor<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
-            assert!(slice.len() <= MAX as usize, "value length exceeds declared bound");
+            assert!(
+                slice.len() <= MAX as usize,
+                "value length exceeds declared bound"
+            );
             <[T] as ConstWriteXDR>::write_txs(slice, w);
         }
         fn cxs_size(&self) -> usize {

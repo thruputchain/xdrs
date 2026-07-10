@@ -61,15 +61,15 @@ fn generic_enum_derives_and_matches_reference() {
 #[test]
 fn generic_enum_max_composes() {
     // System: 1 (disc) + 5 (u32 max); User: 1 (disc) + (9 + 4) = 14
-    assert_eq!(<ContractExn<UserExn> as ConstWriteXDR>::MAX_CXS_LEN, Some(14));
+    assert_eq!(
+        <ContractExn<UserExn> as ConstWriteXDR>::MAX_CXS_LEN,
+        Some(14)
+    );
     // A huge-but-finite E composes: User arm = 1 (disc) + 5 (len varint) + u32::MAX.
     assert_eq!(
         <ContractExn<xdrs::VecM<u8>> as ConstWriteXDR>::MAX_CXS_LEN,
         Some(1 + 5 + u32::MAX as usize)
     );
     // A truly unbounded field type poisons the max but the type still derives.
-    assert_eq!(
-        <ContractExn<&[u8]> as ConstWriteXDR>::MAX_CXS_LEN,
-        None
-    );
+    assert_eq!(<ContractExn<&[u8]> as ConstWriteXDR>::MAX_CXS_LEN, None);
 }

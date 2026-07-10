@@ -116,7 +116,8 @@ impl<T: ConstWriteXDR, const N: usize> ConstWriteXDR for Vec<T, N> {
         Some(cxs::const_writer::size_u32(N as u32)),
         encoded_max::mul(N, T::MAX_CXS_LEN),
     );
-    const MAX_TXS_LEN: Option<usize> = encoded_max::add(Some(4), encoded_max::mul(N, T::MAX_TXS_LEN));
+    const MAX_TXS_LEN: Option<usize> =
+        encoded_max::add(Some(4), encoded_max::mul(N, T::MAX_TXS_LEN));
     fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_u32(self.len() as u32);

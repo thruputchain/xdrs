@@ -1008,7 +1008,10 @@ mod tests {
 
         let toks = const_write_xdr(&input).unwrap().to_string();
         // Trait impl is emitted …
-        assert!(toks.contains("ConstWriteXDR for"), "expected trait impl in: {toks}");
+        assert!(
+            toks.contains("ConstWriteXDR for"),
+            "expected trait impl in: {toks}"
+        );
         // … but no inherent const fns.
         assert!(
             !toks.contains("const_write_cxs"),

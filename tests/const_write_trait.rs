@@ -36,7 +36,9 @@ fn assert_trait_matches<T: ConstWriteXDR + xdrs::WriteXDR + core::fmt::Debug>(v:
     v.write_cxs(&mut c);
     assert_eq!(c.as_bytes(), &exp[..len], "cxs bytes for {v:?}");
     assert_eq!(v.cxs_size(), len, "cxs_size for {v:?}");
-    if let Some(m) = T::MAX_CXS_LEN { assert!(len <= m, "cxs MAX for {v:?}"); }
+    if let Some(m) = T::MAX_CXS_LEN {
+        assert!(len <= m, "cxs MAX for {v:?}");
+    }
 
     let (exp, len) = reference_txs(v);
     let mut buf = [0u8; 64];
@@ -44,20 +46,51 @@ fn assert_trait_matches<T: ConstWriteXDR + xdrs::WriteXDR + core::fmt::Debug>(v:
     v.write_txs(&mut c);
     assert_eq!(c.as_bytes(), &exp[..len], "txs bytes for {v:?}");
     assert_eq!(v.txs_size(), len, "txs_size for {v:?}");
-    if let Some(m) = T::MAX_TXS_LEN { assert!(len <= m, "txs MAX for {v:?}"); }
+    if let Some(m) = T::MAX_TXS_LEN {
+        assert!(len <= m, "txs MAX for {v:?}");
+    }
 }
 
 #[test]
 fn primitives_match_reference() {
-    for v in [0i32, 1, -1, 31, 32, -31, -32, 62, 63, 127, 128, 255, 256,
-              32767, 32768, 65535, 65536, i32::MAX, i32::MIN] {
+    for v in [
+        0i32,
+        1,
+        -1,
+        31,
+        32,
+        -31,
+        -32,
+        62,
+        63,
+        127,
+        128,
+        255,
+        256,
+        32767,
+        32768,
+        65535,
+        65536,
+        i32::MAX,
+        i32::MIN,
+    ] {
         assert_trait_matches(&v);
     }
-    for v in [0u32, 63, 256, 65536, u32::MAX] { assert_trait_matches(&v); }
-    for v in [0i64, i64::MAX, i64::MIN] { assert_trait_matches(&v); }
-    for v in [0u64, u32::MAX as u64 + 1, u64::MAX] { assert_trait_matches(&v); }
-    for v in [0i16, -32, i16::MAX, i16::MIN] { assert_trait_matches(&v); }
-    for v in [0u16, 63, u16::MAX] { assert_trait_matches(&v); }
+    for v in [0u32, 63, 256, 65536, u32::MAX] {
+        assert_trait_matches(&v);
+    }
+    for v in [0i64, i64::MAX, i64::MIN] {
+        assert_trait_matches(&v);
+    }
+    for v in [0u64, u32::MAX as u64 + 1, u64::MAX] {
+        assert_trait_matches(&v);
+    }
+    for v in [0i16, -32, i16::MAX, i16::MIN] {
+        assert_trait_matches(&v);
+    }
+    for v in [0u16, 63, u16::MAX] {
+        assert_trait_matches(&v);
+    }
     assert_trait_matches(&true);
     assert_trait_matches(&false);
     assert_trait_matches(&1.5f32);
@@ -157,9 +190,15 @@ mod xdr_common_types {
         // Outer container at u32::MAX capacity × large element overflows → None
         assert_eq!(<VecM<VecM<u8>> as ConstWriteXDR>::MAX_CXS_LEN, None);
         // Finite nested bound composes: 1 (len varint for 4) + 4 × (5 + u32::MAX)
-        assert_eq!(<VecM<VecM<u8>, 4> as ConstWriteXDR>::MAX_CXS_LEN, Some(17_179_869_201));
+        assert_eq!(
+            <VecM<VecM<u8>, 4> as ConstWriteXDR>::MAX_CXS_LEN,
+            Some(17_179_869_201)
+        );
         // Default VecM<u8> (MAX = u32::MAX)
-        assert_eq!(<VecM<u8> as ConstWriteXDR>::MAX_CXS_LEN, Some(5 + u32::MAX as usize));
+        assert_eq!(
+            <VecM<u8> as ConstWriteXDR>::MAX_CXS_LEN,
+            Some(5 + u32::MAX as usize)
+        );
     }
 }
 
