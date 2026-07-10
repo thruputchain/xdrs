@@ -17,6 +17,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
         const _: () = {
             mod __xdrs {
                 pub use #krate::serialize::writer::{Writer, WriteResult};
+                pub use #krate::serialize::writer_unchecked::WriterUnchecked;
                 pub use #krate::discrim::XDRDiscriminant;
                 pub use #krate::WriteXDR;
             }
@@ -51,6 +52,15 @@ fn write_into_type(input: &syn::DeriveInput, into_type: &syn::Type) -> TokenStre
                     w,
                 )
             }
+
+            unsafe fn write_xdr_unchecked<F, W: __xdrs::WriterUnchecked<F>>(&self, w: &mut W) {
+                unsafe {
+                    <#into_type as __xdrs::WriteXDR>::write_xdr_unchecked(
+                        &::core::convert::Into::into(::core::clone::Clone::clone(self)),
+                        w,
+                    )
+                }
+            }
         }
     }
 }
@@ -65,11 +75,25 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Toke
         .map(|(i, f)| write_field(i, f))
         .collect::<Result<Vec<_>>>()?;
 
+    let write_fields_unchecked = item
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| write_field_unchecked(i, f))
+        .collect::<Result<Vec<_>>>()?;
+
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
                 #(#write_fields)*
                 Ok(())
+            }
+
+            #[allow(unused_unsafe)]
+            unsafe fn write_xdr_unchecked<F, W: __xdrs::WriterUnchecked<F>>(&self, w: &mut W) {
+                unsafe {
+                    #(#write_fields_unchecked)*
+                }
             }
         }
     })
@@ -95,6 +119,26 @@ fn write_field(index: usize, field: &syn::Field) -> Result<TokenStream> {
     }
 }
 
+fn write_field_unchecked(index: usize, field: &syn::Field) -> Result<TokenStream> {
+    let ty = &field.ty;
+    let fa = FieldAccess::new(index, field);
+    let attrs = FieldAttrs::from_field(field)?;
+    attrs.check(field)?;
+
+    if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
+        Ok(quote! {
+            <#into_type as __xdrs::WriteXDR>::write_xdr_unchecked(
+                &::core::convert::Into::into(::core::clone::Clone::clone(&self.#fa)),
+                w,
+            );
+        })
+    } else {
+        Ok(quote! {
+            <#ty as __xdrs::WriteXDR>::write_xdr_unchecked(&self.#fa, w);
+        })
+    }
+}
+
 fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
@@ -112,6 +156,13 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
         .map(|(i, v)| write_variant(i, v, input))
         .collect::<Result<Vec<_>>>()?;
 
+    let write_variants_unchecked: Vec<_> = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| write_variant_unchecked(i, v, input))
+        .collect::<Result<Vec<_>>>()?;
+
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::WriteResult<()> {
@@ -119,6 +170,15 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
                     #(#write_variants)*
                 }
                 Ok(())
+            }
+
+            #[allow(unused_unsafe)]
+            unsafe fn write_xdr_unchecked<F, W: __xdrs::WriterUnchecked<F>>(&self, __write_xdr_writer: &mut W) {
+                unsafe {
+                    match self {
+                        #(#write_variants_unchecked)*
+                    }
+                }
             }
         }
     })
@@ -214,6 +274,73 @@ fn write_binding(index: usize, field: &syn::Field) -> Result<TokenStream> {
     } else {
         Ok(quote! {
             <#ty as __xdrs::WriteXDR>::write_xdr(#bind, __write_xdr_writer)?;
+        })
+    }
+}
+
+fn write_variant_unchecked(
+    index: usize,
+    v: &syn::Variant,
+    input: &syn::DeriveInput,
+) -> Result<TokenStream> {
+    let is_default_arm = variant_is_default(v);
+
+    let var_ident = &v.ident;
+    let ty_ident = &input.ident;
+
+    let var_bindings = var_bindings(&v.fields);
+    let write_bindings: Vec<_> = v
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            if is_default_arm && i == 0 {
+                Ok(quote! {})
+            } else {
+                write_binding_unchecked(i, field)
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let variant_idx = index as i32;
+    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
+        // An explicit-discriminant variant should never be considered a default arm
+        assert!(!is_default_arm);
+
+        quote! { #d }
+    } else if is_default_arm {
+        // Use the default-arm value as the discriminant
+        quote! { *_self_0 }
+    } else {
+        // Use the zero-based index
+        quote! { #variant_idx }
+    };
+
+    Ok(quote! {
+        #ty_ident::#var_ident #var_bindings => {
+            __write_xdr_writer.write_i32(#discriminant);
+
+            #(#write_bindings)*
+        }
+    })
+}
+
+fn write_binding_unchecked(index: usize, field: &syn::Field) -> Result<TokenStream> {
+    let ty = &field.ty;
+    let bind = tmp_binding(index);
+    let attrs = FieldAttrs::from_field(field)?;
+    attrs.check(field)?;
+
+    if let Some(into_type) = attrs.into_type.as_ref().or(attrs.via.as_ref()) {
+        Ok(quote! {
+            <#into_type as __xdrs::WriteXDR>::write_xdr_unchecked(
+                &::core::convert::Into::into(::core::clone::Clone::clone(#bind)),
+                __write_xdr_writer,
+            );
+        })
+    } else {
+        Ok(quote! {
+            <#ty as __xdrs::WriteXDR>::write_xdr_unchecked(#bind, __write_xdr_writer);
         })
     }
 }

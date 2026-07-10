@@ -30,6 +30,7 @@ const _: () = {
 
 const _: () = {
     use crate::serialize::writer::*;
+    use crate::serialize::writer_unchecked::*;
     use crate::write_xdr::*;
 
     impl WriteXDR for i128 {
@@ -41,6 +42,18 @@ const _: () = {
             write_xdr(&highbits, w)?;
             write_xdr(&lowbits, w)
         }
+
+        #[inline]
+        unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
+            let highbits = (*self >> 64) as i64;
+            let lowbits = (*self & 0xffffffffffffffff) as u64;
+
+            // SAFETY: the caller guarantees space for both halves.
+            unsafe {
+                write_xdr_unchecked(&highbits, w);
+                write_xdr_unchecked(&lowbits, w);
+            }
+        }
     }
 
     impl WriteXDR for u128 {
@@ -51,6 +64,18 @@ const _: () = {
 
             write_xdr(&highbits, w)?;
             write_xdr(&lowbits, w)
+        }
+
+        #[inline]
+        unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
+            let highbits = (*self >> 64) as u64;
+            let lowbits = (*self & 0xffffffffffffffff) as u64;
+
+            // SAFETY: the caller guarantees space for both halves.
+            unsafe {
+                write_xdr_unchecked(&highbits, w);
+                write_xdr_unchecked(&lowbits, w);
+            }
         }
     }
 };

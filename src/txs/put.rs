@@ -4,6 +4,7 @@
 #![allow(clippy::upper_case_acronyms)]
 
 use crate::serialize::writer::*;
+use crate::serialize::writer_unchecked::*;
 
 /// Implement this basic byte operation in order
 /// to get a `Writer<TXS>` implementation for free
@@ -89,5 +90,98 @@ where
     fn write_f64(&mut self, n: f64) -> WriteResult<()> {
         let bytes: [u8; 8] = n.to_be_bytes();
         self.put_bytes(&bytes)
+    }
+}
+
+/// The unchecked counterpart to [`Put`]: implement these basic byte
+/// operations to get a `WriterUnchecked<TXS>` implementation for free.
+pub(crate) trait PutUnchecked {
+    /// # Safety
+    /// The underlying buffer must have space for `bytes.len()` more bytes.
+    unsafe fn put_bytes(&mut self, bytes: &[u8]);
+
+    /// # Safety
+    /// The underlying buffer must have space for the 4-byte length prefix
+    /// plus the data padded to a 4-byte boundary, and
+    /// `bytes.len() <= u32::MAX`.
+    unsafe fn put_opaque_variable(&mut self, bytes: &[u8]);
+
+    /// # Safety
+    /// The underlying buffer must have space for the data padded to a
+    /// 4-byte boundary, and `bytes.len() <= u32::MAX`.
+    unsafe fn put_opaque_fixed(&mut self, bytes: &[u8]);
+}
+
+macro_rules! write_int_unchecked {
+    [ $($write:ident($nbytes:expr): $ty:ty),* $(,)? ] => {
+
+    $(
+        #[inline]
+        unsafe fn $write(&mut self, n: $ty) {
+            let bytes: [u8; $nbytes] = n.to_be_bytes();
+            // SAFETY: the caller guarantees space for the encoded form.
+            unsafe { self.put_bytes(&bytes) }
+        }
+    )*
+
+    };
+}
+
+impl<P> WriterUnchecked<TXS> for P
+where
+    P: PutUnchecked,
+{
+    #[inline]
+    unsafe fn write_opaque_fixed(&mut self, bytes: &[u8]) {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_opaque_fixed(bytes) }
+    }
+
+    #[inline]
+    unsafe fn write_opaque_variable(&mut self, bytes: &[u8]) {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_opaque_variable(bytes) }
+    }
+
+    #[inline]
+    unsafe fn write_bool(&mut self, v: bool) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.write_i32(if v { 1 } else { 0 }) }
+    }
+
+    #[inline]
+    unsafe fn write_i16(&mut self, n: i16) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.write_i32(n as i32) }
+    }
+
+    #[inline]
+    unsafe fn write_u16(&mut self, n: u16) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.write_u32(n as u32) }
+    }
+
+    write_int_unchecked![
+        write_i64(8): i64,
+        write_i32(4): i32,
+
+        write_u64(8): u64,
+        write_u32(4): u32,
+    ];
+
+    #[inline]
+    unsafe fn write_f32(&mut self, n: f32) {
+        let bytes: [u8; 4] = n.to_be_bytes();
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(&bytes) }
+    }
+
+    #[inline]
+    unsafe fn write_f64(&mut self, n: f64) {
+        let bytes: [u8; 8] = n.to_be_bytes();
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(&bytes) }
     }
 }

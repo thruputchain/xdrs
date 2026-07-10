@@ -5,6 +5,7 @@
 
 use crate::txs::buf_reader::*;
 use crate::txs::into_buf_writer::*;
+use crate::txs::unchecked_buf_writer::*;
 use crate::*;
 use core::mem::MaybeUninit as MU;
 
@@ -69,6 +70,56 @@ where
     value.write_xdr(&mut writer)?;
 
     Ok(writer.written())
+}
+
+/// Encodes a value as TXS-encoded XDR data into a pre-allocated buffer,
+/// without runtime checks.
+///
+/// This is the infallible, unsafe counterpart to [`encode_into`]: no bounds
+/// checking is performed and no error can be returned, minimizing code size
+/// on constrained targets. Returns the number of bytes written.
+///
+/// # Safety
+///
+/// - `buf.len()` must be at least the encoded size of `value`. With
+///   `#[derive(ConstWriteXDR)]`, `const_max_txs_size()` (worst case over
+///   all values) or `const_txs_size()` (exact for this value) provide
+///   suitable sizes.
+/// - `value` must respect all declared XDR bounds (e.g. a `VecM<T, MAX>`
+///   must not be longer than `MAX`), since a violation would make the
+///   encoding exceed any precomputed size bound. This includes the implicit
+///   `u32::MAX` upper limit on variable-length arrays and strings: the
+///   checked path returns [`WriteError::InvalidArrayLength`] for lengths
+///   exceeding `u32::MAX`; the unchecked path only `debug_assert!`s this.
+///
+/// Violations are caught by `debug_assert!` in debug builds; in release
+/// builds they are undefined behavior.
+///
+/// # Example
+///
+/// ```rust
+/// use xdrs::txs;
+/// use core::mem::MaybeUninit;
+///
+/// let value: u32 = 42;
+///
+/// let mut buf = [MaybeUninit::uninit(); 4];
+///
+/// // SAFETY: a u32 always encodes to exactly 4 TXS bytes.
+/// let written = unsafe { txs::encode_into_unchecked(&value, &mut buf) };
+/// assert_eq!(written, 4);
+/// ```
+pub unsafe fn encode_into_unchecked<T>(value: &T, buf: &mut [MU<u8>]) -> usize
+where
+    T: WriteXDR + ?Sized,
+{
+    let mut writer = UncheckedBufWriter::new(buf);
+
+    // SAFETY: the caller guarantees buf can hold the encoded form of value
+    // and that value respects its declared bounds.
+    unsafe { value.write_xdr_unchecked(&mut writer) };
+
+    writer.written()
 }
 
 #[cfg(feature = "alloc")]
