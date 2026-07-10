@@ -372,10 +372,10 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// compile error** at that field naming the offending type and directing you
 /// here, rather than an opaque "no method named `const_write_cxs`". The check
 /// recurses through the recognized wrappers (`Option`/`Result`/tuples/arrays/
-/// slices/references), so `Option<Box<Foo>>` is caught too. References are
-/// exempt: a `&T` field falls through to the referent's inherent const encoders
-/// on the inherent path, so reference-recursive types (`Node<'a>` above) derive
-/// without `#[xdrs(runtime_only)]`.
+/// slices/references), so `Option<Box<Foo>>` is caught too. The check recurses
+/// through references to the underlying type — a `&T` where `T` is itself a
+/// trait-only type (e.g. `&Vec<u8>`) is still flagged; only a reference whose
+/// referent provides inherent const encoders passes through unblocked.
 ///
 /// # Limitations
 ///

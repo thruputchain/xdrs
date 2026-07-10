@@ -30,6 +30,13 @@ jobs:
         run: cargo build --workspace
       - name: Test (root lib without alloc)
         run: cargo test -F int128
+      - name: Check (riscv32 no-std, derive)
+        # 32-bit no-std target: catches usize-overflow in const MAX folds (rv32 is the primary consumer)
+        run: |
+          rustup target add riscv32im-unknown-none-elf
+          cargo check --target riscv32im-unknown-none-elf -F derive,int128
+      - name: Test (derive without alloc)
+        run: cargo test -F derive,int128
       - name: Test (feature permissive)
         run: cargo test -F permissive,int128 --test ints
       - name: Test (feature int128)

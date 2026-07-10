@@ -171,7 +171,7 @@ Notes:
 - The byte-shaped bounded types (`BytesM`, `StringM`, `VecM<u8, MAX>`) and the
   alloc containers (`Box`, `Vec`, `String`) provide **only the `ConstWriteXDR`
   trait impl** — no inherent `const fn` encoders. (Their impls live in xdrs, and
-  emitting inherent const fns for foreign types would be unsound / impossible
+  emitting inherent const fns for foreign types would be impossible / not expressible
   without touching their crates.) A non-`runtime_only` `#[derive(ConstWriteXDR)]`
   whose named-leaf fallback would call `.const_write_cxs()` on such a field
   therefore has no inherent method to call. The derive pre-scans fields and emits

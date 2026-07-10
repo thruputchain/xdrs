@@ -11,6 +11,7 @@ cargo test -F int128
 # 32-bit no-std target: catches usize-overflow in const MAX folds (rv32 is the primary consumer)
 rustup target add riscv32im-unknown-none-elf
 cargo check --target riscv32im-unknown-none-elf -F derive,int128
+cargo test -F derive,int128
 
 # check feature "permissive"
 cargo test -F permissive,int128 --test ints
