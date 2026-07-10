@@ -103,9 +103,6 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
         .map(|(i, f)| const_size_field(i, f, Format::Txs))
         .collect::<Result<Vec<_>>>()?;
 
-    let cxs_max_size = const_max_fields_expr(&item.fields, Format::Cxs)?;
-    let txs_max_size = const_max_fields_expr(&item.fields, Format::Txs)?;
-
     let buf = fresh_buf_size_ident(&input.generics);
 
     Ok(quote! {
@@ -126,20 +123,6 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
             /// Returns the TXS encoded size of this value in bytes.
             pub const fn const_txs_size(&self) -> usize {
                 0 #(+ #txs_size_fields)*
-            }
-
-            /// Returns the worst-case CXS encoded size over all values of this
-            /// type, or `None` if the type is unbounded, possibly recursive
-            /// (reached through indirection), or its bound overflows `usize`.
-            pub const fn const_max_cxs_size() -> ::core::option::Option<usize> {
-                #cxs_max_size
-            }
-
-            /// Returns the worst-case TXS encoded size over all values of this
-            /// type, or `None` if the type is unbounded, possibly recursive
-            /// (reached through indirection), or its bound overflows `usize`.
-            pub const fn const_max_txs_size() -> ::core::option::Option<usize> {
-                #txs_max_size
             }
         }
     })
@@ -494,128 +477,6 @@ fn const_size_value_expr(
     Ok(quote! { (#expr_ref).#size_method() })
 }
 
-/// Folds the worst-case size bounds of `fields` into a single
-/// `Option<usize>` expression via `max_size_add`, starting from `Some(0)`.
-fn const_max_fields_expr(fields: &syn::Fields, fmt: Format) -> Result<TokenStream> {
-    let mod_path = fmt.const_writer_path();
-    let mut acc = quote! { ::core::option::Option::Some(0usize) };
-    for field in fields {
-        let bound = const_max_type_expr(&field.ty, fmt)?;
-        acc = quote! { #mod_path::max_size_add(#acc, #bound) };
-    }
-    Ok(acc)
-}
-
-/// Produces an `Option<usize>` expression for the worst-case encoded size of
-/// `ty` over all its values.
-///
-/// Bounds fold through by-value layout only: any shape reached through a
-/// pointer (`&T`, `&[T]`, `&str`, and the heap-backed element-generic
-/// `VecM<T, MAX>`) yields literal `None` without naming the pointee's
-/// `const_max_*_size` fns, so const-eval cycles for recursive types are
-/// impossible by construction. Byte-shaped bounded containers (`BytesM`,
-/// `StringM`, `VecM<u8, MAX>`) keep exact bounds; a `MAX` that is not spelled
-/// out defaults to `u32::MAX`, matching the `xdr_common` type defaults.
-fn const_max_type_expr(ty: &syn::Type, fmt: Format) -> Result<TokenStream> {
-    check_supported_const_shape(ty)?;
-    let ty = transparent_type(ty);
-
-    let mod_path = fmt.const_writer_path();
-    let max_method = match fmt {
-        Format::Cxs => quote! { const_max_cxs_size },
-        Format::Txs => quote! { const_max_txs_size },
-    };
-    let none = quote! { ::core::option::Option::None };
-
-    if let Some(max_size_fn) = primitive_max_size_fn(ty) {
-        return Ok(quote! { ::core::option::Option::Some(#mod_path::#max_size_fn()) });
-    }
-
-    if let Some((_, len)) = array_inner(ty).filter(|(elem, _)| is_path_ident(elem, "u8")) {
-        return Ok(quote! { #mod_path::max_size_opaque_fixed(#len) });
-    }
-
-    // Unbounded lengths: no static cap exists for slices and strings.
-    if is_u8_slice_ref(ty) || is_str_ref(ty) {
-        return Ok(none);
-    }
-
-    if let Some(max) = bytesm_stringm_max(ty) {
-        let max = max_or_default(max);
-        return Ok(quote! { #mod_path::max_size_opaque_variable(#max) });
-    }
-
-    if let Some((elem, max)) = vecm_parts(ty) {
-        if is_path_ident(elem, "u8") {
-            let max = max_or_default(max);
-            return Ok(quote! { #mod_path::max_size_opaque_variable(#max) });
-        }
-        // Pointer-cut: a heap-backed container generic over its element type
-        // is a cycle edge for recursive types, so the element-generic fold is
-        // literal `None` (never naming the element's bound).
-        return Ok(none);
-    }
-
-    if is_phantom_data(ty) || is_infallible(ty) {
-        return Ok(quote! { ::core::option::Option::Some(0usize) });
-    }
-
-    if let Some(inner) = option_inner(ty) {
-        let inner_bound = const_max_type_expr(inner, fmt)?;
-        return Ok(quote! {
-            #mod_path::max_size_add(
-                ::core::option::Option::Some(#mod_path::size_i32(1)),
-                #inner_bound,
-            )
-        });
-    }
-
-    if let Some((ok_ty, err_ty)) = result_inners(ty) {
-        let ok_bound = const_max_type_expr(ok_ty, fmt)?;
-        let err_bound = const_max_type_expr(err_ty, fmt)?;
-        return Ok(quote! {
-            #mod_path::max_size_add(
-                ::core::option::Option::Some(#mod_path::size_i32(1)),
-                #mod_path::max_size_max(#ok_bound, #err_bound),
-            )
-        });
-    }
-
-    // Pointer-cut for slices (also unbounded in length).
-    if slice_ref_inner(ty).is_some() {
-        return Ok(none);
-    }
-
-    if let Some((elem, len)) = array_inner(ty) {
-        let elem_bound = const_max_type_expr(elem, fmt)?;
-        return Ok(quote! { #mod_path::max_size_array(#len, #elem_bound) });
-    }
-
-    if let Some(elems) = tuple_elems(ty) {
-        let mut acc = quote! { ::core::option::Option::Some(0usize) };
-        for elem in elems {
-            let bound = const_max_type_expr(elem, fmt)?;
-            acc = quote! { #mod_path::max_size_add(#acc, #bound) };
-        }
-        return Ok(acc);
-    }
-
-    // Pointer-cut: boundedness does not cross a reference.
-    if matches!(ty, syn::Type::Reference(_)) {
-        return Ok(none);
-    }
-
-    // Named by-value leaf: inline recursion is unrepresentable in Rust, so
-    // naming the leaf's bound cannot form a const-eval cycle.
-    Ok(quote! { <#ty>::#max_method() })
-}
-
-/// Splices an explicit `MAX` bound, or the `u32::MAX` default used by
-/// `xdr_common`'s `BytesM`/`StringM`/`VecM` when none is spelled out.
-fn max_or_default(max: Option<TokenStream>) -> TokenStream {
-    max.unwrap_or_else(|| quote! { ::core::primitive::u32::MAX })
-}
-
 fn const_write_field(index: usize, field: &syn::Field, fmt: Format) -> Result<TokenStream> {
     let attrs = Attrs::from_field(field)?;
     attrs.check_no_conversion(field)?;
@@ -811,9 +672,6 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
         .map(|(i, v)| const_size_variant(i, v, input, Format::Txs))
         .collect::<Result<Vec<_>>>()?;
 
-    let cxs_max_size = const_max_variants_expr(item, Format::Cxs)?;
-    let txs_max_size = const_max_variants_expr(item, Format::Txs)?;
-
     let buf = fresh_buf_size_ident(&input.generics);
 
     Ok(quote! {
@@ -843,70 +701,8 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
                     #(#txs_size_arms)*
                 }
             }
-
-            /// Returns the worst-case CXS encoded size over all values of this
-            /// type, or `None` if the type is unbounded, possibly recursive
-            /// (reached through indirection), or its bound overflows `usize`.
-            pub const fn const_max_cxs_size() -> ::core::option::Option<usize> {
-                #cxs_max_size
-            }
-
-            /// Returns the worst-case TXS encoded size over all values of this
-            /// type, or `None` if the type is unbounded, possibly recursive
-            /// (reached through indirection), or its bound overflows `usize`.
-            pub const fn const_max_txs_size() -> ::core::option::Option<usize> {
-                #txs_max_size
-            }
         }
     })
-}
-
-/// Folds the worst-case size bound of an enum: the maximum over its variants
-/// of (discriminant size + field bounds). Uninhabited enums bound to
-/// `Some(0)`; a single unbounded variant makes the whole bound `None`.
-fn const_max_variants_expr(item: &syn::DataEnum, fmt: Format) -> Result<TokenStream> {
-    let mod_path = fmt.const_writer_path();
-    let variant_bounds = item
-        .variants
-        .iter()
-        .enumerate()
-        .map(|(i, v)| const_max_variant_expr(i, v, fmt))
-        .collect::<Result<Vec<_>>>()?;
-
-    let mut bounds = variant_bounds.into_iter();
-    let Some(mut acc) = bounds.next() else {
-        return Ok(quote! { ::core::option::Option::Some(0usize) });
-    };
-    for bound in bounds {
-        acc = quote! { #mod_path::max_size_max(#acc, #bound) };
-    }
-    Ok(acc)
-}
-
-fn const_max_variant_expr(index: usize, v: &syn::Variant, fmt: Format) -> Result<TokenStream> {
-    let is_default_arm = variant_is_default(v);
-    let mod_path = fmt.const_writer_path();
-
-    let variant_idx = index as i32;
-    let discrim_bound = if let Some((_, d)) = v.discriminant.as_ref() {
-        quote! { #mod_path::size_i32(#d) }
-    } else if is_default_arm {
-        // The default arm's discriminant is a runtime value.
-        quote! { #mod_path::max_size_i32() }
-    } else {
-        quote! { #mod_path::size_i32(#variant_idx) }
-    };
-
-    let mut acc = quote! { ::core::option::Option::Some(#discrim_bound) };
-    for (i, field) in v.fields.iter().enumerate() {
-        // The default arm's first field is the discriminant itself.
-        if is_default_arm && i == 0 {
-            continue;
-        }
-        let bound = const_max_type_expr(&field.ty, fmt)?;
-        acc = quote! { #mod_path::max_size_add(#acc, #bound) };
-    }
-    Ok(acc)
 }
 
 #[cfg(test)]
@@ -1075,101 +871,18 @@ mod tests {
     }
 
     #[test]
-    fn max_size_fns_cut_at_pointers() {
+    fn const_write_xdr_emits_no_max_size_fns() {
         let input: syn::DeriveInput = syn::parse_quote! {
-            struct Cut<'a> {
-                by_ref: &'a Leaf,
-                items: &'a [Leaf],
-                raw: &'a [u8],
-                name: &'a str,
+            struct Plain {
+                n: u32,
             }
         };
 
-        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        assert!(toks.contains("pubconstfnconst_max_cxs_size()"));
-        assert!(toks.contains("pubconstfnconst_max_txs_size()"));
-        // Every field is a pointer cut: only `None` bounds are folded, and the
-        // max fns never name the pointee's bound.
-        assert!(toks.contains(
-            "max_size_add(::core::option::Option::Some(0usize),::core::option::Option::None)"
-        ));
-        assert!(!toks.contains("Leaf>::const_max_cxs_size"));
-    }
-
-    #[test]
-    fn max_size_fns_fold_by_value_shapes() {
-        let input: syn::DeriveInput = syn::parse_quote! {
-            struct Folded {
-                n: u64,
-                fixed: [u8; 8],
-                arr: [Leaf; 3],
-                maybe: Option<u32>,
-                choice: Result<u32, Leaf>,
-                blob: BytesM<16>,
-                raw: VecM<u8, 4>,
-                unbounded_blob: BytesM,
-            }
-        };
-
-        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        assert!(toks.contains("max_size_u64()"));
-        assert!(toks.contains("max_size_opaque_fixed(8)"));
-        assert!(toks.contains("max_size_array(3,<Leaf>::const_max_cxs_size())"));
-        assert!(toks.contains("max_size_array(3,<Leaf>::const_max_txs_size())"));
-        assert!(toks.contains("max_size_max("));
-        assert!(toks.contains("max_size_opaque_variable(16)"));
-        assert!(toks.contains("max_size_opaque_variable(4)"));
-        // BytesM without an explicit MAX defaults to u32::MAX.
-        assert!(toks.contains("max_size_opaque_variable(::core::primitive::u32::MAX)"));
-    }
-
-    #[test]
-    fn max_size_fns_cut_at_element_generic_vecm() {
-        let input: syn::DeriveInput = syn::parse_quote! {
-            struct Items {
-                items: VecM<Leaf, 5>,
-            }
-        };
-
-        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        // Element-generic VecM is a pointer cut, even with an explicit MAX:
-        // the max fns never name the element's bound.
-        assert!(!toks.contains("::const_max_cxs_size()"));
-        assert!(!toks.contains("::const_max_txs_size()"));
-        assert!(toks.contains(
-            "max_size_add(::core::option::Option::Some(0usize),::core::option::Option::None)"
-        ));
-    }
-
-    #[test]
-    fn max_size_fns_take_max_over_enum_variants() {
-        let input: syn::DeriveInput = syn::parse_quote! {
-            #[repr(i32)]
-            enum Choice {
-                A(u64) = 7,
-                B(u32, u32) = 9,
-            }
-        };
-
-        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        assert!(toks.contains("max_size_max("));
-        assert!(toks.contains("size_i32(7)"));
-        assert!(toks.contains("size_i32(9)"));
-    }
-
-    #[test]
-    fn max_size_fns_default_variant_uses_worst_case_discriminant() {
-        let input: syn::DeriveInput = syn::parse_quote! {
-            #[repr(i32)]
-            enum WithDefault {
-                Known(u32),
-                #[xdr(default_variant)]
-                Other(i32),
-            }
-        };
-
-        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
-        assert!(toks.contains("max_size_i32()"));
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        assert!(toks.contains("const_write_cxs"));
+        assert!(toks.contains("const_cxs_size"));
+        assert!(!toks.contains("const_max_cxs_size"));
+        assert!(!toks.contains("const_max_txs_size"));
     }
 
     #[test]
@@ -1471,32 +1184,6 @@ fn primitive_size_fn(ty: &syn::Type) -> Option<TokenStream> {
         "bool" => Some(quote! { size_bool }),
         "f32" => Some(quote! { size_f32 }),
         "f64" => Some(quote! { size_f64 }),
-        _ => None,
-    }
-}
-
-fn primitive_max_size_fn(ty: &syn::Type) -> Option<TokenStream> {
-    let ty = transparent_type(ty);
-    let path = match ty {
-        syn::Type::Path(p) => p,
-        _ => return None,
-    };
-
-    let ident = path.path.get_ident()?;
-    let s = ident.to_string();
-
-    match s.as_str() {
-        "i32" => Some(quote! { max_size_i32 }),
-        "u32" => Some(quote! { max_size_u32 }),
-        "i64" => Some(quote! { max_size_i64 }),
-        "u64" => Some(quote! { max_size_u64 }),
-        "i128" => Some(quote! { max_size_i128 }),
-        "u128" => Some(quote! { max_size_u128 }),
-        "i16" => Some(quote! { max_size_i16 }),
-        "u16" => Some(quote! { max_size_u16 }),
-        "bool" => Some(quote! { max_size_bool }),
-        "f32" => Some(quote! { max_size_f32 }),
-        "f64" => Some(quote! { max_size_f64 }),
         _ => None,
     }
 }

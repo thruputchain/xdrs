@@ -42,8 +42,8 @@ fn assert_unchecked_matches_checked<T: WriteXDR>(value: &T) {
 }
 
 // Same shape as tests/const_size_bounds.rs Primitives — known to support
-// both WriteXDR and ConstWriteXDR (with max bounds).
-#[derive(xdrs::WriteXDR, xdrs::ConstWriteXDR)]
+// both WriteXDR and ConstXDRSize (max bounds).
+#[derive(xdrs::WriteXDR, xdrs::ConstXDRSize)]
 struct Primitives {
     a: u32,
     b: i64,
@@ -154,11 +154,11 @@ fn int128_matches() {
 // then encode without checks.
 #[test]
 fn buffer_sized_from_const_max_bound() {
-    const TXS_BOUND: usize = match Primitives::const_max_txs_size() {
+    const TXS_BOUND: usize = match <Primitives as xdrs::txs::ConstMaxSize>::MAX_SIZE {
         Some(n) => n,
         None => panic!("unbounded"),
     };
-    const CXS_BOUND: usize = match Primitives::const_max_cxs_size() {
+    const CXS_BOUND: usize = match <Primitives as xdrs::cxs::ConstMaxSize>::MAX_SIZE {
         Some(n) => n,
         None => panic!("unbounded"),
     };
