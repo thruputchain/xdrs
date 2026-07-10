@@ -2,7 +2,6 @@ use crate::util::*;
 use darling::*;
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::collections::HashSet;
 use syn::Result;
 
 #[derive(Clone, Debug, Default, FromDeriveInput, FromField)]
@@ -10,6 +9,11 @@ use syn::Result;
 struct Attrs {
     pub into_type: Option<syn::Type>,
     pub via: Option<syn::Type>,
+
+    /// When set, skip the inherent `const fn` encoders and emit only the
+    /// `ConstWriteXDR` trait impl with direct (non-`const`) bodies. Needed for
+    /// types whose fields (e.g. `StringM`) have no inherent const encoders.
+    pub runtime_only: bool,
 
     #[darling(rename = "crate")]
     pub krate: Option<syn::Path>,
@@ -39,7 +43,7 @@ pub fn const_write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     attrs.check_no_conversion(input)?;
     let krate = attrs.crate_path();
 
-    let impls = const_write_data(input)?;
+    let impls = const_write_data(input, &attrs, &krate)?;
 
     Ok(quote! {
         const _: () = {
@@ -51,7 +55,11 @@ pub fn const_write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     })
 }
 
-fn const_write_data(input: &syn::DeriveInput) -> Result<TokenStream> {
+fn const_write_data(
+    input: &syn::DeriveInput,
+    attrs: &Attrs,
+    krate: &syn::Path,
+) -> Result<TokenStream> {
     if input
         .generics
         .params
@@ -62,8 +70,8 @@ fn const_write_data(input: &syn::DeriveInput) -> Result<TokenStream> {
     }
 
     match &input.data {
-        syn::Data::Struct(item) => const_write_struct(input, item),
-        syn::Data::Enum(item) => const_write_enum(input, item),
+        syn::Data::Struct(item) => const_write_struct(input, item, attrs, krate),
+        syn::Data::Enum(item) => const_write_enum(input, item, attrs, krate),
         _ => err(
             input,
             "ConstWriteXDR can only be derived for structs and enums",
@@ -71,7 +79,26 @@ fn const_write_data(input: &syn::DeriveInput) -> Result<TokenStream> {
     }
 }
 
-fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
+fn const_write_struct(
+    input: &syn::DeriveInput,
+    item: &syn::DataStruct,
+    attrs: &Attrs,
+    krate: &syn::Path,
+) -> Result<TokenStream> {
+    let inherent = if attrs.runtime_only {
+        quote! {}
+    } else {
+        inherent_struct_impl(input, item)?
+    };
+    let trait_impl = trait_impl_struct(input, item, attrs, krate)?;
+
+    Ok(quote! {
+        #inherent
+        #trait_impl
+    })
+}
+
+fn inherent_struct_impl(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -103,15 +130,13 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
         .map(|(i, f)| const_size_field(i, f, Format::Txs))
         .collect::<Result<Vec<_>>>()?;
 
-    let buf = fresh_buf_size_ident(&input.generics);
-
     Ok(quote! {
         impl #impl_generics #ty_ident #ty_generics #where_clause {
-            pub const fn const_write_cxs<const #buf: usize>(&self, w: &mut cxs::ConstWriter<#buf>) {
+            pub const fn const_write_cxs(&self, w: &mut cxs::Cursor<'_>) {
                 #(#cxs_fields)*
             }
 
-            pub const fn const_write_txs<const #buf: usize>(&self, w: &mut txs::ConstWriter<#buf>) {
+            pub const fn const_write_txs(&self, w: &mut txs::Cursor<'_>) {
                 #(#txs_fields)*
             }
 
@@ -132,29 +157,6 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
 enum Format {
     Cxs,
     Txs,
-}
-
-fn fresh_buf_size_ident(generics: &syn::Generics) -> syn::Ident {
-    let used: HashSet<String> = generics
-        .params
-        .iter()
-        .filter_map(|p| match p {
-            syn::GenericParam::Const(c) => Some(c.ident.to_string()),
-            _ => None,
-        })
-        .collect();
-
-    let base = "__N";
-    if !used.contains(base) {
-        return syn::Ident::new(base, proc_macro2::Span::call_site());
-    }
-    for i in 0u64.. {
-        let candidate = format!("{base}{i}");
-        if !used.contains(&candidate) {
-            return syn::Ident::new(&candidate, proc_macro2::Span::call_site());
-        }
-    }
-    unreachable!()
 }
 
 fn const_size_field(index: usize, field: &syn::Field, fmt: Format) -> Result<TokenStream> {
@@ -399,10 +401,29 @@ fn const_write_value_expr(
     Ok(quote! { (#expr_ref).#method(w); })
 }
 
-fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
+fn const_write_enum(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    attrs: &Attrs,
+    krate: &syn::Path,
+) -> Result<TokenStream> {
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
 
+    let inherent = if attrs.runtime_only {
+        quote! {}
+    } else {
+        inherent_enum_impl(input, item)?
+    };
+    let trait_impl = trait_impl_enum(input, item, attrs, krate)?;
+
+    Ok(quote! {
+        #inherent
+        #trait_impl
+    })
+}
+
+fn inherent_enum_impl(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -434,17 +455,15 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
         .map(|(i, v)| const_size_variant(i, v, input, Format::Txs))
         .collect::<Result<Vec<_>>>()?;
 
-    let buf = fresh_buf_size_ident(&input.generics);
-
     Ok(quote! {
         impl #impl_generics #ty_ident #ty_generics #where_clause {
-            pub const fn const_write_cxs<const #buf: usize>(&self, w: &mut cxs::ConstWriter<#buf>) {
+            pub const fn const_write_cxs(&self, w: &mut cxs::Cursor<'_>) {
                 match self {
                     #(#cxs_arms)*
                 }
             }
 
-            pub const fn const_write_txs<const #buf: usize>(&self, w: &mut txs::ConstWriter<#buf>) {
+            pub const fn const_write_txs(&self, w: &mut txs::Cursor<'_>) {
                 match self {
                     #(#txs_arms)*
                 }
@@ -463,6 +482,418 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
                     #(#txs_size_arms)*
                 }
             }
+        }
+    })
+}
+
+// -- ConstWriteXDR trait impl emission --
+
+impl Format {
+    /// Associated const name on `ConstWriteXDR` for this format's worst-case size.
+    fn max_const(self) -> TokenStream {
+        match self {
+            Format::Cxs => quote! { MAX_CXS_LEN },
+            Format::Txs => quote! { MAX_TXS_LEN },
+        }
+    }
+
+    /// Trait write method for this format.
+    fn write_method(self) -> TokenStream {
+        match self {
+            Format::Cxs => quote! { write_cxs },
+            Format::Txs => quote! { write_txs },
+        }
+    }
+
+    /// Trait size method for this format.
+    fn size_method(self) -> TokenStream {
+        match self {
+            Format::Cxs => quote! { cxs_size },
+            Format::Txs => quote! { txs_size },
+        }
+    }
+
+    /// Fully-qualified `size_i32` const fn path for this format.
+    fn size_i32_path(self, krate: &syn::Path) -> TokenStream {
+        match self {
+            Format::Cxs => quote! { #krate::cxs::const_writer::size_i32 },
+            Format::Txs => quote! { #krate::txs::const_writer::size_i32 },
+        }
+    }
+
+    /// Cursor type for this format.
+    fn cursor_ty(self, krate: &syn::Path) -> TokenStream {
+        match self {
+            Format::Cxs => quote! { #krate::cxs::Cursor<'_> },
+            Format::Txs => quote! { #krate::txs::Cursor<'_> },
+        }
+    }
+}
+
+fn trait_impl_struct(
+    input: &syn::DeriveInput,
+    item: &syn::DataStruct,
+    attrs: &Attrs,
+    krate: &syn::Path,
+) -> Result<TokenStream> {
+    let ty_ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let max_cxs = struct_max_fold(item, krate, Format::Cxs)?;
+    let max_txs = struct_max_fold(item, krate, Format::Txs)?;
+
+    let (write_cxs_body, write_txs_body, cxs_size_body, txs_size_body) = if attrs.runtime_only {
+        (
+            struct_trait_write_body(item, krate, Format::Cxs)?,
+            struct_trait_write_body(item, krate, Format::Txs)?,
+            struct_trait_size_body(item, krate, Format::Cxs)?,
+            struct_trait_size_body(item, krate, Format::Txs)?,
+        )
+    } else {
+        (
+            quote! { self.const_write_cxs(w) },
+            quote! { self.const_write_txs(w) },
+            quote! { self.const_cxs_size() },
+            quote! { self.const_txs_size() },
+        )
+    };
+
+    let cxs_cursor = Format::Cxs.cursor_ty(krate);
+    let txs_cursor = Format::Txs.cursor_ty(krate);
+
+    Ok(quote! {
+        impl #impl_generics #krate::ConstWriteXDR for #ty_ident #ty_generics #where_clause {
+            const MAX_CXS_LEN: ::core::option::Option<usize> = #max_cxs;
+            const MAX_TXS_LEN: ::core::option::Option<usize> = #max_txs;
+
+            fn write_cxs(&self, w: &mut #cxs_cursor) { #write_cxs_body }
+            fn write_txs(&self, w: &mut #txs_cursor) { #write_txs_body }
+            fn cxs_size(&self) -> usize { #cxs_size_body }
+            fn txs_size(&self) -> usize { #txs_size_body }
+        }
+    })
+}
+
+/// `add`-fold of every field's worst-case size, starting from `Some(0)`.
+fn struct_max_fold(item: &syn::DataStruct, krate: &syn::Path, fmt: Format) -> Result<TokenStream> {
+    let max_const = fmt.max_const();
+    let adds = item
+        .fields
+        .iter()
+        .map(|f| {
+            let attrs = Attrs::from_field(f)?;
+            attrs.check_no_conversion(f)?;
+            let fty = &f.ty;
+            Ok(quote! {
+                m = #krate::encoded_max::add(m, <#fty as #krate::ConstWriteXDR>::#max_const);
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(quote! {
+        {
+            let mut m = ::core::option::Option::Some(0usize);
+            #(#adds)*
+            m
+        }
+    })
+}
+
+/// Direct per-field trait write calls for a struct (runtime_only path).
+fn struct_trait_write_body(
+    item: &syn::DataStruct,
+    krate: &syn::Path,
+    fmt: Format,
+) -> Result<TokenStream> {
+    let method = fmt.write_method();
+    let writes = item
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let attrs = Attrs::from_field(f)?;
+            attrs.check_no_conversion(f)?;
+            let fa = FieldAccess::new(i, f);
+            let fty = &f.ty;
+            Ok(quote! {
+                <#fty as #krate::ConstWriteXDR>::#method(&self.#fa, w);
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(quote! { #(#writes)* })
+}
+
+/// Direct per-field trait size sum for a struct (runtime_only path).
+fn struct_trait_size_body(
+    item: &syn::DataStruct,
+    krate: &syn::Path,
+    fmt: Format,
+) -> Result<TokenStream> {
+    let method = fmt.size_method();
+    let sizes = item
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, f)| {
+            let attrs = Attrs::from_field(f)?;
+            attrs.check_no_conversion(f)?;
+            let fa = FieldAccess::new(i, f);
+            let fty = &f.ty;
+            Ok(quote! {
+                <#fty as #krate::ConstWriteXDR>::#method(&self.#fa)
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(quote! { 0 #(+ #sizes)* })
+}
+
+fn trait_impl_enum(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    attrs: &Attrs,
+    krate: &syn::Path,
+) -> Result<TokenStream> {
+    let ty_ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let max_cxs = enum_max_fold(item, krate, Format::Cxs)?;
+    let max_txs = enum_max_fold(item, krate, Format::Txs)?;
+
+    let (write_cxs_body, write_txs_body, cxs_size_body, txs_size_body) = if attrs.runtime_only {
+        (
+            enum_trait_write_body(input, item, krate, Format::Cxs)?,
+            enum_trait_write_body(input, item, krate, Format::Txs)?,
+            enum_trait_size_body(input, item, krate, Format::Cxs)?,
+            enum_trait_size_body(input, item, krate, Format::Txs)?,
+        )
+    } else {
+        (
+            quote! { self.const_write_cxs(w) },
+            quote! { self.const_write_txs(w) },
+            quote! { self.const_cxs_size() },
+            quote! { self.const_txs_size() },
+        )
+    };
+
+    let cxs_cursor = Format::Cxs.cursor_ty(krate);
+    let txs_cursor = Format::Txs.cursor_ty(krate);
+
+    Ok(quote! {
+        impl #impl_generics #krate::ConstWriteXDR for #ty_ident #ty_generics #where_clause {
+            const MAX_CXS_LEN: ::core::option::Option<usize> = #max_cxs;
+            const MAX_TXS_LEN: ::core::option::Option<usize> = #max_txs;
+
+            fn write_cxs(&self, w: &mut #cxs_cursor) { #write_cxs_body }
+            fn write_txs(&self, w: &mut #txs_cursor) { #write_txs_body }
+            fn cxs_size(&self) -> usize { #cxs_size_body }
+            fn txs_size(&self) -> usize { #txs_size_body }
+        }
+    })
+}
+
+/// `max`-fold over variants of `add(disc_max, payload_fold)`; `Some(0)` if empty.
+fn enum_max_fold(item: &syn::DataEnum, krate: &syn::Path, fmt: Format) -> Result<TokenStream> {
+    let variants = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| variant_max(i, v, krate, fmt))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(quote! {
+        {
+            let mut acc = ::core::option::Option::Some(0usize);
+            #( acc = #krate::encoded_max::max(acc, #variants); )*
+            acc
+        }
+    })
+}
+
+fn variant_max(
+    index: usize,
+    v: &syn::Variant,
+    krate: &syn::Path,
+    fmt: Format,
+) -> Result<TokenStream> {
+    let is_default_arm = variant_is_default(v);
+    let max_const = fmt.max_const();
+    let size_i32 = fmt.size_i32_path(krate);
+
+    let disc_max = if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { ::core::option::Option::Some(#size_i32(#d)) }
+    } else if is_default_arm {
+        match fmt {
+            Format::Cxs => quote! { ::core::option::Option::Some(5usize) },
+            Format::Txs => quote! { ::core::option::Option::Some(4usize) },
+        }
+    } else {
+        let idx = index as i32;
+        quote! { ::core::option::Option::Some(#size_i32(#idx)) }
+    };
+
+    let adds = v
+        .fields
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !(is_default_arm && *i == 0))
+        .map(|(_, f)| {
+            let attrs = Attrs::from_field(f)?;
+            attrs.check_no_conversion(f)?;
+            let fty = &f.ty;
+            Ok(quote! {
+                p = #krate::encoded_max::add(p, <#fty as #krate::ConstWriteXDR>::#max_const);
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(quote! {
+        {
+            let mut p = ::core::option::Option::Some(0usize);
+            #(#adds)*
+            #krate::encoded_max::add(#disc_max, p)
+        }
+    })
+}
+
+/// Direct `match self` write body for an enum (runtime_only path).
+fn enum_trait_write_body(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    krate: &syn::Path,
+    fmt: Format,
+) -> Result<TokenStream> {
+    let arms = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| enum_trait_write_arm(i, v, input, krate, fmt))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(quote! {
+        match self {
+            #(#arms)*
+        }
+    })
+}
+
+fn enum_trait_write_arm(
+    index: usize,
+    v: &syn::Variant,
+    input: &syn::DeriveInput,
+    krate: &syn::Path,
+    fmt: Format,
+) -> Result<TokenStream> {
+    let is_default_arm = variant_is_default(v);
+    let var_ident = &v.ident;
+    let ty_ident = &input.ident;
+    let var_bindings = const_var_bindings(&v.fields);
+    let method = fmt.write_method();
+
+    let variant_idx = index as i32;
+    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #d }
+    } else if is_default_arm {
+        quote! { *_self_0 }
+    } else {
+        quote! { #variant_idx }
+    };
+
+    let field_writes: Vec<_> = v
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            if is_default_arm && i == 0 {
+                Ok(quote! {})
+            } else {
+                let attrs = Attrs::from_field(field)?;
+                attrs.check_no_conversion(field)?;
+                let bind = tmp_binding(i);
+                let fty = &field.ty;
+                Ok(quote! {
+                    <#fty as #krate::ConstWriteXDR>::#method(#bind, w);
+                })
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(quote! {
+        #ty_ident::#var_ident #var_bindings => {
+            w.write_i32(#discriminant);
+            #(#field_writes)*
+        }
+    })
+}
+
+/// Direct `match self` size body for an enum (runtime_only path).
+fn enum_trait_size_body(
+    input: &syn::DeriveInput,
+    item: &syn::DataEnum,
+    krate: &syn::Path,
+    fmt: Format,
+) -> Result<TokenStream> {
+    let arms = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| enum_trait_size_arm(i, v, input, krate, fmt))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(quote! {
+        match self {
+            #(#arms)*
+        }
+    })
+}
+
+fn enum_trait_size_arm(
+    index: usize,
+    v: &syn::Variant,
+    input: &syn::DeriveInput,
+    krate: &syn::Path,
+    fmt: Format,
+) -> Result<TokenStream> {
+    let is_default_arm = variant_is_default(v);
+    let var_ident = &v.ident;
+    let ty_ident = &input.ident;
+    let var_bindings = const_var_bindings(&v.fields);
+    let method = fmt.size_method();
+    let size_i32 = fmt.size_i32_path(krate);
+
+    let variant_idx = index as i32;
+    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #d }
+    } else if is_default_arm {
+        quote! { *_self_0 }
+    } else {
+        quote! { #variant_idx }
+    };
+
+    let discrim_size = quote! { #size_i32(#discriminant) };
+
+    let field_sizes: Vec<_> = v
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            if is_default_arm && i == 0 {
+                Ok(quote! { 0 })
+            } else {
+                let attrs = Attrs::from_field(field)?;
+                attrs.check_no_conversion(field)?;
+                let bind = tmp_binding(i);
+                let fty = &field.ty;
+                Ok(quote! {
+                    <#fty as #krate::ConstWriteXDR>::#method(#bind)
+                })
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let fields_size = if field_sizes.is_empty() {
+        quote! { 0 }
+    } else {
+        quote! { 0 #(+ #field_sizes)* }
+    };
+
+    Ok(quote! {
+        #ty_ident::#var_ident #var_bindings => {
+            #discrim_size + #fields_size
         }
     })
 }
@@ -536,39 +967,6 @@ mod tests {
         assert!(toks.contains("&(*_inner).0"));
         assert!(toks.contains("&(*&(*_inner).1).0"));
         assert!(!toks.contains("&&_inner.0"));
-    }
-
-    #[test]
-    fn const_generic_named_dunder_n_does_not_collide() {
-        let input: syn::DeriveInput = syn::parse_quote! {
-            struct Packet<const __N: usize> {
-                bytes: [u8; __N],
-            }
-        };
-
-        let toks = const_write_xdr(&input).unwrap().to_string();
-        assert!(toks.contains("const_write_cxs"));
-        assert!(toks.contains("const_write_txs"));
-        assert!(
-            toks.contains("const __N0 : usize"),
-            "buffer generic should be renamed to avoid collision with user's __N"
-        );
-    }
-
-    #[test]
-    fn const_generic_named_dunder_n_and_n0_skips_to_n1() {
-        let input: syn::DeriveInput = syn::parse_quote! {
-            struct Packet<const __N: usize, const __N0: usize> {
-                a: [u8; __N],
-                b: [u8; __N0],
-            }
-        };
-
-        let toks = const_write_xdr(&input).unwrap().to_string();
-        assert!(
-            toks.contains("const __N1 : usize"),
-            "buffer generic should skip to __N1 when __N and __N0 are both taken"
-        );
     }
 
     #[test]

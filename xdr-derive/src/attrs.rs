@@ -22,6 +22,13 @@ pub struct InputAttrs {
     pub into_type: Option<syn::Type>,
     pub from_type: Option<syn::Type>,
     pub via: Option<syn::Type>,
+
+    /// Consumed only by `#[derive(ConstWriteXDR)]` (see `generate_const`).
+    /// Declared here so the sibling `WriteXDR`/`ReadXDR` derives, which share
+    /// the `xdrs` attribute namespace, accept `#[xdrs(runtime_only)]` instead
+    /// of rejecting it as an unknown field.
+    #[allow(dead_code)]
+    pub runtime_only: bool,
 }
 
 #[derive(Clone, Debug, Default, FromField)]

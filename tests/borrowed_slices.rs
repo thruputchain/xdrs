@@ -23,15 +23,19 @@ const LEAF_ITEMS: [Leaf; 2] = [Leaf { code: 7 }, Leaf { code: 42 }];
 const BORROWED: BorrowedLeafSlice<'static> = BorrowedLeafSlice { items: &LEAF_ITEMS };
 
 const BORROWED_CXS: [u8; BORROWED.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ BORROWED.const_cxs_size() }>::new();
+    let mut buf = [0u8; BORROWED.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     BORROWED.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == BORROWED.const_cxs_size());
+    buf
 };
 
 const BORROWED_TXS: [u8; BORROWED.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ BORROWED.const_txs_size() }>::new();
+    let mut buf = [0u8; BORROWED.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     BORROWED.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == BORROWED.const_txs_size());
+    buf
 };
 
 #[test]

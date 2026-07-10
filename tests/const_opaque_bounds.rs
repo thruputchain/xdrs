@@ -4,7 +4,6 @@
 ))]
 
 use std::ffi::{c_int, c_void};
-use std::mem;
 use std::panic;
 use std::ptr;
 use std::slice;
@@ -13,10 +12,15 @@ use std::str;
 const OVERLONG: usize = u32::MAX as usize + 1;
 const EXPECTED_GUARD: &str = "opaque length exceeds u32::MAX";
 
-#[derive(xdrs::ConstWriteXDR)]
-struct FixedOpaqueBytes {
-    bytes: [u8; OVERLONG],
-}
+// NOTE: A derived `#[derive(ConstWriteXDR)]` struct with a `[u8; OVERLONG]`
+// field can no longer exist: the derive now emits a `ConstWriteXDR` trait impl
+// whose `MAX_CXS_LEN`/`MAX_TXS_LEN` fold references
+// `<[u8; OVERLONG] as ConstWriteXDR>::MAX_*_LEN`, which is a const-eval panic
+// (the composite `[u8; N]` impl asserts `N <= u32::MAX`). Overlong *fixed*
+// opaque arrays are therefore rejected at compile time — strictly stronger than
+// the old runtime guard. The variable-length `&[u8]` / `&str` cases below still
+// exercise the runtime overlong-length guards (their bounds are `None` and the
+// offending length comes from actual runtime data).
 
 #[derive(xdrs::ConstWriteXDR)]
 struct SliceOpaqueBytes<'a> {
@@ -32,28 +36,18 @@ struct StringOpaqueBytes<'a> {
 fn constwritexdr_opaque_paths_reject_overlong_lengths() {
     let mapping = Mapping::new(OVERLONG);
 
-    let fixed = mapping.as_fixed();
-    expect_opaque_guard("fixed const_cxs_size", || fixed.const_cxs_size());
-    expect_opaque_guard("fixed const_txs_size", || fixed.const_txs_size());
-    expect_opaque_guard("fixed const_write_cxs", || {
-        let mut w = xdrs::cxs::ConstWriter::<0>::new();
-        fixed.const_write_cxs(&mut w);
-    });
-    expect_opaque_guard("fixed const_write_txs", || {
-        let mut w = xdrs::txs::ConstWriter::<0>::new();
-        fixed.const_write_txs(&mut w);
-    });
-
     let bytes = mapping.as_slice();
     let slice_holder = SliceOpaqueBytes { bytes };
     expect_opaque_guard("slice const_cxs_size", || slice_holder.const_cxs_size());
     expect_opaque_guard("slice const_txs_size", || slice_holder.const_txs_size());
     expect_opaque_guard("slice const_write_cxs", || {
-        let mut w = xdrs::cxs::ConstWriter::<0>::new();
+        let mut buf = [0u8; 0];
+        let mut w = xdrs::cxs::Cursor::new(&mut buf);
         slice_holder.const_write_cxs(&mut w);
     });
     expect_opaque_guard("slice const_write_txs", || {
-        let mut w = xdrs::txs::ConstWriter::<0>::new();
+        let mut buf = [0u8; 0];
+        let mut w = xdrs::txs::Cursor::new(&mut buf);
         slice_holder.const_write_txs(&mut w);
     });
 
@@ -62,11 +56,13 @@ fn constwritexdr_opaque_paths_reject_overlong_lengths() {
     expect_opaque_guard("string const_cxs_size", || string_holder.const_cxs_size());
     expect_opaque_guard("string const_txs_size", || string_holder.const_txs_size());
     expect_opaque_guard("string const_write_cxs", || {
-        let mut w = xdrs::cxs::ConstWriter::<0>::new();
+        let mut buf = [0u8; 0];
+        let mut w = xdrs::cxs::Cursor::new(&mut buf);
         string_holder.const_write_cxs(&mut w);
     });
     expect_opaque_guard("string const_write_txs", || {
-        let mut w = xdrs::txs::ConstWriter::<0>::new();
+        let mut buf = [0u8; 0];
+        let mut w = xdrs::txs::Cursor::new(&mut buf);
         string_holder.const_write_txs(&mut w);
     });
 }
@@ -120,15 +116,6 @@ impl Mapping {
             ptr: raw.cast(),
             len,
         }
-    }
-
-    fn as_fixed(&self) -> &FixedOpaqueBytes {
-        assert_eq!(
-            mem::size_of::<FixedOpaqueBytes>(),
-            self.len,
-            "fixed PoC type should be exactly one overlong byte array"
-        );
-        unsafe { &*self.ptr.cast::<FixedOpaqueBytes>() }
     }
 
     fn as_slice(&self) -> &[u8] {

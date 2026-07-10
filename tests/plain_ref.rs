@@ -30,15 +30,19 @@ const BORROWED_LEAF: BorrowedLeaf<'static> = BorrowedLeaf {
 };
 
 const BORROWED_LEAF_CXS: [u8; BORROWED_LEAF.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ BORROWED_LEAF.const_cxs_size() }>::new();
+    let mut buf = [0u8; BORROWED_LEAF.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     BORROWED_LEAF.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == BORROWED_LEAF.const_cxs_size());
+    buf
 };
 
 const BORROWED_LEAF_TXS: [u8; BORROWED_LEAF.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ BORROWED_LEAF.const_txs_size() }>::new();
+    let mut buf = [0u8; BORROWED_LEAF.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     BORROWED_LEAF.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == BORROWED_LEAF.const_txs_size());
+    buf
 };
 
 #[test]
@@ -68,27 +72,35 @@ const TYPE_REF_SINGLE: TypeRef<'static> = TypeRef::Single(&LEAF_A);
 const TYPE_REF_PAIR: TypeRef<'static> = TypeRef::Pair(&LEAF_A, &LEAF_B);
 
 const TYPE_REF_SINGLE_CXS: [u8; TYPE_REF_SINGLE.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ TYPE_REF_SINGLE.const_cxs_size() }>::new();
+    let mut buf = [0u8; TYPE_REF_SINGLE.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     TYPE_REF_SINGLE.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TYPE_REF_SINGLE.const_cxs_size());
+    buf
 };
 
 const TYPE_REF_SINGLE_TXS: [u8; TYPE_REF_SINGLE.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ TYPE_REF_SINGLE.const_txs_size() }>::new();
+    let mut buf = [0u8; TYPE_REF_SINGLE.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     TYPE_REF_SINGLE.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TYPE_REF_SINGLE.const_txs_size());
+    buf
 };
 
 const TYPE_REF_PAIR_CXS: [u8; TYPE_REF_PAIR.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ TYPE_REF_PAIR.const_cxs_size() }>::new();
+    let mut buf = [0u8; TYPE_REF_PAIR.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     TYPE_REF_PAIR.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TYPE_REF_PAIR.const_cxs_size());
+    buf
 };
 
 const TYPE_REF_PAIR_TXS: [u8; TYPE_REF_PAIR.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ TYPE_REF_PAIR.const_txs_size() }>::new();
+    let mut buf = [0u8; TYPE_REF_PAIR.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     TYPE_REF_PAIR.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TYPE_REF_PAIR.const_txs_size());
+    buf
 };
 
 #[test]
@@ -154,27 +166,35 @@ const OPT_REF_SOME: OptionRef<'static> = OptionRef {
 const OPT_REF_NONE: OptionRef<'static> = OptionRef { maybe: None };
 
 const OPT_REF_SOME_CXS: [u8; OPT_REF_SOME.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ OPT_REF_SOME.const_cxs_size() }>::new();
+    let mut buf = [0u8; OPT_REF_SOME.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     OPT_REF_SOME.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == OPT_REF_SOME.const_cxs_size());
+    buf
 };
 
 const OPT_REF_SOME_TXS: [u8; OPT_REF_SOME.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ OPT_REF_SOME.const_txs_size() }>::new();
+    let mut buf = [0u8; OPT_REF_SOME.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     OPT_REF_SOME.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == OPT_REF_SOME.const_txs_size());
+    buf
 };
 
 const OPT_REF_NONE_CXS: [u8; OPT_REF_NONE.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ OPT_REF_NONE.const_cxs_size() }>::new();
+    let mut buf = [0u8; OPT_REF_NONE.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     OPT_REF_NONE.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == OPT_REF_NONE.const_cxs_size());
+    buf
 };
 
 const OPT_REF_NONE_TXS: [u8; OPT_REF_NONE.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ OPT_REF_NONE.const_txs_size() }>::new();
+    let mut buf = [0u8; OPT_REF_NONE.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     OPT_REF_NONE.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == OPT_REF_NONE.const_txs_size());
+    buf
 };
 
 #[test]

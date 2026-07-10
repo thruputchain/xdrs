@@ -127,15 +127,19 @@ const FOO: Foo = Foo {
 };
 
 const FOO_CXS: [u8; 4] = {
-    let mut w = xdrs::cxs::ConstWriter::<4>::new();
+    let mut buf = [0u8; 4];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     FOO.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 4);
+    buf
 };
 
 const FOO_TXS: [u8; 8] = {
-    let mut w = xdrs::txs::ConstWriter::<8>::new();
+    let mut buf = [0u8; 8];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     FOO.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 8);
+    buf
 };
 
 #[test]
@@ -158,21 +162,27 @@ enum Status {
 }
 
 const STATUS_ON_CXS: [u8; 1] = {
-    let mut w = xdrs::cxs::ConstWriter::<1>::new();
+    let mut buf = [0u8; 1];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     Status::On.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 1);
+    buf
 };
 
 const STATUS_ON_TXS: [u8; 4] = {
-    let mut w = xdrs::txs::ConstWriter::<4>::new();
+    let mut buf = [0u8; 4];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     Status::On.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 4);
+    buf
 };
 
 const STATUS_OFF_CXS: [u8; 1] = {
-    let mut w = xdrs::cxs::ConstWriter::<1>::new();
+    let mut buf = [0u8; 1];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     Status::Off.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 1);
+    buf
 };
 
 #[test]
@@ -192,15 +202,19 @@ enum Shape {
 }
 
 const CIRCLE_CXS: [u8; 2] = {
-    let mut w = xdrs::cxs::ConstWriter::<2>::new();
+    let mut buf = [0u8; 2];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     (Shape::Circle { radius: 5 }).const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 2);
+    buf
 };
 
 const RECT_TXS: [u8; 12] = {
-    let mut w = xdrs::txs::ConstWriter::<12>::new();
+    let mut buf = [0u8; 12];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     (Shape::Rect { w: 10, h: 20 }).const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 12);
+    buf
 };
 
 #[test]
@@ -225,15 +239,19 @@ const CONFIG: Config = Config {
 };
 
 const CONFIG_CXS: [u8; 2] = {
-    let mut w = xdrs::cxs::ConstWriter::<2>::new();
+    let mut buf = [0u8; 2];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     CONFIG.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 2);
+    buf
 };
 
 const CONFIG_TXS: [u8; 8] = {
-    let mut w = xdrs::txs::ConstWriter::<8>::new();
+    let mut buf = [0u8; 8];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     CONFIG.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == 8);
+    buf
 };
 
 #[test]
@@ -274,15 +292,19 @@ fn size_matches_encoded_enum() {
 
 // The main use case: use const_*_size to compute N automatically
 const AUTO_TXS: [u8; CONFIG.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ CONFIG.const_txs_size() }>::new();
+    let mut buf = [0u8; CONFIG.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     CONFIG.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == CONFIG.const_txs_size());
+    buf
 };
 
 const AUTO_CXS: [u8; CONFIG.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ CONFIG.const_cxs_size() }>::new();
+    let mut buf = [0u8; CONFIG.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     CONFIG.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == CONFIG.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -327,15 +349,19 @@ fn cxs_size_varies_with_value() {
 
 // Auto-size with variable-width CXS values
 const NARROW_CXS: [u8; NARROW.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ NARROW.const_cxs_size() }>::new();
+    let mut buf = [0u8; NARROW.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     NARROW.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == NARROW.const_cxs_size());
+    buf
 };
 
 const WIDE_CXS: [u8; WIDE.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ WIDE.const_cxs_size() }>::new();
+    let mut buf = [0u8; WIDE.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     WIDE.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WIDE.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -378,15 +404,19 @@ const OPAQUE_STRUCT: WithOpaque = WithOpaque {
 };
 
 const OPAQUE_STRUCT_TXS: [u8; OPAQUE_STRUCT.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ OPAQUE_STRUCT.const_txs_size() }>::new();
+    let mut buf = [0u8; OPAQUE_STRUCT.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     OPAQUE_STRUCT.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == OPAQUE_STRUCT.const_txs_size());
+    buf
 };
 
 const OPAQUE_STRUCT_CXS: [u8; OPAQUE_STRUCT.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ OPAQUE_STRUCT.const_cxs_size() }>::new();
+    let mut buf = [0u8; OPAQUE_STRUCT.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     OPAQUE_STRUCT.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == OPAQUE_STRUCT.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -426,9 +456,11 @@ const MY_SPEC: InterfaceSpec = InterfaceSpec {
 #[used]
 #[cfg_attr(target_family = "wasm", unsafe(link_section = "groundhogspecrawv0"))]
 static RAW_INTERFACE_SPEC: [u8; MY_SPEC.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ MY_SPEC.const_txs_size() }>::new();
+    let mut buf = [0u8; MY_SPEC.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     MY_SPEC.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == MY_SPEC.const_txs_size());
+    buf
 };
 
 #[test]
@@ -468,15 +500,19 @@ const RECURSIVE: RecursiveShapes = RecursiveShapes {
 };
 
 const RECURSIVE_TXS: [u8; RECURSIVE.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ RECURSIVE.const_txs_size() }>::new();
+    let mut buf = [0u8; RECURSIVE.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     RECURSIVE.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == RECURSIVE.const_txs_size());
+    buf
 };
 
 const RECURSIVE_CXS: [u8; RECURSIVE.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ RECURSIVE.const_cxs_size() }>::new();
+    let mut buf = [0u8; RECURSIVE.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     RECURSIVE.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == RECURSIVE.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -515,15 +551,19 @@ const PARENTHESIZED: ParenthesizedShapes<'static> = ParenthesizedShapes {
 };
 
 const PARENTHESIZED_TXS: [u8; PARENTHESIZED.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ PARENTHESIZED.const_txs_size() }>::new();
+    let mut buf = [0u8; PARENTHESIZED.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     PARENTHESIZED.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == PARENTHESIZED.const_txs_size());
+    buf
 };
 
 const PARENTHESIZED_CXS: [u8; PARENTHESIZED.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ PARENTHESIZED.const_cxs_size() }>::new();
+    let mut buf = [0u8; PARENTHESIZED.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     PARENTHESIZED.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == PARENTHESIZED.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -563,15 +603,19 @@ const NON_COPY: NonCopyTopLevel = NonCopyTopLevel {
 };
 
 const NON_COPY_TXS: [u8; NON_COPY.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ NON_COPY.const_txs_size() }>::new();
+    let mut buf = [0u8; NON_COPY.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     NON_COPY.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == NON_COPY.const_txs_size());
+    buf
 };
 
 const NON_COPY_CXS: [u8; NON_COPY.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ NON_COPY.const_cxs_size() }>::new();
+    let mut buf = [0u8; NON_COPY.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     NON_COPY.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == NON_COPY.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -602,15 +646,19 @@ const AMOUNT_42: Amount = Amount(42);
 const TAG_NEG: Tag = Tag(-7);
 
 const AMOUNT_CXS: [u8; AMOUNT_42.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ AMOUNT_42.const_cxs_size() }>::new();
+    let mut buf = [0u8; AMOUNT_42.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     AMOUNT_42.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == AMOUNT_42.const_cxs_size());
+    buf
 };
 
 const TAG_TXS: [u8; TAG_NEG.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ TAG_NEG.const_txs_size() }>::new();
+    let mut buf = [0u8; TAG_NEG.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     TAG_NEG.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TAG_NEG.const_txs_size());
+    buf
 };
 
 #[test]
@@ -645,15 +693,19 @@ const TRANSFER: Transfer = Transfer {
 };
 
 const TRANSFER_TXS: [u8; TRANSFER.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ TRANSFER.const_txs_size() }>::new();
+    let mut buf = [0u8; TRANSFER.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     TRANSFER.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TRANSFER.const_txs_size());
+    buf
 };
 
 const TRANSFER_CXS: [u8; TRANSFER.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ TRANSFER.const_cxs_size() }>::new();
+    let mut buf = [0u8; TRANSFER.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     TRANSFER.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TRANSFER.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -685,15 +737,19 @@ const NT_COMPOSITES: NewtypeComposites = NewtypeComposites {
 };
 
 const NT_COMPOSITES_TXS: [u8; NT_COMPOSITES.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ NT_COMPOSITES.const_txs_size() }>::new();
+    let mut buf = [0u8; NT_COMPOSITES.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     NT_COMPOSITES.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == NT_COMPOSITES.const_txs_size());
+    buf
 };
 
 const NT_COMPOSITES_CXS: [u8; NT_COMPOSITES.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ NT_COMPOSITES.const_cxs_size() }>::new();
+    let mut buf = [0u8; NT_COMPOSITES.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     NT_COMPOSITES.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == NT_COMPOSITES.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -734,15 +790,19 @@ mod int128_const {
     };
 
     const WIDE_TXS: [u8; WIDE_VAL.const_txs_size()] = {
-        let mut w = xdrs::txs::ConstWriter::<{ WIDE_VAL.const_txs_size() }>::new();
+        let mut buf = [0u8; WIDE_VAL.const_txs_size()];
+        let mut w = xdrs::txs::Cursor::new(&mut buf);
         WIDE_VAL.const_write_txs(&mut w);
-        w.into_bytes()
+        assert!(w.pos() == WIDE_VAL.const_txs_size());
+        buf
     };
 
     const WIDE_CXS: [u8; WIDE_VAL.const_cxs_size()] = {
-        let mut w = xdrs::cxs::ConstWriter::<{ WIDE_VAL.const_cxs_size() }>::new();
+        let mut buf = [0u8; WIDE_VAL.const_cxs_size()];
+        let mut w = xdrs::cxs::Cursor::new(&mut buf);
         WIDE_VAL.const_write_cxs(&mut w);
-        w.into_bytes()
+        assert!(w.pos() == WIDE_VAL.const_cxs_size());
+        buf
     };
 
     #[test]
@@ -767,27 +827,35 @@ mod int128_const {
     };
 
     const U128_ZERO_TXS: [u8; U128_ZERO.const_txs_size()] = {
-        let mut w = xdrs::txs::ConstWriter::<{ U128_ZERO.const_txs_size() }>::new();
+        let mut buf = [0u8; U128_ZERO.const_txs_size()];
+        let mut w = xdrs::txs::Cursor::new(&mut buf);
         U128_ZERO.const_write_txs(&mut w);
-        w.into_bytes()
+        assert!(w.pos() == U128_ZERO.const_txs_size());
+        buf
     };
 
     const U128_MAX_TXS: [u8; U128_MAX.const_txs_size()] = {
-        let mut w = xdrs::txs::ConstWriter::<{ U128_MAX.const_txs_size() }>::new();
+        let mut buf = [0u8; U128_MAX.const_txs_size()];
+        let mut w = xdrs::txs::Cursor::new(&mut buf);
         U128_MAX.const_write_txs(&mut w);
-        w.into_bytes()
+        assert!(w.pos() == U128_MAX.const_txs_size());
+        buf
     };
 
     const U128_ZERO_CXS: [u8; U128_ZERO.const_cxs_size()] = {
-        let mut w = xdrs::cxs::ConstWriter::<{ U128_ZERO.const_cxs_size() }>::new();
+        let mut buf = [0u8; U128_ZERO.const_cxs_size()];
+        let mut w = xdrs::cxs::Cursor::new(&mut buf);
         U128_ZERO.const_write_cxs(&mut w);
-        w.into_bytes()
+        assert!(w.pos() == U128_ZERO.const_cxs_size());
+        buf
     };
 
     const U128_MAX_CXS: [u8; U128_MAX.const_cxs_size()] = {
-        let mut w = xdrs::cxs::ConstWriter::<{ U128_MAX.const_cxs_size() }>::new();
+        let mut buf = [0u8; U128_MAX.const_cxs_size()];
+        let mut w = xdrs::cxs::Cursor::new(&mut buf);
         U128_MAX.const_write_cxs(&mut w);
-        w.into_bytes()
+        assert!(w.pos() == U128_MAX.const_cxs_size());
+        buf
     };
 
     #[test]
@@ -815,27 +883,35 @@ const WITH_STR: WithStr<'static> = WithStr {
 const WITH_STR_EMPTY: WithStr<'static> = WithStr { label: "", code: 0 };
 
 const WITH_STR_TXS: [u8; WITH_STR.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ WITH_STR.const_txs_size() }>::new();
+    let mut buf = [0u8; WITH_STR.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     WITH_STR.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_STR.const_txs_size());
+    buf
 };
 
 const WITH_STR_CXS: [u8; WITH_STR.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ WITH_STR.const_cxs_size() }>::new();
+    let mut buf = [0u8; WITH_STR.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     WITH_STR.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_STR.const_cxs_size());
+    buf
 };
 
 const WITH_STR_EMPTY_TXS: [u8; WITH_STR_EMPTY.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ WITH_STR_EMPTY.const_txs_size() }>::new();
+    let mut buf = [0u8; WITH_STR_EMPTY.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     WITH_STR_EMPTY.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_STR_EMPTY.const_txs_size());
+    buf
 };
 
 const WITH_STR_EMPTY_CXS: [u8; WITH_STR_EMPTY.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ WITH_STR_EMPTY.const_cxs_size() }>::new();
+    let mut buf = [0u8; WITH_STR_EMPTY.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     WITH_STR_EMPTY.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_STR_EMPTY.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -888,27 +964,35 @@ const WITH_BYTES: WithByteSlice<'static> = WithByteSlice {
 const WITH_BYTES_EMPTY: WithByteSlice<'static> = WithByteSlice { data: &[], tag: 0 };
 
 const WITH_BYTES_TXS: [u8; WITH_BYTES.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ WITH_BYTES.const_txs_size() }>::new();
+    let mut buf = [0u8; WITH_BYTES.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     WITH_BYTES.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_BYTES.const_txs_size());
+    buf
 };
 
 const WITH_BYTES_CXS: [u8; WITH_BYTES.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ WITH_BYTES.const_cxs_size() }>::new();
+    let mut buf = [0u8; WITH_BYTES.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     WITH_BYTES.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_BYTES.const_cxs_size());
+    buf
 };
 
 const WITH_BYTES_EMPTY_TXS: [u8; WITH_BYTES_EMPTY.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ WITH_BYTES_EMPTY.const_txs_size() }>::new();
+    let mut buf = [0u8; WITH_BYTES_EMPTY.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     WITH_BYTES_EMPTY.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_BYTES_EMPTY.const_txs_size());
+    buf
 };
 
 const WITH_BYTES_EMPTY_CXS: [u8; WITH_BYTES_EMPTY.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ WITH_BYTES_EMPTY.const_cxs_size() }>::new();
+    let mut buf = [0u8; WITH_BYTES_EMPTY.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     WITH_BYTES_EMPTY.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_BYTES_EMPTY.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -967,15 +1051,19 @@ const SOME_AND_ERR: OptionResultPaths = OptionResultPaths {
 };
 
 const NONE_AND_OK_TXS: [u8; NONE_AND_OK.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ NONE_AND_OK.const_txs_size() }>::new();
+    let mut buf = [0u8; NONE_AND_OK.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     NONE_AND_OK.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == NONE_AND_OK.const_txs_size());
+    buf
 };
 
 const NONE_AND_OK_CXS: [u8; NONE_AND_OK.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ NONE_AND_OK.const_cxs_size() }>::new();
+    let mut buf = [0u8; NONE_AND_OK.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     NONE_AND_OK.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == NONE_AND_OK.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -999,15 +1087,19 @@ fn none_and_ok_const_matches_runtime() {
 }
 
 const SOME_AND_ERR_TXS: [u8; SOME_AND_ERR.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ SOME_AND_ERR.const_txs_size() }>::new();
+    let mut buf = [0u8; SOME_AND_ERR.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     SOME_AND_ERR.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == SOME_AND_ERR.const_txs_size());
+    buf
 };
 
 const SOME_AND_ERR_CXS: [u8; SOME_AND_ERR.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ SOME_AND_ERR.const_cxs_size() }>::new();
+    let mut buf = [0u8; SOME_AND_ERR.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     SOME_AND_ERR.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == SOME_AND_ERR.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -1046,39 +1138,51 @@ const TRECT: TupleShape = TupleShape::Rect(10, 20);
 const TEMPTY: TupleShape = TupleShape::Empty;
 
 const TCIRCLE_TXS: [u8; TCIRCLE.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ TCIRCLE.const_txs_size() }>::new();
+    let mut buf = [0u8; TCIRCLE.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     TCIRCLE.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TCIRCLE.const_txs_size());
+    buf
 };
 
 const TCIRCLE_CXS: [u8; TCIRCLE.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ TCIRCLE.const_cxs_size() }>::new();
+    let mut buf = [0u8; TCIRCLE.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     TCIRCLE.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TCIRCLE.const_cxs_size());
+    buf
 };
 
 const TRECT_TXS: [u8; TRECT.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ TRECT.const_txs_size() }>::new();
+    let mut buf = [0u8; TRECT.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     TRECT.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TRECT.const_txs_size());
+    buf
 };
 
 const TRECT_CXS: [u8; TRECT.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ TRECT.const_cxs_size() }>::new();
+    let mut buf = [0u8; TRECT.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     TRECT.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TRECT.const_cxs_size());
+    buf
 };
 
 const TEMPTY_TXS: [u8; TEMPTY.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ TEMPTY.const_txs_size() }>::new();
+    let mut buf = [0u8; TEMPTY.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     TEMPTY.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TEMPTY.const_txs_size());
+    buf
 };
 
 const TEMPTY_CXS: [u8; TEMPTY.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ TEMPTY.const_cxs_size() }>::new();
+    let mut buf = [0u8; TEMPTY.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     TEMPTY.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == TEMPTY.const_cxs_size());
+    buf
 };
 
 #[test]
@@ -1139,7 +1243,8 @@ mod overlong_length_bound {
         let holder = UnitSliceHolder {
             items: &OVERLONG_UNITS,
         };
-        let mut w = xdrs::txs::ConstWriter::<4>::new();
+        let mut buf = [0u8; 4];
+        let mut w = xdrs::txs::Cursor::new(&mut buf);
         holder.const_write_txs(&mut w);
     }
 
@@ -1149,7 +1254,8 @@ mod overlong_length_bound {
         let holder = UnitSliceHolder {
             items: &OVERLONG_UNITS,
         };
-        let mut w = xdrs::cxs::ConstWriter::<1>::new();
+        let mut buf = [0u8; 1];
+        let mut w = xdrs::cxs::Cursor::new(&mut buf);
         holder.const_write_cxs(&mut w);
     }
 
@@ -1182,7 +1288,8 @@ mod overlong_length_bound {
     #[should_panic(expected = "u32")]
     fn const_array_txs_write_rejects_overlong() {
         let holder = make_overlong_array();
-        let mut w = xdrs::txs::ConstWriter::<0>::new();
+        let mut buf = [0u8; 0];
+        let mut w = xdrs::txs::Cursor::new(&mut buf);
         holder.const_write_txs(&mut w);
     }
 
@@ -1190,7 +1297,8 @@ mod overlong_length_bound {
     #[should_panic(expected = "u32")]
     fn const_array_cxs_write_rejects_overlong() {
         let holder = make_overlong_array();
-        let mut w = xdrs::cxs::ConstWriter::<0>::new();
+        let mut buf = [0u8; 0];
+        let mut w = xdrs::cxs::Cursor::new(&mut buf);
         holder.const_write_cxs(&mut w);
     }
 }
@@ -1224,15 +1332,19 @@ const WITH_PHANTOM: WithPhantom = WithPhantom {
 };
 
 const WITH_PHANTOM_CXS: [u8; WITH_PHANTOM.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ WITH_PHANTOM.const_cxs_size() }>::new();
+    let mut buf = [0u8; WITH_PHANTOM.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     WITH_PHANTOM.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_PHANTOM.const_cxs_size());
+    buf
 };
 
 const WITH_PHANTOM_TXS: [u8; WITH_PHANTOM.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ WITH_PHANTOM.const_txs_size() }>::new();
+    let mut buf = [0u8; WITH_PHANTOM.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     WITH_PHANTOM.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_PHANTOM.const_txs_size());
+    buf
 };
 
 #[test]
@@ -1271,15 +1383,19 @@ const WITH_PHANTOM_NT: WithPhantomNewtype = WithPhantomNewtype {
 };
 
 const WITH_PHANTOM_NT_CXS: [u8; WITH_PHANTOM_NT.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ WITH_PHANTOM_NT.const_cxs_size() }>::new();
+    let mut buf = [0u8; WITH_PHANTOM_NT.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     WITH_PHANTOM_NT.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_PHANTOM_NT.const_cxs_size());
+    buf
 };
 
 const WITH_PHANTOM_NT_TXS: [u8; WITH_PHANTOM_NT.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ WITH_PHANTOM_NT.const_txs_size() }>::new();
+    let mut buf = [0u8; WITH_PHANTOM_NT.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     WITH_PHANTOM_NT.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_PHANTOM_NT.const_txs_size());
+    buf
 };
 
 #[test]
@@ -1365,15 +1481,19 @@ const WITH_INFALLIBLE: WithInfallible = WithInfallible {
 };
 
 const WITH_INFALLIBLE_CXS: [u8; WITH_INFALLIBLE.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ WITH_INFALLIBLE.const_cxs_size() }>::new();
+    let mut buf = [0u8; WITH_INFALLIBLE.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     WITH_INFALLIBLE.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_INFALLIBLE.const_cxs_size());
+    buf
 };
 
 const WITH_INFALLIBLE_TXS: [u8; WITH_INFALLIBLE.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ WITH_INFALLIBLE.const_txs_size() }>::new();
+    let mut buf = [0u8; WITH_INFALLIBLE.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     WITH_INFALLIBLE.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == WITH_INFALLIBLE.const_txs_size());
+    buf
 };
 
 #[test]
@@ -1413,15 +1533,19 @@ enum DefaultPayloadTuple {
 const DPT_VAL: DefaultPayloadTuple = DefaultPayloadTuple::Unknown(7, 9);
 
 const DPT_CXS: [u8; DPT_VAL.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ DPT_VAL.const_cxs_size() }>::new();
+    let mut buf = [0u8; DPT_VAL.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     DPT_VAL.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == DPT_VAL.const_cxs_size());
+    buf
 };
 
 const DPT_TXS: [u8; DPT_VAL.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ DPT_VAL.const_txs_size() }>::new();
+    let mut buf = [0u8; DPT_VAL.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     DPT_VAL.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == DPT_VAL.const_txs_size());
+    buf
 };
 
 #[test]
@@ -1463,15 +1587,19 @@ const DPN_VAL: DefaultPayloadNamed = DefaultPayloadNamed::Unknown {
 };
 
 const DPN_CXS: [u8; DPN_VAL.const_cxs_size()] = {
-    let mut w = xdrs::cxs::ConstWriter::<{ DPN_VAL.const_cxs_size() }>::new();
+    let mut buf = [0u8; DPN_VAL.const_cxs_size()];
+    let mut w = xdrs::cxs::Cursor::new(&mut buf);
     DPN_VAL.const_write_cxs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == DPN_VAL.const_cxs_size());
+    buf
 };
 
 const DPN_TXS: [u8; DPN_VAL.const_txs_size()] = {
-    let mut w = xdrs::txs::ConstWriter::<{ DPN_VAL.const_txs_size() }>::new();
+    let mut buf = [0u8; DPN_VAL.const_txs_size()];
+    let mut w = xdrs::txs::Cursor::new(&mut buf);
     DPN_VAL.const_write_txs(&mut w);
-    w.into_bytes()
+    assert!(w.pos() == DPN_VAL.const_txs_size());
+    buf
 };
 
 #[test]

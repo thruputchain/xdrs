@@ -288,24 +288,47 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Derives const-compatible XDR encoding methods for compile-time use.
+/// Derives const-compatible XDR encoding methods for compile-time use, plus a
+/// runtime [`ConstWriteXDR`](../xdrs/trait.ConstWriteXDR.html) trait impl.
 ///
 /// Generates four inherent `const fn` methods on the type:
-/// - `const_write_cxs<const N: usize>(&self, w: &mut cxs::ConstWriter<N>)`
-/// - `const_write_txs<const N: usize>(&self, w: &mut txs::ConstWriter<N>)`
+/// - `const_write_cxs(&self, w: &mut cxs::Cursor<'_>)`
+/// - `const_write_txs(&self, w: &mut txs::Cursor<'_>)`
 /// - `const_cxs_size(&self) -> usize`
 /// - `const_txs_size(&self) -> usize`
 ///
-/// These methods can be used in `const` blocks to encode values at compile time.
-/// The size methods allow the buffer size to be derived automatically:
+/// These methods can be used in `const` blocks to encode values at compile
+/// time. The writers are slice-backed `cxs::Cursor` / `txs::Cursor` rather
+/// than the buffer-const-generic `ConstWriter`; construct one over a
+/// stack buffer whose length is taken from the size methods:
 ///
 /// ```rust,ignore
 /// static ENCODED: [u8; MY_VAL.const_txs_size()] = {
-///     let mut w = xdrs::txs::ConstWriter::<{ MY_VAL.const_txs_size() }>::new();
+///     let mut buf = [0u8; MY_VAL.const_txs_size()];
+///     let mut w = xdrs::txs::Cursor::new(&mut buf);
 ///     MY_VAL.const_write_txs(&mut w);
-///     w.into_bytes()
+///     assert!(w.pos() == MY_VAL.const_txs_size());
+///     buf
 /// };
 /// ```
+///
+/// # Trait impl and worst-case sizes
+///
+/// The derive also emits an `impl ConstWriteXDR for YourType`. Its `write_cxs` /
+/// `write_txs` / `cxs_size` / `txs_size` methods forward to the inherent
+/// `const fn`s above, and it provides the associated consts `MAX_CXS_LEN` /
+/// `MAX_TXS_LEN` — the worst-case encoded length over all values of the type
+/// (`None` when unbounded, e.g. a field is a `&[T]` or `String`). These consts
+/// are `add`/`max` folds over the fields' own `MAX_*_LEN`, so every field type
+/// (and every enum-variant field type) must itself implement `ConstWriteXDR`.
+///
+/// # `#[xdrs(runtime_only)]`
+///
+/// Apply `#[xdrs(runtime_only)]` to skip the inherent `const fn`s and emit only
+/// the trait impl, with direct (non-`const`) method bodies. Use this for types
+/// whose fields have no inherent const encoders — for example a struct holding a
+/// [`StringM`](../xdrs/struct.StringM.html), whose encoding is not `const`-compatible. The `MAX_*_LEN`
+/// consts are still provided.
 ///
 /// # Limitations
 ///
@@ -329,10 +352,6 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///   the opaque byte fast-path to misfire. Similarly, shadowing `str` will
 ///   confuse string detection.
 /// - Length guards use `::core::assert!()` to resist call-site macro shadowing.
-/// - **Do not use `__N`-prefixed names in discriminant expressions.** The
-///   generated methods introduce a buffer-size const generic with an
-///   `__N`-prefixed name; discriminant expressions referencing a same-named
-///   constant will resolve to the wrong binding.
 /// - **Avoid naming const generics `i`, `arr`, `slice`, or `total`.** The
 ///   generated array/slice iteration uses these as local bindings, and Rust
 ///   does not allow a `let` binding to shadow an in-scope const parameter.

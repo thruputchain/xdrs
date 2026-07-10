@@ -162,3 +162,88 @@ mod xdr_common_types {
         assert_eq!(<VecM<u8> as ConstWriteXDR>::MAX_CXS_LEN, Some(5 + u32::MAX as usize));
     }
 }
+
+#[cfg(feature = "derive")]
+mod derived {
+    use super::*;
+    use xdrs::{ConstWriteXDR, WriteXDR};
+
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    struct Point {
+        x: i32,
+        y: u64,
+        tag: [u8; 3],
+    }
+
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    #[repr(i32)]
+    enum Shape {
+        Circle { radius: u32 },
+        Rect { w: u32, h: u32 },
+    }
+
+    #[test]
+    fn derived_trait_matches_reference() {
+        assert_trait_matches(&Point {
+            x: -32,
+            y: u64::MAX,
+            tag: *b"abc",
+        });
+        assert_trait_matches(&Shape::Circle { radius: 65536 });
+        assert_trait_matches(&Shape::Rect { w: 0, h: u32::MAX });
+    }
+
+    #[test]
+    fn derived_max_values() {
+        // 5 (i32) + 9 (u64) + 3 (opaque fixed)
+        assert_eq!(<Point as ConstWriteXDR>::MAX_CXS_LEN, Some(17));
+        // txs: 4 + 8 + 4 (3 padded)
+        assert_eq!(<Point as ConstWriteXDR>::MAX_TXS_LEN, Some(16));
+        // variants: disc(idx 0|1 -> 1 byte cxs) + payload; Rect wins: 1 + 5 + 5
+        assert_eq!(<Shape as ConstWriteXDR>::MAX_CXS_LEN, Some(11));
+        assert_eq!(<Shape as ConstWriteXDR>::MAX_TXS_LEN, Some(12)); // 4 + 4 + 4
+    }
+
+    #[cfg(feature = "alloc")]
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    #[xdrs(runtime_only)]
+    struct WithString {
+        name: xdrs::StringM<16>,
+        id: u32,
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn runtime_only_derive() {
+        let v = WithString {
+            name: "abc".try_into().unwrap(),
+            id: 7,
+        };
+        assert_trait_matches(&v);
+        // 1 + 16 (StringM<16>) + 5 (u32)
+        assert_eq!(<WithString as ConstWriteXDR>::MAX_CXS_LEN, Some(22));
+    }
+
+    // Exercises the enum runtime_only path: direct `match self` trait bodies.
+    #[cfg(feature = "alloc")]
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    #[xdrs(runtime_only)]
+    #[repr(i32)]
+    enum Message {
+        Ping,
+        Text { body: xdrs::StringM<32> },
+        Code { value: u32 },
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn runtime_only_enum_derive() {
+        assert_trait_matches(&Message::Ping);
+        assert_trait_matches(&Message::Text {
+            body: "hi".try_into().unwrap(),
+        });
+        assert_trait_matches(&Message::Code { value: 65536 });
+        // widest variant: disc(1) + StringM<32> CXS max (1 + 32 = 33) = 34
+        assert_eq!(<Message as ConstWriteXDR>::MAX_CXS_LEN, Some(34));
+    }
+}
