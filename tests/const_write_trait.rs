@@ -126,3 +126,37 @@ fn alloc_impls() {
     let v: std::vec::Vec<u32> = std::vec![1u32, 2, 3];
     assert_trait_matches(&v);
 }
+
+#[cfg(feature = "alloc")]
+mod xdr_common_types {
+    use super::*;
+    use xdrs::{BytesM, StringM, VecM};
+
+    #[test]
+    fn bounded_types_match_reference() {
+        let b: BytesM<8> = vec![1u8, 2, 3].try_into().unwrap();
+        assert_trait_matches(&b);
+        let s: StringM<8> = "hi".try_into().unwrap();
+        assert_trait_matches(&s);
+        let v: VecM<u32, 4> = vec![1u32, 65536].try_into().unwrap();
+        assert_trait_matches(&v);
+    }
+
+    #[test]
+    fn bounded_max_values() {
+        // CXS: len-varint(8)=1, so 1 + 8
+        assert_eq!(<BytesM<8> as ConstWriteXDR>::MAX_CXS_LEN, Some(9));
+        // TXS: 4 (len) + 8 (already 4-aligned)
+        assert_eq!(<BytesM<8> as ConstWriteXDR>::MAX_TXS_LEN, Some(12));
+        // TXS pads data: 4 + size_opaque_fixed(5) = 4 + 8
+        assert_eq!(<BytesM<5> as ConstWriteXDR>::MAX_TXS_LEN, Some(12));
+        // CXS: len-varint(4)=1 + 4 elems × 5
+        assert_eq!(<VecM<u32, 4> as ConstWriteXDR>::MAX_CXS_LEN, Some(21));
+        // len-varint(300) = 3 bytes (300 fits 2-byte payload + header)
+        assert_eq!(<BytesM<300> as ConstWriteXDR>::MAX_CXS_LEN, Some(303));
+        // Outer container at u32::MAX capacity × large element overflows → None
+        assert_eq!(<VecM<VecM<u8>> as ConstWriteXDR>::MAX_CXS_LEN, None);
+        // Default VecM<u8> (MAX = u32::MAX)
+        assert_eq!(<VecM<u8> as ConstWriteXDR>::MAX_CXS_LEN, Some(5 + u32::MAX as usize));
+    }
+}
