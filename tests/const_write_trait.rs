@@ -156,6 +156,8 @@ mod xdr_common_types {
         assert_eq!(<BytesM<300> as ConstWriteXDR>::MAX_CXS_LEN, Some(303));
         // Outer container at u32::MAX capacity × large element overflows → None
         assert_eq!(<VecM<VecM<u8>> as ConstWriteXDR>::MAX_CXS_LEN, None);
+        // Finite nested bound composes: 1 (len varint for 4) + 4 × (5 + u32::MAX)
+        assert_eq!(<VecM<VecM<u8>, 4> as ConstWriteXDR>::MAX_CXS_LEN, Some(17_179_869_201));
         // Default VecM<u8> (MAX = u32::MAX)
         assert_eq!(<VecM<u8> as ConstWriteXDR>::MAX_CXS_LEN, Some(5 + u32::MAX as usize));
     }
