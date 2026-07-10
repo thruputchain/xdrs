@@ -60,18 +60,15 @@ fn const_write_data(
     attrs: &Attrs,
     krate: &syn::Path,
 ) -> Result<TokenStream> {
-    if input
+    let has_type_params = input
         .generics
         .params
         .iter()
-        .any(|param| matches!(param, syn::GenericParam::Type(_)))
-    {
-        return err(input, "ConstWriteXDR does not support type parameters.");
-    }
+        .any(|p| matches!(p, syn::GenericParam::Type(_)));
 
     match &input.data {
-        syn::Data::Struct(item) => const_write_struct(input, item, attrs, krate),
-        syn::Data::Enum(item) => const_write_enum(input, item, attrs, krate),
+        syn::Data::Struct(item) => const_write_struct(input, item, attrs, krate, has_type_params),
+        syn::Data::Enum(item) => const_write_enum(input, item, attrs, krate, has_type_params),
         _ => err(
             input,
             "ConstWriteXDR can only be derived for structs and enums",
@@ -84,13 +81,15 @@ fn const_write_struct(
     item: &syn::DataStruct,
     attrs: &Attrs,
     krate: &syn::Path,
+    has_type_params: bool,
 ) -> Result<TokenStream> {
-    let inherent = if attrs.runtime_only {
-        quote! {}
-    } else {
+    let emit_inherent = !has_type_params && !attrs.runtime_only;
+    let inherent = if emit_inherent {
         inherent_struct_impl(input, item)?
+    } else {
+        quote! {}
     };
-    let trait_impl = trait_impl_struct(input, item, attrs, krate)?;
+    let trait_impl = trait_impl_struct(input, item, krate, !emit_inherent)?;
 
     Ok(quote! {
         #inherent
@@ -406,16 +405,18 @@ fn const_write_enum(
     item: &syn::DataEnum,
     attrs: &Attrs,
     krate: &syn::Path,
+    has_type_params: bool,
 ) -> Result<TokenStream> {
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
 
-    let inherent = if attrs.runtime_only {
-        quote! {}
-    } else {
+    let emit_inherent = !has_type_params && !attrs.runtime_only;
+    let inherent = if emit_inherent {
         inherent_enum_impl(input, item)?
+    } else {
+        quote! {}
     };
-    let trait_impl = trait_impl_enum(input, item, attrs, krate)?;
+    let trait_impl = trait_impl_enum(input, item, krate, !emit_inherent)?;
 
     Ok(quote! {
         #inherent
@@ -530,19 +531,46 @@ impl Format {
     }
 }
 
+/// Clone `generics` and append a `#T: #krate::ConstWriteXDR` where-predicate
+/// for every type parameter. Used so the trait impl compiles when the type has
+/// generic parameters, without requiring the user to write struct-level bounds
+/// (serde-style synthesized bounds).
+fn synthesize_trait_generics(generics: &syn::Generics, krate: &syn::Path) -> syn::Generics {
+    let mut g = generics.clone();
+    let extra: Vec<syn::WherePredicate> = g
+        .params
+        .iter()
+        .filter_map(|p| match p {
+            syn::GenericParam::Type(tp) => {
+                let ident = &tp.ident;
+                Some(syn::parse_quote!(#ident: #krate::ConstWriteXDR))
+            }
+            _ => None,
+        })
+        .collect();
+    if !extra.is_empty() {
+        let wc = g.make_where_clause();
+        for pred in extra {
+            wc.predicates.push(pred);
+        }
+    }
+    g
+}
+
 fn trait_impl_struct(
     input: &syn::DeriveInput,
     item: &syn::DataStruct,
-    attrs: &Attrs,
     krate: &syn::Path,
+    direct_bodies: bool,
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let trait_gen = synthesize_trait_generics(&input.generics, krate);
+    let (impl_generics, ty_generics, where_clause) = trait_gen.split_for_impl();
 
     let max_cxs = struct_max_fold(item, krate, Format::Cxs)?;
     let max_txs = struct_max_fold(item, krate, Format::Txs)?;
 
-    let (write_cxs_body, write_txs_body, cxs_size_body, txs_size_body) = if attrs.runtime_only {
+    let (write_cxs_body, write_txs_body, cxs_size_body, txs_size_body) = if direct_bodies {
         (
             struct_trait_write_body(item, krate, Format::Cxs)?,
             struct_trait_write_body(item, krate, Format::Txs)?,
@@ -649,16 +677,17 @@ fn struct_trait_size_body(
 fn trait_impl_enum(
     input: &syn::DeriveInput,
     item: &syn::DataEnum,
-    attrs: &Attrs,
     krate: &syn::Path,
+    direct_bodies: bool,
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let trait_gen = synthesize_trait_generics(&input.generics, krate);
+    let (impl_generics, ty_generics, where_clause) = trait_gen.split_for_impl();
 
     let max_cxs = enum_max_fold(item, krate, Format::Cxs)?;
     let max_txs = enum_max_fold(item, krate, Format::Txs)?;
 
-    let (write_cxs_body, write_txs_body, cxs_size_body, txs_size_body) = if attrs.runtime_only {
+    let (write_cxs_body, write_txs_body, cxs_size_body, txs_size_body) = if direct_bodies {
         (
             enum_trait_write_body(input, item, krate, Format::Cxs)?,
             enum_trait_write_body(input, item, krate, Format::Txs)?,
@@ -970,16 +999,21 @@ mod tests {
     }
 
     #[test]
-    fn type_generics_are_rejected() {
+    fn type_generics_get_trait_impl_only() {
         let input: syn::DeriveInput = syn::parse_quote! {
             struct Bad<T> {
                 value: Option<T>,
             }
         };
 
-        let err = const_write_xdr(&input).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("generic types") || msg.contains("type parameters"));
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        // Trait impl is emitted …
+        assert!(toks.contains("ConstWriteXDR for"), "expected trait impl in: {toks}");
+        // … but no inherent const fns.
+        assert!(
+            !toks.contains("const_write_cxs"),
+            "unexpected inherent const fn in: {toks}"
+        );
     }
 
     #[test]

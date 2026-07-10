@@ -291,7 +291,8 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// Derives const-compatible XDR encoding methods for compile-time use, plus a
 /// runtime [`ConstWriteXDR`](../xdrs/trait.ConstWriteXDR.html) trait impl.
 ///
-/// Generates four inherent `const fn` methods on the type:
+/// For types **without** type parameters, generates four inherent `const fn`
+/// methods on the type:
 /// - `const_write_cxs(&self, w: &mut cxs::Cursor<'_>)`
 /// - `const_write_txs(&self, w: &mut txs::Cursor<'_>)`
 /// - `const_cxs_size(&self) -> usize`
@@ -314,13 +315,15 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///
 /// # Trait impl and worst-case sizes
 ///
-/// The derive also emits an `impl ConstWriteXDR for YourType`. Its `write_cxs` /
-/// `write_txs` / `cxs_size` / `txs_size` methods forward to the inherent
-/// `const fn`s above, and it provides the associated consts `MAX_CXS_LEN` /
-/// `MAX_TXS_LEN` — the worst-case encoded length over all values of the type
-/// (`None` when unbounded, e.g. a field is a `&[T]` or `String`). These consts
-/// are `add`/`max` folds over the fields' own `MAX_*_LEN`, so every field type
-/// (and every enum-variant field type) must itself implement `ConstWriteXDR`.
+/// The derive always emits an `impl ConstWriteXDR for YourType`. For concrete
+/// (non-generic) types the trait methods forward to the inherent `const fn`s
+/// above. For generic types (or `#[xdrs(runtime_only)]` types) the trait
+/// methods have direct, non-`const` bodies instead. It provides the associated
+/// consts `MAX_CXS_LEN` / `MAX_TXS_LEN` — the worst-case encoded length over
+/// all values of the type (`None` when unbounded, e.g. a field is a `&[T]` or
+/// `String`). These consts are `add`/`max` folds over the fields' own
+/// `MAX_*_LEN`, so every field type (and every enum-variant field type) must
+/// itself implement `ConstWriteXDR`.
 ///
 /// # `#[xdrs(runtime_only)]`
 ///
@@ -335,10 +338,35 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// - Does not support `#[xdr(into_type)]` or `#[xdr(via)]` attributes on the
 ///   derive input, struct fields, or enum variant fields. The `via`/`into_type`
 ///   conversions require `Into::into()` which is not `const fn`.
-/// - Supports lifetime and const generics, but not type parameters
 /// - Field types may use recursive concrete shapes inline, including `Option<T>`,
 ///   `Result<T, E>`, `&[T]`, `[T; N]`, and tuples, as long as leaf types are
-///   concrete and const-encodable
+///   concrete and const-encodable.
+///
+/// # Generic types (type parameters)
+///
+/// When the type being derived has type parameters (e.g. `struct Wrapper<T>`),
+/// `#[derive(ConstWriteXDR)]` emits **only** the `ConstWriteXDR` trait impl —
+/// the inherent `const fn` methods (`const_write_cxs`, etc.) are omitted because
+/// calling a type parameter's method inside a `const fn` requires const traits,
+/// which is a nightly-only feature.
+///
+/// The macro synthesises a `ConstWriteXDR` bound for every type parameter in the
+/// trait impl's where-clause (serde-style). For example:
+///
+/// ```rust,ignore
+/// #[derive(ConstWriteXDR)]
+/// #[repr(i32)]
+/// enum ContractExn<E> {
+///     System { code: u32 },
+///     User { exn: E },
+/// }
+/// // expands to:
+/// // impl<E> ConstWriteXDR for ContractExn<E> where E: ConstWriteXDR { … }
+/// ```
+///
+/// The `MAX_CXS_LEN` / `MAX_TXS_LEN` consts are still provided and fold over
+/// the type parameter's own `MAX_*_LEN`, so a finite-`E` gives a finite bound
+/// and an unbounded `E` (e.g. `&[u8]`) yields `None`.
 ///
 /// # Generated code hygiene
 ///
