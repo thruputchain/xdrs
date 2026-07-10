@@ -55,9 +55,9 @@ pub trait WriteXDR {
     ///   would make the encoding exceed any precomputed size bound. This
     ///   includes the implicit `u32::MAX` upper limit on variable-length
     ///   arrays and strings: the checked path returns
-    ///   [`WriteError::InvalidArrayLength`](crate::WriteError::InvalidArrayLength)
-    ///   for lengths exceeding `u32::MAX`; the unchecked path only
-    ///   `debug_assert!`s this condition.
+    ///   [`WriteError::InvalidArrayLength`] for lengths exceeding
+    ///   `u32::MAX`; the unchecked path only `debug_assert!`s this
+    ///   condition.
     ///
     /// Violations are `debug_assert!`ed; in release builds they are
     /// undefined behavior.
