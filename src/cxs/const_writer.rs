@@ -61,6 +61,15 @@ impl<const N: usize> ConstWriter<N> {
         self.buf
     }
 
+    /// Returns the bytes written so far (the filled prefix of the buffer).
+    ///
+    /// Unlike [`into_bytes`](Self::into_bytes), this does not require the
+    /// buffer to be exactly full, so it supports value-dependent encoded
+    /// lengths that fall short of `N`.
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.buf.split_at(self.pos).0
+    }
+
     // -- internal helpers --
 
     const fn put_byte(&mut self, b: u8) {
@@ -447,5 +456,29 @@ mod tests {
     #[test]
     fn const_encode_bool() {
         assert_eq!(BOOL_TRUE, [0x01]);
+    }
+
+    // `write_u32(300)`: 300 > u8::MAX → 2-byte encoding: header 0x7f, LE bytes [0x2c, 0x01]
+    const AS_BYTES_LEN: usize = {
+        let mut w = ConstWriter::<8>::new();
+        w.write_u32(300);
+        w.as_bytes().len()
+    };
+
+    #[test]
+    fn as_bytes_partial_fill() {
+        let mut w = ConstWriter::<8>::new();
+        w.write_u32(300);
+        assert_eq!(w.as_bytes(), &[0x7f, 0x2c, 0x01]);
+        assert_eq!(AS_BYTES_LEN, 3);
+    }
+
+    #[test]
+    fn as_bytes_empty_and_full() {
+        let w = ConstWriter::<4>::new();
+        assert_eq!(w.as_bytes(), &[] as &[u8]);
+        let mut w = ConstWriter::<1>::new();
+        w.write_bool(true);
+        assert_eq!(w.as_bytes(), &[0x01]);
     }
 }
