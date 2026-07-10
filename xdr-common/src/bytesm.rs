@@ -102,7 +102,9 @@ impl<const MAX: u32> core::str::FromStr for BytesM<MAX> {
             return Err(Error::LengthExceedsMax);
         }
         let mut out = Vec::with_capacity(s.len() / 2);
-        for pair in s.as_bytes().chunks_exact(2) {
+        let (pairs, rest) = s.as_bytes().as_chunks::<2>();
+        debug_assert!(rest.is_empty()); // length is even, checked above
+        for pair in pairs {
             out.push((hex_digit(pair[0])? << 4) | hex_digit(pair[1])?);
         }
         out.try_into()
