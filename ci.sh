@@ -8,6 +8,10 @@ set -x
 # check the root library without alloc
 cargo test -F int128
 
+# check derive macros without alloc (const writers for VecM/BytesM/StringM
+# are only exercised with non-empty static data in no-alloc builds)
+cargo test -F derive,int128
+
 # check feature "permissive"
 cargo test -F permissive,int128 --test ints
 

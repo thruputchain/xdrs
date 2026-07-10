@@ -1489,3 +1489,123 @@ fn default_variant_named_payload_roundtrips() {
     let txs_decoded: DefaultPayloadNamed = xdrs::txs::decode(&DPN_TXS).unwrap();
     assert_eq!(txs_decoded, DPN_VAL);
 }
+
+// -- Derive macro tests: VecM / BytesM / StringM containers --
+//
+// With the `alloc` feature, container values cannot be used inside const
+// evaluation at all: Vec's destructor is not const-evaluable, so even an
+// empty VecM temporary is rejected (E0493). The generated methods are still
+// ordinary `const fn`s, so they are exercised here at runtime against the
+// runtime encoders. True const-context encoding of non-empty containers is
+// covered by tests/const_writer_noalloc.rs in no-alloc builds.
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+struct Containers {
+    nums: xdrs::VecM<u32, 5>,
+    raw: xdrs::VecM<u8, 4>,
+    bytes: xdrs::BytesM<4>,
+    name: xdrs::StringM<8>,
+    unbounded: xdrs::VecM<u64>,
+    nested: xdrs::VecM<xdrs::VecM<u32, 2>, 3>,
+    maybe: Option<xdrs::BytesM<4>>,
+}
+
+/// Const-write `val` into an exact-size buffer at runtime and check the
+/// result against the runtime encoders. `TXS_N`/`CXS_N` must equal the
+/// encoded sizes (`into_bytes` panics on any mismatch).
+fn assert_container_const_matches_runtime<const TXS_N: usize, const CXS_N: usize>(
+    val: &Containers,
+) {
+    let txs_expected = txs_runtime_encode(val);
+    assert_eq!(val.const_txs_size(), txs_expected.len());
+    assert_eq!(TXS_N, txs_expected.len());
+    let mut w = xdrs::txs::ConstWriter::<TXS_N>::new();
+    val.const_write_txs(&mut w);
+    assert_eq!(&w.into_bytes()[..], txs_expected.as_slice());
+
+    let cxs_expected = cxs_runtime_encode(val);
+    assert_eq!(val.const_cxs_size(), cxs_expected.len());
+    assert_eq!(CXS_N, cxs_expected.len());
+    let mut w = xdrs::cxs::ConstWriter::<CXS_N>::new();
+    val.const_write_cxs(&mut w);
+    assert_eq!(&w.into_bytes()[..], cxs_expected.as_slice());
+}
+
+#[test]
+fn container_empty_const_matches_runtime() {
+    let val = Containers {
+        nums: xdrs::VecM(Vec::new()),
+        raw: xdrs::VecM(Vec::new()),
+        bytes: xdrs::BytesM(Vec::new()),
+        name: xdrs::StringM(Vec::new()),
+        unbounded: xdrs::VecM(Vec::new()),
+        nested: xdrs::VecM(Vec::new()),
+        maybe: None,
+    };
+    // TXS: six zero length prefixes + absent option, 4 bytes each.
+    // CXS: the same seven zeros, 1 byte each.
+    assert_container_const_matches_runtime::<28, 7>(&val);
+}
+
+#[test]
+fn container_nonempty_const_matches_runtime() {
+    let val = Containers {
+        nums: vec![1, 70000, u32::MAX].try_into().unwrap(),
+        raw: vec![1, 2, 3].try_into().unwrap(),
+        bytes: vec![0xAA].try_into().unwrap(),
+        name: "xdr".try_into().unwrap(),
+        unbounded: vec![u64::MAX].try_into().unwrap(),
+        nested: vec![
+            vec![1u32, 2].try_into().unwrap(),
+            vec![3u32].try_into().unwrap(),
+        ]
+        .try_into()
+        .unwrap(),
+        maybe: Some(vec![0xBB, 0xCC].try_into().unwrap()),
+    };
+    assert_container_const_matches_runtime::<88, 42>(&val);
+}
+
+#[test]
+fn container_roundtrips() {
+    let val = Containers {
+        nums: vec![7].try_into().unwrap(),
+        raw: vec![8, 9].try_into().unwrap(),
+        bytes: vec![0xEE].try_into().unwrap(),
+        name: "hi".try_into().unwrap(),
+        unbounded: vec![10, 11].try_into().unwrap(),
+        nested: vec![vec![12u32].try_into().unwrap()].try_into().unwrap(),
+        maybe: None,
+    };
+    let cxs_decoded: Containers = xdrs::cxs::decode(&cxs_runtime_encode(&val)).unwrap();
+    assert_eq!(cxs_decoded, val);
+    let txs_decoded: Containers = xdrs::txs::decode(&txs_runtime_encode(&val)).unwrap();
+    assert_eq!(txs_decoded, val);
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[allow(dead_code)]
+enum ContainerEnum {
+    Nums(xdrs::VecM<u32, 5>) = 0,
+    Bytes(xdrs::BytesM<4>) = 1,
+}
+
+#[test]
+fn container_enum_const_matches_runtime() {
+    let val = ContainerEnum::Bytes(vec![0xAB, 0xCD].try_into().unwrap());
+
+    let txs_expected = txs_runtime_encode(&val);
+    assert_eq!(val.const_txs_size(), txs_expected.len());
+    // discriminant + length prefix + 2 bytes padded to 4
+    let mut w = xdrs::txs::ConstWriter::<12>::new();
+    val.const_write_txs(&mut w);
+    assert_eq!(&w.into_bytes()[..], txs_expected.as_slice());
+
+    let cxs_expected = cxs_runtime_encode(&val);
+    assert_eq!(val.const_cxs_size(), cxs_expected.len());
+    // discriminant + length prefix + 2 raw bytes
+    let mut w = xdrs::cxs::ConstWriter::<4>::new();
+    val.const_write_cxs(&mut w);
+    assert_eq!(&w.into_bytes()[..], cxs_expected.as_slice());
+}

@@ -30,6 +30,10 @@ jobs:
         run: cargo build --workspace
       - name: Test (root lib without alloc)
         run: cargo test -F int128
+      - name: Test (derive without alloc)
+        # const writers for VecM/BytesM/StringM are only exercised with
+        # non-empty static data in no-alloc builds
+        run: cargo test -F derive,int128
       - name: Test (feature permissive)
         run: cargo test -F permissive,int128 --test ints
       - name: Test (feature int128)

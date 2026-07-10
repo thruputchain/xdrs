@@ -211,6 +211,18 @@ impl<T: StaticIfNoAlloc, const MAX: u32> VecM<T, MAX> {
     pub fn as_vec(&self) -> &Vec<T> {
         self.as_ref()
     }
+
+    /// Returns the elements as a slice.
+    ///
+    /// Usable in `const` contexts.
+    #[must_use]
+    pub const fn as_slice(&self) -> &[T] {
+        #[cfg(feature = "alloc")]
+        let s: &[T] = self.0.as_slice();
+        #[cfg(not(feature = "alloc"))]
+        let s: &[T] = self.0;
+        s
+    }
 }
 
 #[allow(private_bounds)]
@@ -468,6 +480,27 @@ mod tests {
     extern crate alloc;
     #[cfg(feature = "alloc")]
     use alloc::vec;
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_as_slice_const() {
+        // Compile check that as_slice is const-callable. With alloc, VecM
+        // values cannot be used inside const eval (Vec's destructor is not
+        // const), so the const fn is exercised at runtime.
+        const fn as_slice_in_const<const M: u32>(v: &VecM<u32, M>) -> &[u32] {
+            v.as_slice()
+        }
+        let v: VecM<u32, 3> = vec![1, 2].try_into().unwrap();
+        assert_eq!(as_slice_in_const(&v), &[1, 2]);
+    }
+
+    #[test]
+    #[cfg(not(feature = "alloc"))]
+    fn test_as_slice_const() {
+        const V: VecM<u32, 3> = VecM(&[1, 2]);
+        const SLICE: &[u32] = V.as_slice();
+        assert_eq!(SLICE, &[1, 2]);
+    }
 
     #[test]
     #[cfg(feature = "alloc")]

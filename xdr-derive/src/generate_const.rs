@@ -198,6 +198,45 @@ fn const_size_value_expr(
         return Ok(quote! { #mod_path::size_opaque_variable((*#expr_ref).as_bytes().len()) });
     }
 
+    if let Some(max) = bytesm_stringm_max(ty) {
+        let max_guard = max_len_guard(&max);
+        return Ok(quote! {
+            {
+                let slice = (#expr_ref).as_slice();
+                #max_guard
+                #mod_path::size_opaque_variable(slice.len())
+            }
+        });
+    }
+
+    if let Some((elem, max)) = vecm_parts(ty) {
+        let max_guard = max_len_guard(&max);
+        if is_path_ident(elem, "u8") {
+            return Ok(quote! {
+                {
+                    let slice = (#expr_ref).as_slice();
+                    #max_guard
+                    #mod_path::size_opaque_variable(slice.len())
+                }
+            });
+        }
+        let inner_size = const_size_value_expr(quote! { &slice[i] }, elem, fmt)?;
+        return Ok(quote! {
+            {
+                let slice = (#expr_ref).as_slice();
+                ::core::assert!(slice.len() <= ::core::primitive::u32::MAX as usize, "slice length exceeds u32::MAX");
+                #max_guard
+                let mut total = #mod_path::size_u32(slice.len() as u32);
+                let mut i = 0;
+                while i < slice.len() {
+                    total += #inner_size;
+                    i += 1;
+                }
+                total
+            }
+        });
+    }
+
     if is_phantom_data(ty) {
         return Ok(quote! { 0 });
     }
@@ -312,6 +351,44 @@ fn const_write_value_expr(
 
     if is_str_ref(ty) {
         return Ok(quote! { w.write_opaque_variable((*#expr_ref).as_bytes()); });
+    }
+
+    if let Some(max) = bytesm_stringm_max(ty) {
+        let max_guard = max_len_guard(&max);
+        return Ok(quote! {
+            {
+                let slice = (#expr_ref).as_slice();
+                #max_guard
+                w.write_opaque_variable(slice);
+            }
+        });
+    }
+
+    if let Some((elem, max)) = vecm_parts(ty) {
+        let max_guard = max_len_guard(&max);
+        if is_path_ident(elem, "u8") {
+            return Ok(quote! {
+                {
+                    let slice = (#expr_ref).as_slice();
+                    #max_guard
+                    w.write_opaque_variable(slice);
+                }
+            });
+        }
+        let inner_write = const_write_value_expr(quote! { &slice[i] }, elem, fmt)?;
+        return Ok(quote! {
+            {
+                let slice = (#expr_ref).as_slice();
+                ::core::assert!(slice.len() <= ::core::primitive::u32::MAX as usize, "slice length exceeds u32::MAX");
+                #max_guard
+                w.write_u32(slice.len() as u32);
+                let mut i = 0;
+                while i < slice.len() {
+                    #inner_write
+                    i += 1;
+                }
+            }
+        });
     }
 
     if is_phantom_data(ty) {
@@ -572,6 +649,67 @@ mod tests {
     }
 
     #[test]
+    fn vecm_bytesm_stringm_are_recognized() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Containers {
+                nums: VecM<u32, 5>,
+                raw: VecM<u8, 4>,
+                bytes: BytesM<4>,
+                name: StringM<8>,
+            }
+        };
+
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        // VecM<u32, 5> writes a length prefix and iterates elements.
+        assert!(toks.contains("w.write_u32(slice.len()asu32)"));
+        assert!(toks.contains("whilei<slice.len()"));
+        // VecM<u8, _>, BytesM, and StringM take the opaque fast path.
+        assert!(toks.contains("w.write_opaque_variable(slice)"));
+        // Explicit MAX bounds become length guards.
+        assert!(toks.contains("slice.len()<=(5)asusize"));
+        assert!(toks.contains("slice.len()<=(4)asusize"));
+        assert!(toks.contains("slice.len()<=(8)asusize"));
+    }
+
+    #[test]
+    fn vecm_without_explicit_max_has_no_max_guard() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Unbounded {
+                items: VecM<u32>,
+            }
+        };
+
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        assert!(!toks.contains("lengthexceedsMAX"));
+    }
+
+    #[test]
+    fn vecm_max_accepts_const_generic_param() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Bounded<const M: u32> {
+                items: VecM<u32, M>,
+                blob: BytesM<M>,
+            }
+        };
+
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        assert!(toks.contains("slice.len()<=(M)asusize"));
+    }
+
+    #[test]
+    fn nested_vecm_recurses() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Nested {
+                items: VecM<VecM<u32, 2>, 3>,
+            }
+        };
+
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        // The inner VecM is reached through the outer element loop.
+        assert!(toks.contains("(&slice[i]).as_slice()"));
+    }
+
+    #[test]
     fn type_generics_are_rejected() {
         let input: syn::DeriveInput = syn::parse_quote! {
             struct Bad<T> {
@@ -827,6 +965,17 @@ fn check_supported_const_shape(ty: &syn::Type) -> Result<()> {
         return Ok(());
     }
 
+    if bytesm_stringm_max(ty).is_some() {
+        return Ok(());
+    }
+
+    if let Some((elem, _)) = vecm_parts(ty) {
+        if is_path_ident(elem, "u8") {
+            return Ok(());
+        }
+        return check_supported_const_shape(elem);
+    }
+
     if let Some(inner) = option_inner(ty) {
         return check_supported_const_shape(inner);
     }
@@ -870,6 +1019,65 @@ fn is_path_ident(ty: &syn::Type, name: &str) -> bool {
         return ident == name;
     }
     false
+}
+
+/// Matches `VecM<T>` / `VecM<T, MAX>` by last path segment, returning the
+/// element type and the `MAX` argument tokens when explicitly provided.
+fn vecm_parts(ty: &syn::Type) -> Option<(&syn::Type, Option<TokenStream>)> {
+    let seg = path_segment(ty, "VecM")?;
+    let args = angle_bracketed_args(seg)?;
+    let mut iter = args.args.iter();
+    let elem = match iter.next()? {
+        syn::GenericArgument::Type(t) => transparent_type(t),
+        _ => return None,
+    };
+    let max = match iter.next() {
+        None => None,
+        // A const argument that is a bare path (e.g. a const generic `N`)
+        // parses ambiguously as a Type; both forms splice back verbatim.
+        Some(arg @ (syn::GenericArgument::Const(_) | syn::GenericArgument::Type(_))) => {
+            Some(quote! { #arg })
+        }
+        Some(_) => return None,
+    };
+    if iter.next().is_some() {
+        return None;
+    }
+    Some((elem, max))
+}
+
+/// Matches `BytesM` / `StringM` (with or without an explicit `MAX` argument)
+/// by last path segment, returning the `MAX` argument tokens when provided.
+fn bytesm_stringm_max(ty: &syn::Type) -> Option<Option<TokenStream>> {
+    let seg = path_segment(ty, "BytesM").or_else(|| path_segment(ty, "StringM"))?;
+    let args = match &seg.arguments {
+        syn::PathArguments::None => return Some(None),
+        syn::PathArguments::AngleBracketed(args) => args,
+        syn::PathArguments::Parenthesized(_) => return None,
+    };
+    let mut iter = args.args.iter();
+    let max = match iter.next() {
+        None => None,
+        Some(arg @ (syn::GenericArgument::Const(_) | syn::GenericArgument::Type(_))) => {
+            Some(quote! { #arg })
+        }
+        Some(_) => return None,
+    };
+    if iter.next().is_some() {
+        return None;
+    }
+    Some(max)
+}
+
+/// Generates a length guard against an explicit `MAX` bound, if one was
+/// provided. Expects a `slice` binding to be in scope in the generated code.
+fn max_len_guard(max: &Option<TokenStream>) -> TokenStream {
+    match max {
+        Some(max) => quote! {
+            ::core::assert!(slice.len() <= (#max) as usize, "length exceeds MAX");
+        },
+        None => quote! {},
+    }
 }
 
 fn option_inner(ty: &syn::Type) -> Option<&syn::Type> {
