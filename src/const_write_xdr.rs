@@ -7,6 +7,10 @@
 //! worst-case encoded sizes for compile-time buffer sizing.
 
 use crate::{cxs, txs};
+use crate::encoded_max;
+use crate::valid_u32::ValidU32;
+use core::convert::Infallible;
+use core::marker::PhantomData;
 
 /// Types with an infallible, cursor-based XDR encoding and a (possibly
 /// unbounded) worst-case encoded size.
@@ -75,3 +79,498 @@ const_write_xdr_prim_impls! {
     (f32, write_f32, size_f32, 4, 4),
     (f64, write_f64, size_f64, 8, 8),
 }
+
+impl ConstWriteXDR for [u8] {
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        w.write_opaque_variable(self)
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        w.write_opaque_variable(self)
+    }
+    fn cxs_size(&self) -> usize {
+        cxs::const_writer::size_opaque_variable(self.len())
+    }
+    fn txs_size(&self) -> usize {
+        txs::const_writer::size_opaque_variable(self.len())
+    }
+}
+
+impl ConstWriteXDR for &[u8] {
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
+    #[inline]
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        w.write_opaque_variable(self)
+    }
+    #[inline]
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        w.write_opaque_variable(self)
+    }
+    #[inline]
+    fn cxs_size(&self) -> usize {
+        cxs::const_writer::size_opaque_variable(self.len())
+    }
+    #[inline]
+    fn txs_size(&self) -> usize {
+        txs::const_writer::size_opaque_variable(self.len())
+    }
+}
+
+impl<const N: usize> ConstWriteXDR for [u8; N] {
+    const MAX_CXS_LEN: Option<usize> = Some(cxs::const_writer::size_opaque_fixed(N));
+    const MAX_TXS_LEN: Option<usize> = Some(txs::const_writer::size_opaque_fixed(N));
+    #[inline]
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        let () = ValidU32::<N>::OK;
+        w.write_opaque_fixed(self)
+    }
+    #[inline]
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        let () = ValidU32::<N>::OK;
+        w.write_opaque_fixed(self)
+    }
+    #[inline]
+    fn cxs_size(&self) -> usize {
+        cxs::const_writer::size_opaque_fixed(N)
+    }
+    #[inline]
+    fn txs_size(&self) -> usize {
+        txs::const_writer::size_opaque_fixed(N)
+    }
+}
+
+impl<T: ConstWriteXDR, const N: usize> ConstWriteXDR for [T; N] {
+    const MAX_CXS_LEN: Option<usize> = encoded_max::mul(N, T::MAX_CXS_LEN);
+    const MAX_TXS_LEN: Option<usize> = encoded_max::mul(N, T::MAX_TXS_LEN);
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        let () = ValidU32::<N>::OK;
+        let mut i = 0;
+        while i < N {
+            self[i].write_cxs(w);
+            i += 1;
+        }
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        let () = ValidU32::<N>::OK;
+        let mut i = 0;
+        while i < N {
+            self[i].write_txs(w);
+            i += 1;
+        }
+    }
+    fn cxs_size(&self) -> usize {
+        let mut s = 0;
+        let mut i = 0;
+        while i < N {
+            s += self[i].cxs_size();
+            i += 1;
+        }
+        s
+    }
+    fn txs_size(&self) -> usize {
+        let mut s = 0;
+        let mut i = 0;
+        while i < N {
+            s += self[i].txs_size();
+            i += 1;
+        }
+        s
+    }
+}
+
+impl<T: ConstWriteXDR> ConstWriteXDR for [T] {
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        assert!(self.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
+        w.write_u32(self.len() as u32);
+        for elt in self {
+            elt.write_cxs(w);
+        }
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        assert!(self.len() <= u32::MAX as usize, "array length exceeds u32::MAX");
+        w.write_u32(self.len() as u32);
+        for elt in self {
+            elt.write_txs(w);
+        }
+    }
+    fn cxs_size(&self) -> usize {
+        let mut s = cxs::const_writer::size_u32(self.len() as u32);
+        for elt in self {
+            s += elt.cxs_size();
+        }
+        s
+    }
+    fn txs_size(&self) -> usize {
+        let mut s = 4;
+        for elt in self {
+            s += elt.txs_size();
+        }
+        s
+    }
+}
+
+impl<T: ConstWriteXDR> ConstWriteXDR for &T {
+    const MAX_CXS_LEN: Option<usize> = T::MAX_CXS_LEN;
+    const MAX_TXS_LEN: Option<usize> = T::MAX_TXS_LEN;
+    #[inline]
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        (*self).write_cxs(w)
+    }
+    #[inline]
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        (*self).write_txs(w)
+    }
+    #[inline]
+    fn cxs_size(&self) -> usize {
+        (*self).cxs_size()
+    }
+    #[inline]
+    fn txs_size(&self) -> usize {
+        (*self).txs_size()
+    }
+}
+
+impl<T: ConstWriteXDR> ConstWriteXDR for &mut T {
+    const MAX_CXS_LEN: Option<usize> = T::MAX_CXS_LEN;
+    const MAX_TXS_LEN: Option<usize> = T::MAX_TXS_LEN;
+    #[inline]
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        (**self).write_cxs(w)
+    }
+    #[inline]
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        (**self).write_txs(w)
+    }
+    #[inline]
+    fn cxs_size(&self) -> usize {
+        (**self).cxs_size()
+    }
+    #[inline]
+    fn txs_size(&self) -> usize {
+        (**self).txs_size()
+    }
+}
+
+impl<T: ConstWriteXDR> ConstWriteXDR for &[T] {
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
+    #[inline(always)]
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        <[T] as ConstWriteXDR>::write_cxs(*self, w)
+    }
+    #[inline(always)]
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        <[T] as ConstWriteXDR>::write_txs(*self, w)
+    }
+    #[inline(always)]
+    fn cxs_size(&self) -> usize {
+        <[T] as ConstWriteXDR>::cxs_size(*self)
+    }
+    #[inline(always)]
+    fn txs_size(&self) -> usize {
+        <[T] as ConstWriteXDR>::txs_size(*self)
+    }
+}
+
+impl ConstWriteXDR for str {
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        w.write_opaque_variable(self.as_bytes())
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        w.write_opaque_variable(self.as_bytes())
+    }
+    fn cxs_size(&self) -> usize {
+        cxs::const_writer::size_opaque_variable(self.len())
+    }
+    fn txs_size(&self) -> usize {
+        txs::const_writer::size_opaque_variable(self.len())
+    }
+}
+
+impl ConstWriteXDR for &str {
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        w.write_opaque_variable((*self).as_bytes())
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        w.write_opaque_variable((*self).as_bytes())
+    }
+    fn cxs_size(&self) -> usize {
+        cxs::const_writer::size_opaque_variable((*self).len())
+    }
+    fn txs_size(&self) -> usize {
+        txs::const_writer::size_opaque_variable((*self).len())
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl ConstWriteXDR for alloc::string::String {
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        self.as_str().write_cxs(w)
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        self.as_str().write_txs(w)
+    }
+    fn cxs_size(&self) -> usize {
+        self.as_str().cxs_size()
+    }
+    fn txs_size(&self) -> usize {
+        self.as_str().txs_size()
+    }
+}
+
+impl ConstWriteXDR for () {
+    const MAX_CXS_LEN: Option<usize> = Some(0);
+    const MAX_TXS_LEN: Option<usize> = Some(0);
+    fn write_cxs(&self, _w: &mut cxs::Cursor<'_>) {}
+    fn write_txs(&self, _w: &mut txs::Cursor<'_>) {}
+    fn cxs_size(&self) -> usize {
+        0
+    }
+    fn txs_size(&self) -> usize {
+        0
+    }
+}
+
+impl ConstWriteXDR for Infallible {
+    const MAX_CXS_LEN: Option<usize> = Some(0);
+    const MAX_TXS_LEN: Option<usize> = Some(0);
+    fn write_cxs(&self, _w: &mut cxs::Cursor<'_>) {
+        match *self {}
+    }
+    fn write_txs(&self, _w: &mut txs::Cursor<'_>) {
+        match *self {}
+    }
+    fn cxs_size(&self) -> usize {
+        match *self {}
+    }
+    fn txs_size(&self) -> usize {
+        match *self {}
+    }
+}
+
+macro_rules! const_write_tuple {
+    { $( ($v:ident, $t:ident) ),+ } => {
+        impl<$($t),+> ConstWriteXDR for ($($t),+)
+        where
+            $( $t: ConstWriteXDR, )+
+        {
+            const MAX_CXS_LEN: Option<usize> = {
+                let mut acc: Option<usize> = Some(0);
+                $( acc = encoded_max::add(acc, <$t as ConstWriteXDR>::MAX_CXS_LEN); )+
+                acc
+            };
+            const MAX_TXS_LEN: Option<usize> = {
+                let mut acc: Option<usize> = Some(0);
+                $( acc = encoded_max::add(acc, <$t as ConstWriteXDR>::MAX_TXS_LEN); )+
+                acc
+            };
+            fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+                let ( $($v),+ ) = self;
+                $( $v.write_cxs(w); )+
+            }
+            fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+                let ( $($v),+ ) = self;
+                $( $v.write_txs(w); )+
+            }
+            fn cxs_size(&self) -> usize {
+                let ( $($v),+ ) = self;
+                0 $( + $v.cxs_size() )+
+            }
+            fn txs_size(&self) -> usize {
+                let ( $($v),+ ) = self;
+                0 $( + $v.txs_size() )+
+            }
+        }
+    };
+}
+
+const_write_tuple! { (t0, T0), (t1, T1) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7), (t8, T8) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7), (t8, T8), (t9, T9) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7), (t8, T8), (t9, T9), (t10, T10) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7), (t8, T8), (t9, T9), (t10, T10), (t11, T11) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7), (t8, T8), (t9, T9), (t10, T10), (t11, T11), (t12, T12) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7), (t8, T8), (t9, T9), (t10, T10), (t11, T11), (t12, T12), (t13, T13) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7), (t8, T8), (t9, T9), (t10, T10), (t11, T11), (t12, T12), (t13, T13), (t14, T14) }
+const_write_tuple! { (t0, T0), (t1, T1), (t2, T2), (t3, T3), (t4, T4), (t5, T5), (t6, T6), (t7, T7), (t8, T8), (t9, T9), (t10, T10), (t11, T11), (t12, T12), (t13, T13), (t14, T14), (t15, T15) }
+
+impl<T: ConstWriteXDR> ConstWriteXDR for (T,) {
+    const MAX_CXS_LEN: Option<usize> = T::MAX_CXS_LEN;
+    const MAX_TXS_LEN: Option<usize> = T::MAX_TXS_LEN;
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        let (t,) = self;
+        t.write_cxs(w);
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        let (t,) = self;
+        t.write_txs(w);
+    }
+    fn cxs_size(&self) -> usize {
+        let (t,) = self;
+        t.cxs_size()
+    }
+    fn txs_size(&self) -> usize {
+        let (t,) = self;
+        t.txs_size()
+    }
+}
+
+impl<T: ConstWriteXDR> ConstWriteXDR for Option<T> {
+    // CXS discriminant (i32 0|1) encodes in 1 byte; TXS in 4.
+    const MAX_CXS_LEN: Option<usize> = encoded_max::add(Some(1), T::MAX_CXS_LEN);
+    const MAX_TXS_LEN: Option<usize> = encoded_max::add(Some(4), T::MAX_TXS_LEN);
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        match self {
+            Some(v) => {
+                w.write_i32(1);
+                v.write_cxs(w);
+            }
+            None => w.write_i32(0),
+        }
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        match self {
+            Some(v) => {
+                w.write_i32(1);
+                v.write_txs(w);
+            }
+            None => w.write_i32(0),
+        }
+    }
+    fn cxs_size(&self) -> usize {
+        match self {
+            Some(v) => cxs::const_writer::size_i32(1) + v.cxs_size(),
+            None => cxs::const_writer::size_i32(0),
+        }
+    }
+    fn txs_size(&self) -> usize {
+        match self {
+            Some(v) => 4 + v.txs_size(),
+            None => 4,
+        }
+    }
+}
+
+impl<T, E> ConstWriteXDR for Result<T, E>
+where
+    T: ConstWriteXDR,
+    E: ConstWriteXDR,
+{
+    const MAX_CXS_LEN: Option<usize> =
+        encoded_max::add(Some(1), encoded_max::max(T::MAX_CXS_LEN, E::MAX_CXS_LEN));
+    const MAX_TXS_LEN: Option<usize> =
+        encoded_max::add(Some(4), encoded_max::max(T::MAX_TXS_LEN, E::MAX_TXS_LEN));
+    fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+        match self {
+            Ok(x) => {
+                w.write_i32(0);
+                x.write_cxs(w);
+            }
+            Err(e) => {
+                w.write_i32(1);
+                e.write_cxs(w);
+            }
+        }
+    }
+    fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+        match self {
+            Ok(x) => {
+                w.write_i32(0);
+                x.write_txs(w);
+            }
+            Err(e) => {
+                w.write_i32(1);
+                e.write_txs(w);
+            }
+        }
+    }
+    fn cxs_size(&self) -> usize {
+        match self {
+            Ok(x) => cxs::const_writer::size_i32(0) + x.cxs_size(),
+            Err(e) => cxs::const_writer::size_i32(1) + e.cxs_size(),
+        }
+    }
+    fn txs_size(&self) -> usize {
+        match self {
+            Ok(x) => 4 + x.txs_size(),
+            Err(e) => 4 + e.txs_size(),
+        }
+    }
+}
+
+impl<T> ConstWriteXDR for PhantomData<T> {
+    const MAX_CXS_LEN: Option<usize> = Some(0);
+    const MAX_TXS_LEN: Option<usize> = Some(0);
+    fn write_cxs(&self, _w: &mut cxs::Cursor<'_>) {}
+    fn write_txs(&self, _w: &mut txs::Cursor<'_>) {}
+    fn cxs_size(&self) -> usize {
+        0
+    }
+    fn txs_size(&self) -> usize {
+        0
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+const _: () = {
+    use alloc::vec::Vec;
+
+    impl ConstWriteXDR for Vec<u8> {
+        const MAX_CXS_LEN: Option<usize> = None;
+        const MAX_TXS_LEN: Option<usize> = None;
+        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+            w.write_opaque_variable(self.as_ref())
+        }
+        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+            w.write_opaque_variable(self.as_ref())
+        }
+        fn cxs_size(&self) -> usize {
+            cxs::const_writer::size_opaque_variable(self.len())
+        }
+        fn txs_size(&self) -> usize {
+            txs::const_writer::size_opaque_variable(self.len())
+        }
+    }
+
+    impl<T> ConstWriteXDR for Vec<T>
+    where
+        T: ConstWriteXDR,
+    {
+        const MAX_CXS_LEN: Option<usize> = None;
+        const MAX_TXS_LEN: Option<usize> = None;
+        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+            let slice: &[T] = self.as_ref();
+            slice.write_cxs(w)
+        }
+        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+            let slice: &[T] = self.as_ref();
+            slice.write_txs(w)
+        }
+        fn cxs_size(&self) -> usize {
+            let slice: &[T] = self.as_ref();
+            slice.cxs_size()
+        }
+        fn txs_size(&self) -> usize {
+            let slice: &[T] = self.as_ref();
+            slice.txs_size()
+        }
+    }
+};

@@ -75,3 +75,54 @@ fn primitive_max_values() {
     assert_eq!(<bool as ConstWriteXDR>::MAX_TXS_LEN, Some(4));
     assert_eq!(<f64 as ConstWriteXDR>::MAX_CXS_LEN, Some(8));
 }
+
+#[test]
+fn composite_shapes_match_reference() {
+    assert_trait_matches(&[0xdeu8, 0xad, 0xbe]); // [u8; 3] opaque fixed
+    assert_trait_matches(&[1u32, 65536, 0]); // [u32; 3]
+    assert_trait_matches(&Some(65536u32));
+    assert_trait_matches(&Option::<u32>::None);
+    assert_trait_matches(&Ok::<u32, i64>(7));
+    assert_trait_matches(&Err::<u32, i64>(-9));
+    assert_trait_matches(&(1u32, -1i64, true)); // tuple
+    assert_trait_matches(&"hello"); // &str
+    let s: &[u8] = &[9, 8, 7];
+    assert_trait_matches(&s); // &[u8] variable opaque
+    let t: &[u32] = &[1, 2, 3];
+    assert_trait_matches(&t); // &[T]
+}
+
+#[test]
+fn composite_max_values() {
+    assert_eq!(<[u8; 5] as ConstWriteXDR>::MAX_CXS_LEN, Some(5));
+    assert_eq!(<[u8; 5] as ConstWriteXDR>::MAX_TXS_LEN, Some(8)); // padded to 4
+    assert_eq!(<[u32; 3] as ConstWriteXDR>::MAX_CXS_LEN, Some(15));
+    assert_eq!(<Option<u64> as ConstWriteXDR>::MAX_CXS_LEN, Some(10));
+    assert_eq!(<Option<u64> as ConstWriteXDR>::MAX_TXS_LEN, Some(12));
+    assert_eq!(<Result<u32, i64> as ConstWriteXDR>::MAX_CXS_LEN, Some(10)); // 1 + max(5, 9)
+    assert_eq!(<(u32, bool) as ConstWriteXDR>::MAX_CXS_LEN, Some(6));
+    assert_eq!(<&str as ConstWriteXDR>::MAX_CXS_LEN, None);
+    assert_eq!(<&[u8] as ConstWriteXDR>::MAX_CXS_LEN, None);
+    assert_eq!(<() as ConstWriteXDR>::MAX_CXS_LEN, Some(0));
+}
+
+#[cfg(feature = "int128")]
+#[test]
+fn int128_trait_impls() {
+    assert_trait_matches(&i128::MAX);
+    assert_trait_matches(&u128::MAX);
+    assert_eq!(<i128 as ConstWriteXDR>::MAX_CXS_LEN, Some(18));
+    assert_eq!(<u128 as ConstWriteXDR>::MAX_TXS_LEN, Some(16));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn alloc_impls() {
+    assert_eq!(<std::vec::Vec<u8> as ConstWriteXDR>::MAX_CXS_LEN, None);
+    assert_eq!(<std::vec::Vec<u8> as ConstWriteXDR>::MAX_TXS_LEN, None);
+    assert_eq!(<std::string::String as ConstWriteXDR>::MAX_CXS_LEN, None);
+    assert_eq!(<std::string::String as ConstWriteXDR>::MAX_TXS_LEN, None);
+    // byte equality for a small Vec<u32>
+    let v: std::vec::Vec<u32> = std::vec![1u32, 2, 3];
+    assert_trait_matches(&v);
+}

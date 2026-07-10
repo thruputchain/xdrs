@@ -29,6 +29,53 @@ const _: () = {
 };
 
 const _: () = {
+    use crate::const_write_xdr::ConstWriteXDR;
+    use crate::{cxs, txs};
+
+    impl ConstWriteXDR for i128 {
+        const MAX_CXS_LEN: Option<usize> = Some(18);
+        const MAX_TXS_LEN: Option<usize> = Some(16);
+        #[inline]
+        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+            w.write_i128(*self)
+        }
+        #[inline]
+        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+            w.write_i128(*self)
+        }
+        #[inline]
+        fn cxs_size(&self) -> usize {
+            cxs::const_writer::size_i128(*self)
+        }
+        #[inline]
+        fn txs_size(&self) -> usize {
+            txs::const_writer::size_i128(*self)
+        }
+    }
+
+    impl ConstWriteXDR for u128 {
+        const MAX_CXS_LEN: Option<usize> = Some(18);
+        const MAX_TXS_LEN: Option<usize> = Some(16);
+        #[inline]
+        fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
+            w.write_u128(*self)
+        }
+        #[inline]
+        fn write_txs(&self, w: &mut txs::Cursor<'_>) {
+            w.write_u128(*self)
+        }
+        #[inline]
+        fn cxs_size(&self) -> usize {
+            cxs::const_writer::size_u128(*self)
+        }
+        #[inline]
+        fn txs_size(&self) -> usize {
+            txs::const_writer::size_u128(*self)
+        }
+    }
+};
+
+const _: () = {
     use crate::serialize::writer::*;
     use crate::write_xdr::*;
 
