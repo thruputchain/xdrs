@@ -5,6 +5,7 @@
 
 use super::limits::*;
 use crate::serialize::writer::*;
+use crate::serialize::writer_unchecked::*;
 
 const V_MULTIBYTE: u8 = 63;
 const S_8BYTE: u8 = 3 << 6;
@@ -189,5 +190,203 @@ where
         let s = S_HEADER;
         let h = v | s;
         p.put_byte(h)
+    }
+}
+
+/// The unchecked counterpart to [`Put`]: implement these basic byte
+/// operations to get a `WriterUnchecked<CXS>` implementation for free.
+pub(crate) trait PutUnchecked {
+    /// # Safety
+    /// The underlying buffer must have space for 1 more byte.
+    unsafe fn put_byte(&mut self, b: u8);
+
+    /// # Safety
+    /// The underlying buffer must have space for `bytes.len()` more bytes.
+    unsafe fn put_bytes(&mut self, bytes: &[u8]);
+}
+
+impl<P> WriterUnchecked<CXS> for P
+where
+    P: PutUnchecked,
+{
+    #[inline]
+    unsafe fn write_opaque_fixed(&mut self, bytes: &[u8]) {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(bytes) }
+    }
+
+    unsafe fn write_opaque_variable(&mut self, bytes: &[u8]) {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+        // SAFETY: forwarded caller contract.
+        unsafe {
+            self.write_u32(bytes.len() as u32);
+            self.put_bytes(bytes);
+        }
+    }
+
+    #[inline]
+    unsafe fn write_bool(&mut self, v: bool) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.write_i32(if v { 1 } else { 0 }) }
+    }
+
+    #[inline]
+    unsafe fn write_i64(&mut self, n: i64) {
+        if n > i32::MAX as i64 || n < i32::MIN as i64 {
+            // Use the 8-byte representation
+            let h = V_MULTIBYTE | S_8BYTE;
+            let b = n.to_le_bytes();
+            let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+            // SAFETY: forwarded caller contract.
+            unsafe { self.put_bytes(&combined) }
+        } else {
+            // SAFETY: forwarded caller contract.
+            unsafe { self.write_i32(n as i32) }
+        }
+    }
+
+    #[inline]
+    unsafe fn write_i32(&mut self, n: i32) {
+        if n > i16::MAX as i32 || n < i16::MIN as i32 {
+            // use 4-byte repr
+            let h = V_MULTIBYTE | S_4BYTE;
+            let b = n.to_le_bytes();
+            let combined = [h, b[0], b[1], b[2], b[3]];
+            // SAFETY: forwarded caller contract.
+            unsafe { self.put_bytes(&combined) }
+        } else {
+            // SAFETY: forwarded caller contract.
+            unsafe { self.write_i16(n as i16) }
+        }
+    }
+
+    #[inline]
+    unsafe fn write_i16(&mut self, n: i16) {
+        if n > i8::MAX as i16 || n < i8::MIN as i16 {
+            // use 2-byte repr
+            let h = V_MULTIBYTE | S_2BYTE;
+            let b = n.to_le_bytes();
+            let combined = [h, b[0], b[1]];
+            // SAFETY: forwarded caller contract.
+            unsafe { self.put_bytes(&combined) }
+        } else {
+            // SAFETY: forwarded caller contract.
+            unsafe { write_i8_unchecked(self, n as i8) }
+        }
+    }
+
+    #[inline]
+    unsafe fn write_u64(&mut self, n: u64) {
+        if n > u32::MAX as u64 {
+            // Use 8-byte representation
+            let h = V_MULTIBYTE | S_8BYTE;
+            let b = n.to_le_bytes();
+            let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+            // SAFETY: forwarded caller contract.
+            unsafe { self.put_bytes(&combined) }
+        } else {
+            // SAFETY: forwarded caller contract.
+            unsafe { self.write_u32(n as u32) }
+        }
+    }
+
+    #[inline]
+    unsafe fn write_u32(&mut self, n: u32) {
+        if n > u16::MAX as u32 {
+            // Use 4-byte representation
+            let h = V_MULTIBYTE | S_4BYTE;
+            let b = n.to_le_bytes();
+            let combined = [h, b[0], b[1], b[2], b[3]];
+            // SAFETY: forwarded caller contract.
+            unsafe { self.put_bytes(&combined) }
+        } else {
+            // SAFETY: forwarded caller contract.
+            unsafe { self.write_u16(n as u16) }
+        }
+    }
+
+    #[inline]
+    unsafe fn write_u16(&mut self, n: u16) {
+        if n > u8::MAX as u16 {
+            // Use 2-byte representation
+            let h = V_MULTIBYTE | S_2BYTE;
+            let b = n.to_le_bytes();
+            let combined = [h, b[0], b[1]];
+            // SAFETY: forwarded caller contract.
+            unsafe { self.put_bytes(&combined) }
+        } else {
+            // SAFETY: forwarded caller contract.
+            unsafe { write_u8_unchecked(self, n as u8) }
+        }
+    }
+
+    /// Writes a 32-bit IEEE 754 float as raw little-endian bytes,
+    /// mirroring the checked CXS writer.
+    #[inline]
+    unsafe fn write_f32(&mut self, n: f32) {
+        let bytes: [u8; 4] = n.to_le_bytes();
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(&bytes) }
+    }
+
+    /// Writes a 64-bit IEEE 754 double as raw little-endian bytes,
+    /// mirroring the checked CXS writer.
+    #[inline]
+    unsafe fn write_f64(&mut self, n: f64) {
+        let bytes: [u8; 8] = n.to_le_bytes();
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(&bytes) }
+    }
+}
+
+/// # Safety
+/// The underlying buffer must have space for the encoded form (1-2 bytes).
+#[inline]
+unsafe fn write_u8_unchecked<P>(p: &mut P, n: u8)
+where
+    P: PutUnchecked,
+{
+    if n > UH_MAX {
+        // Use 1-additional-byte representation
+        let h = V_MULTIBYTE | S_1BYTE;
+        let combined = [h, n];
+        // SAFETY: forwarded caller contract.
+        unsafe { p.put_bytes(&combined) }
+    } else {
+        // Use header-byte-only representation
+        // SAFETY: forwarded caller contract.
+        unsafe { p.put_byte(n) }
+    }
+}
+
+/// # Safety
+/// The underlying buffer must have space for the encoded form (1-2 bytes).
+#[inline]
+unsafe fn write_i8_unchecked<P>(p: &mut P, n: i8)
+where
+    P: PutUnchecked,
+{
+    if !(IH_MIN..=IH_MAX).contains(&n) {
+        // Use the 1-byte repr
+        let h = V_MULTIBYTE | S_1BYTE;
+        let combined = [h, n as u8];
+        // SAFETY: forwarded caller contract.
+        unsafe { p.put_bytes(&combined) }
+    } else {
+        // Represent this small, signed number in the header-byte with 6-bit,
+        // one's-complement encoding
+        let nu: u8 = n.unsigned_abs();
+        let v = if n >= 0 {
+            nu
+        } else {
+            // invert and set the high bit
+            (!nu & 0b01_1111) | 0b0010_0000
+        };
+
+        let s = S_HEADER;
+        let h = v | s;
+        // SAFETY: forwarded caller contract.
+        unsafe { p.put_byte(h) }
     }
 }
