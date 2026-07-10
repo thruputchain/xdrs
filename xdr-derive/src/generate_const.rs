@@ -101,6 +101,11 @@ fn inherent_struct_impl(input: &syn::DeriveInput, item: &syn::DataStruct) -> Res
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
+    // Trait-only field types have no inherent const encoders to call.
+    for f in &item.fields {
+        check_field_has_inherent_const_encoder(&f.ty)?;
+    }
+
     let cxs_fields = item
         .fields
         .iter()
@@ -427,6 +432,13 @@ fn const_write_enum(
 fn inherent_enum_impl(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    // Trait-only field types have no inherent const encoders to call.
+    for v in &item.variants {
+        for f in &v.fields {
+            check_field_has_inherent_const_encoder(&f.ty)?;
+        }
+    }
 
     let cxs_arms = item
         .variants
@@ -1040,6 +1052,55 @@ mod tests {
     }
 
     #[test]
+    fn trait_only_field_type_errors_targeted() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct HasString {
+                name: StringM<16>,
+                id: u32,
+            }
+        };
+        let err = const_write_xdr(&input).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("StringM")
+                && msg.contains("only the `ConstWriteXDR` trait impl")
+                && msg.contains("runtime_only"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
+    fn trait_only_field_type_ok_with_runtime_only() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            #[xdrs(runtime_only)]
+            struct HasString {
+                name: StringM<16>,
+                id: u32,
+            }
+        };
+        // runtime_only emits only the trait impl (no inherent const fns), so
+        // trait-only field types are fine.
+        let toks = const_write_xdr(&input).unwrap().to_string();
+        assert!(toks.contains("ConstWriteXDR for"));
+        assert!(!toks.contains("const_write_cxs"));
+    }
+
+    #[test]
+    fn trait_only_field_type_errors_through_wrappers() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct HasBoxedFoo {
+                inner: Option<xdr_common::Box<Foo>>,
+            }
+        };
+        let err = const_write_xdr(&input).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Box") && msg.contains("runtime_only"),
+            "unexpected error message: {msg}"
+        );
+    }
+
+    #[test]
     fn slice_guard_uses_qualified_u32_max() {
         let input: syn::DeriveInput = syn::parse_quote! {
             struct WithSlice<'a> {
@@ -1424,4 +1485,78 @@ fn is_phantom_data(ty: &syn::Type) -> bool {
 
 fn is_infallible(ty: &syn::Type) -> bool {
     path_segment(ty, "Infallible").is_some()
+}
+
+/// Container / alloc type names whose `ConstWriteXDR` impl provides ONLY the
+/// trait (no inherent `const fn` encoders). A field of one of these types in a
+/// non-`runtime_only` derive would compile the named-leaf fallback down to a
+/// call to a nonexistent inherent method (`const_write_cxs` / `const_cxs_size`),
+/// producing an opaque "no method named …" error. We pre-scan for them and
+/// emit a targeted error instead.
+///
+/// Matching is by the path's LAST segment ident — the derive's established
+/// convention (the same way `Option`/`Result` are recognized). It can
+/// false-positive on a user type coincidentally named e.g. `Vec`; see the
+/// hygiene section of the derive docs.
+const TRAIT_ONLY_CONST_TYPES: &[&str] = &["VecM", "BytesM", "StringM", "Box", "Vec", "String"];
+
+/// Pre-scan a field type (used only on the INHERENT-emission path) and reject
+/// types that provide only the `ConstWriteXDR` trait impl. Recurses through the
+/// same syntactically-recognized wrappers as the write/size dispatch
+/// (Option/Result/tuples/arrays/slices/references) so e.g. `Option<StringM<16>>`
+/// is caught too.
+fn check_field_has_inherent_const_encoder(ty: &syn::Type) -> Result<()> {
+    let ty = transparent_type(ty);
+
+    // Leaf shapes the inherent dispatch handles directly (never a trait call).
+    if primitive_size_fn(ty).is_some()
+        || is_u8_array(ty)
+        || is_u8_slice_ref(ty)
+        || is_str_ref(ty)
+        || is_phantom_data(ty)
+        || is_infallible(ty)
+    {
+        return Ok(());
+    }
+
+    if let Some(inner) = option_inner(ty) {
+        return check_field_has_inherent_const_encoder(inner);
+    }
+    if let Some((ok_ty, err_ty)) = result_inners(ty) {
+        check_field_has_inherent_const_encoder(ok_ty)?;
+        return check_field_has_inherent_const_encoder(err_ty);
+    }
+    if let Some(inner) = slice_ref_inner(ty) {
+        return check_field_has_inherent_const_encoder(inner);
+    }
+    if let Some((inner, _)) = array_inner(ty) {
+        return check_field_has_inherent_const_encoder(inner);
+    }
+    if let Some(elems) = tuple_elems(ty) {
+        for elem in elems {
+            check_field_has_inherent_const_encoder(elem)?;
+        }
+        return Ok(());
+    }
+    if let syn::Type::Reference(r) = ty {
+        return check_field_has_inherent_const_encoder(&r.elem);
+    }
+
+    if let syn::Type::Path(p) = ty
+        && let Some(seg) = p.path.segments.last()
+    {
+        let name = seg.ident.to_string();
+        if let Some(matched) = TRAIT_ONLY_CONST_TYPES.iter().find(|n| **n == name) {
+            return err(
+                ty,
+                format!(
+                    "`{matched}` provides only the `ConstWriteXDR` trait impl \
+                     (no inherent const encoders); add `#[xdrs(runtime_only)]` to \
+                     the deriving type to emit only the trait impl"
+                ),
+            );
+        }
+    }
+
+    Ok(())
 }

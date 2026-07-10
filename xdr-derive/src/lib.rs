@@ -332,13 +332,37 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// `MAX_*_LEN`, so every field type (and every enum-variant field type) must
 /// itself implement `ConstWriteXDR`.
 ///
+/// ## Pointer-cut affects derived `MAX_*_LEN`
+///
+/// `ConstWriteXDR`'s `MAX_*_LEN` folds through by-value layout only; boundedness
+/// does not cross pointers. Any field held **behind a pointer** — `&T`,
+/// `&mut T`, [`Box<T>`](../xdrs/type.Box.html), or a heap-backed element
+/// container [`VecM<T, N>`](../xdrs/struct.VecM.html) (the byte-shaped
+/// `VecM<u8, N>` is exempt) — contributes `None` to the fold, so a struct or
+/// enum with such a field derives `MAX_*_LEN == None` even when a finite bound
+/// nominally exists. This is what lets recursive types (`Tree { children:
+/// VecM<Tree, N> }`, `Expr { inner: Box<Expr> }`, `Node { next: Option<&Node> }`)
+/// derive without a const-evaluation cycle. Inline containers (`[T; N]`,
+/// heapless `Vec`/`String`) and byte-shaped bounded types keep exact bounds.
+///
 /// # `#[xdrs(runtime_only)]`
 ///
 /// Apply `#[xdrs(runtime_only)]` to skip the inherent `const fn`s and emit only
 /// the trait impl, with direct (non-`const`) method bodies. Use this for types
-/// whose fields have no inherent const encoders — for example a struct holding a
-/// [`StringM`](../xdrs/struct.StringM.html), whose encoding is not `const`-compatible. The `MAX_*_LEN`
-/// consts are still provided.
+/// whose fields have no inherent const encoders — the byte-shaped bounded types
+/// and alloc containers ([`StringM`](../xdrs/struct.StringM.html),
+/// [`BytesM`](../xdrs/struct.BytesM.html), [`VecM`](../xdrs/struct.VecM.html),
+/// `Box`, `Vec`, `String`) provide only the `ConstWriteXDR` trait impl, not
+/// inherent `const fn` encoders. The `MAX_*_LEN` consts are still provided.
+///
+/// Without `#[xdrs(runtime_only)]`, a field of such a type triggers a **targeted
+/// compile error** at that field naming the offending type and directing you
+/// here, rather than an opaque "no method named `const_write_cxs`". The check
+/// recurses through the recognized wrappers (`Option`/`Result`/tuples/arrays/
+/// slices/references), so `Option<StringM<16>>` is caught too. References are
+/// exempt: a `&T` field falls through to the referent's inherent const encoders
+/// on the inherent path, so reference-recursive types (`Node<'a>` above) derive
+/// without `#[xdrs(runtime_only)]`.
 ///
 /// # Limitations
 ///
@@ -405,6 +429,13 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// methods (i.e. it must itself derive `ConstWriteXDR` or provide them manually).
 /// The same applies to `PhantomData` — if you need a type-alias, wrap it in a
 /// newtype and derive `ConstWriteXDR` on the newtype instead.
+///
+/// The trait-only-field error (see `#[xdrs(runtime_only)]`) matches the same
+/// way: by the field type's **last path segment** against `VecM`, `BytesM`,
+/// `StringM`, `Box`, `Vec`, and `String`. A user type coincidentally named,
+/// e.g., `Vec` — even one that *does* provide inherent const encoders — will
+/// false-positive and be rejected on the inherent path; use a differently-named
+/// newtype or `#[xdrs(runtime_only)]`.
 ///
 #[proc_macro_derive(ConstWriteXDR, attributes(xdr, xdrs))]
 pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {

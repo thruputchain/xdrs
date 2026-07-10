@@ -104,6 +104,20 @@ Key properties:
   `const N: usize = match T::MAX_CXS_LEN { Some(n) => n, None => panic!("unbounded") };`
   (const panic = compile error). No `generic_const_exprs` needed —
   `Cursor`/`ConstWriter` keep the caller-picks-buffer shape.
+- **Pointer-cut invariant (MAX semantics):** `MAX_*_LEN` folds through by-value
+  layout only; boundedness does not cross pointers. `&T`, `&mut T`, `Box<T>`,
+  and heap-backed element containers (`VecM<T, N>`) report `None` even when a
+  finite bound exists. Inline containers (`[T; N]`, heapless `Vec`/`String`) and
+  byte-shaped bounded types (`BytesM`/`StringM`/`VecM<u8, N>`) keep exact bounds.
+  This makes const-eval cycles for recursive types impossible by construction: a
+  cycle needs a type to transitively contain itself; by-value self-containment is
+  unrepresentable in Rust, so every recursion passes through indirection, and if
+  every indirection impl reports literal `None` without reading `T`'s consts, no
+  cycle can form. **Trade-off:** `VecM<T, N>` no longer contributes its finite
+  worst case, so a struct with a bounded non-byte `VecM` field is now `None`
+  (routed to the fallible path) rather than a large `Some`. A future opt-in
+  (e.g. a `#[xdrs(bounded)]` marker that re-enables folding for known-acyclic
+  fields) is **deferred** — the surgical cut is the conservative default.
 
 ### 4. `Option<usize>` const arithmetic helpers
 
@@ -150,10 +164,16 @@ Notes:
 
 - `VecM<T, MAX>` etc. implement the **trait** (runtime): generic `T` element
   iteration through `T: ConstWriteXDR` bounds is fine in non-const code.
-- The byte-shaped bounded types (`BytesM`, `StringM`, `VecM<u8, MAX>`) also
-  get inherent `const fn` encoders (const-context capable — no type-parameter
-  calls involved). Placement follows the existing pattern for their
-  `WriteXDR` impls (feature `xdr_common`).
+- The byte-shaped bounded types (`BytesM`, `StringM`, `VecM<u8, MAX>`) and the
+  alloc containers (`Box`, `Vec`, `String`) provide **only the `ConstWriteXDR`
+  trait impl** — no inherent `const fn` encoders. (Their impls live in xdrs, and
+  emitting inherent const fns for foreign types would be unsound / impossible
+  without touching their crates.) A non-`runtime_only` `#[derive(ConstWriteXDR)]`
+  whose named-leaf fallback would call `.const_write_cxs()` on such a field
+  therefore has no inherent method to call. The derive pre-scans fields and emits
+  a **targeted error** naming the offending type and steering the user to
+  `#[xdrs(runtime_only)]` (which emits only the trait impl, calling the field's
+  trait methods instead). See §Amendments.
 - Whatever `WriteXDR` covers under `heapless`/other features gets mirrored
   where feasible; anything skipped is documented.
 
@@ -230,3 +250,36 @@ the derive.
   redesigning that machinery (not additive).
 - **Faking `u32::MAX` maxes for unbounded types**: rejected — poisons every
   containing type's max; `None` routes to the fallible path honestly.
+
+## Amendments (2026-07-09)
+
+Two changes made after the original approval, both to let recursive types derive
+and to fail loudly instead of opaquely:
+
+1. **Pointer-cut rule for `MAX_*_LEN`.** `MAX_*_LEN` folds through by-value
+   layout only; boundedness does not cross pointers. The impls for `&T`,
+   `&mut T`, `xdr_common::Box<T>`, and `VecM<T, N>` (both `alloc` and no-`alloc`
+   cfg variants; the byte-shaped `VecM<u8, N>` is unaffected) now report literal
+   `None` for both consts, without referencing `T`'s consts. Their write/size
+   methods are UNCHANGED — they still forward/recurse at runtime. Rationale and
+   trade-off are in §3. This flips previously finite pins, e.g.
+   `<VecM<u32, 4>>::MAX_CXS_LEN` was `Some(21)`, now `None`; nested
+   `<VecM<VecM<u8>, 4>>` was `Some(17_179_869_201)`, now `None`. Inline
+   (`[T; N]`, heapless) and byte-shaped bounded types are deliberately kept
+   folding (regression-pinned). A `#[xdrs(bounded)]`-style opt-in to re-enable
+   folding for known-acyclic pointer fields is deferred.
+
+2. **Targeted derive error for trait-only field types.** The byte-shaped bounded
+   types and alloc containers (`VecM`, `BytesM`, `StringM`, `Box`, `Vec`,
+   `String`) provide only the `ConstWriteXDR` trait impl, not inherent const
+   encoders — see §5. A non-`runtime_only` derive whose inherent path would call
+   `.const_write_cxs()` / `.const_cxs_size()` on such a field used to fail with an
+   opaque "no method named `const_write_cxs`". The derive now pre-scans fields on
+   the inherent-emission path only (never for `runtime_only` or generic-type
+   derives, which use direct trait bodies), recursing through the recognized
+   wrappers (`Option`/`Result`/tuples/arrays/slices/references) so
+   `Option<StringM<16>>` is caught too, and returns a spanned error naming the
+   offending last-path-segment and directing the user to `#[xdrs(runtime_only)]`.
+   Last-segment matching is the derive's established convention (as for
+   `Option`/`Result`); it can false-positive on a user type coincidentally named
+   e.g. `Vec` — documented in the derive's hygiene caveats.

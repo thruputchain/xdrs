@@ -148,6 +148,18 @@ fn int128_trait_impls() {
     assert_eq!(<u128 as ConstWriteXDR>::MAX_TXS_LEN, Some(16));
 }
 
+// Heapless inline containers keep exact bounds (the pointer-cut is surgical:
+// inline storage cannot hold a recursive instance, so folding is safe).
+#[cfg(feature = "heapless")]
+#[test]
+fn heapless_inline_bounds_are_kept() {
+    // CXS: 1-byte len varint for capacity 8 + 8 elements × u32 max (5) = 41.
+    assert_eq!(
+        <heapless::Vec<u32, 8> as ConstWriteXDR>::MAX_CXS_LEN,
+        Some(41)
+    );
+}
+
 #[cfg(feature = "alloc")]
 #[test]
 fn alloc_impls() {
@@ -183,17 +195,21 @@ mod xdr_common_types {
         assert_eq!(<BytesM<8> as ConstWriteXDR>::MAX_TXS_LEN, Some(12));
         // TXS pads data: 4 + size_opaque_fixed(5) = 4 + 8
         assert_eq!(<BytesM<5> as ConstWriteXDR>::MAX_TXS_LEN, Some(12));
-        // CXS: len-varint(4)=1 + 4 elems × 5
-        assert_eq!(<VecM<u32, 4> as ConstWriteXDR>::MAX_CXS_LEN, Some(21));
+        // Pointer-cut: a heap-backed element container (`VecM<T, N>`) reports
+        // `None` even though `4 × u32` is finite — boundedness does not cross
+        // the container's heap indirection. (Was `Some(21)`.)
+        assert_eq!(<VecM<u32, 4> as ConstWriteXDR>::MAX_CXS_LEN, None);
+        assert_eq!(<VecM<u32, 4> as ConstWriteXDR>::MAX_TXS_LEN, None);
         // len-varint(300) = 3 bytes (300 fits 2-byte payload + header)
         assert_eq!(<BytesM<300> as ConstWriteXDR>::MAX_CXS_LEN, Some(303));
-        // Outer container at u32::MAX capacity × large element overflows → None
+        // Pointer-cut: `VecM<T, N>` reports literal `None` for any non-byte
+        // element type. Now a trivial `None` from the literal cut, not from the
+        // old u32::MAX-capacity × large-element overflow.
         assert_eq!(<VecM<VecM<u8>> as ConstWriteXDR>::MAX_CXS_LEN, None);
-        // Finite nested bound composes: 1 (len varint for 4) + 4 × (5 + u32::MAX)
-        assert_eq!(
-            <VecM<VecM<u8>, 4> as ConstWriteXDR>::MAX_CXS_LEN,
-            Some(17_179_869_201)
-        );
+        // Pointer-cut: also `None` now — the finite nested bound no longer
+        // composes because the outer `VecM<T, N>` fold is a literal `None`.
+        // (Was `Some(17_179_869_201)`.)
+        assert_eq!(<VecM<VecM<u8>, 4> as ConstWriteXDR>::MAX_CXS_LEN, None);
         // Default VecM<u8> (MAX = u32::MAX)
         assert_eq!(
             <VecM<u8> as ConstWriteXDR>::MAX_CXS_LEN,
@@ -331,5 +347,87 @@ mod derived {
         // max over variants: CXS = max(34, 10) = 34; TXS = max(40, 8) = 40.
         assert_eq!(<RuntimeDefault as ConstWriteXDR>::MAX_CXS_LEN, Some(34));
         assert_eq!(<RuntimeDefault as ConstWriteXDR>::MAX_TXS_LEN, Some(40));
+    }
+}
+
+// The pointer-cut rule (`MAX_*_LEN` folds through by-value layout only) makes
+// recursive derives compile: every recursion passes through an indirection
+// (`VecM<T, N>`, `Box<T>`, `&T`) whose MAX is a literal `None`, so no const-eval
+// cycle can form. All three indirection shapes must compile and round-trip.
+#[cfg(feature = "derive")]
+mod recursion {
+    use super::*;
+    use xdrs::{ConstWriteXDR, WriteXDR};
+
+    // (1) Heap-backed element container recursion: `VecM<Tree, 4>`. Cut at
+    // `VecM<T, N>`. Needs `runtime_only` (the container is trait-only).
+    #[cfg(feature = "alloc")]
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    #[xdrs(runtime_only)]
+    struct Tree {
+        label: u32,
+        children: xdrs::VecM<Tree, 4>,
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn vecm_recursion_compiles_and_round_trips() {
+        assert_eq!(<Tree as ConstWriteXDR>::MAX_CXS_LEN, None);
+        assert_eq!(<Tree as ConstWriteXDR>::MAX_TXS_LEN, None);
+
+        let child = Tree {
+            label: 2,
+            children: xdrs::VecM::default(),
+        };
+        let root = Tree {
+            label: 1,
+            children: vec![child].try_into().unwrap(),
+        };
+        assert_trait_matches(&root);
+    }
+
+    // (2) Box recursion: `xdrs::Box<Expr>`. Cut at `Box<T>`. `runtime_only`.
+    #[cfg(feature = "alloc")]
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    #[xdrs(runtime_only)]
+    #[repr(i32)]
+    enum Expr {
+        Lit { v: i32 },
+        Neg { inner: xdrs::Box<Expr> },
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn box_recursion_compiles_and_round_trips() {
+        assert_eq!(<Expr as ConstWriteXDR>::MAX_CXS_LEN, None);
+        assert_eq!(<Expr as ConstWriteXDR>::MAX_TXS_LEN, None);
+
+        let e = Expr::Neg {
+            inner: xdrs::Box::new(Expr::Lit { v: 5 }),
+        };
+        assert_trait_matches(&e);
+    }
+
+    // (3) Reference recursion, NON-`runtime_only`. References have a syntactic
+    // fallthrough on the inherent path (recurse to the referent's inherent const
+    // fns), so no targeted derive error fires; const fn recursion is legal. Cut
+    // at `&T`.
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    struct Node<'a> {
+        v: u32,
+        next: Option<&'a Node<'a>>,
+    }
+
+    #[test]
+    fn ref_recursion_compiles_and_round_trips() {
+        assert_eq!(<Node<'static> as ConstWriteXDR>::MAX_CXS_LEN, None);
+        assert_eq!(<Node<'static> as ConstWriteXDR>::MAX_TXS_LEN, None);
+
+        let leaf = Node { v: 2, next: None };
+        let root = Node {
+            v: 1,
+            next: Some(&leaf),
+        };
+        assert_trait_matches(&root);
     }
 }

@@ -19,6 +19,20 @@ use core::marker::PhantomData;
 /// panic on buffer overflow. Size a buffer from `MAX_CXS_LEN` /
 /// `MAX_TXS_LEN` (when `Some`) to make encoding infallible:
 ///
+/// # Pointer-cut rule for `MAX_*_LEN`
+///
+/// `MAX_*_LEN` folds through by-value layout only; boundedness does not cross
+/// pointers. `&T`, `&mut T`, [`Box<T>`](xdr_common::Box), and heap-backed
+/// element containers ([`VecM<T, N>`](xdr_common::VecM)) report `None` even
+/// when a finite bound exists — this makes const-evaluation cycles for
+/// recursive types impossible by construction. A const-eval cycle would
+/// require a type to transitively contain itself; by-value self-containment is
+/// unrepresentable in Rust (infinite size), so every recursion must pass
+/// through indirection, and if every indirection impl reports literal `None`
+/// without referencing `T`'s consts, cycles cannot form. Inline containers
+/// ([`[T; N]`](array), heapless types) and byte-shaped bounded types
+/// (`BytesM`, `StringM`, `VecM<u8, N>`) keep exact bounds.
+///
 /// ```rust
 /// use xdrs::ConstWriteXDR;
 /// const N: usize = match <u64 as ConstWriteXDR>::MAX_CXS_LEN {
@@ -238,8 +252,11 @@ impl<T: ConstWriteXDR> ConstWriteXDR for [T] {
 }
 
 impl<T: ConstWriteXDR> ConstWriteXDR for &T {
-    const MAX_CXS_LEN: Option<usize> = T::MAX_CXS_LEN;
-    const MAX_TXS_LEN: Option<usize> = T::MAX_TXS_LEN;
+    // Pointer-cut: boundedness does not cross a reference. Literal `None`
+    // (never referencing `T`'s consts) makes const-eval cycles for recursive
+    // types impossible by construction. write/size still forward at runtime.
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
     #[inline]
     fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
         (*self).write_cxs(w)
@@ -259,8 +276,9 @@ impl<T: ConstWriteXDR> ConstWriteXDR for &T {
 }
 
 impl<T: ConstWriteXDR> ConstWriteXDR for &mut T {
-    const MAX_CXS_LEN: Option<usize> = T::MAX_CXS_LEN;
-    const MAX_TXS_LEN: Option<usize> = T::MAX_TXS_LEN;
+    // Pointer-cut: boundedness does not cross a reference (see `&T`).
+    const MAX_CXS_LEN: Option<usize> = None;
+    const MAX_TXS_LEN: Option<usize> = None;
     #[inline]
     fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
         (**self).write_cxs(w)
@@ -607,12 +625,14 @@ const _: () = {
     where
         T: ConstWriteXDR,
     {
-        const MAX_CXS_LEN: Option<usize> = encoded_max::add(
-            Some(cxs::const_writer::size_u32(MAX)),
-            encoded_max::mul(MAX as usize, T::MAX_CXS_LEN),
-        );
-        const MAX_TXS_LEN: Option<usize> =
-            encoded_max::add(Some(4), encoded_max::mul(MAX as usize, T::MAX_TXS_LEN));
+        // Pointer-cut: a heap-backed container generic over its element type is
+        // the remaining cycle edge for recursive types, so the element-generic
+        // fold is literal `None` (never referencing `T`'s consts). The
+        // byte-shaped `VecM<u8, MAX>` keeps its exact bound via the
+        // `impl_const_write_opaque_bytes!` impl above. write/size still recurse
+        // at runtime.
+        const MAX_CXS_LEN: Option<usize> = None;
+        const MAX_TXS_LEN: Option<usize> = None;
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
             assert!(
@@ -644,12 +664,10 @@ const _: () = {
     where
         T: ConstWriteXDR + 'static,
     {
-        const MAX_CXS_LEN: Option<usize> = encoded_max::add(
-            Some(cxs::const_writer::size_u32(MAX)),
-            encoded_max::mul(MAX as usize, T::MAX_CXS_LEN),
-        );
-        const MAX_TXS_LEN: Option<usize> =
-            encoded_max::add(Some(4), encoded_max::mul(MAX as usize, T::MAX_TXS_LEN));
+        // Pointer-cut: see the `alloc` variant above. Element-generic fold is
+        // literal `None`; byte-shaped `VecM<u8, MAX>` keeps its exact bound.
+        const MAX_CXS_LEN: Option<usize> = None;
+        const MAX_TXS_LEN: Option<usize> = None;
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             let slice: &[T] = <Self as AsRef<[T]>>::as_ref(self);
             assert!(
@@ -679,8 +697,10 @@ const _: () = {
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     impl<T: ConstWriteXDR> ConstWriteXDR for xdr_common::Box<T> {
-        const MAX_CXS_LEN: Option<usize> = T::MAX_CXS_LEN;
-        const MAX_TXS_LEN: Option<usize> = T::MAX_TXS_LEN;
+        // Pointer-cut: boundedness does not cross the box's heap indirection.
+        // Literal `None` keeps recursive `Box<Self>` derives cycle-free.
+        const MAX_CXS_LEN: Option<usize> = None;
+        const MAX_TXS_LEN: Option<usize> = None;
         fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
             self.as_ref().write_cxs(w)
         }
