@@ -4,18 +4,6 @@
 //! fixed-size buffer in `const` contexts, along with `size_*` functions
 //! that compute the encoded size of each primitive type.
 
-/// A const-compatible writer for CXS (Compact XDR Serialization).
-///
-/// All methods panic on buffer overflow. In a `const` context, this
-/// produces a compile-time error.
-///
-/// Use [`into_bytes`](Self::into_bytes) to extract the final buffer,
-/// which panics if the writer has not filled the buffer exactly.
-pub struct ConstWriter<const N: usize> {
-    buf: [u8; N],
-    pos: usize,
-}
-
 // CXS encoding constants (mirrors cxs::limits and cxs::put)
 const V_MULTIBYTE: u8 = 63;
 const S_8BYTE: u8 = 3 << 6;
@@ -28,19 +16,21 @@ const IH_MAX: i8 = 31;
 const IH_MIN: i8 = -31;
 const UH_MAX: u8 = 62;
 
-impl<const N: usize> Default for ConstWriter<N> {
-    fn default() -> Self {
-        Self::new()
-    }
+/// A slice-backed, infallible CXS cursor.
+///
+/// The canonical const-compatible CXS writer: writes into a caller-provided
+/// byte slice, panicking on overflow (a compile-time error in `const`
+/// contexts). [`ConstWriter`] delegates to this type; the CXS width rules
+/// live here exactly once.
+pub struct Cursor<'a> {
+    buf: &'a mut [u8],
+    pos: usize,
 }
 
-impl<const N: usize> ConstWriter<N> {
-    /// Creates a new writer with a zeroed buffer.
-    pub const fn new() -> Self {
-        Self {
-            buf: [0u8; N],
-            pos: 0,
-        }
+impl<'a> Cursor<'a> {
+    /// Creates a cursor writing into `buf`, starting at position 0.
+    pub const fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf, pos: 0 }
     }
 
     /// Returns the number of bytes written so far.
@@ -48,24 +38,7 @@ impl<const N: usize> ConstWriter<N> {
         self.pos
     }
 
-    /// Consumes the writer and returns the buffer.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the number of bytes written does not equal `N`.
-    pub const fn into_bytes(self) -> [u8; N] {
-        assert!(
-            self.pos == N,
-            "ConstWriter: bytes written does not equal buffer size N"
-        );
-        self.buf
-    }
-
     /// Returns the bytes written so far (the filled prefix of the buffer).
-    ///
-    /// Unlike [`into_bytes`](Self::into_bytes), this does not require the
-    /// buffer to be exactly full, so it supports value-dependent encoded
-    /// lengths that fall short of `N`.
     pub const fn as_bytes(&self) -> &[u8] {
         self.buf.split_at(self.pos).0
     }
@@ -249,6 +222,168 @@ impl<const N: usize> ConstWriter<N> {
         } else {
             self.put_byte(n);
         }
+    }
+}
+
+/// A const-compatible writer for CXS (Compact XDR Serialization).
+///
+/// All methods panic on buffer overflow. In a `const` context, this
+/// produces a compile-time error.
+///
+/// Use [`into_bytes`](Self::into_bytes) to extract the final buffer,
+/// which panics if the writer has not filled the buffer exactly.
+pub struct ConstWriter<const N: usize> {
+    buf: [u8; N],
+    pos: usize,
+}
+
+impl<const N: usize> Default for ConstWriter<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const N: usize> ConstWriter<N> {
+    /// Creates a new writer with a zeroed buffer.
+    pub const fn new() -> Self {
+        Self {
+            buf: [0u8; N],
+            pos: 0,
+        }
+    }
+
+    /// Returns the number of bytes written so far.
+    pub const fn pos(&self) -> usize {
+        self.pos
+    }
+
+    /// Consumes the writer and returns the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of bytes written does not equal `N`.
+    pub const fn into_bytes(self) -> [u8; N] {
+        assert!(
+            self.pos == N,
+            "ConstWriter: bytes written does not equal buffer size N"
+        );
+        self.buf
+    }
+
+    /// Returns the bytes written so far (the filled prefix of the buffer).
+    ///
+    /// Unlike [`into_bytes`](Self::into_bytes), this does not require the
+    /// buffer to be exactly full, so it supports value-dependent encoded
+    /// lengths that fall short of `N`.
+    pub const fn as_bytes(&self) -> &[u8] {
+        self.buf.split_at(self.pos).0
+    }
+
+    // -- delegating write methods --
+
+    #[doc(hidden)]
+    /// Writes fixed-length opaque bytes (raw bytes, no length prefix).
+    pub const fn write_opaque_fixed(&mut self, bytes: &[u8]) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_opaque_fixed(bytes);
+        self.pos = c.pos;
+    }
+
+    /// Writes variable-length opaque data: CXS-encoded u32 length prefix,
+    /// then raw bytes.
+    pub const fn write_opaque_variable(&mut self, bytes: &[u8]) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_opaque_variable(bytes);
+        self.pos = c.pos;
+    }
+
+    /// Writes a boolean as CXS-encoded i32 (0 or 1).
+    pub const fn write_bool(&mut self, v: bool) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_bool(v);
+        self.pos = c.pos;
+    }
+
+    /// Writes a 32-bit IEEE 754 float as raw little-endian bytes (4 bytes).
+    ///
+    /// Unlike integers, floats are not compressed with CXS variable-width
+    /// encoding — the bit pattern is written as-is. Little-endian byte order
+    /// follows CXS convention (not RFC 4506 big-endian).
+    pub const fn write_f32(&mut self, n: f32) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_f32(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes a 64-bit IEEE 754 double as raw little-endian bytes (8 bytes).
+    ///
+    /// Unlike integers, floats are not compressed with CXS variable-width
+    /// encoding — the bit pattern is written as-is. Little-endian byte order
+    /// follows CXS convention (not RFC 4506 big-endian).
+    pub const fn write_f64(&mut self, n: f64) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_f64(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes a signed 64-bit integer using CXS variable-width encoding.
+    pub const fn write_i64(&mut self, n: i64) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_i64(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes a signed 32-bit integer using CXS variable-width encoding.
+    pub const fn write_i32(&mut self, n: i32) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_i32(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes a signed 16-bit integer using CXS variable-width encoding.
+    pub const fn write_i16(&mut self, n: i16) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_i16(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes a signed 128-bit integer as `(i64, u64)` using CXS variable-width encoding.
+    #[cfg(feature = "int128")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
+    pub const fn write_i128(&mut self, n: i128) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_i128(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes an unsigned 128-bit integer as `(u64, u64)` using CXS variable-width encoding.
+    #[cfg(feature = "int128")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
+    pub const fn write_u128(&mut self, n: u128) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_u128(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes an unsigned 64-bit integer using CXS variable-width encoding.
+    pub const fn write_u64(&mut self, n: u64) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_u64(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes an unsigned 32-bit integer using CXS variable-width encoding.
+    pub const fn write_u32(&mut self, n: u32) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_u32(n);
+        self.pos = c.pos;
+    }
+
+    /// Writes an unsigned 16-bit integer using CXS variable-width encoding.
+    pub const fn write_u16(&mut self, n: u16) {
+        let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
+        c.write_u16(n);
+        self.pos = c.pos;
     }
 }
 
