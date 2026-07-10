@@ -135,3 +135,33 @@ pub extern "C" fn encode_u64_alloc(n: u64) -> u32 {
         Err(_) => 0,
     }
 }
+
+// --- encode_into_unchecked (no checks, no Result) ---
+
+#[unsafe(no_mangle)]
+pub extern "C" fn encode_u32_unchecked(n: u32, out: *mut u8) -> u32 {
+    // SAFETY: the host guarantees `out` points to at least 5 writable bytes
+    // (the worst-case CXS size of a u32).
+    let buf = unsafe { core::slice::from_raw_parts_mut(out as *mut MaybeUninit<u8>, 5) };
+    unsafe { xdrs::cxs::encode_into_unchecked(&n, buf) as u32 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn encode_i64_unchecked(n: i64, out: *mut u8) -> u32 {
+    // SAFETY: the host guarantees `out` points to at least 9 writable bytes
+    // (the worst-case CXS size of an i64).
+    let buf = unsafe { core::slice::from_raw_parts_mut(out as *mut MaybeUninit<u8>, 9) };
+    unsafe { xdrs::cxs::encode_into_unchecked(&n, buf) as u32 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn encode_bytes_unchecked(ptr: *const u8, len: u32, out: *mut u8) -> u32 {
+    // SAFETY: the host guarantees `ptr` points to `len` readable bytes and
+    // `out` points to at least `5 + len` writable bytes (the worst-case
+    // CXS size of a length prefix plus the data).
+    unsafe {
+        let data = core::slice::from_raw_parts(ptr, len as usize);
+        let buf = core::slice::from_raw_parts_mut(out as *mut MaybeUninit<u8>, 5 + len as usize);
+        xdrs::cxs::encode_into_unchecked(&data, buf) as u32
+    }
+}
