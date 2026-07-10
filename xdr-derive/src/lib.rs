@@ -425,9 +425,10 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///   the opaque byte fast-path to misfire. Similarly, shadowing `str` will
 ///   confuse string detection.
 /// - Length guards use `::core::assert!()` to resist call-site macro shadowing.
-/// - **Avoid naming const generics `i`, `arr`, `slice`, or `total`.** The
-///   generated array/slice iteration uses these as local bindings, and Rust
-///   does not allow a `let` binding to shadow an in-scope const parameter.
+/// - **Avoid naming const generics `i`, `arr`, `slice`, `s`, or `total`.** The
+///   generated array/slice/container iteration uses these as local bindings,
+///   and Rust does not allow a `let` binding to shadow an in-scope const
+///   parameter.
 /// - **Avoid naming modules `cxs` or `txs` in discriminant paths.** The
 ///   generated const block imports `use xdrs::cxs; use xdrs::txs;`, which can
 ///   capture discriminant expressions whose paths start with those segments.
