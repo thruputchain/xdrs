@@ -158,6 +158,158 @@ impl Format {
             Format::Txs => quote! { txs::const_writer },
         }
     }
+
+    fn trait_path(self) -> TokenStream {
+        match self {
+            Format::Cxs => quote! { cxs::ConstMaxSize },
+            Format::Txs => quote! { txs::ConstMaxSize },
+        }
+    }
+}
+
+/// Entry point for `#[derive(ConstXDRSize)]`: implements the per-format
+/// worst-case size bound traits `cxs::ConstMaxSize` and `txs::ConstMaxSize`.
+///
+/// Unlike the value-writing derive, this fold is entirely trait-dispatched:
+/// every field bounds as `<FieldTy as ConstMaxSize>::MAX_SIZE`, so no type
+/// shapes are recognized syntactically and foreign types participate by
+/// implementing the traits.
+pub fn const_xdr_size(input: &syn::DeriveInput) -> Result<TokenStream> {
+    let attrs = Attrs::from_derive_input(input)?;
+    attrs.check_no_conversion(input)?;
+    let krate = attrs.crate_path();
+
+    let impls = max_size_data(input)?;
+
+    Ok(quote! {
+        const _: () = {
+            use #krate::cxs;
+            use #krate::txs;
+
+            #impls
+        };
+    })
+}
+
+fn max_size_data(input: &syn::DeriveInput) -> Result<TokenStream> {
+    if input
+        .generics
+        .params
+        .iter()
+        .any(|param| matches!(param, syn::GenericParam::Type(_)))
+    {
+        return err(input, "ConstXDRSize does not support type parameters.");
+    }
+
+    match &input.data {
+        syn::Data::Struct(item) => max_size_impl_struct(input, item),
+        syn::Data::Enum(item) => max_size_impl_enum(input, item),
+        _ => err(
+            input,
+            "ConstXDRSize can only be derived for structs and enums",
+        ),
+    }
+}
+
+fn max_size_impl_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
+    let cxs_bound = trait_max_fields_expr(&item.fields, Format::Cxs)?;
+    let txs_bound = trait_max_fields_expr(&item.fields, Format::Txs)?;
+    Ok(max_size_impls(input, cxs_bound, txs_bound))
+}
+
+fn max_size_impl_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
+    check_enum_repr(input)?;
+    check_variants(input, item, has_xdr_discrim_type(input))?;
+
+    let cxs_bound = trait_max_variants_expr(item, Format::Cxs)?;
+    let txs_bound = trait_max_variants_expr(item, Format::Txs)?;
+    Ok(max_size_impls(input, cxs_bound, txs_bound))
+}
+
+fn max_size_impls(
+    input: &syn::DeriveInput,
+    cxs_bound: TokenStream,
+    txs_bound: TokenStream,
+) -> TokenStream {
+    let ty_ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    quote! {
+        impl #impl_generics cxs::ConstMaxSize for #ty_ident #ty_generics #where_clause {
+            const MAX_SIZE: ::core::option::Option<usize> = #cxs_bound;
+        }
+
+        impl #impl_generics txs::ConstMaxSize for #ty_ident #ty_generics #where_clause {
+            const MAX_SIZE: ::core::option::Option<usize> = #txs_bound;
+        }
+    }
+}
+
+/// Folds the worst-case size bounds of `fields` into a single
+/// `Option<usize>` expression via `max_size_add`, starting from `Some(0)`.
+/// Every field bounds through the `ConstMaxSize` trait.
+fn trait_max_fields_expr(fields: &syn::Fields, fmt: Format) -> Result<TokenStream> {
+    let mod_path = fmt.const_writer_path();
+    let trait_path = fmt.trait_path();
+    let mut acc = quote! { ::core::option::Option::Some(0usize) };
+    for field in fields {
+        let attrs = Attrs::from_field(field)?;
+        attrs.check_no_conversion(field)?;
+        let ty = &field.ty;
+        acc = quote! { #mod_path::max_size_add(#acc, <#ty as #trait_path>::MAX_SIZE) };
+    }
+    Ok(acc)
+}
+
+/// Folds the worst-case size bound of an enum: the maximum over its variants
+/// of (discriminant size + field bounds). Uninhabited enums bound to
+/// `Some(0)`; a single unbounded variant makes the whole bound `None`.
+fn trait_max_variants_expr(item: &syn::DataEnum, fmt: Format) -> Result<TokenStream> {
+    let mod_path = fmt.const_writer_path();
+    let variant_bounds = item
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(i, v)| trait_max_variant_expr(i, v, fmt))
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut bounds = variant_bounds.into_iter();
+    let Some(mut acc) = bounds.next() else {
+        return Ok(quote! { ::core::option::Option::Some(0usize) });
+    };
+    for bound in bounds {
+        acc = quote! { #mod_path::max_size_max(#acc, #bound) };
+    }
+    Ok(acc)
+}
+
+fn trait_max_variant_expr(index: usize, v: &syn::Variant, fmt: Format) -> Result<TokenStream> {
+    let is_default_arm = variant_is_default(v);
+    let mod_path = fmt.const_writer_path();
+    let trait_path = fmt.trait_path();
+
+    let variant_idx = index as i32;
+    let discrim_bound = if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #mod_path::size_i32(#d) }
+    } else if is_default_arm {
+        // The default arm's discriminant is a runtime value.
+        quote! { #mod_path::max_size_i32() }
+    } else {
+        quote! { #mod_path::size_i32(#variant_idx) }
+    };
+
+    let mut acc = quote! { ::core::option::Option::Some(#discrim_bound) };
+    for (i, field) in v.fields.iter().enumerate() {
+        // The default arm's first field is the discriminant itself.
+        if is_default_arm && i == 0 {
+            continue;
+        }
+        let attrs = Attrs::from_field(field)?;
+        attrs.check_no_conversion(field)?;
+        let ty = &field.ty;
+        acc = quote! { #mod_path::max_size_add(#acc, <#ty as #trait_path>::MAX_SIZE) };
+    }
+    Ok(acc)
 }
 
 fn fresh_buf_size_ident(generics: &syn::Generics) -> syn::Ident {
@@ -1051,6 +1203,86 @@ mod tests {
             !bare.contains("u32 :: MAX"),
             "no bare u32::MAX should remain in generated code"
         );
+    }
+
+    #[test]
+    fn const_xdr_size_generates_trait_impls() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Leafy {
+                n: u32,
+                blob: BytesM<4>,
+            }
+        };
+
+        let toks = normalize_tokens(&super::const_xdr_size(&input).unwrap().to_string());
+        assert!(toks.contains("implcxs::ConstMaxSizeforLeafy"));
+        assert!(toks.contains("impltxs::ConstMaxSizeforLeafy"));
+        // Every field folds through the trait — no shape recognition.
+        assert!(toks.contains("<u32ascxs::ConstMaxSize>::MAX_SIZE"));
+        assert!(toks.contains("<BytesM<4>astxs::ConstMaxSize>::MAX_SIZE"));
+        // No inherent methods.
+        assert!(!toks.contains("const_max_cxs_size"));
+        assert!(!toks.contains("const_max_txs_size"));
+    }
+
+    #[test]
+    fn const_xdr_size_enum_uses_discriminant_terms() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            #[repr(i32)]
+            enum Choice {
+                A(u64) = 7,
+                B(u32, u32) = 9,
+            }
+        };
+
+        let toks = normalize_tokens(&super::const_xdr_size(&input).unwrap().to_string());
+        assert!(toks.contains("max_size_max("));
+        assert!(toks.contains("size_i32(7)"));
+        assert!(toks.contains("size_i32(9)"));
+        assert!(toks.contains("<u64ascxs::ConstMaxSize>::MAX_SIZE"));
+    }
+
+    #[test]
+    fn const_xdr_size_default_variant_uses_worst_case_discriminant() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            #[repr(i32)]
+            enum WithDefault {
+                Known(u32),
+                #[xdr(default_variant)]
+                Other(i32),
+            }
+        };
+
+        let toks = normalize_tokens(&super::const_xdr_size(&input).unwrap().to_string());
+        assert!(toks.contains("max_size_i32()"));
+        // The default arm's first field holds the discriminant; it must not
+        // be folded again as a payload field.
+        assert!(!toks.contains("<i32ascxs::ConstMaxSize>::MAX_SIZE"));
+    }
+
+    #[test]
+    fn const_xdr_size_rejects_type_parameters() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Bad<T> {
+                value: Option<T>,
+            }
+        };
+
+        let msg = super::const_xdr_size(&input).unwrap_err().to_string();
+        assert!(msg.contains("type parameters"));
+    }
+
+    #[test]
+    fn const_xdr_size_allows_lifetimes_and_const_generics() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Ok<'a, const M: usize> {
+                items: &'a [u32],
+                bytes: [u8; M],
+            }
+        };
+
+        let toks = normalize_tokens(&super::const_xdr_size(&input).unwrap().to_string());
+        assert!(toks.contains("impl<'a,constM:usize>cxs::ConstMaxSizeforOk<'a,M>"));
     }
 
     #[test]

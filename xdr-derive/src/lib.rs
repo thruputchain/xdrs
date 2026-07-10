@@ -391,3 +391,64 @@ pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
+
+/// Derives worst-case XDR size bounds as `cxs::ConstMaxSize` and
+/// `txs::ConstMaxSize` trait implementations.
+///
+/// The associated const `MAX_SIZE` is the worst-case encoded size over
+/// **all** values of the type — a bound suitable for sizing a buffer before
+/// a value is known — or `None` when no usable bound exists:
+///
+/// ```rust,ignore
+/// #[derive(xdrs::ConstXDRSize)]
+/// struct Frame {
+///     kind: u32,
+///     payload: [u8; 32],
+/// }
+///
+/// const BOUND: usize = match <Frame as xdrs::txs::ConstMaxSize>::MAX_SIZE {
+///     Some(n) => n,
+///     None => panic!("unbounded"),
+/// };
+/// let buf = [0u8; BOUND];
+/// ```
+///
+/// Every field bounds through the `ConstMaxSize` trait — there is no
+/// syntactic type recognition. A field's type participates by implementing
+/// the traits: user types derive `ConstXDRSize`; `xdrs` provides impls for
+/// primitives, `[u8; N]`, `[T; N]`, references, `Option`, `Result`, tuples
+/// (arity ≤ 12), `PhantomData`, `Infallible`, `VecM`/`BytesM`/`StringM`, and
+/// (with the `heapless` feature) `heapless::Vec` / `heapless::String`;
+/// foreign types can implement the traits manually.
+///
+/// Bounds fold through by-value layout only; boundedness does not cross
+/// pointers. References (`&T`, `&[T]`, `&str`) and the heap-backed
+/// element-generic `VecM<T, MAX>` bound to a literal `None` that never names
+/// the pointee's bound, which is what makes const-evaluation cycles
+/// impossible for recursive types: recursion must pass through indirection,
+/// and every indirection bounds to `None`. Recursive types therefore derive
+/// cleanly and report `None`.
+///
+/// Enums bound to the maximum over their variants. All arithmetic is
+/// checked: a bound that overflows `usize` (possible on 32-bit targets for
+/// `u32::MAX`-bounded containers) reports `None` rather than failing
+/// compilation.
+///
+/// # Limitations
+///
+/// - Does not support `#[xdr(into_type)]` or `#[xdr(via)]` attributes.
+/// - Supports lifetime and const generics, but not type parameters.
+/// - Enums require `#[repr(i32)]`, matching the other XDR derives.
+/// - Avoid naming modules `cxs` or `txs` in discriminant paths: the
+///   generated const block imports `use xdrs::cxs; use xdrs::txs;`.
+///
+/// All derives accept `#[xdr(crate = "path")]` to override the `::xdrs`
+/// import path.
+#[proc_macro_derive(ConstXDRSize, attributes(xdr, xdrs))]
+pub fn derive_const_xdr_size(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    generate_const::const_xdr_size(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
