@@ -76,7 +76,7 @@ impl<T: ConstMaxSize, const N: usize> ConstMaxSize for [T; N] {
 
 // Pointer cut: boundedness does not cross a reference. Literal `None`, no
 // bound on `T`, so the pointee's bound is never named (or evaluated).
-impl<'a, T: ?Sized> ConstMaxSize for &'a T {
+impl<T: ?Sized> ConstMaxSize for &T {
     const MAX_SIZE: Option<usize> = None;
 }
 

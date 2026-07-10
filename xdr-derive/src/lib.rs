@@ -290,13 +290,11 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 
 /// Derives const-compatible XDR encoding methods for compile-time use.
 ///
-/// Generates six inherent `const fn` methods on the type:
+/// Generates four inherent `const fn` methods on the type:
 /// - `const_write_cxs<const N: usize>(&self, w: &mut cxs::ConstWriter<N>)`
 /// - `const_write_txs<const N: usize>(&self, w: &mut txs::ConstWriter<N>)`
 /// - `const_cxs_size(&self) -> usize`
 /// - `const_txs_size(&self) -> usize`
-/// - `const_max_cxs_size() -> Option<usize>`
-/// - `const_max_txs_size() -> Option<usize>`
 ///
 /// These methods can be used in `const` blocks to encode values at compile time.
 /// The size methods allow the buffer size to be derived automatically:
@@ -309,28 +307,8 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// };
 /// ```
 ///
-/// # Worst-case size bounds
-///
-/// `const_max_cxs_size()` / `const_max_txs_size()` return the worst-case
-/// encoded size over **all** values of the type — a bound suitable for sizing
-/// a buffer before a value is known — or `None` when no usable bound exists.
-///
-/// Bounds fold through by-value layout only; boundedness does not cross
-/// pointers. Any field shape reached through indirection — `&T`, `&[T]`,
-/// `&[u8]`, `&str`, and the heap-backed element-generic `VecM<T, MAX>` —
-/// makes the bound `None`, and the generated code never names the pointee's
-/// bound. This is what makes const-evaluation cycles impossible for recursive
-/// types: recursion must pass through indirection (by-value self-containment
-/// is unrepresentable in Rust), and every indirection folds to a literal
-/// `None`. Recursive types therefore derive cleanly and report `None`.
-///
-/// Byte-shaped bounded containers (`BytesM<MAX>`, `StringM<MAX>`,
-/// `VecM<u8, MAX>`) keep exact bounds; a `MAX` that is not spelled out in the
-/// field type defaults to `u32::MAX`, matching the `xdr_common` defaults.
-/// Enums bound to the maximum over their variants. All arithmetic is checked:
-/// a bound that overflows `usize` (possible on 32-bit targets for
-/// `u32::MAX`-bounded containers) reports `None` rather than failing
-/// compilation.
+/// For worst-case size bounds over all values of a type (buffer sizing
+/// before a value is known), see `#[derive(ConstXDRSize)]`.
 ///
 /// # Limitations
 ///

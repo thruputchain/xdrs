@@ -358,7 +358,7 @@ pub const fn size_opaque_variable(len: usize) -> usize {
 
 // -- Worst-case size helpers --
 // Type-level maximums over all values of a type, used by
-// `#[derive(ConstWriteXDR)]` to fold `const_max_cxs_size()` bounds.
+// `#[derive(ConstXDRSize)]` to fold `ConstMaxSize::MAX_SIZE` bounds.
 // `None` means unbounded, or a bound that overflows `usize` on this target.
 
 /// Worst-case CXS encoded size of a boolean (always 1: header byte only).
