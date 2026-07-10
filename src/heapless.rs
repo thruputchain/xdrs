@@ -1,6 +1,7 @@
 use crate::read_xdr::ReadXDR;
 use crate::serialize::reader::{ReadError, ReadResult, Reader};
 use crate::serialize::writer::{WriteResult, Writer};
+use crate::serialize::writer_unchecked::WriterUnchecked;
 use crate::valid_u32::*;
 use crate::write_xdr::WriteXDR;
 
@@ -26,6 +27,14 @@ impl<const N: usize> WriteXDR for Vec<u8, N> {
         let () = ValidU32::<N>::OK;
 
         w.write_opaque_variable(self.as_slice())
+    }
+
+    unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
+        let () = ValidU32::<N>::OK;
+
+        // SAFETY: a heapless Vec<u8, N> never exceeds N <= u32::MAX
+        // elements; the caller guarantees buffer space.
+        unsafe { w.write_opaque_variable(self.as_slice()) }
     }
 }
 
@@ -64,6 +73,19 @@ where
         }
         Ok(())
     }
+
+    unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
+        let () = ValidU32::<N>::OK;
+
+        // SAFETY: the caller guarantees space for the length prefix and
+        // every element.
+        unsafe {
+            w.write_u32(self.len() as u32);
+            for elt in self {
+                elt.write_xdr_unchecked(w);
+            }
+        }
+    }
 }
 
 impl<'r, const N: usize> ReadXDR<'r> for String<N> {
@@ -86,5 +108,13 @@ impl<const N: usize> WriteXDR for String<N> {
         let () = ValidU32::<N>::OK;
 
         w.write_opaque_variable(self.as_bytes())
+    }
+
+    unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
+        let () = ValidU32::<N>::OK;
+
+        // SAFETY: a heapless String<N> never exceeds N <= u32::MAX bytes;
+        // the caller guarantees buffer space.
+        unsafe { w.write_opaque_variable(self.as_bytes()) }
     }
 }
