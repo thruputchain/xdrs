@@ -281,8 +281,8 @@ impl<const N: usize> ConstWriter<N> {
 
     // -- delegating write methods --
 
-    #[doc(hidden)]
     /// Writes fixed-length opaque bytes (raw bytes, no length prefix).
+    #[doc(hidden)]
     pub const fn write_opaque_fixed(&mut self, bytes: &[u8]) {
         let mut c = Cursor { buf: &mut self.buf, pos: self.pos };
         c.write_opaque_fixed(bytes);

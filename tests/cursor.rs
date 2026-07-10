@@ -130,3 +130,61 @@ fn cursor_overflow_panics() {
     let mut c = cxs::Cursor::new(&mut buf);
     c.write_u32(u32::MAX); // needs 5 bytes
 }
+
+// -- TXS Cursor tests --
+
+use xdrs::txs;
+
+/// Encode via the fallible reference path; return the bytes in a fixed buffer + len.
+///
+/// Note: `txs::encode_into` returns `WriteResult<usize>` (number of bytes written),
+/// so we read back the initialized portion of the `MaybeUninit` buffer ourselves.
+fn reference_txs<T: xdrs::WriteXDR>(v: &T) -> ([u8; 64], usize) {
+    let mut mu = [MaybeUninit::<u8>::uninit(); 64];
+    let n = txs::encode_into(v, &mut mu).expect("reference encode failed");
+    let mut out = [0u8; 64];
+    // SAFETY: encode_into guarantees that the first n bytes of `mu` are initialized.
+    let mut i = 0;
+    while i < n {
+        out[i] = unsafe { mu[i].assume_init() };
+        i += 1;
+    }
+    (out, n)
+}
+
+macro_rules! assert_txs_cursor_matches {
+    ($write_method:ident, $val:expr) => {{
+        let v = $val;
+        let (expected, len) = reference_txs(&v);
+        let mut buf = [0u8; 64];
+        let mut c = xdrs::txs::Cursor::new(&mut buf);
+        c.$write_method(v);
+        assert_eq!(c.pos(), len);
+        assert_eq!(c.as_bytes(), &expected[..len]);
+    }};
+}
+
+#[test]
+fn txs_cursor_all_primitives() {
+    for v in [0i32, -1, i32::MAX, i32::MIN] { assert_txs_cursor_matches!(write_i32, v); }
+    for v in [0u32, u32::MAX] { assert_txs_cursor_matches!(write_u32, v); }
+    for v in [0i64, i64::MAX, i64::MIN] { assert_txs_cursor_matches!(write_i64, v); }
+    for v in [0u64, u64::MAX] { assert_txs_cursor_matches!(write_u64, v); }
+    for v in [0i16, i16::MIN] { assert_txs_cursor_matches!(write_i16, v); }
+    for v in [0u16, u16::MAX] { assert_txs_cursor_matches!(write_u16, v); }
+    assert_txs_cursor_matches!(write_bool, true);
+    assert_txs_cursor_matches!(write_f32, 1.5f32);
+    assert_txs_cursor_matches!(write_f64, -2.75f64);
+}
+
+#[test]
+fn txs_cursor_opaque_padding() {
+    // 5 data bytes → variable = 4 (len) + 5 + 3 (pad) = 12
+    let data = [1u8, 2, 3, 4, 5];
+    let (expected, len) = reference_txs(&&data[..]);
+    assert_eq!(len, 12);
+    let mut buf = [0u8; 64];
+    let mut c = xdrs::txs::Cursor::new(&mut buf);
+    c.write_opaque_variable(&data);
+    assert_eq!((c.pos(), c.as_bytes()), (len, &expected[..len]));
+}
