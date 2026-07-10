@@ -94,7 +94,10 @@ impl<const N: usize> WriteXDR for String<N> {
 
 impl<const N: usize> ConstWriteXDR for Vec<u8, N> {
     const MAX_CXS_LEN: Option<usize> = Some(cxs::const_writer::size_opaque_variable(N));
-    const MAX_TXS_LEN: Option<usize> = Some(txs::const_writer::size_opaque_variable(N));
+    // 4-byte length prefix + `N` padded to a 4-byte boundary; `padded4` maps a
+    // capacity whose padded size would overflow `usize` (32-bit targets) to
+    // `None` instead of a const-eval error.
+    const MAX_TXS_LEN: Option<usize> = encoded_max::add(Some(4), encoded_max::padded4(N));
     fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_opaque_variable(self.as_slice());
@@ -150,7 +153,10 @@ impl<T: ConstWriteXDR, const N: usize> ConstWriteXDR for Vec<T, N> {
 
 impl<const N: usize> ConstWriteXDR for String<N> {
     const MAX_CXS_LEN: Option<usize> = Some(cxs::const_writer::size_opaque_variable(N));
-    const MAX_TXS_LEN: Option<usize> = Some(txs::const_writer::size_opaque_variable(N));
+    // 4-byte length prefix + `N` padded to a 4-byte boundary; `padded4` maps a
+    // capacity whose padded size would overflow `usize` (32-bit targets) to
+    // `None` instead of a const-eval error.
+    const MAX_TXS_LEN: Option<usize> = encoded_max::add(Some(4), encoded_max::padded4(N));
     fn write_cxs(&self, w: &mut cxs::Cursor<'_>) {
         let () = ValidU32::<N>::OK;
         w.write_opaque_variable(self.as_bytes());

@@ -199,6 +199,14 @@ mod xdr_common_types {
             <VecM<u8> as ConstWriteXDR>::MAX_CXS_LEN,
             Some(5 + u32::MAX as usize)
         );
+        // Default-bounded BytesM (MAX = u32::MAX): 4-byte length prefix + the
+        // bound padded up to a 4-byte boundary. On 64-bit this is a finite
+        // Some; the padded4 helper is what keeps the const fold from
+        // overflowing usize on 32-bit targets (where it becomes None).
+        assert_eq!(
+            <BytesM as ConstWriteXDR>::MAX_TXS_LEN,
+            Some(4 + xdrs::encoded_max::padded4(u32::MAX as usize).unwrap())
+        );
     }
 }
 
@@ -284,5 +292,44 @@ mod derived {
         assert_trait_matches(&Message::Code { value: 65536 });
         // widest variant: disc(1) + StringM<32> CXS max (1 + 32 = 33) = 34
         assert_eq!(<Message as ConstWriteXDR>::MAX_CXS_LEN, Some(34));
+    }
+
+    // A `runtime_only` enum WITH a default variant. The default arm's field 0 is
+    // the captured wire discriminant (excluded from the payload) and its size is
+    // taken as the i32 worst case (5 CXS / 4 TXS), not the encoded size of a
+    // known tag.
+    #[cfg(feature = "alloc")]
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    #[xdrs(runtime_only)]
+    #[repr(i32)]
+    #[allow(dead_code)]
+    enum RuntimeDefault {
+        Known {
+            note: xdrs::StringM<32>,
+        } = 0,
+
+        #[xdr(default_variant)]
+        Unknown(i32, u32),
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn runtime_only_default_variant_derive() {
+        assert_trait_matches(&RuntimeDefault::Known {
+            note: "hi".try_into().unwrap(),
+        });
+        assert_trait_matches(&RuntimeDefault::Unknown(99, 7));
+
+        // Per-variant worst cases (disc + payload):
+        //   Known (explicit disc = 0): disc = size_i32(0) = 1 CXS / 4 TXS.
+        //     payload StringM<32>: CXS = size_u32(32)=1 + 32 = 33; TXS = 4 + 32 = 36.
+        //     => Known = 1 + 33 = 34 CXS / 4 + 36 = 40 TXS.
+        //   Unknown (default arm): disc worst case = 5 CXS / 4 TXS.
+        //     field 0 (i32) is the captured discriminant, excluded from payload;
+        //     field 1 (u32): CXS = 5, TXS = 4.
+        //     => Unknown = 5 + 5 = 10 CXS / 4 + 4 = 8 TXS.
+        // max over variants: CXS = max(34, 10) = 34; TXS = max(40, 8) = 40.
+        assert_eq!(<RuntimeDefault as ConstWriteXDR>::MAX_CXS_LEN, Some(34));
+        assert_eq!(<RuntimeDefault as ConstWriteXDR>::MAX_TXS_LEN, Some(40));
     }
 }

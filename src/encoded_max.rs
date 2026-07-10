@@ -44,6 +44,29 @@ mod tests {
     fn usable_in_const() {
         assert_eq!(CONST_FOLD, Some(32));
     }
+
+    #[test]
+    fn padded4_rounds_up_each_residue() {
+        assert_eq!(padded4(0), Some(0));
+        assert_eq!(padded4(1), Some(4));
+        assert_eq!(padded4(2), Some(4));
+        assert_eq!(padded4(3), Some(4));
+        assert_eq!(padded4(4), Some(4));
+        assert_eq!(padded4(5), Some(8));
+        assert_eq!(padded4(6), Some(8));
+        assert_eq!(padded4(7), Some(8));
+        assert_eq!(padded4(8), Some(8));
+    }
+
+    #[test]
+    fn padded4_overflow_yields_none() {
+        // The three largest inputs would round up past usize::MAX.
+        assert_eq!(padded4(usize::MAX), None);
+        assert_eq!(padded4(usize::MAX - 1), None);
+        assert_eq!(padded4(usize::MAX - 2), None);
+        // usize::MAX - 3 is already a multiple of 4 (usize::MAX ≡ 3 mod 4).
+        assert_eq!(padded4(usize::MAX - 3), Some(usize::MAX - 3));
+    }
 }
 
 /// Sum of two optional bounds; `None` if either is unbounded or the sum overflows.
@@ -58,6 +81,21 @@ pub const fn add(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 pub const fn mul(n: usize, a: Option<usize>) -> Option<usize> {
     match a {
         Some(x) => x.checked_mul(n),
+        None => None,
+    }
+}
+
+/// `len` rounded up to the next multiple of 4 (XDR 4-byte padding); `None` on
+/// overflow.
+///
+/// `(len + 3) & !3` rounds up to a 4-byte boundary; the rounding can only
+/// exceed `usize` when `len + 3` itself overflows, which `checked_add` maps to
+/// `None`. Used to size the padded payload of TXS opaque/variable containers
+/// whose declared bound can be as large as `u32::MAX` — a value that overflows
+/// this computation on 32-bit targets and so correctly yields `None`.
+pub const fn padded4(len: usize) -> Option<usize> {
+    match len.checked_add(3) {
+        Some(n) => Some(n & !3),
         None => None,
     }
 }

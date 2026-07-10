@@ -16,8 +16,9 @@
 //! - **`#[derive(ConstWriteXDR)]`**: Implements the `ConstWriteXDR` trait and
 //!   emits inherent `const fn` encoders via `cxs::Cursor` / `txs::Cursor` plus
 //!   `MAX_CXS_LEN` / `MAX_TXS_LEN` size constants for compile-time buffer
-//!   sizing.  Fields with unbounded or runtime-only sizes may be marked
-//!   `#[xdrs(runtime_only)]`.
+//!   sizing.  A whole type whose fields lack inherent const encoders may be
+//!   marked with the type-level attribute `#[xdrs(runtime_only)]` to emit only
+//!   the trait impl (with direct, non-`const` method bodies).
 //!
 //! - **`#[derive(XDR)]`**: Automatically implements the `XDR` and `HasTypeDef`
 //!   traits, allowing types to describe their XDR type representation for

@@ -203,13 +203,14 @@ fn txs_cursor_all_primitives() {
     for v in [0u64, u64::MAX] {
         assert_txs_cursor_matches!(write_u64, v);
     }
-    for v in [0i16, i16::MIN] {
+    for v in [0i16, i16::MIN, i16::MAX] {
         assert_txs_cursor_matches!(write_i16, v);
     }
     for v in [0u16, u16::MAX] {
         assert_txs_cursor_matches!(write_u16, v);
     }
     assert_txs_cursor_matches!(write_bool, true);
+    assert_txs_cursor_matches!(write_bool, false);
     assert_txs_cursor_matches!(write_f32, 1.5f32);
     assert_txs_cursor_matches!(write_f64, -2.75f64);
 }

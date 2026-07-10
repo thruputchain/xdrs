@@ -480,4 +480,13 @@ mod tests {
         assert_eq!(w.as_bytes(), &[0x00, 0x00, 0x01, 0x2c]);
         assert_eq!(AS_BYTES_LEN, 4);
     }
+
+    #[test]
+    fn as_bytes_empty_and_full() {
+        let w = ConstWriter::<4>::new();
+        assert_eq!(w.as_bytes(), &[] as &[u8]);
+        let mut w = ConstWriter::<4>::new();
+        w.write_bool(true);
+        assert_eq!(w.as_bytes(), &[0x00, 0x00, 0x00, 0x01]);
+    }
 }

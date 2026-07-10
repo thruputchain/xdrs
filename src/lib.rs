@@ -53,6 +53,13 @@
 //!   support for `i128` and `u128`. These types are encoded as two 64-bit
 //!   integers (high bits and low bits).
 //!
+//! ### Always-available type support
+//!
+//! - **`xdr_common` types** (always available; `xdr-common` is a required
+//!   dependency): `ReadXDR`, `WriteXDR`, and `ConstWriteXDR` implementations for
+//!   `xdr_common::Box<T>`, `xdr_common::BytesM<MAX>`, `xdr_common::StringM<MAX>`,
+//!   and `xdr_common::VecM<T, MAX>`.
+//!
 //! ### Optional dependencies
 //!
 //! - **`derive`**: Enables derive macros from the `xdr-derive` crate:
@@ -64,11 +71,6 @@
 //! - **`repr`** (requires `alloc`): Enables the `xdr-repr` crate for XDR
 //!   specification representation. Provides types and traits for describing XDR
 //!   type definitions.
-//!
-//! - **`xdr_common` types** (always available; `xdr-common` is a required
-//!   dependency): `ReadXDR`, `WriteXDR`, and `ConstWriteXDR` implementations for
-//!   `xdr_common::Box<T>`, `xdr_common::BytesM<MAX>`, `xdr_common::StringM<MAX>`,
-//!   and `xdr_common::VecM<T, MAX>`.
 //!
 //! - **`heapless`**: Enables support for types from the `heapless` package.
 //!
