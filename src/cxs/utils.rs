@@ -79,9 +79,9 @@ pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Write
 /// # Safety
 ///
 /// - `buf.len()` must be at least the encoded size of `value`. With
-///   `#[derive(ConstWriteXDR)]`, `const_max_cxs_size()` (worst case over
-///   all values) or `const_cxs_size()` (exact for this value) provide
-///   suitable sizes.
+///   `#[derive(ConstXDRSize)]`, `<T as cxs::ConstMaxSize>::MAX_SIZE` (worst
+///   case over all values) — or, with `#[derive(ConstWriteXDR)]`,
+///   `const_cxs_size()` (exact for this value) — provide suitable sizes.
 /// - `value` must respect all declared XDR bounds (e.g. a `VecM<T, MAX>`
 ///   must not be longer than `MAX`), since a violation would make the
 ///   encoding exceed any precomputed size bound. This includes the implicit

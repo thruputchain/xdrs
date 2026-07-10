@@ -1,7 +1,9 @@
+use crate::cxs;
 use crate::read_xdr::ReadXDR;
 use crate::serialize::reader::{ReadError, ReadResult, Reader};
 use crate::serialize::writer::{WriteResult, Writer};
 use crate::serialize::writer_unchecked::WriterUnchecked;
+use crate::txs;
 use crate::valid_u32::*;
 use crate::write_xdr::WriteXDR;
 
@@ -117,4 +119,72 @@ impl<const N: usize> WriteXDR for String<N> {
         // the caller guarantees buffer space.
         unsafe { w.write_opaque_variable(self.as_bytes()) }
     }
+}
+
+// -- Worst-case size bounds --
+//
+// heapless containers store their elements inline (no heap indirection), so
+// unlike `VecM<T, MAX>` a recursive type through them is impossible by
+// construction, and naming the element's bound cannot form a const-eval
+// cycle — the same argument as arrays. Bounds are therefore exact.
+//
+// A capacity `N` that exceeds `u32::MAX` cannot be length-prefixed, so it
+// bounds to `None` (such values can never be fully encoded), mirroring
+// `max_size_opaque_fixed`.
+//
+// As with the read/write impls above, the `Vec<u8, N>` and `Vec<T, N>` impl
+// pairs are disjoint because `u8` does not implement the trait.
+
+impl<const N: usize> cxs::ConstMaxSize for Vec<u8, N> {
+    const MAX_SIZE: Option<usize> = if N > u32::MAX as usize {
+        None
+    } else {
+        cxs::const_writer::max_size_opaque_variable(N as u32)
+    };
+}
+
+impl<T: cxs::ConstMaxSize, const N: usize> cxs::ConstMaxSize for Vec<T, N> {
+    const MAX_SIZE: Option<usize> = if N > u32::MAX as usize {
+        None
+    } else {
+        cxs::const_writer::max_size_add(
+            Some(cxs::const_writer::size_u32(N as u32)),
+            cxs::const_writer::max_size_array(N, T::MAX_SIZE),
+        )
+    };
+}
+
+impl<const N: usize> cxs::ConstMaxSize for String<N> {
+    const MAX_SIZE: Option<usize> = if N > u32::MAX as usize {
+        None
+    } else {
+        cxs::const_writer::max_size_opaque_variable(N as u32)
+    };
+}
+
+impl<const N: usize> txs::ConstMaxSize for Vec<u8, N> {
+    const MAX_SIZE: Option<usize> = if N > u32::MAX as usize {
+        None
+    } else {
+        txs::const_writer::max_size_opaque_variable(N as u32)
+    };
+}
+
+impl<T: txs::ConstMaxSize, const N: usize> txs::ConstMaxSize for Vec<T, N> {
+    const MAX_SIZE: Option<usize> = if N > u32::MAX as usize {
+        None
+    } else {
+        txs::const_writer::max_size_add(
+            Some(txs::const_writer::size_u32(N as u32)),
+            txs::const_writer::max_size_array(N, T::MAX_SIZE),
+        )
+    };
+}
+
+impl<const N: usize> txs::ConstMaxSize for String<N> {
+    const MAX_SIZE: Option<usize> = if N > u32::MAX as usize {
+        None
+    } else {
+        txs::const_writer::max_size_opaque_variable(N as u32)
+    };
 }

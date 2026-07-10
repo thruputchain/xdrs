@@ -82,9 +82,9 @@ where
 /// # Safety
 ///
 /// - `buf.len()` must be at least the encoded size of `value`. With
-///   `#[derive(ConstWriteXDR)]`, `const_max_txs_size()` (worst case over
-///   all values) or `const_txs_size()` (exact for this value) provide
-///   suitable sizes.
+///   `#[derive(ConstXDRSize)]`, `<T as txs::ConstMaxSize>::MAX_SIZE` (worst
+///   case over all values) — or, with `#[derive(ConstWriteXDR)]`,
+///   `const_txs_size()` (exact for this value) — provide suitable sizes.
 /// - `value` must respect all declared XDR bounds (e.g. a `VecM<T, MAX>`
 ///   must not be longer than `MAX`), since a violation would make the
 ///   encoding exceed any precomputed size bound. This includes the implicit

@@ -17,4 +17,7 @@ mod put;
 pub mod const_writer;
 pub use const_writer::ConstWriter;
 
+pub mod max_size;
+pub use max_size::ConstMaxSize;
+
 pub mod unchecked_buf_writer;

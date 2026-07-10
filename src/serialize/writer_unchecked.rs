@@ -5,7 +5,7 @@
 //! perform no runtime bounds checking: the caller must guarantee up front
 //! that the writer's underlying buffer is large enough for everything
 //! written, typically by sizing it with the worst-case bounds computed by
-//! `#[derive(ConstWriteXDR)]` (`const_max_cxs_size` / `const_max_txs_size`).
+//! `#[derive(ConstXDRSize)]` (`cxs::ConstMaxSize` / `txs::ConstMaxSize`).
 //!
 //! Preconditions are checked with `debug_assert!` only, so misuse is caught
 //! in debug builds at zero release-mode cost. This is intended for

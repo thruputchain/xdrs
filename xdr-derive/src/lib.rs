@@ -290,13 +290,11 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 
 /// Derives const-compatible XDR encoding methods for compile-time use.
 ///
-/// Generates six inherent `const fn` methods on the type:
+/// Generates four inherent `const fn` methods on the type:
 /// - `const_write_cxs<const N: usize>(&self, w: &mut cxs::ConstWriter<N>)`
 /// - `const_write_txs<const N: usize>(&self, w: &mut txs::ConstWriter<N>)`
 /// - `const_cxs_size(&self) -> usize`
 /// - `const_txs_size(&self) -> usize`
-/// - `const_max_cxs_size() -> Option<usize>`
-/// - `const_max_txs_size() -> Option<usize>`
 ///
 /// These methods can be used in `const` blocks to encode values at compile time.
 /// The size methods allow the buffer size to be derived automatically:
@@ -309,28 +307,8 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// };
 /// ```
 ///
-/// # Worst-case size bounds
-///
-/// `const_max_cxs_size()` / `const_max_txs_size()` return the worst-case
-/// encoded size over **all** values of the type — a bound suitable for sizing
-/// a buffer before a value is known — or `None` when no usable bound exists.
-///
-/// Bounds fold through by-value layout only; boundedness does not cross
-/// pointers. Any field shape reached through indirection — `&T`, `&[T]`,
-/// `&[u8]`, `&str`, and the heap-backed element-generic `VecM<T, MAX>` —
-/// makes the bound `None`, and the generated code never names the pointee's
-/// bound. This is what makes const-evaluation cycles impossible for recursive
-/// types: recursion must pass through indirection (by-value self-containment
-/// is unrepresentable in Rust), and every indirection folds to a literal
-/// `None`. Recursive types therefore derive cleanly and report `None`.
-///
-/// Byte-shaped bounded containers (`BytesM<MAX>`, `StringM<MAX>`,
-/// `VecM<u8, MAX>`) keep exact bounds; a `MAX` that is not spelled out in the
-/// field type defaults to `u32::MAX`, matching the `xdr_common` defaults.
-/// Enums bound to the maximum over their variants. All arithmetic is checked:
-/// a bound that overflows `usize` (possible on 32-bit targets for
-/// `u32::MAX`-bounded containers) reports `None` rather than failing
-/// compilation.
+/// For worst-case size bounds over all values of a type (buffer sizing
+/// before a value is known), see `#[derive(ConstXDRSize)]`.
 ///
 /// # Limitations
 ///
@@ -388,6 +366,67 @@ pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
     generate_const::const_write_xdr(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derives worst-case XDR size bounds as `cxs::ConstMaxSize` and
+/// `txs::ConstMaxSize` trait implementations.
+///
+/// The associated const `MAX_SIZE` is the worst-case encoded size over
+/// **all** values of the type — a bound suitable for sizing a buffer before
+/// a value is known — or `None` when no usable bound exists:
+///
+/// ```rust,ignore
+/// #[derive(xdrs::ConstXDRSize)]
+/// struct Frame {
+///     kind: u32,
+///     payload: [u8; 32],
+/// }
+///
+/// const BOUND: usize = match <Frame as xdrs::txs::ConstMaxSize>::MAX_SIZE {
+///     Some(n) => n,
+///     None => panic!("unbounded"),
+/// };
+/// let buf = [0u8; BOUND];
+/// ```
+///
+/// Every field bounds through the `ConstMaxSize` trait — there is no
+/// syntactic type recognition. A field's type participates by implementing
+/// the traits: user types derive `ConstXDRSize`; `xdrs` provides impls for
+/// primitives, `[u8; N]`, `[T; N]`, references, `Option`, `Result`, tuples
+/// (arity ≤ 12), `PhantomData`, `Infallible`, `VecM`/`BytesM`/`StringM`, and
+/// (with the `heapless` feature) `heapless::Vec` / `heapless::String`;
+/// foreign types can implement the traits manually.
+///
+/// Bounds fold through by-value layout only; boundedness does not cross
+/// pointers. References (`&T`, `&[T]`, `&str`) and the heap-backed
+/// element-generic `VecM<T, MAX>` bound to a literal `None` that never names
+/// the pointee's bound, which is what makes const-evaluation cycles
+/// impossible for recursive types: recursion must pass through indirection,
+/// and every indirection bounds to `None`. Recursive types therefore derive
+/// cleanly and report `None`.
+///
+/// Enums bound to the maximum over their variants. All arithmetic is
+/// checked: a bound that overflows `usize` (possible on 32-bit targets for
+/// `u32::MAX`-bounded containers) reports `None` rather than failing
+/// compilation.
+///
+/// # Limitations
+///
+/// - Does not support `#[xdr(into_type)]` or `#[xdr(via)]` attributes.
+/// - Supports lifetime and const generics, but not type parameters.
+/// - Enums require `#[repr(i32)]`, matching the other XDR derives.
+/// - Avoid naming modules `cxs` or `txs` in discriminant paths: the
+///   generated const block imports `use xdrs::cxs; use xdrs::txs;`.
+///
+/// All derives accept `#[xdr(crate = "path")]` to override the `::xdrs`
+/// import path.
+#[proc_macro_derive(ConstXDRSize, attributes(xdr, xdrs))]
+pub fn derive_const_xdr_size(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    generate_const::const_xdr_size(&input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
