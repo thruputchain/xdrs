@@ -8,6 +8,9 @@
 //! - Traits [`Reader`] and [`Writer`], for converting between the
 //!   [XDR][RFC-4506] data model and some serialization format.
 //!
+//! - Trait [`WriterUnchecked`], an infallible, unsafe counterpart to
+//!   [`Writer`] with no runtime checks, for code-size-sensitive targets.
+//!
 //! - Implementations of [`Reader`] and [`Writer`]:
 //!   - [CXS](cxs) ("Compact XDR Serialization")
 //!   - [TXS](txs) ("Traditional XDR Serialization")
@@ -112,6 +115,8 @@ pub use serialize::reader::*;
 pub use serialize::writer::WriteError;
 pub use serialize::writer::WriteResult;
 pub use serialize::writer::*;
+
+pub use serialize::writer_unchecked::*;
 
 #[cfg(feature = "repr")]
 #[cfg_attr(docsrs, doc(cfg(feature = "repr")))]
