@@ -191,6 +191,18 @@ impl<const MAX: u32> StringM<MAX> {
     pub fn as_vec(&self) -> &Vec<u8> {
         self.as_ref()
     }
+
+    /// Returns the string's bytes as a slice.
+    ///
+    /// Usable in `const` contexts.
+    #[must_use]
+    pub const fn as_slice(&self) -> &[u8] {
+        #[cfg(feature = "alloc")]
+        let s: &[u8] = self.0.as_slice();
+        #[cfg(not(feature = "alloc"))]
+        let s: &[u8] = self.0;
+        s
+    }
 }
 
 impl<const MAX: u32> StringM<MAX> {
@@ -484,6 +496,27 @@ mod tests {
     use alloc::vec;
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_as_slice_const() {
+        // Compile check that as_slice is const-callable. With alloc, StringM
+        // values cannot be used inside const eval (Vec's destructor is not
+        // const), so the const fn is exercised at runtime.
+        const fn as_slice_in_const<const M: u32>(s: &StringM<M>) -> &[u8] {
+            s.as_slice()
+        }
+        let s: StringM<100> = "xdr".try_into().unwrap();
+        assert_eq!(as_slice_in_const(&s), b"xdr");
+    }
+
+    #[test]
+    #[cfg(not(feature = "alloc"))]
+    fn test_as_slice_const() {
+        const S: StringM<8> = StringM(b"xdr");
+        const SLICE: &[u8] = S.as_slice();
+        assert_eq!(SLICE, b"xdr");
+    }
 
     #[test]
     #[cfg(feature = "alloc")]

@@ -102,7 +102,9 @@ impl<const MAX: u32> core::str::FromStr for BytesM<MAX> {
             return Err(Error::LengthExceedsMax);
         }
         let mut out = Vec::with_capacity(s.len() / 2);
-        for pair in s.as_bytes().chunks_exact(2) {
+        let (pairs, rest) = s.as_bytes().as_chunks::<2>();
+        debug_assert!(rest.is_empty()); // length is even, checked above
+        for pair in pairs {
             out.push((hex_digit(pair[0])? << 4) | hex_digit(pair[1])?);
         }
         out.try_into()
@@ -186,6 +188,18 @@ impl<const MAX: u32> BytesM<MAX> {
     #[must_use]
     pub fn as_vec(&self) -> &Vec<u8> {
         self.as_ref()
+    }
+
+    /// Returns the bytes as a slice.
+    ///
+    /// Usable in `const` contexts.
+    #[must_use]
+    pub const fn as_slice(&self) -> &[u8] {
+        #[cfg(feature = "alloc")]
+        let s: &[u8] = self.0.as_slice();
+        #[cfg(not(feature = "alloc"))]
+        let s: &[u8] = self.0;
+        s
     }
 }
 
@@ -400,6 +414,27 @@ mod tests {
     extern crate alloc;
     #[cfg(feature = "alloc")]
     use alloc::{string::ToString, vec};
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_as_slice_const() {
+        // Compile check that as_slice is const-callable. With alloc, BytesM
+        // values cannot be used inside const eval (Vec's destructor is not
+        // const), so the const fn is exercised at runtime.
+        const fn as_slice_in_const<const M: u32>(b: &BytesM<M>) -> &[u8] {
+            b.as_slice()
+        }
+        let b: BytesM<3> = vec![0xde, 0xad].try_into().unwrap();
+        assert_eq!(as_slice_in_const(&b), &[0xde, 0xad]);
+    }
+
+    #[test]
+    #[cfg(not(feature = "alloc"))]
+    fn test_as_slice_const() {
+        const B: BytesM<3> = BytesM(&[0xde, 0xad]);
+        const SLICE: &[u8] = B.as_slice();
+        assert_eq!(SLICE, &[0xde, 0xad]);
+    }
 
     #[test]
     #[cfg(feature = "alloc")]

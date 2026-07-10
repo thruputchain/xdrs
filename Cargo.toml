@@ -122,6 +122,12 @@ required-features = ["alloc", "derive"]
 name = "const_opaque_bounds"
 required-features = ["alloc", "derive"]
 
+# Contents additionally gated on cfg(not(feature = "alloc")): non-empty
+# VecM/BytesM/StringM values are only const-constructible without alloc.
+[[test]]
+name = "const_writer_noalloc"
+required-features = ["derive"]
+
 [[test]]
 name = "borrowed_slices_baseline"
 required-features = ["alloc", "derive"]
