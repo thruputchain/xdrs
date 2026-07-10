@@ -267,6 +267,51 @@ mod derived {
         assert_eq!(<Shape as ConstWriteXDR>::MAX_TXS_LEN, Some(12)); // 4 + 4 + 4
     }
 
+    // A NON-`runtime_only` struct whose fields are bounded containers. These now
+    // take the inherent const path (via the derive's syntactic dispatch onto the
+    // xdr-common `const fn as_slice` accessors), so no `#[xdrs(runtime_only)]` is
+    // needed. `assert_trait_matches` exercises the trait-forwards-to-inherent
+    // path, which transits the new emission.
+    #[cfg(feature = "alloc")]
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    struct Leaf {
+        a: u32,
+        b: u16,
+    }
+
+    #[cfg(feature = "alloc")]
+    #[derive(WriteXDR, ConstWriteXDR, Debug)]
+    struct Bounded {
+        name: xdrs::StringM<16>,
+        tag: xdrs::BytesM<8>,
+        raw: xdrs::VecM<u8, 4>,
+        items: xdrs::VecM<Leaf, 3>,
+    }
+
+    #[cfg(feature = "alloc")]
+    #[test]
+    fn bounded_containers_inherent_derive() {
+        let v = Bounded {
+            name: "hi".try_into().unwrap(),
+            tag: vec![1u8, 2, 3].try_into().unwrap(),
+            raw: vec![9u8, 8].try_into().unwrap(),
+            items: vec![Leaf { a: 1, b: 2 }, Leaf { a: 65536, b: 7 }]
+                .try_into()
+                .unwrap(),
+        };
+        assert_trait_matches(&v);
+
+        // Direct inherent const-size vs fallible-reference-length agreement.
+        let (_, cxs_len) = reference_cxs(&v);
+        assert_eq!(v.const_cxs_size(), cxs_len);
+        let (_, txs_len) = reference_txs(&v);
+        assert_eq!(v.const_txs_size(), txs_len);
+
+        // A `VecM<Leaf, 3>` field is a heap-backed element container: pointer-cut
+        // makes the whole struct's MAX unbounded.
+        assert_eq!(<Bounded as ConstWriteXDR>::MAX_CXS_LEN, None);
+    }
+
     #[cfg(feature = "alloc")]
     #[derive(WriteXDR, ConstWriteXDR, Debug)]
     #[xdrs(runtime_only)]
@@ -429,5 +474,54 @@ mod recursion {
             next: Some(&leaf),
         };
         assert_trait_matches(&root);
+    }
+}
+
+// The payoff: const-context encoding of bounded containers on no-`alloc`. The
+// derive inlines the xdr-common `const fn as_slice` accessors, so a
+// bounded-container struct encodes entirely inside a `const` block with no heap.
+// Needs `derive` (the const encoders are derive-generated); runs under
+// `cargo test -F derive,int128` and is cfg'd out cleanly under `--all-features`
+// (which enables `alloc`).
+#[cfg(all(not(feature = "alloc"), feature = "derive"))]
+mod no_alloc_const_ctx {
+    use xdrs::{BytesM, ConstWriteXDR, StringM, VecM, WriteXDR};
+
+    #[derive(WriteXDR, ConstWriteXDR)]
+    struct Leaf {
+        a: u32,
+    }
+
+    #[derive(WriteXDR, ConstWriteXDR)]
+    struct Msg {
+        name: StringM<16>,
+        tag: BytesM<8>,
+        raw: VecM<u8, 4>,
+        items: VecM<Leaf, 3>,
+    }
+
+    // No-`alloc` backing is `&'static [_]`; construct via the public `.0` field.
+    const M: Msg = Msg {
+        name: StringM(b"hi" as &[u8]),
+        tag: BytesM(b"\x01\x02\x03" as &[u8]),
+        raw: VecM(b"\x09\x08" as &[u8]),
+        items: VecM(&[Leaf { a: 1 }, Leaf { a: 65536 }]),
+    };
+
+    // Buffer sized from the const size fn; encoded fully at compile time.
+    const SIZE: usize = M.const_cxs_size();
+    const ENCODED: [u8; SIZE] = {
+        let mut buf = [0u8; SIZE];
+        let mut c = xdrs::cxs::Cursor::new(&mut buf);
+        M.const_write_cxs(&mut c);
+        buf
+    };
+
+    #[test]
+    fn const_context_encoding_matches_reference() {
+        // The const-encoded bytes equal the fallible-writer reference encoding.
+        let (exp, len) = super::reference_cxs(&M);
+        assert_eq!(SIZE, len, "const size vs reference length");
+        assert_eq!(&ENCODED[..], &exp[..len], "const bytes vs reference bytes");
     }
 }

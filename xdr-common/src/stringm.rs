@@ -191,6 +191,25 @@ impl<const MAX: u32> StringM<MAX> {
     pub fn as_vec(&self) -> &Vec<u8> {
         self.as_ref()
     }
+
+    /// Returns the contained bytes as a slice.
+    ///
+    /// This is a `const fn` in both feature variants (backed by
+    /// `Vec::as_slice`, `const` since Rust 1.87, with `alloc`; a plain
+    /// `&'static [u8]` copy without). It is the const accessor the
+    /// `ConstWriteXDR` derive inlines to encode a `StringM` field in a
+    /// `const` context.
+    #[must_use]
+    pub const fn as_slice(&self) -> &[u8] {
+        #[cfg(feature = "alloc")]
+        {
+            self.0.as_slice()
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            self.0
+        }
+    }
 }
 
 impl<const MAX: u32> StringM<MAX> {
@@ -663,5 +682,24 @@ mod tests {
     fn test_stringm_serde_deserialize_rejects_overlimit() {
         let err = serde_json::from_value::<StringM<1>>(serde_json::json!("abc"));
         assert!(err.is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_stringm_as_slice_alloc() {
+        let s: StringM<100> = "hello".try_into().unwrap();
+        assert_eq!(s.as_slice(), b"hello");
+    }
+
+    #[test]
+    #[cfg(not(feature = "alloc"))]
+    fn test_stringm_as_slice_noalloc() {
+        static DATA: [u8; 3] = [b'a', b'b', b'c'];
+        let s: StringM<8> = (&DATA).try_into().unwrap();
+        assert_eq!(s.as_slice(), b"abc");
+        // Exercise as_slice in a genuine const context (the no-alloc payoff).
+        const CS: StringM<8> = StringM(b"hi" as &[u8]);
+        const LEN: usize = CS.as_slice().len();
+        assert_eq!(LEN, 2);
     }
 }

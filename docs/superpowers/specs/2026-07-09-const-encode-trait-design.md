@@ -287,3 +287,34 @@ and to fail loudly instead of opaquely:
    Last-segment matching is the derive's established convention (as for
    `Option`/`Result`); it can false-positive on a user type coincidentally named
    e.g. `Vec` — documented in the derive's hygiene caveats.
+
+## Amendment (2026-07-10): bounded-container inherent encoding restored
+
+The 2026-07-09 amendment (#2 above) over-broadly listed `VecM`/`BytesM`/`StringM`
+as trait-only. **Correction:** their inherent (derive-inlined, `const fn`)
+encoding is restored, so a non-`runtime_only` `#[derive(ConstWriteXDR)]` may hold
+these fields directly. The structural constraint (inherent `const_write_cxs`
+methods cannot live on the xdr-common types themselves — `E0116` in xdrs, a
+circular dependency in xdr-common) is worked around exactly like the existing
+`&[u8]`/`&str`/`[u8; N]` leaves:
+
+- **(a) xdr-common const accessors.** `BytesM`, `StringM`, and `VecM<T>` gain a
+  `pub const fn as_slice(&self) -> &[u8]` / `&[T]`, cfg-switched internally
+  (`alloc`: `self.0.as_slice()`, `const` since Rust 1.87; no-`alloc`: the
+  `&'static` slice). No `MAX` consts are added, so the pointer-cut rule is
+  untouched.
+- **(b) Derive syntactic dispatch** (`generate_const.rs`). Recognized by last
+  path segment before the named-leaf fallback: `BytesM`/`StringM`/`VecM<u8, N>`
+  emit the length-prefixed opaque-bytes shape
+  (`assert(len <= <Ty>::MAX_LEN); write_opaque_variable(as_slice())`);
+  `VecM<T, N>` (non-`u8` `T`) emits a length prefix plus a while-loop of
+  per-element inherent `const_write_cxs`, mirroring the existing `&[T]` shape.
+  Size twins are analogous.
+
+The trait impls in `src/const_write_xdr.rs` and all `MAX_*_LEN` semantics
+(pointer-cut: `VecM<T>` MAX `None`; byte-shaped keep arithmetic bounds) are
+**unchanged**; derive-inlined encoding is byte-identical to the trait impls
+(same `len <= MAX` assert). The targeted derive error now covers only
+`{Box, Vec, String}` (heapless `Vec`/`String` still caught by those segments;
+`Box` and heapless types still need `#[xdrs(runtime_only)]`). The payoff is
+const-context encoding of bounded containers on no-`alloc`.

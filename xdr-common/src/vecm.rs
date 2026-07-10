@@ -211,6 +211,25 @@ impl<T: StaticIfNoAlloc, const MAX: u32> VecM<T, MAX> {
     pub fn as_vec(&self) -> &Vec<T> {
         self.as_ref()
     }
+
+    /// Returns the contained elements as a slice.
+    ///
+    /// This is a `const fn` in both feature variants (backed by
+    /// `Vec::<T>::as_slice`, `const` for all `T` since Rust 1.87, with
+    /// `alloc`; a plain `&'static [T]` copy without). It is the const
+    /// accessor the `ConstWriteXDR` derive inlines to encode a `VecM` field
+    /// in a `const` context.
+    #[must_use]
+    pub const fn as_slice(&self) -> &[T] {
+        #[cfg(feature = "alloc")]
+        {
+            self.0.as_slice()
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            self.0
+        }
+    }
 }
 
 #[allow(private_bounds)]
@@ -519,6 +538,25 @@ mod tests {
         let value = VecM::<u32, 2>(vec![1, 2]);
         let json = serde_json::to_value(&value).unwrap();
         assert_eq!(json, serde_json::json!([1, 2]));
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_vecm_as_slice_alloc() {
+        let v: VecM<u32, 10> = vec![1u32, 2, 3].try_into().unwrap();
+        assert_eq!(v.as_slice(), &[1u32, 2, 3]);
+    }
+
+    #[test]
+    #[cfg(not(feature = "alloc"))]
+    fn test_vecm_as_slice_noalloc() {
+        static DATA: [u32; 3] = [1, 2, 3];
+        let v: VecM<u32, 10> = (&DATA).try_into().unwrap();
+        assert_eq!(v.as_slice(), &[1u32, 2, 3]);
+        // Exercise as_slice in a genuine const context (the no-alloc payoff).
+        const CV: VecM<u32, 4> = VecM(&[7, 8]);
+        const LEN: usize = CV.as_slice().len();
+        assert_eq!(LEN, 2);
     }
 
     #[test]

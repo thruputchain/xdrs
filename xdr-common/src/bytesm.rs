@@ -187,6 +187,25 @@ impl<const MAX: u32> BytesM<MAX> {
     pub fn as_vec(&self) -> &Vec<u8> {
         self.as_ref()
     }
+
+    /// Returns the contained bytes as a slice.
+    ///
+    /// This is a `const fn` in both feature variants (backed by
+    /// `Vec::as_slice`, `const` since Rust 1.87, with `alloc`; a plain
+    /// `&'static [u8]` copy without). It is the const accessor the
+    /// `ConstWriteXDR` derive inlines to encode a `BytesM` field in a
+    /// `const` context.
+    #[must_use]
+    pub const fn as_slice(&self) -> &[u8] {
+        #[cfg(feature = "alloc")]
+        {
+            self.0.as_slice()
+        }
+        #[cfg(not(feature = "alloc"))]
+        {
+            self.0
+        }
+    }
 }
 
 impl<const MAX: u32> BytesM<MAX> {
@@ -527,6 +546,29 @@ mod tests {
     fn test_bytesm_serde_deserialize_rejects_overlimit() {
         let err = serde_json::from_value::<BytesM<1>>(serde_json::json!("aabb"));
         assert!(err.is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "alloc")]
+    fn test_bytesm_as_slice_alloc() {
+        let b: BytesM<100> = vec![0xde, 0xad, 0xbe, 0xef].try_into().unwrap();
+        assert_eq!(b.as_slice(), &[0xde, 0xad, 0xbe, 0xef]);
+        // as_slice is const-callable.
+        const _: fn() = || {
+            let _ = BytesM::<4>::as_slice;
+        };
+    }
+
+    #[test]
+    #[cfg(not(feature = "alloc"))]
+    fn test_bytesm_as_slice_noalloc() {
+        static DATA: [u8; 3] = [1, 2, 3];
+        let b: BytesM<8> = (&DATA).try_into().unwrap();
+        assert_eq!(b.as_slice(), &[1, 2, 3]);
+        // Exercise as_slice in a genuine const context (the no-alloc payoff).
+        const CB: BytesM<8> = BytesM(b"hi" as &[u8]);
+        const LEN: usize = CB.as_slice().len();
+        assert_eq!(LEN, 2);
     }
 
     #[test]

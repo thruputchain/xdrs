@@ -345,21 +345,34 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// derive without a const-evaluation cycle. Inline containers (`[T; N]`,
 /// heapless `Vec`/`String`) and byte-shaped bounded types keep exact bounds.
 ///
+/// ## Bounded containers on the inherent path
+///
+/// The xdr-common bounded containers
+/// ([`BytesM`](../xdrs/struct.BytesM.html),
+/// [`StringM`](../xdrs/struct.StringM.html),
+/// [`VecM`](../xdrs/struct.VecM.html)) are supported on the inherent const path:
+/// the derive recognizes them by last path segment and inlines their encoding
+/// via the crate's `const fn as_slice` accessors — `BytesM`/`StringM`/`VecM<u8, N>`
+/// as length-prefixed opaque bytes, and `VecM<T, N>` (non-`u8` `T`) as a length
+/// prefix plus per-element inherent const encoding. A `VecM<T, N>` field's
+/// element type `T` must therefore itself provide inherent const encoders (same
+/// contract as `[T; N]` / `&[T]`). So a **non**-`runtime_only` struct/enum may
+/// hold these fields directly, no attribute required.
+///
 /// # `#[xdrs(runtime_only)]`
 ///
 /// Apply `#[xdrs(runtime_only)]` to skip the inherent `const fn`s and emit only
 /// the trait impl, with direct (non-`const`) method bodies. Use this for types
-/// whose fields have no inherent const encoders — the byte-shaped bounded types
-/// and alloc containers ([`StringM`](../xdrs/struct.StringM.html),
-/// [`BytesM`](../xdrs/struct.BytesM.html), [`VecM`](../xdrs/struct.VecM.html),
-/// `Box`, `Vec`, `String`) provide only the `ConstWriteXDR` trait impl, not
+/// whose fields have no inherent const encoders — the alloc/std containers
+/// (`Box`, `Vec`, `String`, and `heapless::Vec`/`heapless::String`, which match
+/// the `Vec`/`String` segments) provide only the `ConstWriteXDR` trait impl, not
 /// inherent `const fn` encoders. The `MAX_*_LEN` consts are still provided.
 ///
 /// Without `#[xdrs(runtime_only)]`, a field of such a type triggers a **targeted
 /// compile error** at that field naming the offending type and directing you
 /// here, rather than an opaque "no method named `const_write_cxs`". The check
 /// recurses through the recognized wrappers (`Option`/`Result`/tuples/arrays/
-/// slices/references), so `Option<StringM<16>>` is caught too. References are
+/// slices/references), so `Option<Box<Foo>>` is caught too. References are
 /// exempt: a `&T` field falls through to the referent's inherent const encoders
 /// on the inherent path, so reference-recursive types (`Node<'a>` above) derive
 /// without `#[xdrs(runtime_only)]`.
@@ -370,8 +383,9 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///   derive input, struct fields, or enum variant fields. The `via`/`into_type`
 ///   conversions require `Into::into()` which is not `const fn`.
 /// - Field types may use recursive concrete shapes inline, including `Option<T>`,
-///   `Result<T, E>`, `&[T]`, `[T; N]`, and tuples, as long as leaf types are
-///   concrete and const-encodable.
+///   `Result<T, E>`, `&[T]`, `[T; N]`, tuples, and the bounded containers
+///   `BytesM`/`StringM`/`VecM`, as long as leaf types are concrete and
+///   const-encodable.
 ///
 /// # Generic types (type parameters)
 ///
@@ -431,11 +445,15 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// newtype and derive `ConstWriteXDR` on the newtype instead.
 ///
 /// The trait-only-field error (see `#[xdrs(runtime_only)]`) matches the same
-/// way: by the field type's **last path segment** against `VecM`, `BytesM`,
-/// `StringM`, `Box`, `Vec`, and `String`. A user type coincidentally named,
-/// e.g., `Vec` — even one that *does* provide inherent const encoders — will
-/// false-positive and be rejected on the inherent path; use a differently-named
-/// newtype or `#[xdrs(runtime_only)]`.
+/// way: by the field type's **last path segment** against `Box`, `Vec`, and
+/// `String`. The bounded containers `BytesM` / `StringM` / `VecM` are likewise
+/// recognized by last segment for the inherent path. A user type coincidentally
+/// named, e.g., `Vec` — even one that *does* provide inherent const encoders —
+/// will false-positive and be rejected on the inherent path; use a
+/// differently-named newtype or `#[xdrs(runtime_only)]`. Symmetrically, a user
+/// type named `VecM`/`BytesM`/`StringM` that does *not* have the expected
+/// `as_slice` / `MAX_LEN` const surface will fail to compile on the inherent
+/// path.
 ///
 #[proc_macro_derive(ConstWriteXDR, attributes(xdr, xdrs))]
 pub fn derive_const_write_xdr(input: TokenStream) -> TokenStream {

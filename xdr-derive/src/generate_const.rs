@@ -204,6 +204,42 @@ fn const_size_value_expr(
         return Ok(quote! { #mod_path::size_opaque_variable((*#expr_ref).as_bytes().len()) });
     }
 
+    // Byte-shaped bounded containers (and `VecM<u8, ..>`): opaque-bytes size.
+    if is_bytesm_or_stringm(ty) || vecm_elem(ty).is_some_and(|e| is_path_ident(e, "u8")) {
+        return Ok(quote! {
+            {
+                let s = (#expr_ref).as_slice();
+                ::core::assert!(
+                    s.len() <= <#ty>::MAX_LEN,
+                    "value length exceeds declared bound"
+                );
+                #mod_path::size_opaque_variable(s.len())
+            }
+        });
+    }
+
+    // `VecM<T, ..>` with a non-`u8` element type: length prefix + per-element
+    // inherent const size, mirroring the `&[T]` shape.
+    if let Some(elem) = vecm_elem(ty) {
+        let inner_size = const_size_value_expr(quote! { &s[i] }, elem, fmt)?;
+        return Ok(quote! {
+            {
+                let s = (#expr_ref).as_slice();
+                ::core::assert!(
+                    s.len() <= <#ty>::MAX_LEN,
+                    "value length exceeds declared bound"
+                );
+                let mut total = #mod_path::size_u32(s.len() as u32);
+                let mut i = 0;
+                while i < s.len() {
+                    total += #inner_size;
+                    i += 1;
+                }
+                total
+            }
+        });
+    }
+
     if is_phantom_data(ty) {
         return Ok(quote! { 0 });
     }
@@ -318,6 +354,43 @@ fn const_write_value_expr(
 
     if is_str_ref(ty) {
         return Ok(quote! { w.write_opaque_variable((*#expr_ref).as_bytes()); });
+    }
+
+    // Byte-shaped bounded containers: length-prefixed opaque bytes via the
+    // xdr-common `const fn as_slice` accessor. `VecM<u8, ..>` shares this shape.
+    if is_bytesm_or_stringm(ty) || vecm_elem(ty).is_some_and(|e| is_path_ident(e, "u8")) {
+        return Ok(quote! {
+            {
+                let s = (#expr_ref).as_slice();
+                ::core::assert!(
+                    s.len() <= <#ty>::MAX_LEN,
+                    "value length exceeds declared bound"
+                );
+                w.write_opaque_variable(s);
+            }
+        });
+    }
+
+    // `VecM<T, ..>` with a non-`u8` element type: length prefix + per-element
+    // inherent const encoding, mirroring the `&[T]` shape. Elements must provide
+    // inherent const encoders (same contract as `[T; N]` / `&[T]`).
+    if let Some(elem) = vecm_elem(ty) {
+        let inner_write = const_write_value_expr(quote! { &s[i] }, elem, fmt)?;
+        return Ok(quote! {
+            {
+                let s = (#expr_ref).as_slice();
+                ::core::assert!(
+                    s.len() <= <#ty>::MAX_LEN,
+                    "value length exceeds declared bound"
+                );
+                w.write_u32(s.len() as u32);
+                let mut i = 0;
+                while i < s.len() {
+                    #inner_write
+                    i += 1;
+                }
+            }
+        });
     }
 
     if is_phantom_data(ty) {
@@ -1052,21 +1125,37 @@ mod tests {
     }
 
     #[test]
-    fn trait_only_field_type_errors_targeted() {
+    fn bytesm_stringm_fields_emit_opaque_variable() {
         let input: syn::DeriveInput = syn::parse_quote! {
-            struct HasString {
+            struct HasBounded {
                 name: StringM<16>,
+                tag: BytesM<8>,
+                raw: VecM<u8, 4>,
                 id: u32,
             }
         };
-        let err = const_write_xdr(&input).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("StringM")
-                && msg.contains("only the `ConstWriteXDR` trait impl")
-                && msg.contains("runtime_only"),
-            "unexpected error message: {msg}"
-        );
+        // No longer an error: the bounded containers take the inherent path.
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        assert!(toks.contains("write_opaque_variable(s)"), "{toks}");
+        // Length bound is asserted against the type's MAX_LEN.
+        assert!(toks.contains("s.len()<=<StringM<16>>::MAX_LEN"), "{toks}");
+        assert!(toks.contains("s.len()<=<BytesM<8>>::MAX_LEN"), "{toks}");
+        assert!(toks.contains("s.len()<=<VecM<u8,4>>::MAX_LEN"), "{toks}");
+    }
+
+    #[test]
+    fn vecm_of_leaf_field_emits_element_loop() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct HasVecOfLeaf {
+                items: VecM<Leaf, 3>,
+            }
+        };
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        // Length prefix + element loop, asserting against MAX_LEN.
+        assert!(toks.contains("s.len()<=<VecM<Leaf,3>>::MAX_LEN"), "{toks}");
+        assert!(toks.contains("w.write_u32(s.len()asu32)"), "{toks}");
+        assert!(toks.contains("whilei<s.len()"), "{toks}");
+        assert!(toks.contains("(&s[i]).const_write_cxs(w)"), "{toks}");
     }
 
     #[test]
@@ -1479,6 +1568,38 @@ fn is_str_ref(ty: &syn::Type) -> bool {
     false
 }
 
+/// Whether `ty`'s last path segment is `BytesM` or `StringM` — the byte-shaped
+/// bounded containers. Both encode as a length-prefixed opaque byte string and
+/// expose a `const fn as_slice(&self) -> &[u8]` accessor plus a `MAX_LEN` const,
+/// so the inherent const path inlines them directly (see the dispatch in
+/// `const_write_value_expr` / `const_size_value_expr`). Matched by last segment,
+/// the derive's established convention.
+fn is_bytesm_or_stringm(ty: &syn::Type) -> bool {
+    if let syn::Type::Path(p) = transparent_type(ty)
+        && let Some(seg) = p.path.segments.last()
+    {
+        return seg.ident == "BytesM" || seg.ident == "StringM";
+    }
+    false
+}
+
+/// If `ty`'s last path segment is `VecM`, returns its first generic **type**
+/// argument (the element type). Returns `None` when the segment is not `VecM`
+/// or carries no angle-bracketed type argument (e.g. a bare `VecM` alias) — the
+/// caller then falls through rather than guessing an element type. `VecM`
+/// exposes a `const fn as_slice(&self) -> &[T]` accessor and a `MAX_LEN` const.
+fn vecm_elem(ty: &syn::Type) -> Option<&syn::Type> {
+    let seg = path_segment(ty, "VecM")?;
+    let args = angle_bracketed_args(seg)?;
+    args.args.iter().find_map(|arg| {
+        if let syn::GenericArgument::Type(t) = arg {
+            Some(t)
+        } else {
+            None
+        }
+    })
+}
+
 fn is_phantom_data(ty: &syn::Type) -> bool {
     path_segment(ty, "PhantomData").is_some()
 }
@@ -1487,18 +1608,23 @@ fn is_infallible(ty: &syn::Type) -> bool {
     path_segment(ty, "Infallible").is_some()
 }
 
-/// Container / alloc type names whose `ConstWriteXDR` impl provides ONLY the
+/// Alloc/std container type names whose `ConstWriteXDR` impl provides ONLY the
 /// trait (no inherent `const fn` encoders). A field of one of these types in a
 /// non-`runtime_only` derive would compile the named-leaf fallback down to a
 /// call to a nonexistent inherent method (`const_write_cxs` / `const_cxs_size`),
 /// producing an opaque "no method named …" error. We pre-scan for them and
 /// emit a targeted error instead.
 ///
+/// The xdr-common bounded containers (`BytesM`, `StringM`, `VecM`) are NOT in
+/// this list: they now have a syntactic inherent path via the `const fn
+/// as_slice` accessors (see `is_bytesm_or_stringm` / `vecm_elem`). `heapless`
+/// `Vec` / `String` are still caught by the `Vec` / `String` entries here.
+///
 /// Matching is by the path's LAST segment ident — the derive's established
 /// convention (the same way `Option`/`Result` are recognized). It can
 /// false-positive on a user type coincidentally named e.g. `Vec`; see the
 /// hygiene section of the derive docs.
-const TRAIT_ONLY_CONST_TYPES: &[&str] = &["VecM", "BytesM", "StringM", "Box", "Vec", "String"];
+const TRAIT_ONLY_CONST_TYPES: &[&str] = &["Box", "Vec", "String"];
 
 /// Pre-scan a field type (used only on the INHERENT-emission path) and reject
 /// types that provide only the `ConstWriteXDR` trait impl. Recurses through the
@@ -1540,6 +1666,20 @@ fn check_field_has_inherent_const_encoder(ty: &syn::Type) -> Result<()> {
     }
     if let syn::Type::Reference(r) = ty {
         return check_field_has_inherent_const_encoder(&r.elem);
+    }
+
+    // Byte-shaped bounded containers have a self-contained inherent path.
+    if is_bytesm_or_stringm(ty) {
+        return Ok(());
+    }
+    // `VecM<u8, ..>` is opaque bytes (no element encoder needed); `VecM<T, ..>`
+    // inlines per-element inherent const encoding, so `T` must itself have one
+    // (same contract as `[T; N]` / `&[T]`). Recurse into the element type.
+    if let Some(elem) = vecm_elem(ty) {
+        if is_path_ident(elem, "u8") {
+            return Ok(());
+        }
+        return check_field_has_inherent_const_encoder(elem);
     }
 
     if let syn::Type::Path(p) = ty
