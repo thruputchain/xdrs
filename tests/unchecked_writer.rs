@@ -2,7 +2,6 @@
 //! unchecked writers must produce byte-identical output to the checked
 //! writers, in both formats. Also exercises the debug_assert guards on
 //! contract violations (debug builds only).
-#![allow(dead_code)]
 
 use core::mem::MaybeUninit as MU;
 use xdrs::{BytesM, StringM, VecM, WriteXDR, cxs, mu, txs};

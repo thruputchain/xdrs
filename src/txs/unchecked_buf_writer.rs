@@ -60,8 +60,13 @@ impl<'a> UncheckedBufWriter<'a> {
         let start = self.written;
         self.written = extent;
 
-        // SAFETY: the caller guarantees extent <= self.buf.len(), and
-        // start <= extent (since len >= 0 and start = old written).
+        // SAFETY: the caller contract `written + len <= buf.len()` bounds
+        // the mathematical sum by `buf.len() <= isize::MAX`, so
+        // `self.written + len` cannot overflow usize when the contract is
+        // upheld. `start <= extent` follows because `start` is the old
+        // `self.written` and `len` is non-negative (usize). Both `start`
+        // and `extent` are therefore in `0..=self.buf.len()`, making the
+        // range valid for `get_unchecked_mut`.
         unsafe { self.buf.get_unchecked_mut(start..extent) }
     }
 }

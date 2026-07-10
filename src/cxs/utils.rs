@@ -84,7 +84,10 @@ pub fn encode_into<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> Write
 ///   suitable sizes.
 /// - `value` must respect all declared XDR bounds (e.g. a `VecM<T, MAX>`
 ///   must not be longer than `MAX`), since a violation would make the
-///   encoding exceed any precomputed size bound.
+///   encoding exceed any precomputed size bound. This includes the implicit
+///   `u32::MAX` upper limit on variable-length arrays and strings: the
+///   checked path returns [`WriteError::InvalidArrayLength`] for lengths
+///   exceeding `u32::MAX`; the unchecked path only `debug_assert!`s this.
 ///
 /// Violations are caught by `debug_assert!` in debug builds; in release
 /// builds they are undefined behavior.

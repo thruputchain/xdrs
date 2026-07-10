@@ -15,6 +15,13 @@ use core::convert::Infallible;
 /// Types implementing this trait can be serialized into XDR format
 /// using any writer that implements [`Writer`].
 ///
+/// The trait has two required methods: [`write_xdr`](Self::write_xdr) (the
+/// checked, fallible path) and [`write_xdr_unchecked`](Self::write_xdr_unchecked)
+/// (an `unsafe`, infallible path with no runtime checks). `#[derive(WriteXDR)]`
+/// implements both automatically; manual implementors must provide both — the
+/// unchecked method must uphold the buffer-size and value-bound contract
+/// documented on [`write_xdr_unchecked`](Self::write_xdr_unchecked).
+///
 /// # Example
 ///
 /// ```rust
@@ -45,7 +52,12 @@ pub trait WriteXDR {
     ///   for the encoded form of `self`.
     /// - `self` must respect all declared XDR bounds (e.g. a
     ///   `VecM<T, MAX>` must not be longer than `MAX`), since a violation
-    ///   would make the encoding exceed any precomputed size bound.
+    ///   would make the encoding exceed any precomputed size bound. This
+    ///   includes the implicit `u32::MAX` upper limit on variable-length
+    ///   arrays and strings: the checked path returns
+    ///   [`WriteError::InvalidArrayLength`](crate::WriteError::InvalidArrayLength)
+    ///   for lengths exceeding `u32::MAX`; the unchecked path only
+    ///   `debug_assert!`s this condition.
     ///
     /// Violations are `debug_assert!`ed; in release builds they are
     /// undefined behavior.

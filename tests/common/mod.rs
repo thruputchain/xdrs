@@ -14,6 +14,16 @@ pub trait Format {
         buf: &mut [MU<u8>],
     ) -> Result<usize, WriteError>;
 
+    /// Encode `value` into `buf` using the format's unchecked path.
+    ///
+    /// # Safety
+    ///
+    /// `buf.len()` must equal the exact encoded size of `value` (or be
+    /// larger), and `value` must respect all declared XDR bounds. In
+    /// practice the test helper sizes the buffer from a prior successful
+    /// checked encode, which satisfies both requirements.
+    unsafe fn encode_into_unchecked<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> usize;
+
     #[cfg(feature = "alloc")]
     fn encode<T: WriteXDR + ?Sized>(value: &T) -> Result<Vec<u8>, WriteError>;
 
@@ -58,6 +68,11 @@ impl Format for CXS {
         cxs::encode_into(value, buf)
     }
 
+    unsafe fn encode_into_unchecked<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> usize {
+        // SAFETY: forwarded caller contract.
+        unsafe { cxs::encode_into_unchecked(value, buf) }
+    }
+
     #[cfg(feature = "alloc")]
     fn encode<T: WriteXDR + ?Sized>(value: &T) -> Result<Vec<u8>, WriteError> {
         cxs::encode(value)
@@ -81,6 +96,11 @@ impl Format for TXS {
         buf: &mut [MU<u8>],
     ) -> Result<usize, WriteError> {
         txs::encode_into(value, buf)
+    }
+
+    unsafe fn encode_into_unchecked<T: WriteXDR + ?Sized>(value: &T, buf: &mut [MU<u8>]) -> usize {
+        // SAFETY: forwarded caller contract.
+        unsafe { txs::encode_into_unchecked(value, buf) }
     }
 
     #[cfg(feature = "alloc")]
@@ -139,9 +159,30 @@ pub trait Check: Format {
 
         let written = Self::encode_into(value, &mut buf).unwrap();
 
+        // SAFETY: `encode_into` just initialized the first `written` bytes.
         let encoded = unsafe { mu::assume_init_ref(&buf[..written]) };
 
         Self::check_eq(encoded, expected);
+
+        // Differential unchecked leg: the checked encode succeeded above,
+        // so `written` is the exact encoded byte count and all declared XDR
+        // bounds on `value` were validated. We slice the unchecked buffer to
+        // exactly `written` bytes to satisfy the tight buffer-size contract.
+        let mut ubuf: [MU<u8>; BUFSZ] = [const { MU::zeroed() }; BUFSZ];
+        // SAFETY: `ubuf[..written]` is sized to the exact encoded length
+        // measured by the checked encode that just succeeded; the successful
+        // checked encode also validated every declared XDR bound on `value`.
+        let uwritten = unsafe { Self::encode_into_unchecked(value, &mut ubuf[..written]) };
+        assert_eq!(
+            written,
+            uwritten,
+            "unchecked written != checked written (format = {})",
+            Self::name()
+        );
+        // SAFETY: `encode_into_unchecked` just initialized the first
+        // `uwritten` bytes.
+        let uencoded = unsafe { mu::assume_init_ref(&ubuf[..uwritten]) };
+        Self::check_eq(uencoded, expected);
     }
 
     #[cfg(feature = "alloc")]
