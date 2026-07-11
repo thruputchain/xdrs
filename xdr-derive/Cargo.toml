@@ -17,10 +17,10 @@ proc-macro = true
 doctest = true
 
 [dependencies]
-darling = "=0.20.11"
-proc-macro2 = "=1.0.105"
-quote = "=1.0.43"
-syn = { version = "=2.0.114", features = ["visit"] }
+darling = "0.20.11"
+proc-macro2 = "1.0.105"
+quote = "1.0.43"
+syn = { version = "2.0.114", features = ["visit"] }
 
 [dev-dependencies]
 xdrs = { path = "..", features = ["alloc", "derive", "repr"] }

@@ -9,7 +9,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.7.3"
+version = "0.7.4"
 edition = "2024"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"  
@@ -25,12 +25,12 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.7.3", registry = "groundhog" }
-xdr-repr = { path = "xdr-repr", version = "=0.7.3", registry = "groundhog" }
-xdr-common = { path = "xdr-common", version = "=0.7.3", registry = "groundhog" }
+xdr-derive = { path = "xdr-derive", version = "=0.7.4", registry = "groundhog" }
+xdr-repr = { path = "xdr-repr", version = "=0.7.4", registry = "groundhog" }
+xdr-common = { path = "xdr-common", version = "=0.7.4", registry = "groundhog" }
 
-pretty_assertions = "=1.4.1"
-heapless = "=0.9.3"
+pretty_assertions = "1.4.1"
+heapless = "0.9.3"
 
 [workspace.lints.rust]
 unsafe_code = "allow"
@@ -63,8 +63,8 @@ xdr-repr = { workspace = true, optional = true }
 heapless = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = "=0.6.0"
-hex = "=0.4.3"
+criterion = "0.6.0"
+hex = "0.4.3"
 pretty_assertions = { workspace = true }
 
 [features]
