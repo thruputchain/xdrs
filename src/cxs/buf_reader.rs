@@ -75,7 +75,20 @@ impl<'a> BufReader<'a> {
         Ok(unsafe { *byte.get_unchecked(0) })
     }
 
-    #[inline(always)]
+    #[cfg_attr(
+        any(
+            target_family = "wasm",
+            all(target_arch = "riscv32", target_os = "none"),
+        ),
+        inline(never)
+    )]
+    #[cfg_attr(
+        not(any(
+            target_family = "wasm",
+            all(target_arch = "riscv32", target_os = "none"),
+        )),
+        inline(always)
+    )]
     fn read_signed(&mut self) -> ReadResult<i64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
@@ -141,7 +154,20 @@ impl<'a> BufReader<'a> {
         Ok(n)
     }
 
-    #[inline(always)]
+    #[cfg_attr(
+        any(
+            target_family = "wasm",
+            all(target_arch = "riscv32", target_os = "none"),
+        ),
+        inline(never)
+    )]
+    #[cfg_attr(
+        not(any(
+            target_family = "wasm",
+            all(target_arch = "riscv32", target_os = "none"),
+        )),
+        inline(always)
+    )]
     fn read_unsigned(&mut self) -> ReadResult<u64> {
         let h = self.read_byte()?;
         let s = (h & 0xc0) >> 6;
