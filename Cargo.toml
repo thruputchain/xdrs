@@ -9,7 +9,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.7.4"
+version = "0.8.0"
 edition = "2024"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"  
@@ -25,9 +25,9 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.7.4", registry = "groundhog" }
-xdr-repr = { path = "xdr-repr", version = "=0.7.4", registry = "groundhog" }
-xdr-common = { path = "xdr-common", version = "=0.7.4", registry = "groundhog" }
+xdr-derive = { path = "xdr-derive", version = "=0.8.0", registry = "groundhog" }
+xdr-repr = { path = "xdr-repr", version = "=0.8.0", registry = "groundhog" }
+xdr-common = { path = "xdr-common", version = "=0.8.0", registry = "groundhog" }
 
 pretty_assertions = "1.4.1"
 heapless = "0.9.3"
@@ -68,6 +68,8 @@ hex = "0.4.3"
 pretty_assertions = { workspace = true }
 
 [features]
+default = ["detailed-errors"]
+detailed-errors = [] # retain precise ReadError variants and diagnostic payloads
 permissive = [] # relax wire validation: CXS minimal integer encoding + TXS non-zero padding
 alloc = ["xdr-common/alloc"] # enable allocating interfaces
 int128 = ["xdr-repr?/int128"] # enable de/serialization of i128/u128
@@ -112,7 +114,7 @@ required-features = ["alloc", "derive"]
 
 [[test]]
 name = "pointer"
-required-features = ["alloc", "derive"]
+required-features = ["alloc", "derive", "detailed-errors"]
 
 [[test]]
 name = "const_writer"
@@ -158,4 +160,22 @@ required-features = ["alloc"]
 
 [[test]]
 name = "vecm_prealloc_dos"
-required-features = ["alloc"]
+required-features = ["alloc", "detailed-errors"]
+
+# These tests inspect or construct precise ReadError variants. Compact builds
+# exercise equivalent malformed inputs through tests/read_errors.rs instead.
+[[test]]
+name = "arrays"
+required-features = ["detailed-errors"]
+
+[[test]]
+name = "ints"
+required-features = ["detailed-errors"]
+
+[[test]]
+name = "leak_detection"
+required-features = ["detailed-errors"]
+
+[[test]]
+name = "padding"
+required-features = ["detailed-errors"]

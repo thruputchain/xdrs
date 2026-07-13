@@ -17,6 +17,10 @@ This package provides:
 
 The library is `no_std`. Optional features:
 
+- `detailed-errors` (enabled by default): retain precise `ReadError`
+  variants and diagnostic payloads. Contract builds can use
+  `default-features = false` to replace them with a single compact error
+  value while preserving identical validation behavior
 - `alloc`: allocation-based interfaces (`Vec`, `String`, growable
   `BufWriter`s, owned `encode()` functions)
 - `permissive`: accept non-minimal CXS integer encodings and non-zero

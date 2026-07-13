@@ -220,7 +220,7 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
 impl<'r> ReadXDR<'r> for &'r str {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
-        str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)
+        str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())
     }
 }
 
@@ -229,7 +229,7 @@ impl<'r> ReadXDR<'r> for &'r str {
 impl<'r> ReadXDR<'r> for alloc::string::String {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
-        let s = str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)?;
+        let s = str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())?;
         Ok(alloc::string::String::from(s))
     }
 }
@@ -329,7 +329,7 @@ where
         match d {
             0 => Ok(Result::Ok(read_xdr(r)?)),
             1 => Ok(Result::Err(read_xdr(r)?)),
-            _ => Err(ReadError::BadDiscriminator(d)),
+            _ => Err(ReadError::bad_discriminator(d)),
         }
     }
 }
@@ -404,7 +404,7 @@ const _: () = {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
             if len > MAX as usize {
-                return Err(ReadError::MaxLengthExceeded);
+                return Err(ReadError::max_length_exceeded());
             }
 
             let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
