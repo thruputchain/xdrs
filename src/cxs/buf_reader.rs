@@ -55,10 +55,7 @@ impl<'a> BufReader<'a> {
             // - checked_add overflow (32-bit only): pos <= data.len() <= isize::MAX,
             //   so data.len() - pos <= isize::MAX < u32::MAX.
             let remaining: usize = self.data.len() - self.pos;
-            return Err(ReadError::SourceEmpty {
-                requested: requested as usize,
-                remaining,
-            });
+            return Err(ReadError::source_empty(requested as usize, remaining));
         };
 
         // SAFETY: we just verified extent <= self.data.len() and
@@ -119,17 +116,17 @@ impl<'a> BufReader<'a> {
 
                 if n > 0 {
                     if n < repr_min {
-                        return Err(ReadError::NotMinimalEncoding);
+                        return Err(ReadError::not_minimal_encoding());
                     }
                 } else if n > repr_max {
-                    return Err(ReadError::NotMinimalEncoding);
+                    return Err(ReadError::not_minimal_encoding());
                 }
             }
         } else {
             // The number is the 6-bit, one's-complement signed integer in `v`
 
             if s != 0 {
-                return Err(ReadError::InvalidHeaderByte { h });
+                return Err(ReadError::invalid_header_byte(h));
             }
 
             if v & 0b10_0000 != 0 {
@@ -183,7 +180,7 @@ impl<'a> BufReader<'a> {
                 let repr_min = N_BYTE_REPR_MIN[s as usize];
 
                 if uint < repr_min {
-                    return Err(ReadError::NotMinimalEncoding);
+                    return Err(ReadError::not_minimal_encoding());
                 }
             }
 
@@ -192,7 +189,7 @@ impl<'a> BufReader<'a> {
             // The number is the 6-bit unsigned integer in `v`
 
             if s != 0 {
-                return Err(ReadError::InvalidHeaderByte { h });
+                return Err(ReadError::invalid_header_byte(h));
             }
 
             Ok(v as u64)
@@ -206,7 +203,9 @@ macro_rules! read_signed {
         #[inline]
         fn $f(&mut self) -> ReadResult<$ty> {
             let n = self.read_signed()?;
-            let n = n.try_into().map_err(|_| ReadError::IntegerOutOfRange)?;
+            let n = n
+                .try_into()
+                .map_err(|_| ReadError::integer_out_of_range())?;
             Ok(n)
         }
 
@@ -219,7 +218,9 @@ macro_rules! read_unsigned {
         #[inline]
         fn $f(&mut self) -> ReadResult<$ty> {
             let n = self.read_unsigned()?;
-            let n = n.try_into().map_err(|_| ReadError::IntegerOutOfRange)?;
+            let n = n
+                .try_into()
+                .map_err(|_| ReadError::integer_out_of_range())?;
             Ok(n)
         }
 
@@ -281,7 +282,7 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
         let len = self.read_u32()?;
 
         if len > max {
-            return Err(ReadError::MaxLengthExceeded);
+            return Err(ReadError::max_length_exceeded());
         }
 
         self.read_opaque_fixed(len as usize)

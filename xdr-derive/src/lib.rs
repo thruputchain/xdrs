@@ -200,7 +200,7 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///   trailing variant): mark it as the union's default arm. Discriminants that
 ///   match no other variant decode to this variant, with the wire discriminant
 ///   stored in its first field (which must be `i32`). Without a default
-///   variant, unknown discriminants fail with `ReadError::BadDiscriminator`.
+///   variant, unknown discriminants fail with a decode error.
 /// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///

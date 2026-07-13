@@ -61,10 +61,7 @@ impl<'a> BufReader<'a> {
             .filter(|&e| e <= self.data.len())
         else {
             let remaining: usize = self.data.len() - self.pos;
-            return Err(ReadError::SourceEmpty {
-                requested,
-                remaining,
-            });
+            return Err(ReadError::source_empty(requested, remaining));
         };
 
         // SAFETY: we just verified extent <= self.data.len() and
@@ -91,20 +88,19 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
         // SAFETY: padlen <= 3 and get_input(len + padlen) returns exactly
         // len + padlen initialized bytes. The first `len` bytes are
         // payload, the trailing `padlen` bytes are padding.
-        let combined = len.checked_add(padlen).ok_or(ReadError::SourceEmpty {
+        let combined = len.checked_add(padlen).ok_or_else(|| {
             // TODO(geoff): The actual requested amount if this overflow fails
             // is 2^32, i.e. one more than u32::MAX, on 32-bit targets
             // This check overflows for i.e. len = u32::MAX, padding=1 on 32-bit targets,
             // but on such targets we cannot have a buffer of size usize::MAX anyways.
-            requested: usize::MAX,
-            remaining: self.data.len() - self.pos,
+            ReadError::source_empty(usize::MAX, self.data.len() - self.pos)
         })?;
         let buf = self.get_input(combined)?;
         let payload = unsafe { buf.get_unchecked(..len) };
 
         #[cfg(not(feature = "permissive"))]
         if unsafe { buf.get_unchecked(len..) }.iter().any(|&b| b != 0) {
-            return Err(ReadError::NonZeroPadding);
+            return Err(ReadError::non_zero_padding());
         }
 
         Ok(payload)
@@ -115,7 +111,7 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
         let len = self.read_u32()?;
 
         if len > max {
-            return Err(ReadError::MaxLengthExceeded);
+            return Err(ReadError::max_length_exceeded());
         }
 
         self.read_opaque_fixed(len as usize)
@@ -130,7 +126,7 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
         let n = self.read_i32()?;
         #[cfg(not(feature = "permissive"))]
         if n < i16::MIN as i32 || n > i16::MAX as i32 {
-            return Err(ReadError::IntegerOutOfRange);
+            return Err(ReadError::integer_out_of_range());
         }
         Ok(n as i16)
     }
@@ -143,7 +139,7 @@ unsafe impl<'r> Reader<'r> for BufReader<'r> {
         let n = self.read_u32()?;
         #[cfg(not(feature = "permissive"))]
         if n < u16::MIN as u32 || n > u16::MAX as u32 {
-            return Err(ReadError::IntegerOutOfRange);
+            return Err(ReadError::integer_out_of_range());
         }
         Ok(n as u16)
     }

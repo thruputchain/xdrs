@@ -68,6 +68,8 @@ hex = "0.4.3"
 pretty_assertions = { workspace = true }
 
 [features]
+default = ["detailed-errors"]
+detailed-errors = [] # retain precise ReadError variants and diagnostic payloads
 permissive = [] # relax wire validation: CXS minimal integer encoding + TXS non-zero padding
 alloc = ["xdr-common/alloc"] # enable allocating interfaces
 int128 = ["xdr-repr?/int128"] # enable de/serialization of i128/u128

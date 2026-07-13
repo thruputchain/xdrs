@@ -18,7 +18,7 @@ impl<'r, const N: usize> ReadXDR<'r> for Vec<u8, N> {
 
         let mut s = Vec::new();
         s.extend_from_slice(bytes)
-            .map_err(|_| ReadError::MaxLengthExceeded)?;
+            .map_err(|_| ReadError::max_length_exceeded())?;
 
         Ok(s)
     }
@@ -49,13 +49,13 @@ where
 
         let len = r.read_u32()? as usize;
         if len > N {
-            return Err(ReadError::MaxLengthExceeded);
+            return Err(ReadError::max_length_exceeded());
         }
 
         let mut vec = Vec::new();
         for _ in 0..len {
             vec.push(<T as ReadXDR>::read_xdr(r)?)
-                .map_err(|_| ReadError::MaxLengthExceeded)?;
+                .map_err(|_| ReadError::max_length_exceeded())?;
         }
 
         Ok(vec)
@@ -95,11 +95,11 @@ impl<'r, const N: usize> ReadXDR<'r> for String<N> {
         let () = ValidU32::<N>::OK;
 
         let bytes = r.read_opaque_variable(N as u32)?;
-        let slice = str::from_utf8(bytes).map_err(|_| ReadError::BadUTF8)?;
+        let slice = str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())?;
 
         let mut s = String::new();
         s.push_str(slice)
-            .map_err(|_| ReadError::MaxLengthExceeded)?;
+            .map_err(|_| ReadError::max_length_exceeded())?;
 
         Ok(s)
     }

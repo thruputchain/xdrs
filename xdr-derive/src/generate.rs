@@ -460,7 +460,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
         .collect::<Result<Vec<_>>>()?;
 
     let catch_bad_index = if default_variant.is_none() {
-        quote! { _ => Err(__xdrs::ReadError::BadDiscriminator(d)) }
+        quote! { _ => Err(__xdrs::ReadError::bad_discriminator(d)) }
     } else {
         quote! {}
     };

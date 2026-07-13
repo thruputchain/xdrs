@@ -67,7 +67,7 @@ pub unsafe trait Reader<'r>: Sized {
         match self.read_i32()? {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(ReadError::BadBool),
+            _ => Err(ReadError::bad_bool()),
         }
     }
 
@@ -110,7 +110,7 @@ pub unsafe trait Reader<'r>: Sized {
         let len = self.read_u32()?;
 
         if len > max {
-            return Err(ReadError::MaxLengthExceeded);
+            return Err(ReadError::max_length_exceeded());
         }
 
         // SAFETY: dst[..len as usize] has exactly `len` elements.
@@ -144,6 +144,7 @@ pub unsafe trait Reader<'r>: Sized {
 pub type ReadResult<T> = core::result::Result<T, ReadError>;
 
 /// Errors that can occur when reading XDR data.
+#[cfg(feature = "detailed-errors")]
 #[derive(Copy, Clone, Debug)]
 pub enum ReadError {
     /// The input ended before the requested number of bytes could be read.
@@ -192,6 +193,155 @@ pub enum ReadError {
     NotMinimalEncoding,
 }
 
+/// An error that occurred while reading XDR data.
+///
+/// Compact builds intentionally omit diagnostic details to minimize contract
+/// code size. Enable the default `detailed-errors` feature to retain precise
+/// error variants and payloads.
+#[cfg(not(feature = "detailed-errors"))]
+#[derive(Copy, Clone, Debug)]
+pub struct ReadError;
+
+impl ReadError {
+    #[doc(hidden)]
+    #[inline]
+    pub fn source_empty(requested: usize, remaining: usize) -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::SourceEmpty {
+                requested,
+                remaining,
+            }
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            let _ = (requested, remaining);
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn source_remaining(remaining: u64) -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::SourceRemaining { remaining }
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            let _ = remaining;
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn invalid_header_byte(h: u8) -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::InvalidHeaderByte { h }
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            let _ = h;
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn integer_out_of_range() -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::IntegerOutOfRange
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn bad_bool() -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::BadBool
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn bad_discriminator(discriminant: i32) -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::BadDiscriminator(discriminant)
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            let _ = discriminant;
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn max_length_exceeded() -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::MaxLengthExceeded
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn non_zero_padding() -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::NonZeroPadding
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn bad_utf8() -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::BadUTF8
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            Self
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn not_minimal_encoding() -> Self {
+        #[cfg(feature = "detailed-errors")]
+        {
+            Self::NotMinimalEncoding
+        }
+        #[cfg(not(feature = "detailed-errors"))]
+        {
+            Self
+        }
+    }
+}
+
+#[cfg(feature = "detailed-errors")]
 impl core::fmt::Display for ReadError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -214,6 +364,13 @@ impl core::fmt::Display for ReadError {
             ReadError::BadUTF8 => write!(f, "bad UTF8"),
             ReadError::NotMinimalEncoding => write!(f, "not the minimal-size encoding"),
         }
+    }
+}
+
+#[cfg(not(feature = "detailed-errors"))]
+impl core::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("XDR decoding failed")
     }
 }
 

@@ -30,6 +30,8 @@ jobs:
         run: cargo build --workspace
       - name: Test (root lib without alloc)
         run: cargo test -F int128
+      - name: Test compact read errors
+        run: cargo test --no-default-features --features derive --test read_errors
       - name: Test (derive without alloc)
         # const writers for VecM/BytesM/StringM are only exercised with
         # non-empty static data in no-alloc builds

@@ -36,7 +36,7 @@ where
     let remaining = buf.len() - reader.position();
     if remaining > 0 {
         let remaining = remaining as u64;
-        return Err(ReadError::SourceRemaining { remaining });
+        return Err(ReadError::source_remaining(remaining));
     }
 
     Ok(value)
