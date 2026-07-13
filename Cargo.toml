@@ -114,7 +114,7 @@ required-features = ["alloc", "derive"]
 
 [[test]]
 name = "pointer"
-required-features = ["alloc", "derive"]
+required-features = ["alloc", "derive", "detailed-errors"]
 
 [[test]]
 name = "const_writer"
@@ -160,4 +160,22 @@ required-features = ["alloc"]
 
 [[test]]
 name = "vecm_prealloc_dos"
-required-features = ["alloc"]
+required-features = ["alloc", "detailed-errors"]
+
+# These tests inspect or construct precise ReadError variants. Compact builds
+# exercise equivalent malformed inputs through tests/read_errors.rs instead.
+[[test]]
+name = "arrays"
+required-features = ["detailed-errors"]
+
+[[test]]
+name = "ints"
+required-features = ["detailed-errors"]
+
+[[test]]
+name = "leak_detection"
+required-features = ["detailed-errors"]
+
+[[test]]
+name = "padding"
+required-features = ["detailed-errors"]
