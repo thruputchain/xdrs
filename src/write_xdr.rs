@@ -152,19 +152,6 @@ impl WriteXDR for [u8] {
     }
 }
 
-impl WriteXDR for &[u8] {
-    #[inline]
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
-        w.write_opaque_variable(self)
-    }
-
-    #[inline]
-    unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
-        // SAFETY: forwarded caller contract.
-        unsafe { w.write_opaque_variable(self) }
-    }
-}
-
 impl<const N: usize> WriteXDR for [u8; N] {
     #[inline]
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
@@ -229,7 +216,10 @@ impl<T: WriteXDR> WriteXDR for [T] {
     }
 }
 
-impl<T: WriteXDR> WriteXDR for &T {
+// `?Sized` so a `&'a T` field under a `T: WriteXDR + ?Sized` bound can derive.
+// This subsumes `&[u8]`, `&[T]` and `&str` through their pointee impls above —
+// a concrete impl for any of them would overlap this one and fail coherence.
+impl<T: WriteXDR + ?Sized> WriteXDR for &T {
     #[inline]
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         (*self).write_xdr(w)
@@ -242,7 +232,7 @@ impl<T: WriteXDR> WriteXDR for &T {
     }
 }
 
-impl<T: WriteXDR> WriteXDR for &mut T {
+impl<T: WriteXDR + ?Sized> WriteXDR for &mut T {
     #[inline]
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         (**self).write_xdr(w)
@@ -255,19 +245,6 @@ impl<T: WriteXDR> WriteXDR for &mut T {
     }
 }
 
-impl<T: WriteXDR> WriteXDR for &[T] {
-    #[inline(always)]
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
-        <[T] as WriteXDR>::write_xdr(*self, w)
-    }
-
-    #[inline(always)]
-    unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
-        // SAFETY: forwarded caller contract.
-        unsafe { <[T] as WriteXDR>::write_xdr_unchecked(*self, w) }
-    }
-}
-
 impl WriteXDR for str {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         w.write_opaque_variable(self.as_bytes())
@@ -276,17 +253,6 @@ impl WriteXDR for str {
     unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
         // SAFETY: forwarded caller contract.
         unsafe { w.write_opaque_variable(self.as_bytes()) }
-    }
-}
-
-impl WriteXDR for &str {
-    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
-        w.write_opaque_variable((*self).as_bytes())
-    }
-
-    unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
-        // SAFETY: forwarded caller contract.
-        unsafe { w.write_opaque_variable((*self).as_bytes()) }
     }
 }
 
