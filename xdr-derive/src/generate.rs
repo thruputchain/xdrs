@@ -164,25 +164,43 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let write_variants: Vec<_> = item
+
+    // The discriminant is written once, before matching on the payload, rather
+    // than inside every arm.  Where each discriminant is a constant the match
+    // folds to a plain read of the enum's tag, so the write and its error path
+    // appear once instead of once per variant and the generated code stops
+    // growing with the variant count.  (This is what the `write_enum_fast`
+    // TODO below wanted an `unsafe` tag read for; the compiler gets there on
+    // its own from safe code.)
+    let discriminant_arms = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| write_variant(i, v, input, Mode::Checked))
+        .map(|(i, v)| discriminant_arm(i, v, input))
         .collect::<Result<Vec<_>>>()?;
 
-    let write_variants_unchecked: Vec<_> = item
+    let payload_variants = item
         .variants
         .iter()
-        .enumerate()
-        .map(|(i, v)| write_variant(i, v, input, Mode::Unchecked))
+        .map(|v| payload_arm(v, input, Mode::Checked))
+        .collect::<Result<Vec<_>>>()?;
+
+    let payload_variants_unchecked = item
+        .variants
+        .iter()
+        .map(|v| payload_arm(v, input, Mode::Unchecked))
         .collect::<Result<Vec<_>>>()?;
 
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::WriteResult<()> {
+                let __xdr_discriminant: i32 = match self {
+                    #(#discriminant_arms)*
+                };
+                __write_xdr_writer.write_i32(__xdr_discriminant)?;
+
                 match self {
-                    #(#write_variants)*
+                    #(#payload_variants)*
                 }
                 Ok(())
             }
@@ -190,8 +208,13 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
             #[allow(unused_unsafe)]
             unsafe fn write_xdr_unchecked<F, W: __xdrs::WriterUnchecked<F>>(&self, __write_xdr_writer: &mut W) {
                 unsafe {
+                    let __xdr_discriminant: i32 = match self {
+                        #(#discriminant_arms)*
+                    };
+                    __write_xdr_writer.write_i32(__xdr_discriminant);
+
                     match self {
-                        #(#write_variants_unchecked)*
+                        #(#payload_variants_unchecked)*
                     }
                 }
             }
@@ -230,30 +253,16 @@ fn write_enum_fast(_input: &syn::DeriveInput, _item: &syn::DataEnum) -> Option<T
     */
 }
 
-fn write_variant(
+/// An arm mapping a variant to the `i32` it writes as its wire discriminant.
+fn discriminant_arm(
     index: usize,
     v: &syn::Variant,
     input: &syn::DeriveInput,
-    mode: Mode,
 ) -> Result<TokenStream> {
     let is_default_arm = variant_is_default(v);
-
     let var_ident = &v.ident;
     let ty_ident = &input.ident;
-
     let var_bindings = var_bindings(&v.fields);
-    let write_bindings: Vec<_> = v
-        .fields
-        .iter()
-        .enumerate()
-        .map(|(i, field)| {
-            if is_default_arm && i == 0 {
-                Ok(quote! {})
-            } else {
-                write_binding(i, field, mode)
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
 
     let variant_idx = index as i32;
     let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
@@ -269,12 +278,35 @@ fn write_variant(
         quote! { #variant_idx }
     };
 
-    let q = mode.q();
+    Ok(quote! {
+        #ty_ident::#var_ident #var_bindings => #discriminant,
+    })
+}
+
+/// An arm writing a variant's fields, in declaration order.  The discriminant
+/// has already been written, so a default arm's first field — which holds it —
+/// is skipped here.
+fn payload_arm(v: &syn::Variant, input: &syn::DeriveInput, mode: Mode) -> Result<TokenStream> {
+    let is_default_arm = variant_is_default(v);
+    let var_ident = &v.ident;
+    let ty_ident = &input.ident;
+    let var_bindings = var_bindings(&v.fields);
+
+    let write_bindings = v
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| {
+            if is_default_arm && i == 0 {
+                Ok(quote! {})
+            } else {
+                write_binding(i, field, mode)
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(quote! {
         #ty_ident::#var_ident #var_bindings => {
-            __write_xdr_writer.write_i32(#discriminant)#q;
-
             #(#write_bindings)*
         }
     })
