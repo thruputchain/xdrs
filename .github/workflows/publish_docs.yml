@@ -34,7 +34,7 @@ jobs:
             ${{ secrets.XDRS_TO_ACTIONS_KEY }}
 
       - name: Checkout at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: v${{ inputs.version }}
           fetch-depth: 0
@@ -44,7 +44,7 @@ jobs:
         run: git config --global url."git@github.com:".insteadOf "https://github.com/"
 
       - name: Checkout actions repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: groundhogchain/actions
           path: actions
