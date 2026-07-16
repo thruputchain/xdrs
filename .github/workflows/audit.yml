@@ -6,11 +6,13 @@ on:
     paths:
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - '.github/workflows/audit.yml'
   pull_request:
     branches: [ main ]
     paths:
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - '.github/workflows/audit.yml'
   # Run on a schedule so newly-disclosed advisories against already-locked
   # dependencies are caught even when nothing in the repo changes.
   schedule:
@@ -24,6 +26,13 @@ jobs:
       issues: write  # rustsec/audit-check opens an issue when an advisory is found
     steps:
       - uses: actions/checkout@v4
+      # The runner's preinstalled Rust lags behind current stable, and
+      # rustsec/audit-check builds cargo-audit from source with whatever
+      # toolchain is on PATH. cargo-audit's transitive dep `kstring` now
+      # requires a rustc newer than the preinstalled toolchain, so that build
+      # fails. Install current stable first so the action builds cargo-audit
+      # with a new-enough compiler.
+      - uses: dtolnay/rust-toolchain@stable
       - name: Run cargo audit
         uses: rustsec/audit-check@v2
         with:
