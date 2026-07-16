@@ -6,11 +6,13 @@ on:
     paths:
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - '.github/workflows/audit.yml'
   pull_request:
     branches: [ main ]
     paths:
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - '.github/workflows/audit.yml'
   # Run on a schedule so newly-disclosed advisories against already-locked
   # dependencies are caught even when nothing in the repo changes.
   schedule:
@@ -23,8 +25,19 @@ jobs:
       contents: read
       issues: write  # rustsec/audit-check opens an issue when an advisory is found
     steps:
-      - uses: actions/checkout@v4
-      - name: Run cargo audit
-        uses: rustsec/audit-check@v2
+      - uses: actions/checkout@v5
+      # rustsec/audit-check builds cargo-audit with an unlocked `cargo
+      # install`, which needs rustc >= 1.96 (its dep `kstring`) — newer than
+      # this repo's rust-toolchain.toml pin (1.95.0). Install current stable
+      # and select it for the action via RUSTUP_TOOLCHAIN: an env override
+      # outranks the rust-toolchain.toml directory file, so cargo-audit builds
+      # with stable for this job only, leaving the repo-wide pin untouched.
+      - uses: dtolnay/rust-toolchain@stable
+      # The latest release (v2.0.0) still targets the deprecated Node 20. Pin
+      # to the Node 24 commit (rustsec/audit-check#48) — v2.0.0 plus that
+      # runtime bump and two README fixes — until a Node 24 release is tagged.
+      - uses: rustsec/audit-check@858dc40f52ca2b8570b7a997c1c4e35c6fc9a432
+        env:
+          RUSTUP_TOOLCHAIN: stable
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
