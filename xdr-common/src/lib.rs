@@ -36,9 +36,6 @@
 #![no_std]
 #![warn(missing_docs)]
 
-#[cfg(feature = "std")]
-extern crate std;
-
 #[cfg(feature = "alloc")]
 extern crate alloc;
 

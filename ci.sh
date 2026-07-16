@@ -28,10 +28,8 @@ cargo test --workspace --all-features
 # Test on xdr-common with varying features
 cargo test -p xdr-common --no-default-features
 cargo test -p xdr-common --features alloc
-cargo test -p xdr-common --features std
-cargo test -p xdr-common --features alloc,std
 cargo test -p xdr-common --features serde
-cargo test -p xdr-common --features serde,std
+cargo test -p xdr-common --features schemars
 
 cargo +nightly build -p xdr-common --no-default-features -Zbuild-std=core,alloc
 cargo +nightly build -p xdr-common --features alloc -Zbuild-std=core,alloc
