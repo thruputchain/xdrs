@@ -6,11 +6,11 @@
 //!
 //! Bounds fold through by-value layout only; boundedness does not cross
 //! pointers. The blanket `&T` impl is a literal `None` that never names the
-//! pointee's bound, and the element-generic `VecM<T, MAX>` impl is likewise
-//! a literal `None` (heap-backed indirection). This is what makes
-//! const-evaluation cycles impossible for recursive types: recursion must
-//! pass through indirection, and every indirection bounds to `None` without
-//! evaluating anything further.
+//! pointee's bound, and the `Box<T>` and element-generic `VecM<T, MAX>`
+//! impls are likewise literal `None` (heap-backed indirection). This is what
+//! makes const-evaluation cycles impossible for recursive types: recursion
+//! must pass through indirection, and every indirection bounds to `None`
+//! without evaluating anything further.
 //!
 //! `u8` deliberately does not implement [`ConstMaxSize`]: a lone `u8` is not
 //! XDR-encodable, and its absence is what keeps the `[u8; N]`/`[T; N]` and
@@ -30,7 +30,7 @@ use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
 /// Worst-case CXS encoded size over all values of a type.
 ///
 /// `MAX_SIZE` is `Some(bound)` when a finite bound exists, or `None` when
-/// the type is unbounded, reached through indirection (`&T`,
+/// the type is unbounded, reached through indirection (`&T`, `Box<T>`,
 /// `VecM<T, MAX>`), or its bound overflows `usize` on this target.
 ///
 /// Implemented for user types via `#[derive(ConstXDRSize)]`; implement
@@ -77,6 +77,16 @@ impl<T: ConstMaxSize, const N: usize> ConstMaxSize for [T; N] {
 // Pointer cut: boundedness does not cross a reference. Literal `None`, no
 // bound on `T`, so the pointee's bound is never named (or evaluated).
 impl<T: ?Sized> ConstMaxSize for &T {
+    const MAX_SIZE: Option<usize> = None;
+}
+
+// Pointer cut: an owned heap `Box` is indirection — a cycle edge for
+// recursive types, even though it XDR-encodes transparently as its pointee.
+// Literal `None`, no bound on `T`, so the pointee's bound is never named (or
+// evaluated). In no-`alloc` builds `Box<T>` aliases `&T` and folds through
+// the reference impl above; this covers the `alloc` heap `Box`.
+#[cfg(feature = "alloc")]
+impl<T: ?Sized> ConstMaxSize for alloc::boxed::Box<T> {
     const MAX_SIZE: Option<usize> = None;
 }
 
@@ -172,6 +182,27 @@ mod tests {
     const _: () = assert!(bound::<&'static [u8]>().is_none());
     const _: () = assert!(bound::<&'static str>().is_none());
     const _: () = assert!(bound::<&'static [u32]>().is_none());
+
+    // Owned heap `Box` is also a pointer cut (alloc only; no-alloc `Box`
+    // aliases `&T`, covered above). None propagates through an enclosing fold.
+    #[cfg(feature = "alloc")]
+    const _: () = assert!(bound::<alloc::boxed::Box<u32>>().is_none());
+    #[cfg(feature = "alloc")]
+    const _: () = assert!(bound::<alloc::boxed::Box<[u8; 4]>>().is_none());
+    #[cfg(feature = "alloc")]
+    const _: () = assert!(bound::<Option<alloc::boxed::Box<u32>>>().is_none());
+
+    // A type whose recursion passes through `Box` folds to `None` with no
+    // const-eval cycle — the property the literal `None` protects. Mirrors
+    // what `#[derive(ConstXDRSize)]` emits for `struct Rec(Option<Box<Rec>>)`.
+    #[cfg(feature = "alloc")]
+    struct Rec;
+    #[cfg(feature = "alloc")]
+    impl ConstMaxSize for Rec {
+        const MAX_SIZE: Option<usize> = <Option<alloc::boxed::Box<Rec>> as ConstMaxSize>::MAX_SIZE;
+    }
+    #[cfg(feature = "alloc")]
+    const _: () = assert!(bound::<Rec>().is_none());
 
     // Option adds the worst-case discriminant; None propagates.
     const _: () = assert!(matches!(bound::<Option<u32>>(), Some(6)));
