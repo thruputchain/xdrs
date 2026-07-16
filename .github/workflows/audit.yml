@@ -23,17 +23,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write  # rustsec/audit-check opens an issue when an advisory is found
     steps:
       - uses: actions/checkout@v4
-      # The runner's preinstalled Rust lags behind current stable, and
-      # rustsec/audit-check builds cargo-audit from source with whatever
-      # toolchain is on PATH. cargo-audit's transitive dep `kstring` now
-      # requires a rustc newer than the preinstalled toolchain, so that build
-      # fails. Install current stable first so the action builds cargo-audit
-      # with a new-enough compiler.
-      - uses: dtolnay/rust-toolchain@stable
+      # We install and run cargo-audit directly rather than via
+      # rustsec/audit-check, because that action builds cargo-audit with an
+      # *unlocked* `cargo install`. That pulls the latest `kstring` (MSRV
+      # rustc 1.96), which the runner's preinstalled 1.95 toolchain cannot
+      # build, and the action exposes no way to pass `--locked`. `--locked`
+      # uses cargo-audit's own pinned, MSRV-compatible Cargo.lock, which
+      # builds on the preinstalled toolchain.
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
       - name: Run cargo audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo audit
