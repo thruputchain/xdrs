@@ -63,14 +63,10 @@
 //!   specification representation. Provides types and traits for describing XDR
 //!   type definitions.
 //!
-//! - **`xdr_common`**: Enables support for types from the `xdr_common` crate:
-//!   - `xdr_common::Box<T>` implementations
-//!   - `xdr_common::BytesM<MAX>` and `xdr_common::VecM<T, MAX>` implementations
-//!
 //! - **`heapless`**: Enables support for types from the `heapless` package.
 //!
-//! - **`ns`**: Enables namespace support in `xdr-repr` for C++-like scoping of
-//!   XDR definitions.
+//! - **`ns`** (implies `repr`): Enables namespace support in `xdr-repr` for
+//!   C++-like scoping of XDR definitions.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 

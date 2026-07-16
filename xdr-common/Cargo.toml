@@ -18,7 +18,6 @@ doctest = false
 
 [features]
 alloc = ["escape-bytes/alloc"]
-std = ["alloc"]
 serde = ["alloc", "dep:serde"]
 schemars = ["alloc", "dep:schemars"]
 

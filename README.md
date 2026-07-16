@@ -30,7 +30,7 @@ The library is `no_std`. Optional features:
   `ConstWriteXDR` (crate `xdr_derive`)
 - `repr`: datatypes representing XDR specifications (crate `xdr_repr`;
   implies `alloc`)
-- `ns`: C++-like namespaces for XDR specs in `xdr_repr`
+- `ns`: C++-like namespaces for XDR specs in `xdr_repr` (implies `repr`)
 - `heapless`: serialization support for `heapless` types, plus schema
   support when combined with `repr`
 - `serde` / `schemars`: serde and JSON-schema support for `xdr_common`

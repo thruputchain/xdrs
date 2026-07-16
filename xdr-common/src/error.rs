@@ -3,13 +3,11 @@
 
 pub use crate::cfg::*;
 
-#[cfg(feature = "std")]
-use std::{error, io};
+use core::error;
 
 /// Errors that can occur when working with XDR types.
 ///
-/// This error type can be compared via `PartialEq`. Note that any contained
-/// IO errors will only be compared on their `ErrorKind`.
+/// This error type can be compared via `PartialEq`.
 #[derive(Debug)]
 pub enum Error {
     /// The XDR value is invalid or malformed.
@@ -34,9 +32,6 @@ pub enum Error {
     ///
     /// This occurs when attempting to convert a `StringM` to a UTF-8 `String`.
     InvalidUTF8,
-    /// An I/O error occurred.
-    #[cfg(feature = "std")]
-    Io(io::Error),
     /// The depth limit was exceeded during processing.
     DepthLimitExceeded,
     /// The length limit was exceeded during processing.
@@ -45,29 +40,11 @@ pub enum Error {
 
 impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            // IO errors cannot be compared, but in the absence of any more
-            // meaningful way to compare the errors we compare the kind of error
-            // and ignore the embedded source error or OS error. The main use
-            // case for comparing errors outputted by the XDR library is for
-            // error case testing, and a lack of the ability to compare has a
-            // detrimental affect on failure testing, so this is a tradeoff.
-            #[cfg(feature = "std")]
-            (Self::Io(l), Self::Io(r)) => l.kind() == r.kind(),
-            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
-        }
+        core::mem::discriminant(self) == core::mem::discriminant(other)
     }
 }
 
-#[cfg(feature = "std")]
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        match self {
-            Self::Io(e) => Some(e),
-            _ => None,
-        }
-    }
-}
+impl error::Error for Error {}
 
 use core::array::TryFromSliceError;
 use core::fmt;
@@ -89,8 +66,6 @@ impl fmt::Display for Error {
             #[cfg(feature = "alloc")]
             Error::InvalidHex => write!(f, "hex invalid"),
             Error::InvalidUTF8 => write!(f, "utf8 invalid"),
-            #[cfg(feature = "std")]
-            Error::Io(e) => write!(f, "{e}"),
             Error::DepthLimitExceeded => write!(f, "depth limit exceeded"),
             Error::LengthLimitExceeded => write!(f, "length limit exceeded"),
         }
@@ -113,12 +88,5 @@ impl From<core::str::Utf8Error> for Error {
 impl From<FromUtf8Error> for Error {
     fn from(_: FromUtf8Error) -> Self {
         Error::InvalidUTF8
-    }
-}
-
-#[cfg(feature = "std")]
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::Io(e)
     }
 }
