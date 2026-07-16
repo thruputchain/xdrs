@@ -43,7 +43,10 @@ struct PartialInitGuard<'a, T> {
 
 impl<T> Drop for PartialInitGuard<'_, T> {
     fn drop(&mut self) {
-        for elt in &mut self.slice[..self.initialized] {
+        // `take` rather than indexing `[..self.initialized]`: the bound holds
+        // by construction, but it is not visible here, so the index would keep
+        // a bounds check and a panicking branch in every array and VecM decode.
+        for elt in self.slice.iter_mut().take(self.initialized) {
             // SAFETY: elements up to `self.initialized` were successfully
             // written via `MaybeUninit::write` before the count was incremented.
             unsafe {
