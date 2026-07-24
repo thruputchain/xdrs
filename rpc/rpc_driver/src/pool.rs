@@ -51,7 +51,17 @@ struct FixedSerialPoolInner {
     request_tx: StdMutex<Option<mpsc::UnboundedSender<PoolRequest>>>,
     queue_slots: Arc<Semaphore>,
     worker_handles: StdMutex<Vec<JoinHandle<()>>>,
-    connections: Vec<Arc<ConnectionHandle>>,
+    connections: Vec<Arc<StdMutex<Option<Arc<ConnectionHandle>>>>>,
+}
+
+struct FixedWorkerConnectionGuard(Arc<StdMutex<Option<Arc<ConnectionHandle>>>>);
+
+impl Drop for FixedWorkerConnectionGuard {
+    fn drop(&mut self) {
+        if let Some(connection) = self.0.lock().unwrap().take() {
+            connection.begin_poison();
+        }
+    }
 }
 
 /// Fixed-size connection pool with FIFO request dispatch.
@@ -59,6 +69,8 @@ struct FixedSerialPoolInner {
 /// Wraps N [`ConnectionHandle`] connections to a single address. A shared
 /// `tokio::sync::mpsc` channel distributes requests to connection workers
 /// in FIFO order — one call at a time per connection.
+/// Canceling a queued call removes it before dispatch. Canceling an active call
+/// closes and replaces that worker's connection before it accepts more work.
 ///
 /// This matches the Go `ConnectPoolToScheduler` pattern: a fixed number
 /// of connections with sequential dispatch per connection.
@@ -120,6 +132,7 @@ impl FixedSerialPoolInner {
         let connection_shutdowns = self
             .connections
             .iter()
+            .filter_map(|slot| slot.lock().unwrap().take())
             .map(|conn| conn.begin_poison())
             .collect();
 
@@ -170,7 +183,11 @@ impl FixedSerialPool {
             };
             pending.connections.push(client);
         }
-        let connections = pending.into_connections();
+        let connections = pending
+            .into_connections()
+            .into_iter()
+            .map(|connection| Arc::new(StdMutex::new(Some(connection))))
+            .collect::<Vec<_>>();
 
         let inner = Arc::new(FixedSerialPoolInner {
             closed: AtomicBool::new(false),
@@ -180,9 +197,16 @@ impl FixedSerialPool {
             connections: connections.clone(),
         });
 
-        for client in connections {
+        for connection_slot in connections {
             let worker_rx = rx.clone();
+            let worker_addr = *addr;
+            let mut client = connection_slot
+                .lock()
+                .unwrap()
+                .clone()
+                .expect("new fixed pool worker should have a connection");
             let join = tokio::spawn(async move {
+                let _connection_guard = FixedWorkerConnectionGuard(connection_slot.clone());
                 loop {
                     // Acquire the shared receiver lock. The next idle worker
                     // wins the lock and takes the next request.
@@ -207,9 +231,57 @@ impl FixedSerialPool {
                     drop(queue_permit);
 
                     match reply {
-                        Some(reply_tx) => {
-                            let result = client.send_call_owned(progvers, proc_num, data).await;
-                            let _ = reply_tx.send(result);
+                        Some(mut reply_tx) => {
+                            if reply_tx.is_closed() {
+                                continue;
+                            }
+                            let result = tokio::select! {
+                                result = client.send_call_owned(progvers, proc_num, data) => {
+                                    Some(result)
+                                }
+                                () = reply_tx.closed() => None,
+                            };
+                            if let Some(result) = result {
+                                let _ = reply_tx.send(result);
+                            } else {
+                                connection_slot.lock().unwrap().take();
+                                client.begin_poison().finish().await;
+                                let mut retry_delay = Duration::from_millis(100);
+                                let mut first_failure = true;
+                                loop {
+                                    match connect_client(&worker_addr).await {
+                                        Ok(connection) => {
+                                            let replacement = connection.into_handle();
+                                            *connection_slot.lock().unwrap() =
+                                                Some(replacement.clone());
+                                            client = replacement;
+                                            break;
+                                        }
+                                        Err(error) => {
+                                            if first_failure {
+                                                tracing::warn!(
+                                                    %worker_addr,
+                                                    %error,
+                                                    pool_type = "fixed_serial",
+                                                    "failed to replace connection after canceled call"
+                                                );
+                                                first_failure = false;
+                                            } else {
+                                                tracing::debug!(
+                                                    %worker_addr,
+                                                    %error,
+                                                    pool_type = "fixed_serial",
+                                                    "fixed pool connection replacement still pending"
+                                                );
+                                            }
+                                            tokio::time::sleep(retry_delay).await;
+                                            retry_delay = retry_delay
+                                                .saturating_mul(2)
+                                                .min(Duration::from_secs(5));
+                                        }
+                                    }
+                                }
+                            }
                         }
                         None => {
                             if let Err(e) = client
@@ -943,6 +1015,12 @@ mod tests {
         delay: std::time::Duration,
     }
 
+    struct CancellationEchoService {
+        blocked_started: Arc<Notify>,
+        blocked_release: Arc<Notify>,
+        calls: Arc<StdMutex<Vec<Vec<u8>>>>,
+    }
+
     #[async_trait]
     impl RpcHandler for SlowEchoService {
         async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
@@ -951,6 +1029,27 @@ mod tests {
             }
             tokio::time::sleep(self.delay).await;
             Ok(data.to_vec())
+        }
+
+        fn prog_vers(&self) -> ProgVers {
+            ProgVers::new(1, 1)
+        }
+    }
+
+    #[async_trait]
+    impl RpcHandler for CancellationEchoService {
+        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+            if proc != 1 {
+                return Err(RpcError::InvalidProcedure);
+            }
+            self.calls.lock().unwrap().push(data.to_vec());
+            if data == b"blocked" {
+                self.blocked_started.notify_one();
+                self.blocked_release.notified().await;
+                Ok(data.to_vec())
+            } else {
+                Ok(data.to_vec())
+            }
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -978,6 +1077,28 @@ mod tests {
         let server = RpcServer::new(listener, services);
         server.start().await;
         addr
+    }
+
+    async fn start_cancellation_server() -> (
+        SocketAddr,
+        Arc<Notify>,
+        Arc<Notify>,
+        Arc<StdMutex<Vec<Vec<u8>>>>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let blocked_started = Arc::new(Notify::new());
+        let blocked_release = Arc::new(Notify::new());
+        let calls = Arc::new(StdMutex::new(Vec::new()));
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(CancellationEchoService {
+            blocked_started: blocked_started.clone(),
+            blocked_release: blocked_release.clone(),
+            calls: calls.clone(),
+        }));
+        let server = RpcServer::new(listener, services);
+        server.start().await;
+        (addr, blocked_started, blocked_release, calls)
     }
 
     #[tokio::test]
@@ -1074,6 +1195,80 @@ mod tests {
                 .unwrap();
             assert_eq!(result, data.as_bytes());
         }
+    }
+
+    #[tokio::test]
+    async fn fixed_pool_canceled_active_call_releases_worker() {
+        let (addr, blocked_started, blocked_release, calls) = start_cancellation_server().await;
+        let pool = Arc::new(FixedSerialPool::connect(&addr, 1).await.unwrap());
+        let blocked_pool = pool.clone();
+        let blocked = tokio::spawn(async move {
+            blocked_pool
+                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .await
+        });
+        blocked_started.notified().await;
+
+        blocked.abort();
+        assert!(blocked.await.unwrap_err().is_cancelled());
+        let response = tokio::time::timeout(
+            Duration::from_secs(1),
+            pool.send_call(ProgVers::new(1, 1), 1, b"after"),
+        )
+        .await
+        .expect("a canceled active call should release its worker")
+        .unwrap();
+
+        assert_eq!(response, b"after");
+        assert_eq!(
+            &*calls.lock().unwrap(),
+            &[b"blocked".to_vec(), b"after".to_vec()]
+        );
+        blocked_release.notify_one();
+    }
+
+    #[tokio::test]
+    async fn fixed_pool_skips_canceled_queued_call() {
+        let (addr, blocked_started, blocked_release, calls) = start_cancellation_server().await;
+        let pool = Arc::new(FixedSerialPool::connect(&addr, 1).await.unwrap());
+        let blocked_pool = pool.clone();
+        let blocked = tokio::spawn(async move {
+            blocked_pool
+                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .await
+        });
+        blocked_started.notified().await;
+
+        let stale_pool = pool.clone();
+        let stale =
+            tokio::spawn(
+                async move { stale_pool.send_call(ProgVers::new(1, 1), 1, b"stale").await },
+            );
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while pool.inner.queue_slots.available_permits() == 16 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("stale call should enter the pool queue");
+        stale.abort();
+        assert!(stale.await.unwrap_err().is_cancelled());
+        blocked.abort();
+        assert!(blocked.await.unwrap_err().is_cancelled());
+
+        let response = tokio::time::timeout(
+            Duration::from_secs(1),
+            pool.send_call(ProgVers::new(1, 1), 1, b"after"),
+        )
+        .await
+        .expect("canceled queued work should not block a later call")
+        .unwrap();
+        assert_eq!(response, b"after");
+        assert_eq!(
+            &*calls.lock().unwrap(),
+            &[b"blocked".to_vec(), b"after".to_vec()]
+        );
+        blocked_release.notify_one();
     }
 
     #[tokio::test]
