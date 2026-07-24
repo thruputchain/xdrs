@@ -16,8 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - name: Test (No Features)
+      - name: Test (Workspace)
         run: cargo test --workspace
+      - name: Test rpc_driver (No Features)
+        run: cargo test -p rpc_driver --no-default-features
       - name: Test (All Features)
         run: cargo test --workspace --all-features
       - name: Check format

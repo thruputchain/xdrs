@@ -45,7 +45,7 @@ fn main() {
 
     println!(
         "{:<42} {:>10} {:>12} {:>12} {:>8}",
-        "scenario", "metric", &baseline_label, &candidate_label, "delta"
+        "scenario", "metric", baseline_label, candidate_label, "delta"
     );
     println!("{}", "-".repeat(86));
 

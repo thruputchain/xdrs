@@ -23,6 +23,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
+use std::{future::Future, mem};
 
 use async_trait::async_trait;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
@@ -67,6 +68,41 @@ pub struct FixedSerialPool {
     size: usize,
 }
 
+struct PendingFixedConnections {
+    connections: Vec<Arc<ConnectionHandle>>,
+}
+
+impl PendingFixedConnections {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            connections: Vec::with_capacity(capacity),
+        }
+    }
+
+    async fn shutdown(mut self) {
+        let shutdowns = self
+            .connections
+            .drain(..)
+            .map(|connection| connection.begin_poison())
+            .collect::<Vec<_>>();
+        for shutdown in shutdowns {
+            shutdown.finish().await;
+        }
+    }
+
+    fn into_connections(mut self) -> Vec<Arc<ConnectionHandle>> {
+        mem::take(&mut self.connections)
+    }
+}
+
+impl Drop for PendingFixedConnections {
+    fn drop(&mut self) {
+        for connection in self.connections.drain(..) {
+            connection.begin_poison();
+        }
+    }
+}
+
 impl FixedSerialPoolInner {
     fn begin_shutdown(
         &self,
@@ -101,6 +137,18 @@ impl FixedSerialPool {
     /// All connections are established eagerly. If any connection fails, the
     /// entire pool creation fails.
     pub async fn connect(addr: &SocketAddr, pool_size: usize) -> Result<Self, RpcError> {
+        Self::connect_with(addr, pool_size, || connect_client(addr)).await
+    }
+
+    async fn connect_with<F, Fut>(
+        addr: &SocketAddr,
+        pool_size: usize,
+        mut connect: F,
+    ) -> Result<Self, RpcError>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<crate::connection::ClientConnection, std::io::Error>>,
+    {
         if pool_size == 0 {
             return Err(RpcError::SystemError);
         }
@@ -110,22 +158,19 @@ impl FixedSerialPool {
         let (tx, rx) = mpsc::unbounded_channel::<PoolRequest>();
         let rx = Arc::new(tokio::sync::Mutex::new(rx));
 
-        let mut connections: Vec<Arc<ConnectionHandle>> = Vec::with_capacity(pool_size);
+        let mut pending = PendingFixedConnections::with_capacity(pool_size);
         for _ in 0..pool_size {
-            let client = match connect_client(addr).await.map(|c| c.into_handle()) {
+            let client = match connect().await.map(|c| c.into_handle()) {
                 Ok(client) => client,
                 Err(e) => {
-                    let shutdowns: Vec<_> =
-                        connections.iter().map(|conn| conn.begin_poison()).collect();
-                    for shutdown in shutdowns {
-                        shutdown.finish().await;
-                    }
+                    pending.shutdown().await;
                     tracing::error!(%addr, error = %e, pool_type = "fixed_serial", "pool connection failed");
                     return Err(RpcError::SystemError);
                 }
             };
-            connections.push(client);
+            pending.connections.push(client);
         }
+        let connections = pending.into_connections();
 
         let inner = Arc::new(FixedSerialPoolInner {
             closed: AtomicBool::new(false),
@@ -872,6 +917,8 @@ mod tests {
     use crate::RpcServer;
     use crate::handler::{RpcHandler, ServiceMap};
     use async_trait::async_trait;
+    use std::sync::atomic::AtomicUsize;
+    use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
 
     /// Echo service that returns the input data unchanged.
@@ -1035,6 +1082,144 @@ mod tests {
         let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
         let result = FixedSerialPool::connect(&addr, 3).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn fixed_pool_connect_cancellation_closes_partial_connections() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (closed_tx, closed_rx) = oneshot::channel();
+        let (release_server_tx, release_server_rx) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut byte = [0u8; 1];
+            closed_tx.send(stream.read(&mut byte).await).unwrap();
+            release_server_rx.await.unwrap();
+        });
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let connect_attempts = attempts.clone();
+        let (first_handle_tx, first_handle_rx) = oneshot::channel();
+        let mut first_handle_tx = Some(first_handle_tx);
+        let (second_attempt_tx, second_attempt_rx) = oneshot::channel();
+        let mut second_attempt_tx = Some(second_attempt_tx);
+        let construction = tokio::spawn(async move {
+            FixedSerialPool::connect_with(&addr, 2, move || {
+                let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
+                let first_handle_tx = if attempt == 0 {
+                    first_handle_tx.take()
+                } else {
+                    None
+                };
+                let second_attempt_tx = if attempt == 1 {
+                    second_attempt_tx.take()
+                } else {
+                    None
+                };
+                async move {
+                    if attempt == 0 {
+                        let client = connect_client(&addr).await?;
+                        first_handle_tx
+                            .unwrap()
+                            .send(Arc::downgrade(client.handle()))
+                            .unwrap();
+                        Ok(client)
+                    } else {
+                        second_attempt_tx.unwrap().send(()).unwrap();
+                        std::future::pending().await
+                    }
+                }
+            })
+            .await
+        });
+
+        let first_handle = tokio::time::timeout(Duration::from_secs(1), first_handle_rx)
+            .await
+            .expect("first connection should complete")
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), second_attempt_rx)
+            .await
+            .expect("second connection attempt should start")
+            .unwrap();
+        construction.abort();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), construction)
+                .await
+                .expect("pool construction should stop after cancellation")
+                .unwrap_err()
+                .is_cancelled()
+        );
+
+        let read_result = tokio::time::timeout(Duration::from_secs(1), closed_rx)
+            .await
+            .expect("partial connection should close when pool construction is canceled")
+            .unwrap();
+        assert_eq!(read_result.unwrap(), 0);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while first_handle.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("partial connection handle should be released without peer cooperation");
+
+        release_server_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), server)
+            .await
+            .expect("server task should stop")
+            .unwrap();
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn fixed_pool_connect_failure_closes_partial_connections() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut byte = [0u8; 1];
+            stream.read(&mut byte).await.unwrap()
+        });
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let connect_attempts = attempts.clone();
+        let (first_handle_tx, first_handle_rx) = oneshot::channel();
+        let mut first_handle_tx = Some(first_handle_tx);
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            FixedSerialPool::connect_with(&addr, 2, move || {
+                let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
+                let first_handle_tx = if attempt == 0 {
+                    first_handle_tx.take()
+                } else {
+                    None
+                };
+                async move {
+                    if attempt == 0 {
+                        let client = connect_client(&addr).await?;
+                        first_handle_tx
+                            .unwrap()
+                            .send(Arc::downgrade(client.handle()))
+                            .unwrap();
+                        Ok(client)
+                    } else {
+                        Err(std::io::Error::other("injected connection failure"))
+                    }
+                }
+            }),
+        )
+        .await
+        .expect("pool construction should return after connection failure");
+
+        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        let first_handle = first_handle_rx.await.unwrap();
+        assert!(first_handle.upgrade().is_none());
+        let bytes_read = tokio::time::timeout(Duration::from_secs(1), server)
+            .await
+            .expect("partial connection should close after connection failure")
+            .unwrap();
+        assert_eq!(bytes_read, 0);
     }
 
     #[tokio::test]
