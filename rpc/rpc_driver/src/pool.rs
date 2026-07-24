@@ -69,8 +69,11 @@ impl Drop for FixedWorkerConnectionGuard {
 /// Wraps N [`ConnectionHandle`] connections to a single address. A shared
 /// `tokio::sync::mpsc` channel distributes requests to connection workers
 /// in FIFO order — one call at a time per connection.
-/// Canceling a queued call removes it before dispatch. Canceling an active call
-/// closes and replaces that worker's connection before it accepts more work.
+/// Canceling a queued call removes it before dispatch. By default, canceling an
+/// active call closes and replaces that worker's connection before it accepts
+/// more work. [`CanceledCallPolicy::PoisonConnection`] instead terminates the
+/// affected worker, leaving any other workers available at reduced capacity
+/// until the owner discards the pool.
 ///
 /// This matches the Go `ConnectPoolToScheduler` pattern: a fixed number
 /// of connections with sequential dispatch per connection.
@@ -78,6 +81,19 @@ impl Drop for FixedWorkerConnectionGuard {
 pub struct FixedSerialPool {
     inner: Arc<FixedSerialPoolInner>,
     size: usize,
+}
+
+/// Action taken when the caller of an active fixed-pool request is canceled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanceledCallPolicy {
+    /// Replace the affected connection before the worker accepts more work.
+    ReplaceConnection,
+    /// Poison the affected connection and terminate its worker.
+    ///
+    /// Owners should discard the pool after canceling a call. This policy is
+    /// intended for protocols where reconnects require an external handshake
+    /// or quarantine before the client can become visible again.
+    PoisonConnection,
 }
 
 struct PendingFixedConnections {
@@ -150,12 +166,30 @@ impl FixedSerialPool {
     /// All connections are established eagerly. If any connection fails, the
     /// entire pool creation fails.
     pub async fn connect(addr: &SocketAddr, pool_size: usize) -> Result<Self, RpcError> {
-        Self::connect_with(addr, pool_size, || connect_client(addr)).await
+        Self::connect_with_canceled_call_policy(
+            addr,
+            pool_size,
+            CanceledCallPolicy::ReplaceConnection,
+        )
+        .await
+    }
+
+    /// Connect with an explicit policy for active calls whose caller cancels.
+    pub async fn connect_with_canceled_call_policy(
+        addr: &SocketAddr,
+        pool_size: usize,
+        canceled_call_policy: CanceledCallPolicy,
+    ) -> Result<Self, RpcError> {
+        Self::connect_with(addr, pool_size, canceled_call_policy, || {
+            connect_client(addr)
+        })
+        .await
     }
 
     async fn connect_with<F, Fut>(
         addr: &SocketAddr,
         pool_size: usize,
+        canceled_call_policy: CanceledCallPolicy,
         mut connect: F,
     ) -> Result<Self, RpcError>
     where
@@ -246,6 +280,9 @@ impl FixedSerialPool {
                             } else {
                                 connection_slot.lock().unwrap().take();
                                 client.begin_poison().finish().await;
+                                if canceled_call_policy == CanceledCallPolicy::PoisonConnection {
+                                    break;
+                                }
                                 let mut retry_delay = Duration::from_millis(100);
                                 let mut first_failure = true;
                                 loop {
@@ -303,7 +340,11 @@ impl FixedSerialPool {
         })
     }
 
-    /// Returns the number of connections in the pool.
+    /// Returns the configured pool size.
+    ///
+    /// This is not a live connection count. A pool using
+    /// [`CanceledCallPolicy::PoisonConnection`] can have fewer active workers
+    /// after a caller cancels an in-flight request.
     pub fn size(&self) -> usize {
         self.size
     }
@@ -1272,6 +1313,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fixed_pool_can_fail_closed_after_active_cancellation() {
+        let (addr, blocked_started, blocked_release, calls) = start_cancellation_server().await;
+        let pool = Arc::new(
+            FixedSerialPool::connect_with_canceled_call_policy(
+                &addr,
+                1,
+                CanceledCallPolicy::PoisonConnection,
+            )
+            .await
+            .unwrap(),
+        );
+        let blocked_pool = pool.clone();
+        let blocked = tokio::spawn(async move {
+            blocked_pool
+                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .await
+        });
+        blocked_started.notified().await;
+
+        blocked.abort();
+        assert!(blocked.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !pool.inner.worker_handles.lock().unwrap()[0].is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("poisoned worker should terminate");
+        let worker = pool.inner.worker_handles.lock().unwrap().pop().unwrap();
+        worker.await.expect("poisoned worker should exit cleanly");
+        assert_eq!(
+            pool.send_call(ProgVers::new(1, 1), 1, b"after").await,
+            Err(RpcError::SystemError)
+        );
+        assert_eq!(&*calls.lock().unwrap(), &[b"blocked".to_vec()]);
+        blocked_release.notify_one();
+    }
+
+    #[tokio::test]
     async fn fixed_pool_connect_failure() {
         // Try to connect to an address that's not listening.
         let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
@@ -1299,32 +1379,37 @@ mod tests {
         let (second_attempt_tx, second_attempt_rx) = oneshot::channel();
         let mut second_attempt_tx = Some(second_attempt_tx);
         let construction = tokio::spawn(async move {
-            FixedSerialPool::connect_with(&addr, 2, move || {
-                let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
-                let first_handle_tx = if attempt == 0 {
-                    first_handle_tx.take()
-                } else {
-                    None
-                };
-                let second_attempt_tx = if attempt == 1 {
-                    second_attempt_tx.take()
-                } else {
-                    None
-                };
-                async move {
-                    if attempt == 0 {
-                        let client = connect_client(&addr).await?;
-                        first_handle_tx
-                            .unwrap()
-                            .send(Arc::downgrade(client.handle()))
-                            .unwrap();
-                        Ok(client)
+            FixedSerialPool::connect_with(
+                &addr,
+                2,
+                CanceledCallPolicy::ReplaceConnection,
+                move || {
+                    let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
+                    let first_handle_tx = if attempt == 0 {
+                        first_handle_tx.take()
                     } else {
-                        second_attempt_tx.unwrap().send(()).unwrap();
-                        std::future::pending().await
+                        None
+                    };
+                    let second_attempt_tx = if attempt == 1 {
+                        second_attempt_tx.take()
+                    } else {
+                        None
+                    };
+                    async move {
+                        if attempt == 0 {
+                            let client = connect_client(&addr).await?;
+                            first_handle_tx
+                                .unwrap()
+                                .send(Arc::downgrade(client.handle()))
+                                .unwrap();
+                            Ok(client)
+                        } else {
+                            second_attempt_tx.unwrap().send(()).unwrap();
+                            std::future::pending().await
+                        }
                     }
-                }
-            })
+                },
+            )
             .await
         });
 
@@ -1382,26 +1467,31 @@ mod tests {
         let mut first_handle_tx = Some(first_handle_tx);
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            FixedSerialPool::connect_with(&addr, 2, move || {
-                let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
-                let first_handle_tx = if attempt == 0 {
-                    first_handle_tx.take()
-                } else {
-                    None
-                };
-                async move {
-                    if attempt == 0 {
-                        let client = connect_client(&addr).await?;
-                        first_handle_tx
-                            .unwrap()
-                            .send(Arc::downgrade(client.handle()))
-                            .unwrap();
-                        Ok(client)
+            FixedSerialPool::connect_with(
+                &addr,
+                2,
+                CanceledCallPolicy::ReplaceConnection,
+                move || {
+                    let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
+                    let first_handle_tx = if attempt == 0 {
+                        first_handle_tx.take()
                     } else {
-                        Err(std::io::Error::other("injected connection failure"))
+                        None
+                    };
+                    async move {
+                        if attempt == 0 {
+                            let client = connect_client(&addr).await?;
+                            first_handle_tx
+                                .unwrap()
+                                .send(Arc::downgrade(client.handle()))
+                                .unwrap();
+                            Ok(client)
+                        } else {
+                            Err(std::io::Error::other("injected connection failure"))
+                        }
                     }
-                }
-            }),
+                },
+            ),
         )
         .await
         .expect("pool construction should return after connection failure");

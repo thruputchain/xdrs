@@ -207,7 +207,7 @@ mod client;
 pub use client::{connect_client, connect_client_with_config};
 
 pub mod pool;
-pub use pool::{CpuSetPool, DynamicPool, FixedSerialPool};
+pub use pool::{CanceledCallPolicy, CpuSetPool, DynamicPool, FixedSerialPool};
 
 pub mod tcp_connection;
 

@@ -4,10 +4,10 @@ members = ["rpc_driver", "bench-compare", "rpc-smoke"]
 resolver = "2"
 
 [workspace.dependencies]
-rpc_driver = { path = "rpc_driver", version = "0.9.3" }
+rpc_driver = { path = "rpc_driver", version = "0.9.4" }
 
 [workspace.package]
-version = "0.9.3"
+version = "0.9.4"
 
 [workspace.lints.rust]
 # Safety
