@@ -651,7 +651,7 @@ impl ConnectionHandle {
         .instrument(span)
         .await;
 
-        guard.disarm();
+        guard.complete();
         result
     }
 
@@ -834,7 +834,7 @@ impl ConnectionHandle {
         .instrument(span)
         .await;
 
-        guard.disarm();
+        guard.complete();
         result
     }
 
@@ -898,15 +898,9 @@ struct CallGuard<'a> {
 }
 
 impl CallGuard<'_> {
-    fn disarm(mut self) {
-        self.done = true;
-        self.pending_count.fetch_sub(1, Ordering::Relaxed);
-    }
-}
-
-impl Drop for CallGuard<'_> {
-    fn drop(&mut self) {
+    fn cleanup(&mut self) {
         if !self.done {
+            self.done = true;
             self.pending_count.fetch_sub(1, Ordering::Relaxed);
             self.state
                 .lock()
@@ -914,6 +908,16 @@ impl Drop for CallGuard<'_> {
                 .pending_requests
                 .remove(&self.xid);
         }
+    }
+
+    fn complete(mut self) {
+        self.cleanup();
+    }
+}
+
+impl Drop for CallGuard<'_> {
+    fn drop(&mut self) {
+        self.cleanup();
     }
 }
 
@@ -1076,6 +1080,24 @@ mod tests {
 
         // Duplicate reply — entry already removed, should be ignored.
         state.handle_reply(xid, ReplyResult::Ok(b"foo".to_vec(), 0));
+    }
+
+    #[test]
+    fn test_call_guard_completion_cleans_registered_entry() {
+        let state = StdMutex::new(ConnectionState::new());
+        let xid = state.lock().unwrap().register_call().unwrap();
+        let pending_count = AtomicUsize::new(1);
+
+        CallGuard {
+            state: &state,
+            pending_count: &pending_count,
+            xid,
+            done: false,
+        }
+        .complete();
+
+        assert_eq!(pending_count.load(Ordering::Relaxed), 0);
+        assert!(state.lock().unwrap().pending_requests.is_empty());
     }
 
     #[test]

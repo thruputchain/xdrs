@@ -131,10 +131,12 @@ impl Drop for FixedWorkerConnectionGuard {
 /// `tokio::sync::mpsc` channel distributes requests to connection workers
 /// in FIFO order — one call at a time per connection. Workers skip canceled
 /// queued calls before sending them. By default, canceling an active call
-/// closes and replaces that worker's connection before it accepts more work.
-/// [`CanceledCallPolicy::PoisonConnection`] instead terminates the affected
-/// worker, leaving any other workers available at reduced capacity until the
-/// owner discards the pool.
+/// or detecting that its connection was poisoned closes and replaces that
+/// worker's connection before it accepts more work. The request that observes
+/// an unexpected connection loss still returns an error; later requests use
+/// the replacement connection. [`CanceledCallPolicy::PoisonConnection`]
+/// instead terminates the affected worker, leaving any other workers available
+/// at reduced capacity until the owner discards the pool.
 ///
 /// This matches the Go `ConnectPoolToScheduler` pattern: a fixed number
 /// of connections with sequential dispatch per connection.
@@ -144,16 +146,18 @@ pub struct FixedSerialPool {
     size: usize,
 }
 
-/// Action taken when the caller of an active fixed-pool request is canceled.
+/// Action taken when an active fixed-pool request is canceled or its connection
+/// becomes poisoned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanceledCallPolicy {
     /// Replace the affected connection before the worker accepts more work.
     ReplaceConnection,
     /// Poison the affected connection and terminate its worker.
     ///
-    /// Owners should discard the pool after canceling a call. This policy is
-    /// intended for protocols where reconnects require an external handshake
-    /// or quarantine before the client can become visible again.
+    /// Owners should discard the pool after canceling a call or observing a
+    /// connection failure. This policy is intended for protocols where
+    /// reconnects require an external handshake or quarantine before the
+    /// client can become visible again.
     PoisonConnection,
 }
 
@@ -183,6 +187,59 @@ fn begin_pool_shutdown(closed: &AtomicBool) -> bool {
 async fn finish_shutdowns(shutdowns: Vec<crate::connection::ConnectionShutdown>) {
     for shutdown in shutdowns {
         shutdown.finish().await;
+    }
+}
+
+/// Retire a fixed worker's current connection and apply its recovery policy.
+///
+/// Returns `true` after installing a replacement, or `false` when the worker
+/// should terminate under [`CanceledCallPolicy::PoisonConnection`].
+async fn recover_fixed_worker_connection(
+    connection_slot: &Arc<StdMutex<Option<Arc<ConnectionHandle>>>>,
+    client: &mut Arc<ConnectionHandle>,
+    connection_factory: &ConnectionFactory,
+    canceled_call_policy: CanceledCallPolicy,
+    reason: &'static str,
+) -> bool {
+    connection_slot.lock().unwrap().take();
+    client.begin_poison().finish().await;
+    if canceled_call_policy == CanceledCallPolicy::PoisonConnection {
+        return false;
+    }
+
+    let mut retry_delay = Duration::from_millis(100);
+    let mut first_failure = true;
+    loop {
+        match connection_factory.connect().await {
+            Ok(connection) => {
+                let replacement = connection.into_handle();
+                *connection_slot.lock().unwrap() = Some(replacement.clone());
+                *client = replacement;
+                return true;
+            }
+            Err(error) => {
+                if first_failure {
+                    tracing::warn!(
+                        addr = %connection_factory.addr,
+                        %error,
+                        pool_type = "fixed_serial",
+                        reason,
+                        "failed to replace fixed-pool connection"
+                    );
+                    first_failure = false;
+                } else {
+                    tracing::debug!(
+                        addr = %connection_factory.addr,
+                        %error,
+                        pool_type = "fixed_serial",
+                        reason,
+                        "fixed-pool connection replacement still pending"
+                    );
+                }
+                tokio::time::sleep(retry_delay).await;
+                retry_delay = retry_delay.saturating_mul(2).min(Duration::from_secs(5));
+            }
+        }
     }
 }
 
@@ -403,6 +460,22 @@ impl FixedSerialPool {
                     } = req;
                     drop(queue_permit);
 
+                    // The read task can poison an idle connection after its peer
+                    // closes. Recover before dispatch so the next queued request
+                    // does not have to fail merely to trigger replacement.
+                    if client.is_poisoned()
+                        && !recover_fixed_worker_connection(
+                            &connection_slot,
+                            &mut client,
+                            &worker_factory,
+                            canceled_call_policy,
+                            "poison detected before request dispatch",
+                        )
+                        .await
+                    {
+                        break;
+                    }
+
                     match reply {
                         Some(mut reply_tx) => {
                             if reply_tx.is_closed() {
@@ -415,48 +488,30 @@ impl FixedSerialPool {
                                 () = reply_tx.closed() => None,
                             };
                             if let Some(result) = result {
+                                let connection_poisoned = client.is_poisoned();
                                 let _ = reply_tx.send(result);
-                            } else {
-                                connection_slot.lock().unwrap().take();
-                                client.begin_poison().finish().await;
-                                if canceled_call_policy == CanceledCallPolicy::PoisonConnection {
+                                if connection_poisoned
+                                    && !recover_fixed_worker_connection(
+                                        &connection_slot,
+                                        &mut client,
+                                        &worker_factory,
+                                        canceled_call_policy,
+                                        "connection poisoned during RPC call",
+                                    )
+                                    .await
+                                {
                                     break;
                                 }
-                                let mut retry_delay = Duration::from_millis(100);
-                                let mut first_failure = true;
-                                loop {
-                                    match worker_factory.connect().await {
-                                        Ok(connection) => {
-                                            let replacement = connection.into_handle();
-                                            *connection_slot.lock().unwrap() =
-                                                Some(replacement.clone());
-                                            client = replacement;
-                                            break;
-                                        }
-                                        Err(error) => {
-                                            if first_failure {
-                                                tracing::warn!(
-                                                    addr = %worker_factory.addr,
-                                                    %error,
-                                                    pool_type = "fixed_serial",
-                                                    "failed to replace connection after canceled call"
-                                                );
-                                                first_failure = false;
-                                            } else {
-                                                tracing::debug!(
-                                                    addr = %worker_factory.addr,
-                                                    %error,
-                                                    pool_type = "fixed_serial",
-                                                    "fixed pool connection replacement still pending"
-                                                );
-                                            }
-                                            tokio::time::sleep(retry_delay).await;
-                                            retry_delay = retry_delay
-                                                .saturating_mul(2)
-                                                .min(Duration::from_secs(5));
-                                        }
-                                    }
-                                }
+                            } else if !recover_fixed_worker_connection(
+                                &connection_slot,
+                                &mut client,
+                                &worker_factory,
+                                canceled_call_policy,
+                                "active RPC call canceled",
+                            )
+                            .await
+                            {
+                                break;
                             }
                         }
                         None => {
@@ -465,6 +520,18 @@ impl FixedSerialPool {
                                 .await
                             {
                                 tracing::warn!(error = %e, "fire-and-forget send failed");
+                            }
+                            if client.is_poisoned()
+                                && !recover_fixed_worker_connection(
+                                    &connection_slot,
+                                    &mut client,
+                                    &worker_factory,
+                                    canceled_call_policy,
+                                    "connection poisoned during fire-and-forget call",
+                                )
+                                .await
+                            {
+                                break;
                             }
                         }
                     }
@@ -510,7 +577,8 @@ impl FixedSerialPool {
     ///
     /// This is not a live connection count. A pool using
     /// [`CanceledCallPolicy::PoisonConnection`] can have fewer active workers
-    /// after a caller cancels an in-flight request.
+    /// after a caller cancels an in-flight request or a connection becomes
+    /// poisoned.
     pub fn size(&self) -> usize {
         self.size
     }
@@ -1343,6 +1411,11 @@ mod tests {
         calls: Arc<StdMutex<Vec<Vec<u8>>>>,
     }
 
+    struct HoldingEchoService {
+        started: tokio::sync::mpsc::UnboundedSender<()>,
+        release: Arc<Semaphore>,
+    }
+
     #[async_trait]
     impl RpcHandler for SlowEchoService {
         async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
@@ -1372,6 +1445,28 @@ mod tests {
             } else {
                 Ok(data.to_vec())
             }
+        }
+
+        fn prog_vers(&self) -> ProgVers {
+            ProgVers::new(1, 1)
+        }
+    }
+
+    #[async_trait]
+    impl RpcHandler for HoldingEchoService {
+        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+            if proc != 1 {
+                return Err(RpcError::InvalidProcedure);
+            }
+            self.started
+                .send(())
+                .expect("balancing test should still be waiting for calls");
+            self.release
+                .acquire()
+                .await
+                .expect("balancing test release semaphore should remain open")
+                .forget();
+            Ok(data.to_vec())
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -1421,6 +1516,26 @@ mod tests {
         let server = RpcServer::new(listener, services);
         server.start().await;
         (addr, blocked_started, blocked_release, calls)
+    }
+
+    /// Accept and close the pool's initial connection, then serve echo
+    /// requests on replacement connections.
+    async fn start_drop_then_echo_server() -> (SocketAddr, Arc<Notify>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let initial_connection_dropped = Arc::new(Notify::new());
+        let dropped = initial_connection_dropped.clone();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            drop(stream);
+            dropped.notify_one();
+
+            let mut services = ServiceMap::new();
+            services.add_service(Box::new(EchoService));
+            let server = RpcServer::new(listener, services);
+            drop(server.start().await);
+        });
+        (addr, initial_connection_dropped)
     }
 
     fn limited_client_config(max_message_size: u32) -> ConnectionConfig {
@@ -1519,6 +1634,68 @@ mod tests {
         // Pool should still work for valid calls after an error.
         let result = pool.send_call(ProgVers::new(1, 1), 1, b"ok").await.unwrap();
         assert_eq!(result, b"ok");
+    }
+
+    #[tokio::test]
+    async fn fixed_pool_replaces_connection_after_peer_disconnect() {
+        let (addr, initial_connection_dropped) = start_drop_then_echo_server().await;
+        let pool = FixedSerialPool::connect(&addr, 1).await.unwrap();
+        initial_connection_dropped.notified().await;
+
+        let response = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                match pool
+                    .send_call(ProgVers::new(1, 1), 1, b"after-restart")
+                    .await
+                {
+                    Ok(response) => break response,
+                    Err(RpcError::SystemError) => tokio::task::yield_now().await,
+                    Err(error) => panic!("unexpected error while replacing connection: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("fixed pool should replace a peer-disconnected connection");
+
+        assert_eq!(response, b"after-restart");
+    }
+
+    #[tokio::test]
+    async fn fixed_pool_poison_policy_terminates_after_peer_disconnect() {
+        let (addr, initial_connection_dropped) = start_drop_then_echo_server().await;
+        let pool = FixedSerialPool::connect_with_canceled_call_policy(
+            &addr,
+            1,
+            CanceledCallPolicy::PoisonConnection,
+        )
+        .await
+        .unwrap();
+        initial_connection_dropped.notified().await;
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            pool.send_call(ProgVers::new(1, 1), 1, b"after-disconnect"),
+        )
+        .await
+        .expect("peer disconnect should resolve the active request");
+        assert!(matches!(
+            result,
+            Err(RpcError::SystemError | RpcError::Canceled)
+        ));
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !pool.inner.worker_handles.lock().unwrap()[0].is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("poison policy should terminate the disconnected worker");
+
+        assert_eq!(
+            pool.send_call(ProgVers::new(1, 1), 1, b"after-worker-exit")
+                .await,
+            Err(RpcError::PoolClosed)
+        );
     }
 
     #[tokio::test]
@@ -2030,33 +2207,41 @@ mod tests {
 
     #[tokio::test]
     async fn dynamic_pool_balances_by_pending() {
-        let delay = std::time::Duration::from_millis(100);
-        let addr = start_slow_server(delay).await;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let release = Arc::new(Semaphore::new(0));
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(HoldingEchoService {
+            started: started_tx,
+            release: release.clone(),
+        }));
+        let server = RpcServer::new(listener, services);
+        server.start().await;
 
         let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60), None));
 
-        // Send 6 concurrent calls through a pool with max_connections=3.
+        // Hold one call open on each connection. Starting calls sequentially
+        // after the server observes the previous one makes the pending count,
+        // and therefore the expected connection growth, deterministic.
         let mut handles = Vec::new();
-        for i in 0..6u32 {
-            let pool = pool.clone();
+        for i in 0..3u32 {
+            let call_pool = pool.clone();
             handles.push(tokio::spawn(async move {
                 let data = format!("bal-{}", i);
-                pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                call_pool
+                    .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
                     .await
                     .unwrap()
             }));
+            tokio::time::timeout(Duration::from_secs(1), started_rx.recv())
+                .await
+                .expect("server should observe the pending call")
+                .expect("holding service should remain connected");
+            assert_eq!(pool.active_connections().await, i as usize + 1);
         }
 
-        // Give time for connections to be opened.
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-
-        // Pool should have opened up to 3 connections for concurrent load.
-        let active = pool.active_connections().await;
-        assert!(
-            (2..=3).contains(&active),
-            "Expected 2-3 active connections under load, got {active}"
-        );
-
+        release.add_permits(handles.len());
         for handle in handles {
             handle.await.unwrap();
         }
