@@ -26,10 +26,7 @@ mod tests {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
-            println!(
-                "EchoCallbackService: dispatch: proc={}, data={:?}",
-                proc, data
-            );
+            println!("EchoCallbackService: dispatch: proc={proc}, data={data:?}");
             Ok(data.to_vec())
         }
 
@@ -270,7 +267,7 @@ mod tests {
             .send_call(ProgVers::new(1, 1), 1, b"test")
             .await;
 
-        println!("result: {:?}", result);
+        println!("result: {result:?}");
 
         // The call should fail with a SystemError since the connection was closed
         assert!(result.is_err());
@@ -291,8 +288,7 @@ mod tests {
                 return Err(RpcError::InvalidProcedure);
             }
             println!(
-                "BlockingEchoService: dispatch: proc={}, data={:?}, waiting for notification",
-                proc, data
+                "BlockingEchoService: dispatch: proc={proc}, data={data:?}, waiting for notification"
             );
             // Wait for notification before returning
             self.notify.notified().await;
@@ -342,7 +338,7 @@ mod tests {
                     let res = client_handle
                         .send_call(ProgVers::new(1, 1), 1, b"test")
                         .await;
-                    println!("res: {:?}", res);
+                    println!("res: {res:?}");
                     assert!(res.is_err());
                 }
             });

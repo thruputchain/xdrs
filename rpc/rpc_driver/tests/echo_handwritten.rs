@@ -26,6 +26,14 @@ impl TestProgram_TestVersion_Dispatcher {
     }
 }
 
+// Manual impl: the boxed trait object is not `Debug`.
+impl std::fmt::Debug for TestProgram_TestVersion_Dispatcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TestProgram_TestVersion_Dispatcher")
+            .finish_non_exhaustive()
+    }
+}
+
 #[async_trait]
 impl rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatcher {
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
@@ -67,6 +75,14 @@ impl rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatcher {
 #[allow(non_camel_case_types)]
 pub struct TestProgram_TestVersion_Client {
     handle: Arc<dyn RpcSender>,
+}
+
+// Manual impl: `Arc<dyn RpcSender>` is not `Debug`.
+impl std::fmt::Debug for TestProgram_TestVersion_Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TestProgram_TestVersion_Client")
+            .finish_non_exhaustive()
+    }
 }
 
 impl TestProgram_TestVersion_Client {
@@ -115,11 +131,11 @@ mod tests {
             Ok(())
         }
         async fn takes_int(&self, i: i32) -> Result<i32, ProgramError> {
-            println!("EchoCallbackService: takes_int: i={}", i);
+            println!("EchoCallbackService: takes_int: i={i}");
             Ok(i)
         }
         async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgramError> {
-            println!("EchoCallbackService: takes_two_ints: i1={}, i2={}", i1, i2);
+            println!("EchoCallbackService: takes_two_ints: i1={i1}, i2={i2}");
             Ok(i1 + i2)
         }
     }

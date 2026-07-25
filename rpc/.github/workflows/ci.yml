@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      # Note: `--workspace` builds rpc-smoke, which enables rpc_driver's
+      # `concurrent-dispatch`. Cargo unifies features across members, so any
+      # workspace-wide command builds rpc_driver WITH the feature. Serial
+      # dispatch — the default, and what every consumer ships — is only
+      # covered by the `-p rpc_driver` steps below.
       - name: Test (Workspace)
         run: cargo test --workspace
       - name: Test rpc_driver (No Features)
@@ -24,5 +29,13 @@ jobs:
         run: cargo test --workspace --all-features
       - name: Check format
         run: cargo fmt --check
-      - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
+      - name: Clippy (Workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy rpc_driver (Serial Dispatch)
+        run: cargo clippy -p rpc_driver --all-targets -- -D warnings
+      - name: Clippy rpc_driver (Concurrent Dispatch)
+        run: cargo clippy -p rpc_driver --all-targets --features concurrent-dispatch -- -D warnings
+      - name: Bench smoke (Serial Dispatch)
+        run: cargo bench -p rpc_driver --bench rpc_bench -- --quick
+      - name: Bench smoke (Concurrent Dispatch)
+        run: cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch -- --quick

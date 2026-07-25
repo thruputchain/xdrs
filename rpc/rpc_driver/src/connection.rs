@@ -1144,7 +1144,7 @@ mod tests {
         let was_faf = state.handle_reply(faf_xid, ReplyResult::Ok(b"ignored".to_vec(), 0));
         assert!(was_faf, "expected true for fire-and-forget reply");
         assert!(
-            state.pending_requests.get(&faf_xid).is_none(),
+            !state.pending_requests.contains_key(&faf_xid),
             "fire-and-forget entry should be removed"
         );
 

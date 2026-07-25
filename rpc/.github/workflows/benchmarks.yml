@@ -20,15 +20,34 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run benchmarks
-        run: cargo bench --bench rpc_bench --features concurrent-dispatch -- --gh-bench > bench-output.json
-      - name: Store benchmark results
+      # Both dispatch modes are tracked as separate series. `-p rpc_driver` is
+      # required: without it cargo builds rpc-smoke too, which enables
+      # `concurrent-dispatch`, and feature unification makes the "serial" run
+      # silently measure the concurrent path.
+      - name: Run benchmarks (Serial Dispatch)
+        run: cargo bench -p rpc_driver --bench rpc_bench -- --gh-bench > bench-serial.json
+      - name: Store benchmark results (Serial Dispatch)
         uses: benchmark-action/github-action-benchmark@v1
         with:
+          name: rpc_driver (serial dispatch)
           tool: customSmallerIsBetter
-          output-file-path: bench-output.json
+          output-file-path: bench-serial.json
           gh-pages-branch: gh-pages
-          benchmark-data-dir-path: dev/bench
+          benchmark-data-dir-path: dev/bench/serial
+          auto-push: true
+          alert-threshold: "150%"
+          comment-on-alert: false
+          fail-on-alert: false
+      - name: Run benchmarks (Concurrent Dispatch)
+        run: cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch -- --gh-bench > bench-concurrent.json
+      - name: Store benchmark results (Concurrent Dispatch)
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: rpc_driver (concurrent dispatch)
+          tool: customSmallerIsBetter
+          output-file-path: bench-concurrent.json
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench/concurrent
           auto-push: true
           alert-threshold: "150%"
           comment-on-alert: false

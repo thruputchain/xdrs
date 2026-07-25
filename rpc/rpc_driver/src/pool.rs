@@ -1574,7 +1574,7 @@ mod tests {
 
         // Send 9 calls sequentially and verify all succeed with correct data.
         for i in 0..9u32 {
-            let data = format!("call-{}", i);
+            let data = format!("call-{i}");
             let result = pool
                 .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
                 .await
@@ -1598,7 +1598,7 @@ mod tests {
         for i in 0..3u32 {
             let pool = pool.clone();
             handles.push(tokio::spawn(async move {
-                let data = format!("slow-{}", i);
+                let data = format!("slow-{i}");
                 pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
                     .await
                     .unwrap()
@@ -1616,8 +1616,7 @@ mod tests {
         // Allow generous margin for CI variance.
         assert!(
             elapsed < std::time::Duration::from_millis(250),
-            "Expected parallel execution (~100ms), got {:?}",
-            elapsed
+            "Expected parallel execution (~100ms), got {elapsed:?}"
         );
     }
 
@@ -1714,7 +1713,7 @@ mod tests {
 
         // Even with one connection, sequential calls should work.
         for i in 0..5u32 {
-            let data = format!("single-{}", i);
+            let data = format!("single-{i}");
             let result = pool
                 .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
                 .await
@@ -2193,7 +2192,7 @@ mod tests {
 
         // Sequential calls should reuse the same (idle) connection.
         for i in 0..5u32 {
-            let data = format!("seq-{}", i);
+            let data = format!("seq-{i}");
             let result = pool
                 .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
                 .await
@@ -2228,7 +2227,7 @@ mod tests {
         for i in 0..3u32 {
             let call_pool = pool.clone();
             handles.push(tokio::spawn(async move {
-                let data = format!("bal-{}", i);
+                let data = format!("bal-{i}");
                 call_pool
                     .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
                     .await
@@ -2262,7 +2261,7 @@ mod tests {
         for i in 0..4u32 {
             let pool = pool.clone();
             handles.push(tokio::spawn(async move {
-                let data = format!("max-{}", i);
+                let data = format!("max-{i}");
                 pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
                     .await
                     .unwrap()
@@ -2358,7 +2357,7 @@ mod tests {
         for i in 0..3u32 {
             let pool = pool.clone();
             handles.push(tokio::spawn(async move {
-                let data = format!("pend-{}", i);
+                let data = format!("pend-{i}");
                 pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
                     .await
                     .unwrap()

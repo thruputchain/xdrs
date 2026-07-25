@@ -6,9 +6,18 @@
 //! # Usage
 //!
 //! ```sh
-//! cargo bench --bench rpc_bench
-//! cargo bench --bench rpc_bench --features concurrent-dispatch
+//! cargo bench -p rpc_driver --bench rpc_bench                                  # serial
+//! cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch   # concurrent
 //! ```
+//!
+//! Use `-p rpc_driver`. Omitting it selects the whole workspace, and `rpc-smoke`
+//! enables `concurrent-dispatch`, so cargo's feature unification silently turns
+//! the feature on — a "serial" run measures the concurrent path instead.
+//!
+//! All scenarios run in both modes except `bidirectional_rpc` and
+//! `handler_fanout`, which are `concurrent-dispatch`-only: their handlers call
+//! back to the peer via `peer()`, which deadlocks on the serial path (the
+//! connection cannot read the callback's REPLY while awaiting the handler).
 //!
 //! # Flags (after `--`)
 //!
@@ -16,22 +25,20 @@
 //! - `--quick`           — 10x fewer iterations for fast smoke runs
 //! - `--json`            — write detailed JSON to `target/bench/`
 //! - `--gh-bench`        — emit p99 latency JSON to stdout (for github-action-benchmark)
-//! - `--tracing <level>` — install a tracing subscriber at the given level (info, debug)
-//!                         to measure instrumentation overhead (writes to sink)
+//! - `--tracing <level>` — install a tracing subscriber at the given level (info,
+//!   debug) to measure instrumentation overhead (writes to sink)
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
-#[cfg(feature = "concurrent-dispatch")]
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use rpc_driver::{
-    ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
+    ConnectionConfig, DynamicPool, FixedSerialPool, ProgVers, RpcError, RpcSender, RpcServer,
+    connect_client_with_config,
     handler::{RpcHandler, ServiceMap},
 };
-#[cfg(feature = "concurrent-dispatch")]
-use rpc_driver::{DynamicPool, FixedSerialPool, RpcSender};
 use serde::Serialize;
 use tokio::net::TcpListener;
 
@@ -128,12 +135,10 @@ impl RpcHandler for EchoService {
 }
 
 /// Echo service with a simulated I/O delay.
-#[cfg(feature = "concurrent-dispatch")]
 struct DelayEchoService {
     delay: Duration,
 }
 
-#[cfg(feature = "concurrent-dispatch")]
 #[async_trait]
 impl RpcHandler for DelayEchoService {
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
@@ -221,13 +226,11 @@ impl RpcHandler for FanoutService {
 /// Simulates handler contention: all handlers acquire a shared lock
 /// (like hogd's `commit_lock_`) before doing work, then release.
 /// Models serialized critical sections within concurrent dispatch.
-#[cfg(feature = "concurrent-dispatch")]
 struct ContentionService {
     lock: Arc<tokio::sync::Mutex<()>>,
     work_duration: Duration,
 }
 
-#[cfg(feature = "concurrent-dispatch")]
 #[async_trait]
 impl RpcHandler for ContentionService {
     async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
@@ -265,7 +268,6 @@ async fn start_server_multi(services_list: Vec<Box<dyn RpcHandler>>) -> SocketAd
     addr
 }
 
-#[cfg(feature = "concurrent-dispatch")]
 async fn run_concurrent(
     sender: Arc<dyn RpcSender>,
     progvers: ProgVers,
@@ -347,7 +349,7 @@ fn write_json(results: &BenchResult) {
     } else {
         "serial"
     };
-    let filename = format!("bench-{}-{}.json", &results.metadata.git_sha, variant);
+    let filename = format!("bench-{}-{}.json", results.metadata.git_sha, variant);
     let path = dir.join(&filename);
     let json = serde_json::to_string_pretty(results).unwrap();
     std::fs::write(&path, &json).unwrap();
@@ -377,15 +379,13 @@ fn build_metadata() -> Metadata {
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .map_or_else(|| "unknown".to_string(), |s| s.trim().to_string());
 
     let hostname = std::process::Command::new("hostname")
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .map_or_else(|| "unknown".to_string(), |s| s.trim().to_string());
 
     let feature_flags = if cfg!(feature = "concurrent-dispatch") {
         vec!["concurrent-dispatch".to_string()]
@@ -547,7 +547,6 @@ async fn scenario_sequential_latency(quick: bool) -> Vec<ScenarioResult> {
     results
 }
 
-#[cfg(feature = "concurrent-dispatch")]
 async fn scenario_concurrent_throughput(quick: bool) -> Vec<ScenarioResult> {
     let delay = Duration::from_millis(1);
     let addr = start_server(Box::new(DelayEchoService { delay })).await;
@@ -701,7 +700,6 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
 /// results may differ when handlers do real work, network latency is non-trivial,
 /// or connection-level fault isolation matters. This benchmark does not model
 /// those conditions.
-#[cfg(feature = "concurrent-dispatch")]
 async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
     let delay = Duration::from_millis(1);
     let addr = start_server(Box::new(DelayEchoService { delay })).await;
@@ -787,7 +785,6 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
     results
 }
 
-#[cfg(feature = "concurrent-dispatch")]
 async fn scenario_dynamic_pool(quick: bool) -> Vec<ScenarioResult> {
     let delay = Duration::from_millis(1);
     let addr = start_server(Box::new(DelayEchoService { delay })).await;
@@ -964,7 +961,6 @@ async fn scenario_handler_fanout(quick: bool) -> Vec<ScenarioResult> {
 /// lock inside the handler.  Models hogd's `commit_lock_` pattern where some
 /// operations serialize through a mutex even under concurrent dispatch.
 /// Shows whether concurrent dispatch still helps when the lock is a bottleneck.
-#[cfg(feature = "concurrent-dispatch")]
 async fn scenario_handler_contention(quick: bool) -> Vec<ScenarioResult> {
     let lock = Arc::new(tokio::sync::Mutex::new(()));
     let work_duration = Duration::from_millis(1);
@@ -1067,7 +1063,6 @@ async fn main() {
         all_results.extend(results);
     }
 
-    #[cfg(feature = "concurrent-dispatch")]
     if should_run("concurrent_throughput", &cli.scenario_filter) {
         let results = scenario_concurrent_throughput(cli.quick).await;
         for r in &results {
@@ -1085,7 +1080,6 @@ async fn main() {
         all_results.extend(results);
     }
 
-    #[cfg(feature = "concurrent-dispatch")]
     if should_run("pool_vs_single", &cli.scenario_filter) {
         let results = scenario_pool_vs_single(cli.quick).await;
         for r in &results {
@@ -1094,7 +1088,6 @@ async fn main() {
         all_results.extend(results);
     }
 
-    #[cfg(feature = "concurrent-dispatch")]
     if should_run("dynamic_pool", &cli.scenario_filter) {
         let results = scenario_dynamic_pool(cli.quick).await;
         for r in &results {
@@ -1120,7 +1113,6 @@ async fn main() {
         all_results.extend(results);
     }
 
-    #[cfg(feature = "concurrent-dispatch")]
     if should_run("handler_contention", &cli.scenario_filter) {
         let results = scenario_handler_contention(cli.quick).await;
         for r in &results {

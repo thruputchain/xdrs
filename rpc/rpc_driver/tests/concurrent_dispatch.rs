@@ -264,8 +264,7 @@ async fn test_concurrent_throughput() {
     // (start_paused = true makes tokio::time::sleep deterministic.)
     assert!(
         elapsed < Duration::from_millis(500),
-        "expected concurrent completion in <500ms, took {:?} (serial dispatch?)",
-        elapsed,
+        "expected concurrent completion in <500ms, took {elapsed:?} (serial dispatch?)",
     );
 }
 
@@ -300,13 +299,11 @@ async fn test_backpressure() {
     // (start_paused = true makes tokio::time::sleep deterministic.)
     assert!(
         elapsed >= Duration::from_millis(500),
-        "completed too fast ({:?}) — backpressure not working",
-        elapsed,
+        "completed too fast ({elapsed:?}) — backpressure not working",
     );
     assert!(
         elapsed < Duration::from_millis(900),
-        "took too long ({:?}) — dispatches may be fully serial",
-        elapsed,
+        "took too long ({elapsed:?}) — dispatches may be fully serial",
     );
 }
 

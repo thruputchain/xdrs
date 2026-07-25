@@ -44,6 +44,22 @@ rpc_driver = { version = "0.10.0", features = ["concurrent-dispatch"] }
 
 Tune concurrency via `ConnectionConfig::with_max_concurrent_dispatches`.
 
+Without the feature, dispatch is serial: each connection awaits its handler
+before reading the next record. Serial dispatch has no per-CALL task spawn or
+record copy, but one slow handler blocks that connection, and a handler that
+calls back to the peer via `peer()` on the same connection will deadlock.
+
+To benchmark the two paths, always pass `-p rpc_driver`:
+
+```sh
+cargo bench -p rpc_driver --bench rpc_bench -- --quick                                  # serial
+cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch -- --quick   # concurrent
+```
+
+Omitting `-p rpc_driver` selects the whole workspace, and `rpc-smoke` enables
+`concurrent-dispatch` — cargo's feature unification then turns the feature on
+for every member, so a "serial" run silently measures the concurrent path.
+
 ## Tracing
 
 All diagnostic output uses the [`tracing`](https://docs.rs/tracing) crate. No
@@ -87,7 +103,7 @@ Instrumentation cost is workload- and subscriber-dependent. Measure it on the
 target system with:
 
 ```sh
-cargo bench --bench rpc_bench --features concurrent-dispatch -- --tracing debug
+cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch -- --tracing debug
 ```
 
 See `rpc-smoke/src/server.rs` for a complete reference example.
