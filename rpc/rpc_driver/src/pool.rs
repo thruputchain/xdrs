@@ -17,7 +17,6 @@
 //!   L3 cache group, routes by the caller's current CPU via `sched_getcpu`.
 //!   Models x23 `RpcMulticlient` / `PerCpuSet`.
 
-use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::{
     Arc, Mutex as StdMutex,
@@ -30,10 +29,72 @@ use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
+#[cfg(test)]
+use crate::connect_client;
 use crate::{
-    ConnectionConfig, ConnectionHandle, ProgVers, RpcResponse, RpcSender, connect_client,
+    ConnectionConfig, ConnectionHandle, ProgVers, RpcResponse, RpcSender,
     connect_client_with_config, rpc_error::RpcError,
 };
+#[cfg(test)]
+use std::future::Future;
+
+#[cfg(test)]
+type ConnectFuture = std::pin::Pin<
+    Box<dyn Future<Output = Result<crate::connection::ClientConnection, std::io::Error>> + Send>,
+>;
+#[cfg(test)]
+type ConnectOverride = Arc<dyn Fn() -> ConnectFuture + Send + Sync>;
+
+/// Opens connections to one address with one stable configuration.
+///
+/// Fixed-pool workers retain this factory so replacement connections receive
+/// the same configuration as the connections created during construction.
+#[derive(Clone)]
+struct ConnectionFactory {
+    addr: SocketAddr,
+    config: ConnectionConfig,
+    #[cfg(test)]
+    connect_override: Option<ConnectOverride>,
+}
+
+impl ConnectionFactory {
+    fn new(addr: SocketAddr, config: ConnectionConfig) -> Self {
+        Self {
+            addr,
+            config,
+            #[cfg(test)]
+            connect_override: None,
+        }
+    }
+
+    async fn connect(&self) -> Result<crate::connection::ClientConnection, std::io::Error> {
+        #[cfg(test)]
+        if let Some(connect) = &self.connect_override {
+            return connect().await;
+        }
+        connect_client_with_config(&self.addr, self.config.clone()).await
+    }
+
+    #[cfg(test)]
+    fn with_override<F, Fut>(addr: SocketAddr, connect: F) -> Self
+    where
+        F: FnMut() -> Fut + Send + 'static,
+        Fut: Future<Output = Result<crate::connection::ClientConnection, std::io::Error>>
+            + Send
+            + 'static,
+    {
+        let connect = Arc::new(StdMutex::new(connect));
+        let connect_override = Arc::new(move || {
+            let future = connect.lock().unwrap()();
+            Box::pin(future) as ConnectFuture
+        });
+        Self {
+            addr,
+            config: ConnectionConfig::default(),
+            connect_override: Some(connect_override),
+        }
+    }
+}
 
 /// A request dispatched through the pool to a worker.
 struct PoolRequest {
@@ -149,38 +210,97 @@ impl FixedSerialPool {
     /// Connect `pool_size` clients to `addr`, each with a dedicated worker task.
     ///
     /// All connections are established eagerly. If any connection fails, the
-    /// entire pool creation fails.
+    /// entire pool creation fails. Connections use
+    /// [`ConnectionConfig::default`].
     pub async fn connect(addr: &SocketAddr, pool_size: usize) -> Result<Self, RpcError> {
-        Self::connect_with_canceled_call_policy(
+        Self::connect_with_config_and_canceled_call_policy(
             addr,
             pool_size,
+            ConnectionConfig::default(),
+            CanceledCallPolicy::ReplaceConnection,
+        )
+        .await
+    }
+
+    /// Connect `pool_size` clients using `config`.
+    ///
+    /// The configuration is also applied to replacement connections opened
+    /// after an active call is canceled.
+    pub async fn connect_with_config(
+        addr: &SocketAddr,
+        pool_size: usize,
+        config: ConnectionConfig,
+    ) -> Result<Self, RpcError> {
+        Self::connect_with_config_and_canceled_call_policy(
+            addr,
+            pool_size,
+            config,
             CanceledCallPolicy::ReplaceConnection,
         )
         .await
     }
 
     /// Connect with an explicit policy for active calls whose caller cancels.
+    ///
+    /// Connections use [`ConnectionConfig::default`].
     pub async fn connect_with_canceled_call_policy(
         addr: &SocketAddr,
         pool_size: usize,
         canceled_call_policy: CanceledCallPolicy,
     ) -> Result<Self, RpcError> {
-        Self::connect_with(addr, pool_size, canceled_call_policy, || {
-            connect_client(addr)
-        })
+        Self::connect_with_config_and_canceled_call_policy(
+            addr,
+            pool_size,
+            ConnectionConfig::default(),
+            canceled_call_policy,
+        )
         .await
     }
 
+    /// Connect with a custom connection configuration and cancellation policy.
+    ///
+    /// `config` is applied both during initial pool construction and whenever
+    /// [`CanceledCallPolicy::ReplaceConnection`] replaces a connection.
+    pub async fn connect_with_config_and_canceled_call_policy(
+        addr: &SocketAddr,
+        pool_size: usize,
+        config: ConnectionConfig,
+        canceled_call_policy: CanceledCallPolicy,
+    ) -> Result<Self, RpcError> {
+        Self::connect_with_factory(
+            pool_size,
+            canceled_call_policy,
+            ConnectionFactory::new(*addr, config),
+        )
+        .await
+    }
+
+    #[cfg(test)]
     async fn connect_with<F, Fut>(
         addr: &SocketAddr,
         pool_size: usize,
         canceled_call_policy: CanceledCallPolicy,
-        mut connect: F,
+        connect: F,
     ) -> Result<Self, RpcError>
     where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<crate::connection::ClientConnection, std::io::Error>>,
+        F: FnMut() -> Fut + Send + 'static,
+        Fut: Future<Output = Result<crate::connection::ClientConnection, std::io::Error>>
+            + Send
+            + 'static,
     {
+        Self::connect_with_factory(
+            pool_size,
+            canceled_call_policy,
+            ConnectionFactory::with_override(*addr, connect),
+        )
+        .await
+    }
+
+    async fn connect_with_factory(
+        pool_size: usize,
+        canceled_call_policy: CanceledCallPolicy,
+        connection_factory: ConnectionFactory,
+    ) -> Result<Self, RpcError> {
         if pool_size == 0 {
             return Err(RpcError::SystemError);
         }
@@ -194,11 +314,16 @@ impl FixedSerialPool {
         // partial connections if construction is canceled mid-loop.
         let mut pending = Vec::with_capacity(pool_size);
         for _ in 0..pool_size {
-            match connect().await {
+            match connection_factory.connect().await {
                 Ok(client) => pending.push(client),
                 Err(e) => {
                     close_all(pending).await;
-                    tracing::error!(%addr, error = %e, pool_type = "fixed_serial", "pool connection failed");
+                    tracing::error!(
+                        addr = %connection_factory.addr,
+                        error = %e,
+                        pool_type = "fixed_serial",
+                        "pool connection failed"
+                    );
                     return Err(RpcError::SystemError);
                 }
             }
@@ -218,7 +343,7 @@ impl FixedSerialPool {
 
         for connection_slot in connections {
             let worker_rx = rx.clone();
-            let worker_addr = *addr;
+            let worker_factory = connection_factory.clone();
             let mut client = connection_slot
                 .lock()
                 .unwrap()
@@ -271,7 +396,7 @@ impl FixedSerialPool {
                                 let mut retry_delay = Duration::from_millis(100);
                                 let mut first_failure = true;
                                 loop {
-                                    match connect_client(&worker_addr).await {
+                                    match worker_factory.connect().await {
                                         Ok(connection) => {
                                             let replacement = connection.into_handle();
                                             *connection_slot.lock().unwrap() =
@@ -282,7 +407,7 @@ impl FixedSerialPool {
                                         Err(error) => {
                                             if first_failure {
                                                 tracing::warn!(
-                                                    %worker_addr,
+                                                    addr = %worker_factory.addr,
                                                     %error,
                                                     pool_type = "fixed_serial",
                                                     "failed to replace connection after canceled call"
@@ -290,7 +415,7 @@ impl FixedSerialPool {
                                                 first_failure = false;
                                             } else {
                                                 tracing::debug!(
-                                                    %worker_addr,
+                                                    addr = %worker_factory.addr,
                                                     %error,
                                                     pool_type = "fixed_serial",
                                                     "fixed pool connection replacement still pending"
@@ -450,13 +575,6 @@ impl Drop for ConnectingSlot<'_> {
     }
 }
 
-#[cfg(test)]
-type ConnectFuture = std::pin::Pin<
-    Box<dyn Future<Output = Result<crate::connection::ClientConnection, std::io::Error>> + Send>,
->;
-#[cfg(test)]
-type ConnectOverride = Box<dyn Fn() -> ConnectFuture + Send + Sync>;
-
 /// Dynamic connection pool with min-pending load balancing.
 ///
 /// Opens connections lazily up to `max_connections`. Each call is routed
@@ -466,19 +584,14 @@ type ConnectOverride = Box<dyn Fn() -> ConnectFuture + Send + Sync>;
 /// Use [`DynamicPool::start_evictor`] to spawn the background eviction
 /// task. Without it, idle connections are never reaped.
 pub struct DynamicPool {
-    addr: SocketAddr,
     max_connections: usize,
     idle_ttl: Duration,
-    config: ConnectionConfig,
+    connection_factory: ConnectionFactory,
     closed: AtomicBool,
     connecting: std::sync::atomic::AtomicUsize,
     connections: tokio::sync::Mutex<Vec<PooledConnection>>,
     connection_ready: Notify,
     evictor_abort: StdMutex<Option<tokio::task::AbortHandle>>,
-    /// Test seam: when set, used instead of [`connect_client_with_config`]
-    /// to open new connections.
-    #[cfg(test)]
-    connect_override: Option<ConnectOverride>,
 }
 
 // Manual Debug impl because PooledConnection contains ConnectionHandle (which
@@ -486,7 +599,7 @@ pub struct DynamicPool {
 impl std::fmt::Debug for DynamicPool {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynamicPool")
-            .field("addr", &self.addr)
+            .field("addr", &self.connection_factory.addr)
             .field("max_connections", &self.max_connections)
             .field("idle_ttl", &self.idle_ttl)
             .finish_non_exhaustive()
@@ -515,17 +628,14 @@ impl DynamicPool {
         assert!(max_connections > 0, "max_connections must be at least 1");
         assert!(!idle_ttl.is_zero(), "idle_ttl must be greater than zero");
         Self {
-            addr,
             max_connections,
             idle_ttl,
-            config: config.unwrap_or_default(),
+            connection_factory: ConnectionFactory::new(addr, config.unwrap_or_default()),
             closed: AtomicBool::new(false),
             connecting: std::sync::atomic::AtomicUsize::new(0),
             connections: tokio::sync::Mutex::new(Vec::new()),
             connection_ready: Notify::new(),
             evictor_abort: StdMutex::new(None),
-            #[cfg(test)]
-            connect_override: None,
         }
     }
 
@@ -550,11 +660,7 @@ impl DynamicPool {
 
     /// Open a new connection to the pool's address.
     async fn open_connection(&self) -> Result<crate::connection::ClientConnection, std::io::Error> {
-        #[cfg(test)]
-        if let Some(connect) = &self.connect_override {
-            return connect().await;
-        }
-        connect_client_with_config(&self.addr, self.config.clone()).await
+        self.connection_factory.connect().await
     }
 
     /// Select or create a connection with the fewest pending requests.
@@ -648,7 +754,12 @@ impl DynamicPool {
                 let client = match self.open_connection().await {
                     Ok(client) => client,
                     Err(e) => {
-                        tracing::error!(addr = %self.addr, error = %e, pool_type = "dynamic", "pool connection failed");
+                        tracing::error!(
+                            addr = %self.connection_factory.addr,
+                            error = %e,
+                            pool_type = "dynamic",
+                            "pool connection failed"
+                        );
                         return Err(RpcError::SystemError);
                     }
                 };
@@ -873,34 +984,87 @@ impl std::fmt::Debug for CpuSetPool {
 impl CpuSetPool {
     /// Connect to `addr` with one connection per LLC group, auto-detected
     /// from sysfs. Falls back to a single connection if topology is
-    /// unavailable (non-Linux, container restrictions).
+    /// unavailable (non-Linux, container restrictions). Connections use
+    /// [`ConnectionConfig::default`].
     pub async fn connect(addr: &SocketAddr) -> Result<Self, RpcError> {
+        Self::connect_with_config(addr, ConnectionConfig::default()).await
+    }
+
+    /// Connect using `config`, with one connection per auto-detected LLC group.
+    ///
+    /// Falls back to a single connection if topology is unavailable
+    /// (non-Linux, container restrictions).
+    pub async fn connect_with_config(
+        addr: &SocketAddr,
+        config: ConnectionConfig,
+    ) -> Result<Self, RpcError> {
         let (num_buckets, cpu_map) = detect_llc_topology();
-        Self::connect_with_map(addr, num_buckets, cpu_map).await
+        Self::connect_with_map_and_config(addr, num_buckets, cpu_map, config).await
     }
 
     /// Connect with an explicit number of connections and CPU→connection mapping.
     ///
     /// Useful for testing or when you want to override the auto-detected topology
-    /// (e.g., one connection per physical core instead of per LLC).
+    /// (e.g., one connection per physical core instead of per LLC). Connections
+    /// use [`ConnectionConfig::default`].
     pub async fn connect_with_map(
         addr: &SocketAddr,
         num_connections: usize,
         cpu_map: Vec<usize>,
     ) -> Result<Self, RpcError> {
-        Self::connect_with(addr, num_connections, cpu_map, || connect_client(addr)).await
+        Self::connect_with_map_and_config(
+            addr,
+            num_connections,
+            cpu_map,
+            ConnectionConfig::default(),
+        )
+        .await
     }
 
+    /// Connect using `config` with an explicit connection count and CPU map.
+    ///
+    /// `cpu_map` maps logical CPU identifiers to connection indices. Entries
+    /// may be [`usize::MAX`] to request modular fallback routing.
+    pub async fn connect_with_map_and_config(
+        addr: &SocketAddr,
+        num_connections: usize,
+        cpu_map: Vec<usize>,
+        config: ConnectionConfig,
+    ) -> Result<Self, RpcError> {
+        Self::connect_with_factory(
+            num_connections,
+            cpu_map,
+            ConnectionFactory::new(*addr, config),
+        )
+        .await
+    }
+
+    #[cfg(test)]
     async fn connect_with<F, Fut>(
         addr: &SocketAddr,
         num_connections: usize,
         cpu_map: Vec<usize>,
-        mut connect: F,
+        connect: F,
     ) -> Result<Self, RpcError>
     where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<crate::connection::ClientConnection, std::io::Error>>,
+        F: FnMut() -> Fut + Send + 'static,
+        Fut: Future<Output = Result<crate::connection::ClientConnection, std::io::Error>>
+            + Send
+            + 'static,
     {
+        Self::connect_with_factory(
+            num_connections,
+            cpu_map,
+            ConnectionFactory::with_override(*addr, connect),
+        )
+        .await
+    }
+
+    async fn connect_with_factory(
+        num_connections: usize,
+        cpu_map: Vec<usize>,
+        connection_factory: ConnectionFactory,
+    ) -> Result<Self, RpcError> {
         if num_connections == 0 {
             return Err(RpcError::SystemError);
         }
@@ -915,11 +1079,16 @@ impl CpuSetPool {
         // partial connections if construction is canceled mid-loop.
         let mut pending = Vec::with_capacity(num_connections);
         for _ in 0..num_connections {
-            match connect().await {
+            match connection_factory.connect().await {
                 Ok(client) => pending.push(client),
                 Err(e) => {
                     close_all(pending).await;
-                    tracing::error!(%addr, error = %e, pool_type = "cpu_set", "pool connection failed");
+                    tracing::error!(
+                        addr = %connection_factory.addr,
+                        error = %e,
+                        pool_type = "cpu_set",
+                        "pool connection failed"
+                    );
                     return Err(RpcError::SystemError);
                 }
             }
@@ -1215,6 +1384,10 @@ mod tests {
         (addr, blocked_started, blocked_release, calls)
     }
 
+    fn limited_client_config(max_message_size: u32) -> ConnectionConfig {
+        ConnectionConfig::new(Some(max_message_size), ServiceMap::new())
+    }
+
     /// Spawn a raw TCP server that accepts one connection and reports the
     /// result of its first read (`Ok(0)` = clean EOF, i.e. the peer closed).
     /// The returned sender releases the server task once the test is done
@@ -1335,6 +1508,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fixed_pool_applies_connection_config() {
+        let addr = start_echo_server().await;
+        let pool = FixedSerialPool::connect_with_config(&addr, 1, limited_client_config(128))
+            .await
+            .unwrap();
+
+        let oversized_response = vec![0; 256];
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            pool.send_call(ProgVers::new(1, 1), 1, &oversized_response),
+        )
+        .await
+        .expect("configured message limit should reject the response promptly");
+
+        assert_eq!(result, Err(RpcError::SystemError));
+    }
+
+    #[tokio::test]
     async fn fixed_pool_canceled_active_call_releases_worker() {
         let (addr, blocked_started, blocked_release, calls) = start_cancellation_server().await;
         let pool = Arc::new(FixedSerialPool::connect(&addr, 1).await.unwrap());
@@ -1360,6 +1551,46 @@ mod tests {
         assert_eq!(
             &*calls.lock().unwrap(),
             &[b"blocked".to_vec(), b"after".to_vec()]
+        );
+        blocked_release.notify_one();
+    }
+
+    #[tokio::test]
+    async fn fixed_pool_replacement_applies_connection_config() {
+        let (addr, blocked_started, blocked_release, calls) = start_cancellation_server().await;
+        let pool = Arc::new(
+            FixedSerialPool::connect_with_config_and_canceled_call_policy(
+                &addr,
+                1,
+                limited_client_config(128),
+                CanceledCallPolicy::ReplaceConnection,
+            )
+            .await
+            .unwrap(),
+        );
+        let blocked_pool = pool.clone();
+        let blocked = tokio::spawn(async move {
+            blocked_pool
+                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .await
+        });
+        blocked_started.notified().await;
+
+        blocked.abort();
+        assert!(blocked.await.unwrap_err().is_cancelled());
+
+        let oversized_response = vec![0; 256];
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            pool.send_call(ProgVers::new(1, 1), 1, &oversized_response),
+        )
+        .await
+        .expect("replacement connection should retain the configured message limit");
+
+        assert_eq!(result, Err(RpcError::SystemError));
+        assert_eq!(
+            &*calls.lock().unwrap(),
+            &[b"blocked".to_vec(), oversized_response]
         );
         blocked_release.notify_one();
     }
@@ -1940,7 +2171,7 @@ mod tests {
         let in_connect = Arc::new(Notify::new());
         let connect_started = in_connect.clone();
         let mut pool = DynamicPool::new(addr, 1, Duration::from_secs(60), None);
-        pool.connect_override = Some(Box::new(move || {
+        pool.connection_factory = ConnectionFactory::with_override(addr, move || {
             let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
             let connect_started = connect_started.clone();
             let fut: ConnectFuture = Box::pin(async move {
@@ -1952,7 +2183,7 @@ mod tests {
                 }
             });
             fut
-        }));
+        });
         let pool = Arc::new(pool);
 
         let leasing_pool = pool.clone();
@@ -1993,14 +2224,14 @@ mod tests {
         let in_connect = Arc::new(Notify::new());
         let connect_started = in_connect.clone();
         let mut pool = DynamicPool::new(addr, 1, Duration::from_secs(60), None);
-        pool.connect_override = Some(Box::new(move || {
+        pool.connection_factory = ConnectionFactory::with_override(addr, move || {
             let connect_started = connect_started.clone();
             let fut: ConnectFuture = Box::pin(async move {
                 connect_started.notify_one();
                 std::future::pending().await
             });
             fut
-        }));
+        });
         let pool = Arc::new(pool);
 
         // First caller reserves the only slot and parks in connect forever.
@@ -2047,7 +2278,7 @@ mod tests {
         let (handle_tx, handle_rx) = oneshot::channel();
         let handle_tx = Arc::new(StdMutex::new(Some(handle_tx)));
         let mut pool = DynamicPool::new(addr, 1, Duration::from_secs(60), None);
-        pool.connect_override = Some(Box::new(move || {
+        pool.connection_factory = ConnectionFactory::with_override(addr, move || {
             let gate = connect_gate.clone();
             let handle_tx = handle_tx.clone();
             let fut: ConnectFuture = Box::pin(async move {
@@ -2059,7 +2290,7 @@ mod tests {
                 Ok(client)
             });
             fut
-        }));
+        });
         let pool = Arc::new(pool);
 
         let leasing_pool = pool.clone();
@@ -2201,6 +2432,25 @@ mod tests {
                 .unwrap();
             assert_eq!(result, data.as_bytes());
         }
+    }
+
+    #[tokio::test]
+    async fn cpu_pool_applies_connection_config() {
+        let addr = start_echo_server().await;
+        let pool =
+            CpuSetPool::connect_with_map_and_config(&addr, 1, vec![0], limited_client_config(128))
+                .await
+                .unwrap();
+
+        let oversized_response = vec![0; 256];
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            pool.send_call(ProgVers::new(1, 1), 1, &oversized_response),
+        )
+        .await
+        .expect("configured message limit should reject the response promptly");
+
+        assert_eq!(result, Err(RpcError::SystemError));
     }
 
     #[tokio::test]
