@@ -172,6 +172,15 @@ async fn close_all(connections: Vec<crate::connection::ClientConnection>) {
         .into_iter()
         .map(|client| client.into_handle().begin_poison())
         .collect::<Vec<_>>();
+    finish_shutdowns(shutdowns).await;
+}
+
+/// Claim responsibility for shutting down a pool.
+fn begin_pool_shutdown(closed: &AtomicBool) -> bool {
+    !closed.swap(true, Ordering::SeqCst)
+}
+
+async fn finish_shutdowns(shutdowns: Vec<crate::connection::ConnectionShutdown>) {
     for shutdown in shutdowns {
         shutdown.finish().await;
     }
@@ -184,7 +193,7 @@ impl FixedSerialPoolInner {
         Vec<JoinHandle<()>>,
         Vec<crate::connection::ConnectionShutdown>,
     ) {
-        if self.closed.swap(true, Ordering::SeqCst) {
+        if !begin_pool_shutdown(&self.closed) {
             return (Vec::new(), Vec::new());
         }
 
@@ -212,6 +221,11 @@ impl FixedSerialPool {
     /// All connections are established eagerly. If any connection fails, the
     /// entire pool creation fails. Connections use
     /// [`ConnectionConfig::default`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::InvalidPoolConfiguration`] when `pool_size` is zero
+    /// and [`RpcError::ConnectFailed`] when a connection cannot be opened.
     pub async fn connect(addr: &SocketAddr, pool_size: usize) -> Result<Self, RpcError> {
         Self::connect_with_config_and_canceled_call_policy(
             addr,
@@ -226,6 +240,11 @@ impl FixedSerialPool {
     ///
     /// The configuration is also applied to replacement connections opened
     /// after an active call is canceled.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::InvalidPoolConfiguration`] when `pool_size` is zero
+    /// and [`RpcError::ConnectFailed`] when a connection cannot be opened.
     pub async fn connect_with_config(
         addr: &SocketAddr,
         pool_size: usize,
@@ -243,6 +262,11 @@ impl FixedSerialPool {
     /// Connect with an explicit policy for active calls whose caller cancels.
     ///
     /// Connections use [`ConnectionConfig::default`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::InvalidPoolConfiguration`] when `pool_size` is zero
+    /// and [`RpcError::ConnectFailed`] when a connection cannot be opened.
     pub async fn connect_with_canceled_call_policy(
         addr: &SocketAddr,
         pool_size: usize,
@@ -261,6 +285,11 @@ impl FixedSerialPool {
     ///
     /// `config` is applied both during initial pool construction and whenever
     /// [`CanceledCallPolicy::ReplaceConnection`] replaces a connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::InvalidPoolConfiguration`] when `pool_size` is zero
+    /// and [`RpcError::ConnectFailed`] when a connection cannot be opened.
     pub async fn connect_with_config_and_canceled_call_policy(
         addr: &SocketAddr,
         pool_size: usize,
@@ -302,7 +331,7 @@ impl FixedSerialPool {
         connection_factory: ConnectionFactory,
     ) -> Result<Self, RpcError> {
         if pool_size == 0 {
-            return Err(RpcError::SystemError);
+            return Err(RpcError::InvalidPoolConfiguration);
         }
 
         let queue_capacity = pool_size.saturating_mul(16).max(16);
@@ -324,7 +353,7 @@ impl FixedSerialPool {
                         pool_type = "fixed_serial",
                         "pool connection failed"
                     );
-                    return Err(RpcError::SystemError);
+                    return Err(RpcError::ConnectFailed);
                 }
             }
         }
@@ -450,6 +479,33 @@ impl FixedSerialPool {
         })
     }
 
+    async fn enqueue_request(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        data: &[u8],
+        reply: Option<oneshot::Sender<Result<RpcResponse, RpcError>>>,
+    ) -> Result<(), RpcError> {
+        let queue_permit = self
+            .inner
+            .queue_slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| RpcError::PoolClosed)?;
+        let request_tx = self.inner.request_tx.lock().unwrap();
+        let request_tx = request_tx.as_ref().ok_or(RpcError::PoolClosed)?;
+        request_tx
+            .send(PoolRequest {
+                progvers,
+                proc_num: proc,
+                data: data.to_vec(),
+                queue_permit,
+                reply,
+            })
+            .map_err(|_| RpcError::PoolClosed)
+    }
+
     /// Returns the configured pool size.
     ///
     /// This is not a live connection count. A pool using
@@ -461,16 +517,14 @@ impl FixedSerialPool {
 
     /// Shut down the pool and wait for its workers and connections to stop.
     ///
-    /// New calls fail with [`RpcError::SystemError`]. Calling `shutdown` more
+    /// New calls fail with [`RpcError::PoolClosed`]. Calling `shutdown` more
     /// than once is safe.
     pub async fn shutdown(&self) {
         let (workers, connection_shutdowns) = self.inner.begin_shutdown();
         for join in workers {
             let _ = join.await;
         }
-        for shutdown in connection_shutdowns {
-            shutdown.finish().await;
-        }
+        finish_shutdowns(connection_shutdowns).await;
     }
 }
 
@@ -491,28 +545,16 @@ impl RpcSender for FixedSerialPool {
         proc: u32,
         data: &[u8],
     ) -> Result<RpcResponse, RpcError> {
-        let queue_permit = self
-            .inner
-            .queue_slots
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| RpcError::SystemError)?;
         let (reply_tx, rx) = oneshot::channel();
-        {
-            let request_tx = self.inner.request_tx.lock().unwrap();
-            let request_tx = request_tx.as_ref().ok_or(RpcError::SystemError)?;
-            request_tx
-                .send(PoolRequest {
-                    progvers,
-                    proc_num: proc,
-                    data: data.to_vec(),
-                    queue_permit,
-                    reply: Some(reply_tx),
-                })
-                .map_err(|_| RpcError::SystemError)?;
-        }
-        rx.await.map_err(|_| RpcError::SystemError)?
+        self.enqueue_request(progvers, proc, data, Some(reply_tx))
+            .await?;
+        rx.await.map_err(|_| {
+            if self.inner.closed.load(Ordering::SeqCst) {
+                RpcError::PoolClosed
+            } else {
+                RpcError::Canceled
+            }
+        })?
     }
 
     async fn send_fire_and_forget(
@@ -521,27 +563,7 @@ impl RpcSender for FixedSerialPool {
         proc: u32,
         data: &[u8],
     ) -> Result<(), RpcError> {
-        let queue_permit = self
-            .inner
-            .queue_slots
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| RpcError::SystemError)?;
-        {
-            let request_tx = self.inner.request_tx.lock().unwrap();
-            let request_tx = request_tx.as_ref().ok_or(RpcError::SystemError)?;
-            request_tx
-                .send(PoolRequest {
-                    progvers,
-                    proc_num: proc,
-                    data: data.to_vec(),
-                    queue_permit,
-                    reply: None,
-                })
-                .map_err(|_| RpcError::SystemError)?;
-        }
-        Ok(())
+        self.enqueue_request(progvers, proc, data, None).await
     }
 }
 
@@ -644,7 +666,7 @@ impl DynamicPool {
     }
 
     fn begin_drop_shutdown(&mut self) {
-        if self.closed.swap(true, Ordering::SeqCst) {
+        if !begin_pool_shutdown(&self.closed) {
             return;
         }
 
@@ -667,7 +689,7 @@ impl DynamicPool {
     async fn lease_connection(&self) -> Result<Arc<ConnectionHandle>, RpcError> {
         loop {
             if self.closed.load(Ordering::SeqCst) {
-                return Err(RpcError::SystemError);
+                return Err(RpcError::PoolClosed);
             }
 
             let mut connect_slot = None;
@@ -677,7 +699,7 @@ impl DynamicPool {
                 let mut conns = self.connections.lock().await;
 
                 if self.closed.load(Ordering::SeqCst) {
-                    return Err(RpcError::SystemError);
+                    return Err(RpcError::PoolClosed);
                 }
 
                 // Remove poisoned connections before any selection logic.
@@ -735,7 +757,7 @@ impl DynamicPool {
                     // forever-pending connect attempt could hold the pool at
                     // capacity so no further wakeup arrives.
                     if self.closed.load(Ordering::SeqCst) {
-                        return Err(RpcError::SystemError);
+                        return Err(RpcError::PoolClosed);
                     }
                     let total_connections = conns.len() + self.connecting.load(Ordering::SeqCst);
                     if !conns.is_empty() || total_connections < self.max_connections {
@@ -760,7 +782,11 @@ impl DynamicPool {
                             pool_type = "dynamic",
                             "pool connection failed"
                         );
-                        return Err(RpcError::SystemError);
+                        return Err(if self.closed.load(Ordering::SeqCst) {
+                            RpcError::PoolClosed
+                        } else {
+                            RpcError::ConnectFailed
+                        });
                     }
                 };
 
@@ -768,7 +794,7 @@ impl DynamicPool {
                 if self.closed.load(Ordering::SeqCst) {
                     drop(conns);
                     client.shutdown().await;
-                    return Err(RpcError::SystemError);
+                    return Err(RpcError::PoolClosed);
                 }
 
                 let handle = client.into_handle();
@@ -779,6 +805,17 @@ impl DynamicPool {
                 return Ok(handle);
             }
         }
+    }
+
+    async fn connection_for_request(&self) -> Result<Arc<ConnectionHandle>, RpcError> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(RpcError::PoolClosed);
+        }
+        let conn = self.lease_connection().await?;
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(RpcError::PoolClosed);
+        }
+        Ok(conn)
     }
 
     /// Update the `last_used` timestamp for a connection after a call completes.
@@ -862,10 +899,10 @@ impl DynamicPool {
 
     /// Shut down the pool and wait for all installed connections to stop.
     ///
-    /// New and waiting leases fail with [`RpcError::SystemError`]. Calling
+    /// New and waiting leases fail with [`RpcError::PoolClosed`]. Calling
     /// `shutdown` more than once is safe.
     pub async fn shutdown(&self) {
-        if self.closed.swap(true, Ordering::SeqCst) {
+        if !begin_pool_shutdown(&self.closed) {
             return;
         }
 
@@ -882,9 +919,7 @@ impl DynamicPool {
                 .collect::<Vec<_>>()
         };
 
-        for shutdown in shutdowns {
-            shutdown.finish().await;
-        }
+        finish_shutdowns(shutdowns).await;
     }
 }
 
@@ -905,13 +940,7 @@ impl RpcSender for DynamicPool {
         proc: u32,
         data: &[u8],
     ) -> Result<RpcResponse, RpcError> {
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(RpcError::SystemError);
-        }
-        let conn = self.lease_connection().await?;
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(RpcError::SystemError);
-        }
+        let conn = self.connection_for_request().await?;
         let result = conn.send_call(progvers, proc, data).await;
         self.touch_connection(&conn);
         result
@@ -923,13 +952,7 @@ impl RpcSender for DynamicPool {
         proc: u32,
         data: &[u8],
     ) -> Result<(), RpcError> {
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(RpcError::SystemError);
-        }
-        let conn = self.lease_connection().await?;
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(RpcError::SystemError);
-        }
+        let conn = self.connection_for_request().await?;
         let result = conn.send_fire_and_forget(progvers, proc, data).await;
         self.touch_connection(&conn);
         result
@@ -986,6 +1009,10 @@ impl CpuSetPool {
     /// from sysfs. Falls back to a single connection if topology is
     /// unavailable (non-Linux, container restrictions). Connections use
     /// [`ConnectionConfig::default`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::ConnectFailed`] when a connection cannot be opened.
     pub async fn connect(addr: &SocketAddr) -> Result<Self, RpcError> {
         Self::connect_with_config(addr, ConnectionConfig::default()).await
     }
@@ -994,6 +1021,10 @@ impl CpuSetPool {
     ///
     /// Falls back to a single connection if topology is unavailable
     /// (non-Linux, container restrictions).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::ConnectFailed`] when a connection cannot be opened.
     pub async fn connect_with_config(
         addr: &SocketAddr,
         config: ConnectionConfig,
@@ -1007,6 +1038,12 @@ impl CpuSetPool {
     /// Useful for testing or when you want to override the auto-detected topology
     /// (e.g., one connection per physical core instead of per LLC). Connections
     /// use [`ConnectionConfig::default`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::InvalidPoolConfiguration`] when the connection count
+    /// or CPU map is invalid and [`RpcError::ConnectFailed`] when a connection
+    /// cannot be opened.
     pub async fn connect_with_map(
         addr: &SocketAddr,
         num_connections: usize,
@@ -1025,6 +1062,12 @@ impl CpuSetPool {
     ///
     /// `cpu_map` maps logical CPU identifiers to connection indices. Entries
     /// may be [`usize::MAX`] to request modular fallback routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::InvalidPoolConfiguration`] when the connection count
+    /// or CPU map is invalid and [`RpcError::ConnectFailed`] when a connection
+    /// cannot be opened.
     pub async fn connect_with_map_and_config(
         addr: &SocketAddr,
         num_connections: usize,
@@ -1066,13 +1109,13 @@ impl CpuSetPool {
         connection_factory: ConnectionFactory,
     ) -> Result<Self, RpcError> {
         if num_connections == 0 {
-            return Err(RpcError::SystemError);
+            return Err(RpcError::InvalidPoolConfiguration);
         }
         if cpu_map
             .iter()
             .any(|&b| b != usize::MAX && b >= num_connections)
         {
-            return Err(RpcError::SystemError);
+            return Err(RpcError::InvalidPoolConfiguration);
         }
 
         // `pending` holds `ClientConnection`s, whose RAII drop poisons the
@@ -1089,7 +1132,7 @@ impl CpuSetPool {
                         pool_type = "cpu_set",
                         "pool connection failed"
                     );
-                    return Err(RpcError::SystemError);
+                    return Err(RpcError::ConnectFailed);
                 }
             }
         }
@@ -1114,7 +1157,7 @@ impl CpuSetPool {
     fn connection_for_current_cpu(&self) -> Result<Arc<ConnectionHandle>, RpcError> {
         let connections = self.connections.lock().unwrap();
         if connections.is_empty() {
-            return Err(RpcError::SystemError);
+            return Err(RpcError::PoolClosed);
         }
 
         let cpu_id = current_cpu() as usize;
@@ -1133,8 +1176,19 @@ impl CpuSetPool {
         Ok(connections[bucket].clone())
     }
 
+    fn connection_for_request(&self) -> Result<Arc<ConnectionHandle>, RpcError> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(RpcError::PoolClosed);
+        }
+        let conn = self.connection_for_current_cpu()?;
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(RpcError::PoolClosed);
+        }
+        Ok(conn)
+    }
+
     fn begin_shutdown(&self) -> Vec<crate::connection::ConnectionShutdown> {
-        if self.closed.swap(true, Ordering::SeqCst) {
+        if !begin_pool_shutdown(&self.closed) {
             return Vec::new();
         }
 
@@ -1147,13 +1201,10 @@ impl CpuSetPool {
 
     /// Shut down the pool and wait for all connections to stop.
     ///
-    /// New calls fail with [`RpcError::SystemError`]. Calling `shutdown` more
+    /// New calls fail with [`RpcError::PoolClosed`]. Calling `shutdown` more
     /// than once is safe.
     pub async fn shutdown(&self) {
-        let shutdowns = self.begin_shutdown();
-        for shutdown in shutdowns {
-            shutdown.finish().await;
-        }
+        finish_shutdowns(self.begin_shutdown()).await;
     }
 }
 
@@ -1171,13 +1222,7 @@ impl RpcSender for CpuSetPool {
         proc: u32,
         data: &[u8],
     ) -> Result<RpcResponse, RpcError> {
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(RpcError::SystemError);
-        }
-        let conn = self.connection_for_current_cpu()?;
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(RpcError::SystemError);
-        }
+        let conn = self.connection_for_request()?;
         conn.send_call(progvers, proc, data).await
     }
 
@@ -1187,13 +1232,7 @@ impl RpcSender for CpuSetPool {
         proc: u32,
         data: &[u8],
     ) -> Result<(), RpcError> {
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(RpcError::SystemError);
-        }
-        let conn = self.connection_for_current_cpu()?;
-        if self.closed.load(Ordering::SeqCst) {
-            return Err(RpcError::SystemError);
-        }
+        let conn = self.connection_for_request()?;
         conn.send_fire_and_forget(progvers, proc, data).await
     }
 }
@@ -1486,7 +1525,7 @@ mod tests {
     async fn fixed_pool_zero_size_rejected() {
         let addr = start_echo_server().await;
         let result = FixedSerialPool::connect(&addr, 0).await;
-        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), RpcError::InvalidPoolConfiguration);
     }
 
     #[tokio::test]
@@ -1659,8 +1698,29 @@ mod tests {
         });
         blocked_started.notified().await;
 
+        let queued_pool = pool.clone();
+        let queued = tokio::spawn(async move {
+            queued_pool
+                .send_call(ProgVers::new(1, 1), 1, b"queued")
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while pool.inner.queue_slots.available_permits() == 16 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("second call should enter the pool queue");
+
         blocked.abort();
         assert!(blocked.await.unwrap_err().is_cancelled());
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), queued)
+                .await
+                .expect("queued call should be abandoned when its worker terminates")
+                .unwrap(),
+            Err(RpcError::Canceled)
+        );
         tokio::time::timeout(Duration::from_secs(1), async {
             while !pool.inner.worker_handles.lock().unwrap()[0].is_finished() {
                 tokio::task::yield_now().await;
@@ -1672,7 +1732,7 @@ mod tests {
         worker.await.expect("poisoned worker should exit cleanly");
         assert_eq!(
             pool.send_call(ProgVers::new(1, 1), 1, b"after").await,
-            Err(RpcError::SystemError)
+            Err(RpcError::PoolClosed)
         );
         assert_eq!(&*calls.lock().unwrap(), &[b"blocked".to_vec()]);
         blocked_release.notify_one();
@@ -1683,7 +1743,7 @@ mod tests {
         // Try to connect to an address that's not listening.
         let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
         let result = FixedSerialPool::connect(&addr, 3).await;
-        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), RpcError::ConnectFailed);
     }
 
     #[tokio::test]
@@ -1814,7 +1874,7 @@ mod tests {
         .await
         .expect("pool construction should return after connection failure");
 
-        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(result.unwrap_err(), RpcError::ConnectFailed);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
         let first_handle = first_handle_rx.await.unwrap();
         assert!(first_handle.upgrade().is_none());
@@ -1842,13 +1902,13 @@ mod tests {
             .send_call(ProgVers::new(1, 1), 1, b"after")
             .await
             .unwrap_err();
-        assert_eq!(err, RpcError::SystemError);
+        assert_eq!(err, RpcError::PoolClosed);
 
         let err = pool
             .send_fire_and_forget(ProgVers::new(1, 1), 1, b"after-faf")
             .await
             .unwrap_err();
-        assert_eq!(err, RpcError::SystemError);
+        assert_eq!(err, RpcError::PoolClosed);
     }
 
     #[tokio::test]
@@ -1868,13 +1928,13 @@ mod tests {
             .send_call(ProgVers::new(1, 1), 1, b"after")
             .await
             .unwrap_err();
-        assert_eq!(err, RpcError::SystemError);
+        assert_eq!(err, RpcError::PoolClosed);
 
         let err = pool
             .send_fire_and_forget(ProgVers::new(1, 1), 1, b"after-faf")
             .await
             .unwrap_err();
-        assert_eq!(err, RpcError::SystemError);
+        assert_eq!(err, RpcError::PoolClosed);
     }
 
     #[tokio::test]
@@ -1896,13 +1956,13 @@ mod tests {
             .send_call(ProgVers::new(1, 1), 1, b"after")
             .await
             .unwrap_err();
-        assert_eq!(err, RpcError::SystemError);
+        assert_eq!(err, RpcError::PoolClosed);
 
         let err = pool
             .send_fire_and_forget(ProgVers::new(1, 1), 1, b"after-faf")
             .await
             .unwrap_err();
-        assert_eq!(err, RpcError::SystemError);
+        assert_eq!(err, RpcError::PoolClosed);
     }
 
     #[tokio::test]
@@ -2158,7 +2218,7 @@ mod tests {
         let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
         let pool = DynamicPool::new(addr, 3, Duration::from_secs(60), None);
         let result = pool.send_call(ProgVers::new(1, 1), 1, b"fail").await;
-        assert!(result.is_err());
+        assert_eq!(result, Err(RpcError::ConnectFailed));
         assert_eq!(pool.connecting.load(Ordering::SeqCst), 0);
     }
 
@@ -2265,7 +2325,7 @@ mod tests {
             .await
             .expect("shutdown should unblock a waiting lease")
             .unwrap();
-        assert_eq!(result, Err(RpcError::SystemError));
+        assert_eq!(result, Err(RpcError::PoolClosed));
         connecting.abort();
     }
 
@@ -2399,6 +2459,24 @@ mod tests {
     }
 
     // -- CpuSetPool tests -------------------------------------------------------
+
+    #[tokio::test]
+    async fn cpu_pool_invalid_configuration_rejected() {
+        let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
+
+        assert_eq!(
+            CpuSetPool::connect_with_map(&addr, 0, Vec::new())
+                .await
+                .unwrap_err(),
+            RpcError::InvalidPoolConfiguration
+        );
+        assert_eq!(
+            CpuSetPool::connect_with_map(&addr, 1, vec![1])
+                .await
+                .unwrap_err(),
+            RpcError::InvalidPoolConfiguration
+        );
+    }
 
     #[tokio::test]
     async fn cpu_pool_auto_detect() {
@@ -2571,7 +2649,7 @@ mod tests {
         .await
         .expect("pool construction should return after connection failure");
 
-        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(result.unwrap_err(), RpcError::ConnectFailed);
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
         let first_handle = first_handle_rx.await.unwrap();
         assert!(first_handle.upgrade().is_none());

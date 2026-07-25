@@ -4,7 +4,12 @@ use xdrs::BytesM;
 
 use crate::rpc_msg;
 
-/// Errors that can occur during RPC calls.
+/// Errors that can occur while preparing or performing RPC calls.
+///
+/// Protocol errors correspond to ONC-RPC reply statuses. Local transport and
+/// pool errors have no wire-level equivalent; if returned by a server handler,
+/// they are encoded as [`RpcError::SystemError`].
+#[non_exhaustive]
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RpcError {
     /// The requested procedure is not defined for the selected service.
@@ -33,6 +38,18 @@ pub enum RpcError {
     /// Authentication credentials or verification failed.
     #[error("Authentication error")]
     AuthenticationError,
+    /// A client connection could not be established.
+    #[error("Connection failed")]
+    ConnectFailed,
+    /// The connection pool has been shut down or can no longer accept work.
+    #[error("Connection pool closed")]
+    PoolClosed,
+    /// The pool abandoned a queued request before it could complete.
+    #[error("Request canceled")]
+    Canceled,
+    /// The requested pool configuration is invalid.
+    #[error("Invalid pool configuration")]
+    InvalidPoolConfiguration,
 }
 
 #[allow(unreachable_pub)]
@@ -129,7 +146,11 @@ impl RpcError {
                     },
                 },
             },
-            RpcError::SystemError => rpc_msg::rpc_msg {
+            RpcError::SystemError
+            | RpcError::ConnectFailed
+            | RpcError::PoolClosed
+            | RpcError::Canceled
+            | RpcError::InvalidPoolConfiguration => rpc_msg::rpc_msg {
                 xid,
                 body: rpc_msg::rpc_msg_body::REPLY {
                     rbody: rpc_msg::reply_body::MSG_ACCEPTED {
@@ -176,5 +197,24 @@ impl RpcError {
         buf.extend_from_slice(&msg_len.to_be_bytes());
         buf.extend_from_slice(&header_bytes);
         buf
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RpcError;
+
+    #[test]
+    fn local_errors_encode_as_system_errors() {
+        let system_error = RpcError::SystemError.to_error_record(42);
+
+        for error in [
+            RpcError::ConnectFailed,
+            RpcError::PoolClosed,
+            RpcError::Canceled,
+            RpcError::InvalidPoolConfiguration,
+        ] {
+            assert_eq!(error.to_error_record(42), system_error);
+        }
     }
 }
