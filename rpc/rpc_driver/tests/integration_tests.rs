@@ -977,7 +977,8 @@ mod tests {
 
         let client = connect_client(&addr).await.unwrap();
 
-        // Fire and forget should return immediately.
+        // The call completes after queueing the request, without waiting for
+        // the server's response.
         client
             .send_fire_and_forget(ProgVers::new(1, 1), 1, b"hello")
             .await

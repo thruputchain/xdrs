@@ -28,7 +28,7 @@ const XDR_HEADER_ESTIMATE: usize = 48;
 // ---------------------------------------------------------------------------
 
 /// Pool of reusable `Vec<u8>` buffers shared between callers and the writer
-/// task. After warmup, steady-state operation allocates nothing.
+/// task. Reusing compatible buffers reduces steady-state allocation.
 pub(crate) struct BufPool(StdMutex<Vec<Vec<u8>>>);
 
 impl std::fmt::Debug for BufPool {
@@ -118,7 +118,8 @@ async fn write_batch(wh: &mut WriteHalf, msgs: &[Vec<u8>]) -> Result<(), io::Err
 /// Layout: `[4-byte length with high bit set | XDR header | payload]`
 ///
 /// The provided `buf` is reused if it has sufficient capacity (avoids
-/// allocation after warmup when fed from a [`BufPool`]).
+/// allocation after warmup when a compatible buffer is available in the
+/// [`BufPool`]).
 ///
 /// Used by both the client call path and the server response path.
 #[inline]
@@ -155,8 +156,9 @@ pub(crate) fn frame_rpc_record(
 /// reuses its allocation for the output. Shifts the payload right to make
 /// room for the record-length + XDR header prefix.
 ///
-/// Saves one allocation vs. the borrowed path when the caller already owns
-/// the data (e.g., pool workers that received it over a channel).
+/// Avoids copying the payload into a separate framing buffer when the caller
+/// already owns the data (for example, pool workers receiving it over a
+/// channel). The Vec may still grow if it lacks space for the header.
 #[inline]
 pub(crate) fn frame_rpc_record_owned(
     header: &rpc_msg::rpc_msg,
@@ -301,7 +303,9 @@ pub trait RpcSender: Send + Sync {
     /// Send an RPC call without waiting for the response.
     ///
     /// Default implementation calls [`send_call`](Self::send_call) and
-    /// discards the response. Override for optimal performance.
+    /// discards the response. Implementations may override this to return
+    /// after queueing the request, in which case success does not confirm
+    /// socket delivery or peer-side dispatch.
     async fn send_fire_and_forget(
         &self,
         progvers: ProgVers,
@@ -487,7 +491,7 @@ impl ConnectionShutdown {
 /// Handle for making RPC calls over an established connection.
 ///
 /// Manages pending requests and provides methods for sending calls
-/// and graceful shutdown via poisoning.
+/// and coordinated shutdown via poisoning.
 #[derive(Debug)]
 pub struct ConnectionHandle {
     // Hot — accessed on every RPC:
@@ -508,7 +512,12 @@ pub struct ConnectionHandle {
 }
 
 impl ConnectionHandle {
-    /// Create a new connection handle wrapping the given TCP write half.
+    /// Construct a handle from the driver's low-level transport components.
+    ///
+    /// This is exposed for the driver's integration tests and is not part of
+    /// the supported high-level API. Use [`connect_client`](crate::connect_client)
+    /// for normal client connections.
+    #[doc(hidden)]
     pub fn new(
         write_half: WriteHalf,
         config: &crate::ConnectionConfig,
@@ -648,9 +657,10 @@ impl ConnectionHandle {
 
     /// Send an RPC call without waiting for the response.
     ///
-    /// Registers an XID for tracing, sends the message, and returns
-    /// immediately. The reader task will silently discard the reply when
-    /// it arrives.
+    /// Completes after the message is queued for the connection's writer; it
+    /// may wait for channel capacity under backpressure. Success does not
+    /// confirm that the socket write or peer-side dispatch completed. The
+    /// reader task silently discards the eventual reply.
     pub async fn send_fire_and_forget(
         &self,
         progvers: ProgVers,
@@ -985,8 +995,8 @@ impl ClientConnection {
 
     /// Explicitly shut down the connection, awaiting task completion.
     ///
-    /// This is the async counterpart to the synchronous shutdown that
-    /// `Drop` performs. Prefer this when you can `.await`.
+    /// Unlike `Drop`, which initiates shutdown without waiting, this method
+    /// waits for the connection's background tasks to stop.
     pub async fn shutdown(mut self) {
         if let Some(handle) = self.handle.take() {
             handle.poison().await;

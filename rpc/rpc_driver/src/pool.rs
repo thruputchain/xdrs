@@ -17,13 +17,13 @@
 //!   L3 cache group, routes by the caller's current CPU via `sched_getcpu`.
 //!   Models x23 `RpcMulticlient` / `PerCpuSet`.
 
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::{
     Arc, Mutex as StdMutex,
     atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
-use std::{future::Future, mem};
 
 use async_trait::async_trait;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
@@ -68,12 +68,12 @@ impl Drop for FixedWorkerConnectionGuard {
 ///
 /// Wraps N [`ConnectionHandle`] connections to a single address. A shared
 /// `tokio::sync::mpsc` channel distributes requests to connection workers
-/// in FIFO order — one call at a time per connection.
-/// Canceling a queued call removes it before dispatch. By default, canceling an
-/// active call closes and replaces that worker's connection before it accepts
-/// more work. [`CanceledCallPolicy::PoisonConnection`] instead terminates the
-/// affected worker, leaving any other workers available at reduced capacity
-/// until the owner discards the pool.
+/// in FIFO order — one call at a time per connection. Workers skip canceled
+/// queued calls before sending them. By default, canceling an active call
+/// closes and replaces that worker's connection before it accepts more work.
+/// [`CanceledCallPolicy::PoisonConnection`] instead terminates the affected
+/// worker, leaving any other workers available at reduced capacity until the
+/// owner discards the pool.
 ///
 /// This matches the Go `ConnectPoolToScheduler` pattern: a fixed number
 /// of connections with sequential dispatch per connection.
@@ -96,38 +96,23 @@ pub enum CanceledCallPolicy {
     PoisonConnection,
 }
 
-struct PendingFixedConnections {
-    connections: Vec<Arc<ConnectionHandle>>,
-}
-
-impl PendingFixedConnections {
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            connections: Vec::with_capacity(capacity),
-        }
-    }
-
-    async fn shutdown(mut self) {
-        let shutdowns = self
-            .connections
-            .drain(..)
-            .map(|connection| connection.begin_poison())
-            .collect::<Vec<_>>();
-        for shutdown in shutdowns {
-            shutdown.finish().await;
-        }
-    }
-
-    fn into_connections(mut self) -> Vec<Arc<ConnectionHandle>> {
-        mem::take(&mut self.connections)
-    }
-}
-
-impl Drop for PendingFixedConnections {
-    fn drop(&mut self) {
-        for connection in self.connections.drain(..) {
-            connection.begin_poison();
-        }
+/// Close connections that never made it into a pool: poison them all, then
+/// wait for their shutdowns to complete.
+///
+/// Connections not yet installed in a pool are kept as [`ClientConnection`]
+/// so their RAII drop poisons them if the caller is canceled between awaits;
+/// this is the explicit-failure-path counterpart. Pools call
+/// [`ClientConnection::into_handle`] only at the point of installation.
+///
+/// [`ClientConnection`]: crate::connection::ClientConnection
+/// [`ClientConnection::into_handle`]: crate::connection::ClientConnection::into_handle
+async fn close_all(connections: Vec<crate::connection::ClientConnection>) {
+    let shutdowns = connections
+        .into_iter()
+        .map(|client| client.into_handle().begin_poison())
+        .collect::<Vec<_>>();
+    for shutdown in shutdowns {
+        shutdown.finish().await;
     }
 }
 
@@ -205,22 +190,22 @@ impl FixedSerialPool {
         let (tx, rx) = mpsc::unbounded_channel::<PoolRequest>();
         let rx = Arc::new(tokio::sync::Mutex::new(rx));
 
-        let mut pending = PendingFixedConnections::with_capacity(pool_size);
+        // `pending` holds `ClientConnection`s, whose RAII drop poisons the
+        // partial connections if construction is canceled mid-loop.
+        let mut pending = Vec::with_capacity(pool_size);
         for _ in 0..pool_size {
-            let client = match connect().await.map(|c| c.into_handle()) {
-                Ok(client) => client,
+            match connect().await {
+                Ok(client) => pending.push(client),
                 Err(e) => {
-                    pending.shutdown().await;
+                    close_all(pending).await;
                     tracing::error!(%addr, error = %e, pool_type = "fixed_serial", "pool connection failed");
                     return Err(RpcError::SystemError);
                 }
-            };
-            pending.connections.push(client);
+            }
         }
         let connections = pending
-            .into_connections()
             .into_iter()
-            .map(|connection| Arc::new(StdMutex::new(Some(connection))))
+            .map(|client| Arc::new(StdMutex::new(Some(client.into_handle()))))
             .collect::<Vec<_>>();
 
         let inner = Arc::new(FixedSerialPoolInner {
@@ -349,6 +334,10 @@ impl FixedSerialPool {
         self.size
     }
 
+    /// Shut down the pool and wait for its workers and connections to stop.
+    ///
+    /// New calls fail with [`RpcError::SystemError`]. Calling `shutdown` more
+    /// than once is safe.
     pub async fn shutdown(&self) {
         let (workers, connection_shutdowns) = self.inner.begin_shutdown();
         for join in workers {
@@ -437,6 +426,37 @@ struct PooledConnection {
     last_used: Instant,
 }
 
+/// Reservation of a [`DynamicPool`] connection slot while a connect is in
+/// flight.
+///
+/// Dropping the reservation — including when the leasing caller is canceled
+/// at an await — releases the slot and wakes lease waiters, so `connecting`
+/// cannot drift out of sync and silently shrink the pool's capacity.
+struct ConnectingSlot<'a> {
+    pool: &'a DynamicPool,
+}
+
+impl<'a> ConnectingSlot<'a> {
+    fn reserve(pool: &'a DynamicPool) -> Self {
+        pool.connecting.fetch_add(1, Ordering::SeqCst);
+        Self { pool }
+    }
+}
+
+impl Drop for ConnectingSlot<'_> {
+    fn drop(&mut self) {
+        self.pool.connecting.fetch_sub(1, Ordering::SeqCst);
+        self.pool.connection_ready.notify_waiters();
+    }
+}
+
+#[cfg(test)]
+type ConnectFuture = std::pin::Pin<
+    Box<dyn Future<Output = Result<crate::connection::ClientConnection, std::io::Error>> + Send>,
+>;
+#[cfg(test)]
+type ConnectOverride = Box<dyn Fn() -> ConnectFuture + Send + Sync>;
+
 /// Dynamic connection pool with min-pending load balancing.
 ///
 /// Opens connections lazily up to `max_connections`. Each call is routed
@@ -455,6 +475,10 @@ pub struct DynamicPool {
     connections: tokio::sync::Mutex<Vec<PooledConnection>>,
     connection_ready: Notify,
     evictor_abort: StdMutex<Option<tokio::task::AbortHandle>>,
+    /// Test seam: when set, used instead of [`connect_client_with_config`]
+    /// to open new connections.
+    #[cfg(test)]
+    connect_override: Option<ConnectOverride>,
 }
 
 // Manual Debug impl because PooledConnection contains ConnectionHandle (which
@@ -481,7 +505,7 @@ impl DynamicPool {
     ///
     /// # Panics
     ///
-    /// Panics if `max_connections` is 0.
+    /// Panics if `max_connections` is 0 or `idle_ttl` is zero.
     pub fn new(
         addr: SocketAddr,
         max_connections: usize,
@@ -489,6 +513,7 @@ impl DynamicPool {
         config: Option<ConnectionConfig>,
     ) -> Self {
         assert!(max_connections > 0, "max_connections must be at least 1");
+        assert!(!idle_ttl.is_zero(), "idle_ttl must be greater than zero");
         Self {
             addr,
             max_connections,
@@ -499,6 +524,8 @@ impl DynamicPool {
             connections: tokio::sync::Mutex::new(Vec::new()),
             connection_ready: Notify::new(),
             evictor_abort: StdMutex::new(None),
+            #[cfg(test)]
+            connect_override: None,
         }
     }
 
@@ -521,6 +548,15 @@ impl DynamicPool {
         }
     }
 
+    /// Open a new connection to the pool's address.
+    async fn open_connection(&self) -> Result<crate::connection::ClientConnection, std::io::Error> {
+        #[cfg(test)]
+        if let Some(connect) = &self.connect_override {
+            return connect().await;
+        }
+        connect_client_with_config(&self.addr, self.config.clone()).await
+    }
+
     /// Select or create a connection with the fewest pending requests.
     async fn lease_connection(&self) -> Result<Arc<ConnectionHandle>, RpcError> {
         loop {
@@ -528,8 +564,8 @@ impl DynamicPool {
                 return Err(RpcError::SystemError);
             }
 
-            let mut should_connect = false;
-            let mut wait_for_connection = None;
+            let mut connect_slot = None;
+            let mut should_wait = false;
 
             {
                 let mut conns = self.connections.lock().await;
@@ -563,8 +599,7 @@ impl DynamicPool {
 
                     let total_connections = conns.len() + self.connecting.load(Ordering::SeqCst);
                     if total_connections < self.max_connections {
-                        self.connecting.fetch_add(1, Ordering::SeqCst);
-                        should_connect = true;
+                        connect_slot = Some(ConnectingSlot::reserve(self));
                     } else {
                         conns[min_idx].last_used = Instant::now();
                         return Ok(conns[min_idx].handle.clone());
@@ -572,56 +607,64 @@ impl DynamicPool {
                 } else {
                     let total_connections = self.connecting.load(Ordering::SeqCst);
                     if total_connections < self.max_connections {
-                        self.connecting.fetch_add(1, Ordering::SeqCst);
-                        should_connect = true;
+                        connect_slot = Some(ConnectingSlot::reserve(self));
                     } else {
-                        wait_for_connection = Some(self.connection_ready.notified());
+                        should_wait = true;
                     }
                 }
             }
 
-            if let Some(notified) = wait_for_connection {
+            if should_wait {
+                // Register interest before re-checking, because
+                // `notify_waiters` only wakes futures that are already
+                // enabled: a wakeup fired after `enable` is delivered, and
+                // one fired before it is compensated by the re-check.
+                let notified = self.connection_ready.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                {
+                    let conns = self.connections.lock().await;
+                    // `closed` must be part of the re-check: a shutdown that
+                    // notified before `enable` would otherwise be lost, and a
+                    // forever-pending connect attempt could hold the pool at
+                    // capacity so no further wakeup arrives.
+                    if self.closed.load(Ordering::SeqCst) {
+                        return Err(RpcError::SystemError);
+                    }
+                    let total_connections = conns.len() + self.connecting.load(Ordering::SeqCst);
+                    if !conns.is_empty() || total_connections < self.max_connections {
+                        continue;
+                    }
+                }
                 notified.await;
                 continue;
             }
 
-            if should_connect {
-                let handle = match connect_client_with_config(&self.addr, self.config.clone())
-                    .await
-                    .map(|c| c.into_handle())
-                {
-                    Ok(handle) => handle,
+            if let Some(_slot) = connect_slot {
+                // `_slot` releases the reservation and wakes lease waiters on
+                // every exit from this block, including cancellation at any
+                // await; `client`'s RAII drop poisons the new connection
+                // unless it is installed in `conns` first.
+                let client = match self.open_connection().await {
+                    Ok(client) => client,
                     Err(e) => {
-                        self.connecting.fetch_sub(1, Ordering::SeqCst);
-                        self.connection_ready.notify_waiters();
                         tracing::error!(addr = %self.addr, error = %e, pool_type = "dynamic", "pool connection failed");
                         return Err(RpcError::SystemError);
                     }
                 };
-                if self.closed.load(Ordering::SeqCst) {
-                    let shutdown = handle.begin_poison();
-                    shutdown.finish().await;
-                    self.connecting.fetch_sub(1, Ordering::SeqCst);
-                    self.connection_ready.notify_waiters();
-                    return Err(RpcError::SystemError);
-                }
 
                 let mut conns = self.connections.lock().await;
                 if self.closed.load(Ordering::SeqCst) {
                     drop(conns);
-                    let shutdown = handle.begin_poison();
-                    shutdown.finish().await;
-                    self.connecting.fetch_sub(1, Ordering::SeqCst);
-                    self.connection_ready.notify_waiters();
+                    client.shutdown().await;
                     return Err(RpcError::SystemError);
                 }
 
+                let handle = client.into_handle();
                 conns.push(PooledConnection {
                     handle: handle.clone(),
                     last_used: Instant::now(),
                 });
-                self.connecting.fetch_sub(1, Ordering::SeqCst);
-                self.connection_ready.notify_waiters();
                 return Ok(handle);
             }
         }
@@ -681,8 +724,9 @@ impl DynamicPool {
     /// Spawn a background task that periodically evicts idle connections.
     ///
     /// The task runs until the returned [`tokio::task::JoinHandle`] is
-    /// aborted or the pool is dropped. The check interval is half the
-    /// `idle_ttl` to keep eviction reasonably prompt without busy-looping.
+    /// aborted, the pool is shut down, or the pool is dropped. Starting a new
+    /// evictor aborts the previous one. The check interval is half the
+    /// nonzero `idle_ttl`.
     pub fn start_evictor(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         let weak = Arc::downgrade(self);
         let interval = self.idle_ttl / 2;
@@ -705,6 +749,10 @@ impl DynamicPool {
         join
     }
 
+    /// Shut down the pool and wait for all installed connections to stop.
+    ///
+    /// New and waiting leases fail with [`RpcError::SystemError`]. Calling
+    /// `shutdown` more than once is safe.
     pub async fn shutdown(&self) {
         if self.closed.swap(true, Ordering::SeqCst) {
             return;
@@ -800,7 +848,7 @@ impl RpcSender for DynamicPool {
 /// use rpc_driver::{CpuSetPool, ProgVers, RpcSender};
 ///
 /// let pool = CpuSetPool::connect(&"127.0.0.1:9876".parse().unwrap()).await?;
-/// println!("opened {} connections (one per LLC)", pool.size());
+/// println!("opened {} CPU-affine connections", pool.size());
 /// let resp = pool.send_call(ProgVers::new(100, 1), 0, b"hello").await?;
 /// # Ok(())
 /// # }
@@ -840,6 +888,19 @@ impl CpuSetPool {
         num_connections: usize,
         cpu_map: Vec<usize>,
     ) -> Result<Self, RpcError> {
+        Self::connect_with(addr, num_connections, cpu_map, || connect_client(addr)).await
+    }
+
+    async fn connect_with<F, Fut>(
+        addr: &SocketAddr,
+        num_connections: usize,
+        cpu_map: Vec<usize>,
+        mut connect: F,
+    ) -> Result<Self, RpcError>
+    where
+        F: FnMut() -> Fut,
+        Fut: Future<Output = Result<crate::connection::ClientConnection, std::io::Error>>,
+    {
         if num_connections == 0 {
             return Err(RpcError::SystemError);
         }
@@ -850,23 +911,31 @@ impl CpuSetPool {
             return Err(RpcError::SystemError);
         }
 
-        let mut connections = Vec::with_capacity(num_connections);
+        // `pending` holds `ClientConnection`s, whose RAII drop poisons the
+        // partial connections if construction is canceled mid-loop.
+        let mut pending = Vec::with_capacity(num_connections);
         for _ in 0..num_connections {
-            let handle = connect_client(addr).await.map(|c| c.into_handle()).map_err(|e| {
-                tracing::error!(%addr, error = %e, pool_type = "cpu_set", "pool connection failed");
-                RpcError::SystemError
-            })?;
-            connections.push(handle);
+            match connect().await {
+                Ok(client) => pending.push(client),
+                Err(e) => {
+                    close_all(pending).await;
+                    tracing::error!(%addr, error = %e, pool_type = "cpu_set", "pool connection failed");
+                    return Err(RpcError::SystemError);
+                }
+            }
         }
 
         Ok(Self {
-            connections: StdMutex::new(connections),
+            connections: StdMutex::new(pending.into_iter().map(|c| c.into_handle()).collect()),
             cpu_map,
             closed: AtomicBool::new(false),
         })
     }
 
-    /// Returns the number of connections (one per LLC bucket).
+    /// Returns the current number of installed connections.
+    ///
+    /// This is normally one per detected LLC bucket, or the explicit count
+    /// supplied to [`CpuSetPool::connect_with_map`]. It is zero after shutdown.
     pub fn size(&self) -> usize {
         self.connections.lock().unwrap().len()
     }
@@ -907,6 +976,10 @@ impl CpuSetPool {
             .collect()
     }
 
+    /// Shut down the pool and wait for all connections to stop.
+    ///
+    /// New calls fail with [`RpcError::SystemError`]. Calling `shutdown` more
+    /// than once is safe.
     pub async fn shutdown(&self) {
         let shutdowns = self.begin_shutdown();
         for shutdown in shutdowns {
@@ -1142,6 +1215,29 @@ mod tests {
         (addr, blocked_started, blocked_release, calls)
     }
 
+    /// Spawn a raw TCP server that accepts one connection and reports the
+    /// result of its first read (`Ok(0)` = clean EOF, i.e. the peer closed).
+    /// The returned sender releases the server task once the test is done
+    /// observing.
+    async fn start_eof_probe_server() -> (
+        SocketAddr,
+        oneshot::Receiver<std::io::Result<usize>>,
+        oneshot::Sender<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (closed_tx, closed_rx) = oneshot::channel();
+        let (release_tx, release_rx) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut byte = [0u8; 1];
+            closed_tx.send(stream.read(&mut byte).await).unwrap();
+            release_rx.await.unwrap();
+        });
+        (addr, closed_rx, release_tx, server)
+    }
+
     #[tokio::test]
     async fn fixed_pool_distributes_calls() {
         let addr = start_echo_server().await;
@@ -1361,16 +1457,7 @@ mod tests {
 
     #[tokio::test]
     async fn fixed_pool_connect_cancellation_closes_partial_connections() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (closed_tx, closed_rx) = oneshot::channel();
-        let (release_server_tx, release_server_rx) = oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut byte = [0u8; 1];
-            closed_tx.send(stream.read(&mut byte).await).unwrap();
-            release_server_rx.await.unwrap();
-        });
+        let (addr, closed_rx, release_server_tx, server) = start_eof_probe_server().await;
 
         let attempts = Arc::new(AtomicUsize::new(0));
         let connect_attempts = attempts.clone();
@@ -1608,6 +1695,13 @@ mod tests {
 
     // --- DynamicPool tests ---
 
+    #[test]
+    #[should_panic(expected = "idle_ttl must be greater than zero")]
+    fn dynamic_pool_rejects_zero_idle_ttl() {
+        let addr = "127.0.0.1:1".parse().unwrap();
+        let _ = DynamicPool::new(addr, 1, Duration::ZERO, None);
+    }
+
     #[tokio::test]
     async fn dynamic_pool_opens_connections_lazily() {
         let addr = start_echo_server().await;
@@ -1615,7 +1709,6 @@ mod tests {
         let pool = DynamicPool::new(addr, 3, Duration::from_secs(60), None);
         assert_eq!(pool.active_connections().await, 0);
 
-        // First call opens a connection.
         let result = pool
             .send_call(ProgVers::new(1, 1), 1, b"hello")
             .await
@@ -1835,6 +1928,187 @@ mod tests {
         let pool = DynamicPool::new(addr, 3, Duration::from_secs(60), None);
         let result = pool.send_call(ProgVers::new(1, 1), 1, b"fail").await;
         assert!(result.is_err());
+        assert_eq!(pool.connecting.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_canceled_lease_releases_capacity() {
+        let addr = start_echo_server().await;
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let connect_attempts = attempts.clone();
+        let in_connect = Arc::new(Notify::new());
+        let connect_started = in_connect.clone();
+        let mut pool = DynamicPool::new(addr, 1, Duration::from_secs(60), None);
+        pool.connect_override = Some(Box::new(move || {
+            let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
+            let connect_started = connect_started.clone();
+            let fut: ConnectFuture = Box::pin(async move {
+                if attempt == 0 {
+                    connect_started.notify_one();
+                    std::future::pending().await
+                } else {
+                    connect_client(&addr).await
+                }
+            });
+            fut
+        }));
+        let pool = Arc::new(pool);
+
+        let leasing_pool = pool.clone();
+        let leasing = tokio::spawn(async move {
+            leasing_pool
+                .send_call(ProgVers::new(1, 1), 1, b"canceled")
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), in_connect.notified())
+            .await
+            .expect("first lease should start connecting");
+        assert_eq!(pool.connecting.load(Ordering::SeqCst), 1);
+
+        leasing.abort();
+        assert!(leasing.await.unwrap_err().is_cancelled());
+        assert_eq!(
+            pool.connecting.load(Ordering::SeqCst),
+            0,
+            "canceled lease should release its connecting slot"
+        );
+
+        // With max_connections = 1, a leaked slot would park this call forever.
+        let response = tokio::time::timeout(
+            Duration::from_secs(1),
+            pool.send_call(ProgVers::new(1, 1), 1, b"after"),
+        )
+        .await
+        .expect("canceled lease should not exhaust pool capacity")
+        .unwrap();
+        assert_eq!(response, b"after");
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_shutdown_unblocks_waiting_lease() {
+        let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
+
+        let in_connect = Arc::new(Notify::new());
+        let connect_started = in_connect.clone();
+        let mut pool = DynamicPool::new(addr, 1, Duration::from_secs(60), None);
+        pool.connect_override = Some(Box::new(move || {
+            let connect_started = connect_started.clone();
+            let fut: ConnectFuture = Box::pin(async move {
+                connect_started.notify_one();
+                std::future::pending().await
+            });
+            fut
+        }));
+        let pool = Arc::new(pool);
+
+        // First caller reserves the only slot and parks in connect forever.
+        let connecting_pool = pool.clone();
+        let connecting = tokio::spawn(async move {
+            connecting_pool
+                .send_call(ProgVers::new(1, 1), 1, b"stuck")
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), in_connect.notified())
+            .await
+            .expect("first lease should start connecting");
+
+        // Second caller finds the pool empty and at capacity, so it waits.
+        let waiting_pool = pool.clone();
+        let waiting = tokio::spawn(async move {
+            waiting_pool
+                .send_call(ProgVers::new(1, 1), 1, b"waiting")
+                .await
+        });
+        // Let the waiter reach its wait state before shutting down. The
+        // assertion below must hold for any interleaving; this just makes
+        // the test exercise the interesting one.
+        tokio::task::yield_now().await;
+
+        pool.shutdown().await;
+
+        // The stuck connect attempt holds the pool at capacity forever, so
+        // only the shutdown path can unblock the waiter.
+        let result = tokio::time::timeout(Duration::from_secs(1), waiting)
+            .await
+            .expect("shutdown should unblock a waiting lease")
+            .unwrap();
+        assert_eq!(result, Err(RpcError::SystemError));
+        connecting.abort();
+    }
+
+    #[tokio::test]
+    async fn dynamic_pool_canceled_lease_closes_pending_connection() {
+        let (addr, closed_rx, release_server_tx, server) = start_eof_probe_server().await;
+
+        let gate = Arc::new(Notify::new());
+        let connect_gate = gate.clone();
+        let (handle_tx, handle_rx) = oneshot::channel();
+        let handle_tx = Arc::new(StdMutex::new(Some(handle_tx)));
+        let mut pool = DynamicPool::new(addr, 1, Duration::from_secs(60), None);
+        pool.connect_override = Some(Box::new(move || {
+            let gate = connect_gate.clone();
+            let handle_tx = handle_tx.clone();
+            let fut: ConnectFuture = Box::pin(async move {
+                gate.notified().await;
+                let client = connect_client(&addr).await?;
+                if let Some(tx) = handle_tx.lock().unwrap().take() {
+                    let _ = tx.send(Arc::downgrade(client.handle()));
+                }
+                Ok(client)
+            });
+            fut
+        }));
+        let pool = Arc::new(pool);
+
+        let leasing_pool = pool.clone();
+        let leasing = tokio::spawn(async move {
+            leasing_pool
+                .send_call(ProgVers::new(1, 1), 1, b"canceled")
+                .await
+        });
+
+        // Wait for the lease to reserve its slot, then grab the connections
+        // lock so the lease parks before it can install the new handle.
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while pool.connecting.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("first lease should reserve a connecting slot");
+        let conns_guard = pool.connections.lock().await;
+        gate.notify_one();
+        let pending_handle = tokio::time::timeout(Duration::from_secs(1), handle_rx)
+            .await
+            .expect("lease should open its connection")
+            .unwrap();
+
+        leasing.abort();
+        assert!(leasing.await.unwrap_err().is_cancelled());
+        drop(conns_guard);
+
+        let read_result = tokio::time::timeout(Duration::from_secs(1), closed_rx)
+            .await
+            .expect("pending connection should close when the lease is canceled")
+            .unwrap();
+        assert_eq!(read_result.unwrap(), 0);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while pending_handle.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("pending connection handle should be released");
+        assert_eq!(pool.connecting.load(Ordering::SeqCst), 0);
+        assert_eq!(pool.active_connections().await, 0);
+
+        release_server_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), server)
+            .await
+            .expect("server task should stop")
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1930,6 +2204,135 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cpu_pool_connect_cancellation_closes_partial_connections() {
+        let (addr, closed_rx, release_server_tx, server) = start_eof_probe_server().await;
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let connect_attempts = attempts.clone();
+        let (first_handle_tx, first_handle_rx) = oneshot::channel();
+        let mut first_handle_tx = Some(first_handle_tx);
+        let (second_attempt_tx, second_attempt_rx) = oneshot::channel();
+        let mut second_attempt_tx = Some(second_attempt_tx);
+        let construction = tokio::spawn(async move {
+            CpuSetPool::connect_with(&addr, 2, vec![0, 1], move || {
+                let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
+                let first_handle_tx = if attempt == 0 {
+                    first_handle_tx.take()
+                } else {
+                    None
+                };
+                let second_attempt_tx = if attempt == 1 {
+                    second_attempt_tx.take()
+                } else {
+                    None
+                };
+                async move {
+                    if attempt == 0 {
+                        let client = connect_client(&addr).await?;
+                        first_handle_tx
+                            .unwrap()
+                            .send(Arc::downgrade(client.handle()))
+                            .unwrap();
+                        Ok(client)
+                    } else {
+                        second_attempt_tx.unwrap().send(()).unwrap();
+                        std::future::pending().await
+                    }
+                }
+            })
+            .await
+        });
+
+        let first_handle = tokio::time::timeout(Duration::from_secs(1), first_handle_rx)
+            .await
+            .expect("first connection should complete")
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), second_attempt_rx)
+            .await
+            .expect("second connection attempt should start")
+            .unwrap();
+        construction.abort();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), construction)
+                .await
+                .expect("pool construction should stop after cancellation")
+                .unwrap_err()
+                .is_cancelled()
+        );
+
+        let read_result = tokio::time::timeout(Duration::from_secs(1), closed_rx)
+            .await
+            .expect("partial connection should close when pool construction is canceled")
+            .unwrap();
+        assert_eq!(read_result.unwrap(), 0);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while first_handle.upgrade().is_some() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("partial connection handle should be released without peer cooperation");
+
+        release_server_tx.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), server)
+            .await
+            .expect("server task should stop")
+            .unwrap();
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn cpu_pool_connect_failure_closes_partial_connections() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut byte = [0u8; 1];
+            stream.read(&mut byte).await.unwrap()
+        });
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let connect_attempts = attempts.clone();
+        let (first_handle_tx, first_handle_rx) = oneshot::channel();
+        let mut first_handle_tx = Some(first_handle_tx);
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            CpuSetPool::connect_with(&addr, 2, vec![0, 1], move || {
+                let attempt = connect_attempts.fetch_add(1, Ordering::SeqCst);
+                let first_handle_tx = if attempt == 0 {
+                    first_handle_tx.take()
+                } else {
+                    None
+                };
+                async move {
+                    if attempt == 0 {
+                        let client = connect_client(&addr).await?;
+                        first_handle_tx
+                            .unwrap()
+                            .send(Arc::downgrade(client.handle()))
+                            .unwrap();
+                        Ok(client)
+                    } else {
+                        Err(std::io::Error::other("injected connection failure"))
+                    }
+                }
+            }),
+        )
+        .await
+        .expect("pool construction should return after connection failure");
+
+        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        let first_handle = first_handle_rx.await.unwrap();
+        assert!(first_handle.upgrade().is_none());
+        let bytes_read = tokio::time::timeout(Duration::from_secs(1), server)
+            .await
+            .expect("partial connection should close after connection failure")
+            .unwrap();
+        assert_eq!(bytes_read, 0);
+    }
+
+    #[tokio::test]
     async fn cpu_pool_as_rpc_sender() {
         let addr = start_echo_server().await;
         let pool = Arc::new(CpuSetPool::connect(&addr).await.unwrap());
@@ -1949,13 +2352,10 @@ mod tests {
         let addr = start_echo_server().await;
         let pool = FixedSerialPool::connect(&addr, 2).await.unwrap();
 
-        // Fire-and-forget should return Ok immediately.
         pool.send_fire_and_forget(ProgVers::new(1, 1), 1, b"faf-data")
             .await
             .unwrap();
 
-        // No sleep needed: FixedSerialPool uses a FIFO channel, so send_call
-        // is guaranteed to execute after the FAF request.
         let result = pool
             .send_call(ProgVers::new(1, 1), 1, b"after-faf")
             .await
@@ -1968,7 +2368,6 @@ mod tests {
         let addr = start_echo_server().await;
         let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60), None));
 
-        // Fire-and-forget should return Ok immediately.
         pool.send_fire_and_forget(ProgVers::new(1, 1), 1, b"faf-data")
             .await
             .unwrap();

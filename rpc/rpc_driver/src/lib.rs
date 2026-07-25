@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! # rpc_driver
 //!
 //! Async ONC-RPC (RFC 5531) client/server library built on tokio.
@@ -55,7 +57,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rpc_driver = { version = "0.5", features = ["concurrent-dispatch"] }
+//! rpc_driver = { version = "0.10.0", features = ["concurrent-dispatch"] }
 //! ```
 //!
 //! With this feature:
@@ -106,7 +108,8 @@
 //!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
 //!         let peer = rpc_driver::peer();
 //!         tokio::spawn(async move {
-//!             // safe — runs after dispatch returns
+//!             // The read loop can process the callback reply after this
+//!             // dispatch returns.
 //!             let _ = peer.send_call(ProgVers::new(200, 1), 0, b"").await;
 //!         });
 //!         Ok(vec![])
@@ -122,7 +125,8 @@
 //! `rpc_driver` emits spans and events — your binary crate chooses the
 //! subscriber (console logging, OpenTelemetry, JSON, etc.).
 //!
-//! **Without a subscriber**, tracing is a no-op (~1-2ns per callsite).
+//! Without a subscriber, tracing callsites are disabled. Exact overhead depends
+//! on the build, platform, and workload.
 //!
 //! ### Span Hierarchy
 //!
@@ -154,17 +158,17 @@
 //! ```no_run
 //! use tracing_subscriber::fmt::format::FmtSpan;
 //!
-//! // INFO: connection lifecycle only (< 1% overhead)
-//! // DEBUG: per-RPC waterfall tracing (~5% overhead in realistic workloads)
+//! // INFO records connection spans; DEBUG also records per-RPC spans.
 //! tracing_subscriber::fmt()
 //!     .with_max_level(tracing::Level::DEBUG)
 //!     .with_span_events(FmtSpan::CLOSE)
 //!     .init();
 //! ```
 //!
-//! **`FmtSpan::CLOSE` is important** — without it, the `fmt` subscriber only
-//! shows error/warn events. `CLOSE` adds a line when each span ends, showing
-//! `time.busy` (execution time) and `time.idle` (scheduling gaps):
+//! Successful RPC activity is represented primarily by spans. The `fmt`
+//! subscriber still displays normal events without `FmtSpan::CLOSE`, but it
+//! does not emit a line when a span ends. `CLOSE` adds that lifecycle record,
+//! including `time.busy` (execution time) and `time.idle` (scheduling gaps):
 //!
 //! ```text
 //! rpc_connection{peer=127.0.0.1:4567 role="server"}:rpc_call{xid=1 prog=100 vers=1 proc=1}: close time.busy=6.2µs time.idle=0.4µs
@@ -175,11 +179,9 @@
 //!
 //! ### Performance
 //!
-//! | Subscriber | Per-RPC overhead | Use case |
-//! |---|---|---|
-//! | None | ~1-2ns (atomic check) | Production default |
-//! | INFO | < 1% | Connection monitoring |
-//! | DEBUG | ~5% (realistic workloads) | Performance waterfall |
+//! Instrumentation cost is workload- and subscriber-dependent. Use
+//! `cargo bench --bench rpc_bench --features concurrent-dispatch -- --tracing <level>`
+//! to measure it on the target system.
 //!
 //! See `rpc-smoke/src/server.rs` for a complete reference example of
 //! subscriber setup in a production-like server.
@@ -209,6 +211,11 @@ pub use client::{connect_client, connect_client_with_config};
 pub mod pool;
 pub use pool::{CanceledCallPolicy, CpuSetPool, DynamicPool, FixedSerialPool};
 
+/// Low-level TCP record-stream primitives used by the driver.
+///
+/// This module remains public for integration tests and custom transport
+/// experiments, but it is not part of the supported high-level API.
+#[doc(hidden)]
 pub mod tcp_connection;
 
 // This module is generated, with the following modifications

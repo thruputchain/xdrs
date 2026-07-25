@@ -54,12 +54,13 @@ impl ServiceMap {
     }
 
     /// Register a service handler.
+    ///
+    /// Replaces any existing handler for the same program/version pair.
     pub fn add_service(&mut self, dispatch: Box<dyn RpcHandler>) {
         self.services.insert(dispatch.prog_vers(), dispatch);
     }
 
-    /// Dispatch an incoming RPC call to the appropriate service.
-    pub async fn dispatch(
+    pub(crate) async fn dispatch(
         &self,
         rpc_vers: u32,
         srv: ProgVers,
@@ -73,10 +74,8 @@ impl ServiceMap {
             return handler.dispatch(proc, data).await;
         }
 
-        // Find the first service with matching program number
         let first_match = self.services.range(ProgVers::new(srv.prog(), 0)..);
 
-        // If no match found or first match has different prog, return PROG_UNAVAIL
         if first_match
             .clone()
             .next()
@@ -85,7 +84,6 @@ impl ServiceMap {
             return Err(RpcError::ProgUnavail);
         }
 
-        // Get version range for this program
         let low_vers = first_match.clone().next().unwrap().0.vers();
         let high_vers = self
             .services
@@ -95,7 +93,6 @@ impl ServiceMap {
             .0
             .vers();
 
-        // Return PROG_MISMATCH with version range
         Err(RpcError::InvalidVersion {
             low: low_vers,
             high: high_vers,

@@ -403,10 +403,9 @@ mod concurrent {
     /// as `Err` instead of unwinding the task.  Same approach as
     /// `futures_util::FutureExt::catch_unwind` but with zero dependencies.
     ///
-    /// `AssertUnwindSafe` is applied internally — callers do not need to
-    /// wrap their futures.  This is sound for our use because neither
-    /// `ServiceMap` nor `ConnectionHandle` hold their locks during
-    /// `dispatch()`, so a handler panic cannot poison shared state.
+    /// `AssertUnwindSafe` is applied internally so the connection machinery
+    /// can recover from a handler panic. Handlers remain responsible for the
+    /// consistency of their own state if they panic while mutating it.
     struct CatchUnwind<F>(F);
 
     impl<F: std::future::Future> std::future::Future for CatchUnwind<F> {
@@ -441,9 +440,9 @@ mod concurrent {
     ///
     /// Each incoming CALL is spawned as its own tokio task, matching the
     /// fire-and-forget pattern from x23's C++ ONC-RPC implementation. A
-    /// semaphore limits concurrent handler execution while the read loop
-    /// never blocks on handlers — REPLYs are always routed immediately,
-    /// avoiding deadlocks when handlers call back to the peer.
+    /// semaphore limits concurrent handler execution while a separate reader
+    /// continues receiving records. REPLYs are routed directly once read,
+    /// avoiding handler-induced deadlocks when calling back to the peer.
     ///
     /// Separated from `launch_read_task` so that `reader_handle.abort()` runs
     /// on all exit paths (the caller awaits this, then aborts the reader).

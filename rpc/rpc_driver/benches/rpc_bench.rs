@@ -697,12 +697,10 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
 /// **Caveat:** On loopback with near-zero handler latency, a single concurrent
 /// connection consistently outperforms the 10-connection pool (~5x in testing).
 /// This is because XID multiplexing over one socket avoids the overhead of 10
-/// reader tasks, 10 write mutexes, and FIFO channel dispatch. However, pools
-/// are expected to win in production where: handlers do real work (hiding
-/// connection overhead), network latency is non-trivial, write mutex contention
-/// matters under heavy bidirectional traffic, and fault isolation is required.
-/// This benchmark does NOT test those conditions — take the comparison with a
-/// grain of salt.
+/// reader/writer task pairs and the fixed pool's FIFO worker dispatch. Production
+/// results may differ when handlers do real work, network latency is non-trivial,
+/// or connection-level fault isolation matters. This benchmark does not model
+/// those conditions.
 #[cfg(feature = "concurrent-dispatch")]
 async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
     let delay = Duration::from_millis(1);

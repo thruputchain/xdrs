@@ -32,7 +32,10 @@ impl RpcServer {
         self.listener.local_addr()
     }
 
-    /// Start the server in a background task, returning a handle to it.
+    /// Start accepting connections in a background task.
+    ///
+    /// Dropping the returned handle detaches the server task; call
+    /// [`JoinHandle::abort`](tokio::task::JoinHandle::abort) to stop it.
     pub async fn start(self: Arc<Self>) -> tokio::task::JoinHandle<Result<(), std::io::Error>> {
         let x = self.clone();
         tokio::spawn(async move { x.run().await })

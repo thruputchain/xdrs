@@ -10,9 +10,10 @@ An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [
 - **Concurrent dispatch** (opt-in) — spawn-per-CALL with configurable concurrency limit
 - **Connection pools** — `FixedSerialPool` (serial per-conn), `DynamicPool` (min-pending), `CpuSetPool` (LLC-affine)
 - **Bidirectional RPC** — handlers can call back to the peer via `peer()`
-- Panic isolation, load shedding, connection poisoning for clean shutdown
+- Panic isolation and load shedding with `concurrent-dispatch`; connection
+  poisoning for shutdown
 - **Structured tracing** — `tracing` spans and events for logging, OpenTelemetry, and e2e waterfalls
-- Max message size limit (16MB default)
+- Max message size limit (16 MiB default)
 
 ## Usage
 
@@ -38,14 +39,16 @@ Enable per-connection concurrent handler execution:
 
 ```toml
 [dependencies]
-rpc_driver = { version = "0.5", features = ["concurrent-dispatch"] }
+rpc_driver = { version = "0.10.0", features = ["concurrent-dispatch"] }
 ```
 
 Tune concurrency via `ConnectionConfig::with_max_concurrent_dispatches`.
 
 ## Tracing
 
-All diagnostic output uses the [`tracing`](https://docs.rs/tracing) crate. No subscriber is required — without one, overhead is ~1-2ns per callsite.
+All diagnostic output uses the [`tracing`](https://docs.rs/tracing) crate. No
+subscriber is required; without one, tracing callsites are disabled. Exact
+overhead depends on the build, platform, and workload.
 
 ### Span hierarchy
 
@@ -67,7 +70,9 @@ tracing_subscriber::fmt()
     .init();
 ```
 
-`FmtSpan::CLOSE` is important — without it, only error/warn events appear. With it, each span logs its duration on close:
+Successful RPC activity is represented primarily by spans. Normal events still
+appear without `FmtSpan::CLOSE`, but span-close records do not. With it, each
+span logs its duration on close:
 
 ```text
 rpc_connection{peer=127.0.0.1:4567 role="server"}:rpc_call{xid=1 prog=100 vers=1 proc=1}: close time.busy=6.2µs time.idle=0.4µs
@@ -78,11 +83,12 @@ For OpenTelemetry export, use [`tracing-opentelemetry`](https://docs.rs/tracing-
 
 ### Performance overhead
 
-| Subscriber | Overhead | Use case |
-|---|---|---|
-| None | ~1-2ns per callsite | Production default |
-| INFO | < 1% | Connection monitoring |
-| DEBUG | ~5% (realistic workloads) | Performance waterfall |
+Instrumentation cost is workload- and subscriber-dependent. Measure it on the
+target system with:
+
+```sh
+cargo bench --bench rpc_bench --features concurrent-dispatch -- --tracing debug
+```
 
 See `rpc-smoke/src/server.rs` for a complete reference example.
 

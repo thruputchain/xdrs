@@ -4,18 +4,19 @@ use std::fmt;
 
 /// Generic error type for RPC program implementations.
 ///
-/// Wraps any error type and converts to `RpcError::SystemError` when returned.
+/// Wraps any thread-safe error for use by generated RPC service traits.
+/// Generated dispatchers map a returned `ProgramError` to
+/// [`RpcError::SystemError`](crate::RpcError::SystemError); the underlying
+/// error is not sent to the peer.
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```no_run
 /// use rpc_driver::ProgramError;
 ///
-/// async fn my_rpc_method(&self) -> Result<(), ProgramError> {
-///     // Use .map_err() to convert errors
-///     let file = std::fs::File::open("config.txt")
-///         .map_err(ProgramError::new)?;
-///     Ok(())
+/// fn load_config() -> Result<Vec<u8>, ProgramError> {
+///     let bytes = std::fs::read("config.bin")?;
+///     Ok(bytes)
 /// }
 /// ```
 #[derive(Debug)]
@@ -48,7 +49,6 @@ impl fmt::Display for ProgramError {
     }
 }
 
-// Implement From for common error types to enable ? operator
 impl From<std::io::Error> for ProgramError {
     fn from(err: std::io::Error) -> Self {
         Self::new(err)

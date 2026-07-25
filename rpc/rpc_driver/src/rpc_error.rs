@@ -7,18 +7,30 @@ use crate::rpc_msg;
 /// Errors that can occur during RPC calls.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RpcError {
+    /// The requested procedure is not defined for the selected service.
     #[error("Invalid procedure")]
     InvalidProcedure,
+    /// No service is registered for the requested program number.
     #[error("Program unavailable")]
     ProgUnavail,
+    /// The program exists, but not at the requested version.
     #[error("Invalid version: low {low}, high {high}")]
-    InvalidVersion { low: u32, high: u32 },
+    InvalidVersion {
+        /// Lowest supported version.
+        low: u32,
+        /// Highest supported version.
+        high: u32,
+    },
+    /// The peer requested an unsupported ONC-RPC protocol version.
     #[error("Rpc Mismatch")]
     RpcMismatch,
+    /// The call arguments could not be decoded.
     #[error("Garbage arguments")]
     GarbageArguments,
+    /// The call failed without a more specific wire-level error.
     #[error("System error")]
     SystemError,
+    /// Authentication credentials or verification failed.
     #[error("Authentication error")]
     AuthenticationError,
 }
@@ -60,7 +72,7 @@ impl From<rpc_msg::accepted_reply_reply_data> for RpcError {
 }
 
 impl RpcError {
-    pub fn to_rpc_msg(&self, xid: u32) -> rpc_msg::rpc_msg {
+    pub(crate) fn to_rpc_msg(&self, xid: u32) -> rpc_msg::rpc_msg {
         match self {
             RpcError::InvalidVersion { low, high } => rpc_msg::rpc_msg {
                 xid,
@@ -156,7 +168,7 @@ impl RpcError {
         }
     }
 
-    pub fn to_error_record(&self, xid: u32) -> Vec<u8> {
+    pub(crate) fn to_error_record(&self, xid: u32) -> Vec<u8> {
         let msg = self.to_rpc_msg(xid);
         let header_bytes = xdrs::txs::encode(&msg).unwrap();
         let msg_len: u32 = (header_bytes.len() as u32) | 0x8000_0000;

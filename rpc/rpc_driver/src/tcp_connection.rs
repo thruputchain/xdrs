@@ -36,8 +36,8 @@ pub async fn connect<A: ToSocketAddrs>(
     read_buffer_size: usize,
 ) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let stream = TcpStream::connect(addr).await?;
-    // This doesn't noticeably affect performance on local loopback tests
-    // TODO(geoff): test on real network
+    // RPC latency is more important than Nagle aggregation; batching happens
+    // explicitly in the connection writer.
     stream.set_nodelay(true)?;
     let (read_half, write_half) = stream.into_split();
     Ok((
@@ -52,8 +52,7 @@ pub async fn accept(
     read_buffer_size: usize,
 ) -> Result<(ReadHalf, WriteHalf, SocketAddr), std::io::Error> {
     let (stream, addr) = listener.accept().await?;
-    // This doesn't noticeably affect performance on local loopback tests
-    // TODO(geoff): test on real network
+    // Match client sockets: the connection writer performs explicit batching.
     stream.set_nodelay(true)?;
     let (read_half, write_half) = stream.into_split();
     Ok((

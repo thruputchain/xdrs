@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 use crate::ServiceMap;
 
-/// Configuration for a connection.
-/// Defaults to no services and a max message size of 16MB.
+/// Configuration shared by client and server connections.
+///
+/// The default accepts messages up to 16 MiB and has no handlers for inbound
+/// calls. Client connections need a [`ServiceMap`] only when the remote peer
+/// can call back over the same connection.
 #[derive(Clone, Debug)]
 pub struct ConnectionConfig {
     pub(crate) max_message_size: u32,
@@ -30,11 +33,13 @@ pub struct ConnectionConfig {
     /// Default: 256. Set via [`ConnectionConfig::with_read_channel_capacity`].
     pub(crate) read_channel_capacity: usize,
     /// Size of the per-connection TCP read buffer in bytes.
-    /// Larger buffers reduce syscalls for large RPC payloads by keeping
-    /// more data in the fast path. Records that fit in the buffer are
-    /// parsed zero-copy without additional reads.
     ///
-    /// Default: 65536 (64KB). Set via [`ConnectionConfig::with_read_buffer_size`].
+    /// Larger buffers reduce syscalls for large RPC payloads. With serial
+    /// dispatch, records that fit in the buffer can be parsed directly from
+    /// it; concurrent dispatch copies records before handing them to worker
+    /// tasks.
+    ///
+    /// Default: 65536 (64 KiB). Set via [`ConnectionConfig::with_read_buffer_size`].
     pub(crate) read_buffer_size: usize,
 }
 
@@ -52,6 +57,11 @@ impl Default for ConnectionConfig {
 }
 
 impl ConnectionConfig {
+    /// Create a configuration with an optional message-size limit and inbound services.
+    ///
+    /// `None` selects the default 16 MiB message limit. On a client connection,
+    /// `services` handles callbacks initiated by the remote peer; use an empty
+    /// [`ServiceMap`] when callbacks are not needed.
     pub fn new(max_message_size: Option<u32>, services: ServiceMap) -> Self {
         Self {
             max_message_size: max_message_size.unwrap_or(0x100_0000),
@@ -105,7 +115,7 @@ impl ConnectionConfig {
     ///
     /// Larger values reduce syscalls for large RPCs. For workloads with
     /// payloads up to N bytes, set this to at least N + 64 (header overhead).
-    /// Default: 65536 (64KB).
+    /// Default: 65536 (64 KiB).
     pub fn with_read_buffer_size(mut self, size: usize) -> Self {
         assert!(size >= 1024, "read_buffer_size must be at least 1024");
         self.read_buffer_size = size;

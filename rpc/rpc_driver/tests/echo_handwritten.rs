@@ -361,7 +361,7 @@ mod tests {
                 assert_eq!(result, i);
                 notify.notify_one();
             });
-            // Return immediately — the callback runs after the read loop is unblocked
+            // Returning lets the serial read loop process the callback reply.
             Ok(i)
         }
         async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, ProgramError> {
