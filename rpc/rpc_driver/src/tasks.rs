@@ -88,6 +88,21 @@ fn route_reply(
     }
 }
 
+#[inline]
+fn prepare_response(
+    client_cbs: &ConnectionHandle,
+    xid: u32,
+    result: Result<Vec<u8>, crate::rpc_error::RpcError>,
+) -> Result<Vec<u8>, ReadTaskError> {
+    match result {
+        Ok(response) => {
+            let buf = client_cbs.buf_pool.take();
+            prepare_success_response(buf, xid, &response)
+        }
+        Err(e) => Ok(e.to_error_record(xid)),
+    }
+}
+
 /// Send a dispatch result (success or error) back to the client.
 #[inline]
 async fn send_response(
@@ -95,24 +110,11 @@ async fn send_response(
     xid: u32,
     result: Result<Vec<u8>, crate::rpc_error::RpcError>,
 ) -> Result<(), ReadTaskError> {
-    match result {
-        Ok(response) => {
-            let buf = client_cbs.buf_pool.take();
-            let msg = prepare_success_response(buf, xid, &response)?;
-            client_cbs
-                .send_msg(msg)
-                .await
-                .map_err(ReadTaskError::WriteError)?;
-        }
-        Err(e) => {
-            let out_bytes = e.to_error_record(xid);
-            client_cbs
-                .send_msg(out_bytes)
-                .await
-                .map_err(ReadTaskError::WriteError)?;
-        }
-    }
-    Ok(())
+    let msg = prepare_response(client_cbs, xid, result)?;
+    client_cbs
+        .send_msg(msg)
+        .await
+        .map_err(ReadTaskError::WriteError)
 }
 
 /// Parsed inbound record — either a CALL to dispatch or a REPLY to route.
@@ -290,6 +292,7 @@ async fn run_client_read_task(
                 &client_handle,
                 &mut record_rx,
                 client_handle.max_concurrent_dispatches,
+                client_handle.inline_ready_dispatch,
             ) => result,
         };
 
@@ -394,8 +397,11 @@ pub async fn launch_read_task(
 #[cfg(feature = "concurrent-dispatch")]
 mod concurrent {
     use super::*;
+    use std::future::Future;
     use std::panic::AssertUnwindSafe;
+    use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::task::{Context, Poll, Waker};
 
     // -- Panic-catching future wrapper (replaces futures-util dependency) --
 
@@ -434,15 +440,121 @@ mod concurrent {
         }
     }
 
+    fn defer_response(
+        tasks: &mut tokio::task::JoinSet<()>,
+        client_cbs: &Arc<ConnectionHandle>,
+        deferred: &Arc<AtomicUsize>,
+        deferred_cap: usize,
+        xid: u32,
+        msg: Vec<u8>,
+        span: tracing::Span,
+    ) -> Result<(), ReadTaskError> {
+        let count = deferred.fetch_add(1, Ordering::Relaxed);
+        if count >= deferred_cap {
+            deferred.fetch_sub(1, Ordering::Relaxed);
+            return Err(ReadTaskError::WriteError(std::io::Error::new(
+                std::io::ErrorKind::WouldBlock,
+                "deferred response queue full",
+            )));
+        }
+
+        let cbs = client_cbs.clone();
+        let deferred = deferred.clone();
+        tasks.spawn(
+            async move {
+                let _deferred = PendingGuard(deferred);
+                if let Err(e) = cbs.send_msg(msg).await {
+                    tracing::error!(xid, error = %e, "response write failed");
+                    let _shutdown = cbs.begin_poison();
+                }
+            }
+            .instrument(span),
+        );
+        Ok(())
+    }
+
+    // -- Handler futures -----------------------------------------------------
+
+    /// The handler future for one CALL, owning everything it touches.
+    ///
+    /// The record is moved in rather than borrowed, so the future is `'static`
+    /// and can be polled on the dispatch loop and then — if it suspends —
+    /// moved into a task. `Box::pin` gives it a stable address across that
+    /// move; the inner `async_trait` dispatch allocates its own box on first
+    /// poll either way, so the ready path trades a task allocation for this
+    /// one.
+    type HandlerFuture =
+        Pin<Box<dyn Future<Output = Result<HandlerResult, Panic>> + Send + 'static>>;
+    type HandlerResult = Result<Vec<u8>, crate::rpc_error::RpcError>;
+    type Panic = Box<dyn std::any::Any + Send>;
+
+    /// Build the `'static` handler future for one CALL.
+    fn handler_future(
+        service_map: &Arc<ServiceMap>,
+        client_cbs: &Arc<ConnectionHandle>,
+        record: Vec<u8>,
+        payload_offset: usize,
+        vers: ProgVers,
+        rpcvers: u32,
+        proc: u32,
+    ) -> HandlerFuture {
+        let svc = service_map.clone();
+        let sender: Arc<dyn RpcSender> = client_cbs.clone();
+        Box::pin(CatchUnwind(with_peer(sender, async move {
+            svc.dispatch(rpcvers, vers, proc, &record[payload_offset..])
+                .await
+        })))
+    }
+
+    fn discard_panic_payload(panic: Panic, xid: u32, context: &'static str) {
+        if let Err(drop_panic) = std::panic::catch_unwind(AssertUnwindSafe(|| drop(panic))) {
+            tracing::error!(xid, context, "panic payload destructor panicked");
+            // Dropping a second malicious panic payload could unwind the
+            // connection task again. Leak only on this pathological path.
+            std::mem::forget(drop_panic);
+        }
+    }
+
+    /// Collapse a handler panic into a `SystemError` reply.
+    pub(super) fn handler_outcome(result: Result<HandlerResult, Panic>, xid: u32) -> HandlerResult {
+        match result {
+            Ok(r) => r,
+            Err(panic) => {
+                tracing::error!(xid, "handler panicked");
+                discard_panic_payload(panic, xid, "handler panic");
+                Err(crate::rpc_error::RpcError::SystemError)
+            }
+        }
+    }
+
+    pub(super) fn drop_ready_handler(handler: HandlerFuture, xid: u32) -> bool {
+        match std::panic::catch_unwind(AssertUnwindSafe(|| drop(handler))) {
+            Ok(()) => false,
+            Err(panic) => {
+                tracing::error!(xid, "ready handler destructor panicked");
+                discard_panic_payload(panic, xid, "ready handler destructor panic");
+                true
+            }
+        }
+    }
+
     // -- Dispatch loop -------------------------------------------------------
 
-    /// Run the main dispatch loop using spawn-per-CALL.
+    /// Run the main dispatch loop.
     ///
-    /// Each incoming CALL is spawned as its own tokio task, matching the
-    /// fire-and-forget pattern from x23's C++ ONC-RPC implementation. A
-    /// semaphore limits concurrent handler execution while a separate reader
-    /// continues receiving records. REPLYs are routed directly once read,
-    /// avoiding handler-induced deadlocks when calling back to the peer.
+    /// Each incoming CALL's handler is polled once on this loop. Handlers that
+    /// complete on that first poll are answered inline; handlers that suspend
+    /// are moved into their own tokio task, where a semaphore limits how many
+    /// run concurrently. This is x23's `await_ready()` shape: create
+    /// asynchronous work only when the service actually suspends.
+    ///
+    /// REPLYs are routed by the reader task, not here. Ready responses use a
+    /// nonblocking enqueue so write backpressure cannot stop this loop from
+    /// draining CALLs that precede a bidirectional REPLY in the TCP stream.
+    ///
+    /// Set `inline_ready` to false for an unconditional-spawn control. This
+    /// still uses the common boxed-handler construction introduced by the fast
+    /// path, so exact before/after comparisons require separate builds.
     ///
     /// Separated from `launch_read_task` so that `reader_handle.abort()` runs
     /// on all exit paths (the caller awaits this, then aborts the reader).
@@ -451,6 +563,7 @@ mod concurrent {
         client_cbs: &Arc<ConnectionHandle>,
         record_rx: &mut tokio::sync::mpsc::Receiver<Result<Vec<u8>, ReadTaskError>>,
         max_concurrent: usize,
+        inline_ready: bool,
     ) -> Result<(), ReadTaskError> {
         let semaphore = Arc::new(tokio::sync::Semaphore::new(max_concurrent));
         // Advisory counter for load shedding — Relaxed is intentional because
@@ -459,19 +572,33 @@ mod concurrent {
         // Total spawned tasks (executing + waiting for a permit) before load
         // shedding.  E.g. max=1 -> cap=5, max=64 -> cap=320.
         let pending_cap = max_concurrent.saturating_mul(5);
+        // Responses that cannot enter the bounded writer channel immediately
+        // are deferred without blocking this loop. Bound that extra backlog
+        // separately from handler admission; exhausting it fails the
+        // connection closed rather than accumulating unbounded response tasks.
+        let deferred_responses = Arc::new(AtomicUsize::new(0));
+        let deferred_response_cap = client_cbs.write_channel_capacity.saturating_mul(5);
         let mut tasks = tokio::task::JoinSet::new();
+        // Fast-path hit rate, reported once on exit. Loop-local: this task is
+        // the only writer.
+        let (mut ready_calls, mut suspended_calls, mut unprobed_calls) = (0u64, 0u64, 0u64);
 
-        loop {
+        let result = loop {
             // Reap completed tasks to free memory in the JoinSet.
             while tasks.try_join_next().is_some() {}
 
             let record = match record_rx.recv().await {
                 Some(Ok(data)) => data,
-                Some(Err(e)) => return Err(e),
-                None => return Err(ReadTaskError::Shutdown),
+                Some(Err(e)) => break Err(e),
+                None => break Err(ReadTaskError::Shutdown),
             };
 
-            match parse_record(record)? {
+            let parsed = match parse_record(record) {
+                Ok(parsed) => parsed,
+                Err(e) => break Err(e),
+            };
+
+            match parsed {
                 ParsedRecord::Call {
                     xid,
                     record,
@@ -480,67 +607,192 @@ mod concurrent {
                     rpcvers,
                     proc,
                 } => {
-                    // Load shedding: reject if too many tasks are
-                    // in-flight + waiting for a concurrency permit.
-                    let count = pending.fetch_add(1, Ordering::Relaxed);
+                    // Load shedding: reject if too many tasks are in-flight +
+                    // waiting for a concurrency permit. Checked before the
+                    // handler is built or polled, so a shed CALL never runs its
+                    // handler even partially — the client can safely retry.
+                    // Only suspended handlers occupy this budget, so a purely
+                    // ready workload never sheds.
+                    let count = pending.load(Ordering::Relaxed);
                     if count >= pending_cap {
-                        pending.fetch_sub(1, Ordering::Relaxed);
                         tracing::warn!(xid, pending = count, "rejecting CALL: pending queue full");
                         let error_bytes =
                             crate::rpc_error::RpcError::SystemError.to_error_record(xid);
-                        client_cbs
-                            .send_msg(error_bytes)
-                            .await
-                            .map_err(ReadTaskError::WriteError)?;
+                        match client_cbs.try_send_msg(error_bytes) {
+                            Ok(()) => {}
+                            Err(tokio::sync::mpsc::error::TrySendError::Full(msg)) => {
+                                if let Err(e) = defer_response(
+                                    &mut tasks,
+                                    client_cbs,
+                                    &deferred_responses,
+                                    deferred_response_cap,
+                                    xid,
+                                    msg,
+                                    tracing::Span::none(),
+                                ) {
+                                    break Err(e);
+                                }
+                            }
+                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                break Err(ReadTaskError::WriteError(std::io::Error::new(
+                                    std::io::ErrorKind::BrokenPipe,
+                                    "writer closed",
+                                )));
+                            }
+                        }
                         continue;
                     }
 
+                    // Explicit parent: required because JoinSet::spawn doesn't
+                    // propagate tracing context. `ready` is recorded once the
+                    // probe poll has run. `ready` remains empty when probing is
+                    // disabled or saturation makes the fast path stand down.
+                    let span = tracing::debug_span!(
+                        parent: &client_cbs.connection_span,
+                        "rpc_call",
+                        xid,
+                        prog = vers.prog,
+                        vers = vers.vers,
+                        proc = proc,
+                        probed = tracing::field::Empty,
+                        ready = tracing::field::Empty,
+                    );
+
+                    let mut handler = handler_future(
+                        service_map,
+                        client_cbs,
+                        record,
+                        payload_offset,
+                        vers,
+                        rpcvers,
+                        proc,
+                    );
+
+                    // Reserve a permit *before* probing. A handler's first poll
+                    // can start real work — a timer, a `spawn_blocking`, plain
+                    // CPU work — before it ever suspends, so probing without a
+                    // permit would let that work escape
+                    // `max_concurrent_dispatches` entirely.
+                    //
+                    // Probe only while `pending < max_concurrent`, which
+                    // guarantees a free permit exists. That matters because
+                    // tokio's `try_acquire` checks only the permit count and
+                    // not the waiter queue, so it can barge ahead of a spawned
+                    // handler already queued on `acquire_owned`. A waiter can
+                    // only exist once every permit is held by a spawned task,
+                    // i.e. `pending >= max_concurrent` — so under saturation the
+                    // fast path stands down instead of barging ahead of queued
+                    // work.
+                    let permit = if inline_ready && count < max_concurrent {
+                        semaphore.clone().try_acquire_owned().ok()
+                    } else {
+                        None
+                    };
+
+                    if permit.is_some() {
+                        span.record("probed", true);
+                        // Probe poll. Synchronous, so a plain span guard is
+                        // correct — nothing is awaited while it is held.
+                        //
+                        // The no-op waker is safe because a `Pending` handler
+                        // is always polled again by the task below, and the
+                        // `Future` contract requires a future to re-register
+                        // the waker it is given on each poll. Any wake that
+                        // lands between the two polls is therefore observed as
+                        // readiness by the second poll.
+                        let probe = {
+                            let _enter = span.enter();
+                            handler
+                                .as_mut()
+                                .poll(&mut Context::from_waker(Waker::noop()))
+                        };
+
+                        if let Poll::Ready(result) = probe {
+                            ready_calls += 1;
+                            span.record("ready", true);
+                            let result = {
+                                let _enter = span.enter();
+                                let result = handler_outcome(result, xid);
+                                if drop_ready_handler(handler, xid) {
+                                    Err(crate::rpc_error::RpcError::SystemError)
+                                } else {
+                                    result
+                                }
+                            };
+                            // Permit released here — a ready handler holds it
+                            // only for its own synchronous poll.
+                            drop(permit);
+                            let msg = {
+                                let _enter = span.enter();
+                                match prepare_response(client_cbs, xid, result) {
+                                    Ok(msg) => msg,
+                                    Err(e) => break Err(e),
+                                }
+                            };
+                            let enqueue = {
+                                let _enter = span.enter();
+                                client_cbs.try_send_msg(msg)
+                            };
+                            match enqueue {
+                                Ok(()) => {}
+                                Err(tokio::sync::mpsc::error::TrySendError::Full(msg)) => {
+                                    // Keep the dispatch loop live under output
+                                    // backpressure so the reader can reach
+                                    // bidirectional REPLYs behind queued CALLs.
+                                    if let Err(e) = defer_response(
+                                        &mut tasks,
+                                        client_cbs,
+                                        &deferred_responses,
+                                        deferred_response_cap,
+                                        xid,
+                                        msg,
+                                        span,
+                                    ) {
+                                        break Err(e);
+                                    }
+                                }
+                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                                    break Err(ReadTaskError::WriteError(std::io::Error::new(
+                                        std::io::ErrorKind::BrokenPipe,
+                                        "writer closed",
+                                    )));
+                                }
+                            }
+                            continue;
+                        }
+
+                        suspended_calls += 1;
+                        span.record("ready", false);
+                    } else {
+                        unprobed_calls += 1;
+                        span.record("probed", false);
+                    }
+
+                    // Suspended (or fast path stood down): commit to a task.
+                    pending.fetch_add(1, Ordering::Relaxed);
+
                     let sem = semaphore.clone();
-                    let svc = service_map.clone();
                     let cbs = client_cbs.clone();
                     let ctr = pending.clone();
-                    let conn_span = client_cbs.connection_span.clone();
 
                     tasks.spawn(async move {
                         let _pending = PendingGuard(ctr);
 
-                        // Acquire concurrency permit (may wait if at capacity).
-                        let _permit = match sem.acquire_owned().await {
-                            Ok(p) => p,
-                            Err(_) => return, // semaphore closed — shutting down
+                        // Reuse the probe's permit when we have one; otherwise
+                        // queue for one (may wait if at capacity).
+                        let _permit = match permit {
+                            Some(p) => p,
+                            None => match sem.acquire_owned().await {
+                                Ok(p) => p,
+                                Err(_) => return, // semaphore closed — shutting down
+                            },
                         };
 
-                        // rpc_call span starts after permit — measures handler time only.
-                        // Explicit parent: required because JoinSet::spawn doesn't
-                        // propagate tracing context.
-                        let span = tracing::debug_span!(
-                            parent: &conn_span,
-                            "rpc_call",
-                            xid,
-                            prog = vers.prog,
-                            vers = vers.vers,
-                            proc = proc,
-                        );
-
                         async {
-                            // Dispatch with panic isolation via CatchUnwind.
-                            let sender: Arc<dyn RpcSender> = cbs.clone();
-                            let result = CatchUnwind(with_peer(sender, async {
-                                svc.dispatch(rpcvers, vers, proc, &record[payload_offset..])
-                                    .await
-                            }))
-                            .await;
-
-                            let result = match result {
-                                Ok(r) => r,
-                                Err(_panic) => {
-                                    tracing::error!(xid, "handler panicked");
-                                    Err(crate::rpc_error::RpcError::SystemError)
-                                }
-                            };
-
+                            let result = handler_outcome(handler.await, xid);
                             if let Err(e) = send_response(&cbs, xid, result).await {
                                 tracing::error!(xid, error = %e, "response write failed");
+                                let _shutdown = cbs.begin_poison();
                             }
                         }
                         .instrument(span)
@@ -558,7 +810,16 @@ mod concurrent {
                     route_reply(client_cbs, xid, rbody, record, payload_offset);
                 }
             }
-        }
+        };
+
+        tracing::debug!(
+            ready_calls,
+            suspended_calls,
+            unprobed_calls,
+            inline_ready,
+            "dispatch loop exiting"
+        );
+        result
     }
 }
 
@@ -638,8 +899,14 @@ pub async fn launch_read_task(
     // Run the dispatch loop, then abort the reader task on any exit path
     // (error, shutdown, or write failure). Dropping the JoinSet inside the
     // loop cancels any still-running handler tasks.
-    let result =
-        concurrent::dispatch_loop(&service_map, &client_cbs, &mut record_rx, max_concurrent).await;
+    let result = concurrent::dispatch_loop(
+        &service_map,
+        &client_cbs,
+        &mut record_rx,
+        max_concurrent,
+        client_cbs.inline_ready_dispatch,
+    )
+    .await;
 
     reader_handle.abort();
     result
@@ -681,6 +948,47 @@ fn prepare_success_response(
 mod tests {
     use super::*;
 
+    #[cfg(feature = "concurrent-dispatch")]
+    struct ReadyTestService {
+        entered: tokio::sync::mpsc::UnboundedSender<u32>,
+    }
+
+    #[cfg(feature = "concurrent-dispatch")]
+    #[async_trait::async_trait]
+    impl crate::handler::RpcHandler for ReadyTestService {
+        async fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+        ) -> Result<Vec<u8>, crate::rpc_error::RpcError> {
+            self.entered.send(proc).unwrap();
+            Ok(data.to_vec())
+        }
+
+        fn prog_vers(&self) -> crate::ProgVers {
+            crate::ProgVers::new(1, 1)
+        }
+    }
+
+    #[cfg(feature = "concurrent-dispatch")]
+    fn test_call_record(xid: u32, proc: u32, payload: &[u8]) -> Vec<u8> {
+        let header = rpc_msg::rpc_msg {
+            xid,
+            body: rpc_msg::rpc_msg_body::CALL {
+                cbody: rpc_msg::call_body {
+                    rpcvers: 2,
+                    prog: 1,
+                    vers: 1,
+                    proc,
+                    cred: DEFAULT_OPAQUE_AUTH,
+                    verf: DEFAULT_OPAQUE_AUTH,
+                },
+            },
+        };
+        let framed = crate::connection::frame_rpc_record(Vec::new(), &header, payload).unwrap();
+        framed[4..].to_vec()
+    }
+
     #[tokio::test]
     async fn client_read_runner_begin_shutdown_aborts_stuck_task() {
         let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
@@ -697,5 +1005,166 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_millis(100), runner.shutdown())
             .await
             .expect("shutdown should complete after begin_shutdown aborts the task");
+    }
+
+    #[cfg(feature = "concurrent-dispatch")]
+    #[tokio::test]
+    async fn ready_responses_do_not_block_dispatch_when_write_channel_is_full() {
+        let config = crate::ConnectionConfig::default()
+            .with_max_concurrent_dispatches(1)
+            .with_write_channel_capacity(1);
+        let (write_tx, mut write_rx) = tokio::sync::mpsc::channel(1);
+        write_tx.try_send(vec![0xAA]).unwrap();
+        let client = Arc::new(ConnectionHandle::new_with_write_sender_for_test(
+            write_tx, &config,
+        ));
+
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(ReadyTestService {
+            entered: entered_tx,
+        }));
+        let services = Arc::new(services);
+
+        let (record_tx, mut record_rx) = tokio::sync::mpsc::channel(5);
+        for xid in 1..=5 {
+            record_tx
+                .send(Ok(test_call_record(xid, xid, &[xid as u8])))
+                .await
+                .unwrap();
+        }
+
+        let dispatch_client = client.clone();
+        let dispatch_services = services.clone();
+        let dispatch = tokio::spawn(async move {
+            concurrent::dispatch_loop(
+                &dispatch_services,
+                &dispatch_client,
+                &mut record_rx,
+                1,
+                true,
+            )
+            .await
+        });
+
+        for expected in 1..=5 {
+            let entered =
+                tokio::time::timeout(std::time::Duration::from_secs(1), entered_rx.recv())
+                    .await
+                    .expect("dispatch loop blocked on write-channel capacity")
+                    .unwrap();
+            assert_eq!(entered, expected);
+        }
+
+        assert_eq!(write_rx.recv().await.unwrap(), vec![0xAA]);
+        let mut response_xids = Vec::new();
+        for _ in 0..5 {
+            let response = tokio::time::timeout(std::time::Duration::from_secs(1), write_rx.recv())
+                .await
+                .expect("deferred response was not enqueued")
+                .unwrap();
+            response_xids.push(u32::from_be_bytes(response[4..8].try_into().unwrap()));
+        }
+        response_xids.sort_unstable();
+        assert_eq!(response_xids, [1, 2, 3, 4, 5]);
+
+        drop(record_tx);
+        assert!(matches!(
+            dispatch.await.unwrap(),
+            Err(ReadTaskError::Shutdown)
+        ));
+    }
+
+    #[cfg(feature = "concurrent-dispatch")]
+    #[tokio::test]
+    async fn deferred_response_cap_fails_closed_and_cancels_backlog() {
+        let config = crate::ConnectionConfig::default()
+            .with_max_concurrent_dispatches(1)
+            .with_write_channel_capacity(1);
+        let (write_tx, mut write_rx) = tokio::sync::mpsc::channel(1);
+        write_tx.try_send(vec![0xAA]).unwrap();
+        let client = Arc::new(ConnectionHandle::new_with_write_sender_for_test(
+            write_tx, &config,
+        ));
+
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(ReadyTestService {
+            entered: entered_tx,
+        }));
+        let services = Arc::new(services);
+        let (record_tx, mut record_rx) = tokio::sync::mpsc::channel(6);
+        for xid in 1..=6 {
+            record_tx
+                .send(Ok(test_call_record(xid, xid, &[xid as u8])))
+                .await
+                .unwrap();
+        }
+
+        let result = concurrent::dispatch_loop(&services, &client, &mut record_rx, 1, true).await;
+        assert!(matches!(
+            result,
+            Err(ReadTaskError::WriteError(ref error))
+                if error.kind() == std::io::ErrorKind::WouldBlock
+        ));
+        for expected in 1..=6 {
+            assert_eq!(entered_rx.recv().await.unwrap(), expected);
+        }
+
+        assert_eq!(write_rx.recv().await.unwrap(), vec![0xAA]);
+        assert!(matches!(
+            write_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+        drop(record_tx);
+    }
+
+    #[cfg(feature = "concurrent-dispatch")]
+    #[test]
+    fn panic_payload_destructor_cannot_unwind_dispatch() {
+        struct PanicOnDrop;
+        impl Drop for PanicOnDrop {
+            fn drop(&mut self) {
+                panic!("panic payload destructor");
+            }
+        }
+
+        let result = concurrent::handler_outcome(Err(Box::new(PanicOnDrop)), 7);
+        assert_eq!(result.unwrap_err(), crate::rpc_error::RpcError::SystemError);
+    }
+
+    #[cfg(feature = "concurrent-dispatch")]
+    #[test]
+    fn ready_handler_destructor_cannot_unwind_dispatch() {
+        struct ReadyPanicOnDrop;
+        impl std::future::Future for ReadyPanicOnDrop {
+            type Output =
+                Result<Result<Vec<u8>, crate::rpc_error::RpcError>, Box<dyn std::any::Any + Send>>;
+
+            fn poll(
+                self: std::pin::Pin<&mut Self>,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Self::Output> {
+                std::task::Poll::Ready(Ok(Ok(Vec::new())))
+            }
+        }
+        impl Drop for ReadyPanicOnDrop {
+            fn drop(&mut self) {
+                panic!("ready handler destructor");
+            }
+        }
+
+        type TestHandlerFuture = std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<
+                            Result<Vec<u8>, crate::rpc_error::RpcError>,
+                            Box<dyn std::any::Any + Send>,
+                        >,
+                    > + Send,
+            >,
+        >;
+        let handler: TestHandlerFuture = Box::pin(ReadyPanicOnDrop);
+        assert!(concurrent::drop_ready_handler(handler, 8));
     }
 }

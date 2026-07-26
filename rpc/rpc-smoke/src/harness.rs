@@ -4,7 +4,7 @@ mod profile;
 use std::process::Stdio;
 
 use clap::{Parser, Subcommand};
-use metrics::ClientMetrics;
+use metrics::{ClientMetrics, DispatchModeSource, RpcCounts};
 
 #[derive(Parser)]
 #[command(name = "rpc-smoke")]
@@ -20,6 +20,11 @@ struct Args {
     #[arg(long, default_value = "64", global = true)]
     server_max_concurrent: usize,
 
+    /// Enable ready-handler dispatch on the server. For a remote server, this
+    /// only records a user-declared mode and cannot configure the process.
+    #[arg(long, action = clap::ArgAction::Set, global = true)]
+    server_inline_ready_dispatch: Option<bool>,
+
     /// Connect to an existing remote server instead of spawning one locally.
     /// Format: host:port (e.g. 10.0.1.5:9876)
     #[arg(long, global = true)]
@@ -32,6 +37,33 @@ struct Args {
     /// Enable tracing subscriber on server and client (info, debug)
     #[arg(long, global = true)]
     tracing: Option<String>,
+
+    /// Emit machine-readable result JSON on stdout.
+    #[arg(long, global = true)]
+    json: bool,
+}
+
+impl Args {
+    fn configured_inline_ready_dispatch(&self) -> bool {
+        self.server_inline_ready_dispatch.unwrap_or(false)
+    }
+
+    fn recorded_inline_ready_dispatch(&self) -> Option<bool> {
+        if self.server_addr.is_some() {
+            self.server_inline_ready_dispatch
+        } else {
+            Some(self.configured_inline_ready_dispatch())
+        }
+    }
+
+    fn dispatch_mode_source(&self) -> Option<DispatchModeSource> {
+        if self.server_addr.is_some() {
+            self.server_inline_ready_dispatch
+                .map(|_| DispatchModeSource::Declared)
+        } else {
+            Some(DispatchModeSource::Configured)
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -57,6 +89,9 @@ enum Scenario {
         /// Override connection count
         #[arg(long)]
         connections: Option<usize>,
+        /// Override maximum in-flight RPCs
+        #[arg(long)]
+        max_inflight: Option<usize>,
     },
     /// Multi-process throughput test — N client processes each with M connections,
     /// all driving echo RPCs against one server. Tests server-side scaling.
@@ -144,6 +179,7 @@ impl ServerHandle {
 async fn get_server(
     remote_addr: &Option<String>,
     max_concurrent: usize,
+    inline_ready_dispatch: bool,
     tracing_level: &Option<String>,
 ) -> Result<ServerHandle, Box<dyn std::error::Error + Send + Sync>> {
     if let Some(addr_str) = remote_addr {
@@ -153,11 +189,12 @@ async fn get_server(
         eprintln!("[harness] using remote server at {addr}");
         return Ok(ServerHandle::Remote { addr });
     }
-    start_local_server(max_concurrent, tracing_level).await
+    start_local_server(max_concurrent, inline_ready_dispatch, tracing_level).await
 }
 
 async fn start_local_server(
     max_concurrent: usize,
+    inline_ready_dispatch: bool,
     tracing_level: &Option<String>,
 ) -> Result<ServerHandle, Box<dyn std::error::Error + Send + Sync>> {
     let bin = find_binary("rpc-smoke-server");
@@ -167,6 +204,8 @@ async fn start_local_server(
         "0",
         "--max-concurrent",
         &max_concurrent.to_string(),
+        "--inline-ready-dispatch",
+        &inline_ready_dispatch.to_string(),
     ]);
     if let Some(level) = tracing_level {
         cmd.args(["--tracing", level]);
@@ -206,14 +245,20 @@ async fn start_local_server(
     })
 }
 
-async fn run_client(
-    addr: std::net::SocketAddr,
-    profile: &str,
+struct ClientRunOptions<'a> {
     connections: Option<usize>,
     duration: u64,
     max_inflight: Option<usize>,
-    pool_type: Option<&str>,
-    tracing_level: Option<&str>,
+    pool_type: Option<&'a str>,
+    tracing_level: Option<&'a str>,
+    server_inline_ready_dispatch: Option<bool>,
+    server_dispatch_mode_source: Option<DispatchModeSource>,
+}
+
+async fn run_client(
+    addr: std::net::SocketAddr,
+    profile: &str,
+    options: ClientRunOptions<'_>,
 ) -> Result<ClientMetrics, Box<dyn std::error::Error + Send + Sync>> {
     let bin = find_binary("rpc-smoke-client");
     let mut cmd = tokio::process::Command::new(bin);
@@ -223,18 +268,18 @@ async fn run_client(
         "--profile",
         profile,
         "--duration",
-        &duration.to_string(),
+        &options.duration.to_string(),
     ]);
-    if let Some(c) = connections {
+    if let Some(c) = options.connections {
         cmd.args(["--connections", &c.to_string()]);
     }
-    if let Some(m) = max_inflight {
+    if let Some(m) = options.max_inflight {
         cmd.args(["--max-inflight", &m.to_string()]);
     }
-    if let Some(p) = pool_type {
+    if let Some(p) = options.pool_type {
         cmd.args(["--pool", p]);
     }
-    if let Some(t) = tracing_level {
+    if let Some(t) = options.tracing_level {
         cmd.args(["--tracing", t]);
     }
 
@@ -245,7 +290,9 @@ async fn run_client(
     }
 
     let stdout = String::from_utf8(output.stdout)?;
-    let metrics: ClientMetrics = serde_json::from_str(stdout.trim())?;
+    let mut metrics: ClientMetrics = serde_json::from_str(stdout.trim())?;
+    metrics.server_inline_ready_dispatch = options.server_inline_ready_dispatch;
+    metrics.server_dispatch_mode_source = options.server_dispatch_mode_source;
     Ok(metrics)
 }
 
@@ -265,7 +312,15 @@ where
 {
     let remote = args.server_addr.is_some();
     let shared_server = if remote {
-        Some(get_server(&args.server_addr, args.server_max_concurrent, &args.tracing).await?)
+        Some(
+            get_server(
+                &args.server_addr,
+                args.server_max_concurrent,
+                args.configured_inline_ready_dispatch(),
+                &args.tracing,
+            )
+            .await?,
+        )
     } else {
         None
     };
@@ -274,7 +329,15 @@ where
 
     for tier in 0..num_tiers {
         let mut local_server = if shared_server.is_none() {
-            Some(get_server(&args.server_addr, args.server_max_concurrent, &args.tracing).await?)
+            Some(
+                get_server(
+                    &args.server_addr,
+                    args.server_max_concurrent,
+                    args.configured_inline_ready_dispatch(),
+                    &args.tracing,
+                )
+                .await?,
+            )
         } else {
             None
         };
@@ -297,6 +360,20 @@ where
 }
 
 fn print_summary(results: &[ClientMetrics]) {
+    if let Some(mode) = results
+        .first()
+        .and_then(|metrics| metrics.server_inline_ready_dispatch)
+    {
+        let source = match results
+            .first()
+            .and_then(|metrics| metrics.server_dispatch_mode_source)
+        {
+            Some(DispatchModeSource::Configured) => "configured locally",
+            Some(DispatchModeSource::Declared) => "declared remote mode",
+            None => "unknown source",
+        };
+        println!("\nServer inline-ready dispatch: {mode} ({source})");
+    }
     println!(
         "\n{:<15} {:>6} {:>10} {:>10} {:>10} {:>10} {:>8}",
         "Profile", "Conns", "RPCs", "Errors", "p50 µs", "p99 µs", "RPS"
@@ -336,6 +413,20 @@ fn print_summary(results: &[ClientMetrics]) {
     }
 }
 
+fn emit_results(results: &[ClientMetrics], json: bool) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(results).unwrap());
+    } else {
+        print_summary(results);
+    }
+}
+
+fn has_failures(metrics: &ClientMetrics) -> bool {
+    metrics.total_errors > 0
+        || metrics.rpc_counts.timed_out > 0
+        || metrics.rpc_counts.outstanding > 0
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
@@ -360,8 +451,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             eprintln!(
                 "[harness] scenario: realistic (coordinator + {gateways} gateways + 4 executors + 4 db-shards + auth)"
             );
-            let mut server =
-                get_server(&args.server_addr, args.server_max_concurrent, &args.tracing).await?;
+            let mut server = get_server(
+                &args.server_addr,
+                args.server_max_concurrent,
+                args.configured_inline_ready_dispatch(),
+                &args.tracing,
+            )
+            .await?;
             let addr = server.addr();
 
             // Build list of (profile, connections_override) for all clients
@@ -384,15 +480,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let duration = args.duration;
                 let pool = args.pool.clone();
                 let tracing_level = args.tracing.clone();
+                let inline_ready_dispatch = args.recorded_inline_ready_dispatch();
+                let dispatch_mode_source = args.dispatch_mode_source();
                 tasks.spawn(async move {
                     run_client(
                         addr,
                         profile,
-                        conns,
-                        duration,
-                        None,
-                        pool.as_deref(),
-                        tracing_level.as_deref(),
+                        ClientRunOptions {
+                            connections: conns,
+                            duration,
+                            max_inflight: None,
+                            pool_type: pool.as_deref(),
+                            tracing_level: tracing_level.as_deref(),
+                            server_inline_ready_dispatch: inline_ready_dispatch,
+                            server_dispatch_mode_source: dispatch_mode_source,
+                        },
                     )
                     .await
                 });
@@ -403,11 +505,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 results.push(res??);
             }
 
-            print_summary(&results);
+            emit_results(&results, args.json);
             server.report_rss();
             server.kill().await?;
 
-            let has_errors = results.iter().any(|m| m.total_errors > 0);
+            let has_errors = results.iter().any(has_failures);
             std::process::exit(if has_errors { 1 } else { 0 });
         }
 
@@ -424,16 +526,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let duration = args.duration;
                 let pool = args.pool.clone();
                 let tracing_level = args.tracing.clone();
+                let inline_ready_dispatch = args.recorded_inline_ready_dispatch();
+                let dispatch_mode_source = args.dispatch_mode_source();
                 eprintln!("[harness] testing {count} connections...");
                 async move {
                     let result = run_client(
                         server_addr,
                         "echo",
-                        Some(count),
-                        duration,
-                        None,
-                        pool.as_deref(),
-                        tracing_level.as_deref(),
+                        ClientRunOptions {
+                            connections: Some(count),
+                            duration,
+                            max_inflight: None,
+                            pool_type: pool.as_deref(),
+                            tracing_level: tracing_level.as_deref(),
+                            server_inline_ready_dispatch: inline_ready_dispatch,
+                            server_dispatch_mode_source: dispatch_mode_source,
+                        },
                     )
                     .await?;
                     Ok(vec![result])
@@ -441,32 +549,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .await?;
 
-            print_summary(&results);
+            emit_results(&results, args.json);
 
-            let has_errors = results.iter().any(|m| m.total_errors > 0);
+            let has_errors = results.iter().any(has_failures);
             std::process::exit(if has_errors { 1 } else { 0 });
         }
 
         Scenario::Single {
             profile,
             connections,
+            max_inflight,
         } => {
             eprintln!("[harness] scenario: single profile '{profile}'");
-            let mut server =
-                get_server(&args.server_addr, args.server_max_concurrent, &args.tracing).await?;
+            let mut server = get_server(
+                &args.server_addr,
+                args.server_max_concurrent,
+                args.configured_inline_ready_dispatch(),
+                &args.tracing,
+            )
+            .await?;
 
             let result = run_client(
                 server.addr(),
                 profile,
-                *connections,
-                args.duration,
-                None,
-                args.pool.as_deref(),
-                args.tracing.as_deref(),
+                ClientRunOptions {
+                    connections: *connections,
+                    duration: args.duration,
+                    max_inflight: *max_inflight,
+                    pool_type: args.pool.as_deref(),
+                    tracing_level: args.tracing.as_deref(),
+                    server_inline_ready_dispatch: args.recorded_inline_ready_dispatch(),
+                    server_dispatch_mode_source: args.dispatch_mode_source(),
+                },
             )
             .await?;
-            let has_errors = result.total_errors > 0;
-            print_summary(&[result]);
+            let has_errors = has_failures(&result);
+            emit_results(&[result], args.json);
 
             server.report_rss();
             server.kill().await?;
@@ -497,6 +615,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let inflight = max_inflight;
                 let pool = args.pool.clone();
                 let tracing_level = args.tracing.clone();
+                let inline_ready_dispatch = args.recorded_inline_ready_dispatch();
+                let dispatch_mode_source = args.dispatch_mode_source();
                 eprintln!("[harness] testing {num_clients} client processes...");
                 async move {
                     let mut tasks = tokio::task::JoinSet::new();
@@ -508,11 +628,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             run_client(
                                 server_addr,
                                 &label,
-                                Some(conns),
-                                duration,
-                                Some(inflight),
-                                pool.as_deref(),
-                                tracing_level.as_deref(),
+                                ClientRunOptions {
+                                    connections: Some(conns),
+                                    duration,
+                                    max_inflight: Some(inflight),
+                                    pool_type: pool.as_deref(),
+                                    tracing_level: tracing_level.as_deref(),
+                                    server_inline_ready_dispatch: inline_ready_dispatch,
+                                    server_dispatch_mode_source: dispatch_mode_source,
+                                },
                             )
                             .await
                         });
@@ -526,6 +650,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     // Aggregate into a single row for this tier
                     let total_rpcs: u64 = tier_results.iter().map(|m| m.total_rpcs).sum();
                     let total_errors: u64 = tier_results.iter().map(|m| m.total_errors).sum();
+                    let rpc_counts =
+                        tier_results
+                            .iter()
+                            .fold(RpcCounts::default(), |mut acc, m| {
+                                acc.submitted += m.rpc_counts.submitted;
+                                acc.completed += m.rpc_counts.completed;
+                                acc.failed += m.rpc_counts.failed;
+                                acc.timed_out += m.rpc_counts.timed_out;
+                                acc.outstanding += m.rpc_counts.outstanding;
+                                acc
+                            });
                     let agg_rps: f64 = tier_results.iter().map(|m| m.throughput_rps).sum();
                     let max_wall = tier_results
                         .iter()
@@ -551,12 +686,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         .iter()
                         .map(|m| m.latency_us.min)
                         .fold(f64::MAX, f64::min);
-                    let mean = if total_rpcs > 0 {
+                    let mean = if rpc_counts.completed > 0 {
                         tier_results
                             .iter()
-                            .map(|m| m.latency_us.mean * m.total_rpcs as f64)
+                            .map(|m| m.latency_us.mean * m.rpc_counts.completed as f64)
                             .sum::<f64>()
-                            / total_rpcs as f64
+                            / rpc_counts.completed as f64
                     } else {
                         0.0
                     };
@@ -565,6 +700,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     Ok(vec![metrics::ClientMetrics {
                         profile_name: format!("{num_clients}×{conns}"),
                         connections: total_conns,
+                        server_inline_ready_dispatch: inline_ready_dispatch,
+                        server_dispatch_mode_source: dispatch_mode_source,
+                        rpc_counts,
+                        run_config: tier_results
+                            .first()
+                            .and_then(|metrics| metrics.run_config.clone())
+                            .map(|mut config| {
+                                config.client_processes = num_clients;
+                                config
+                            }),
                         total_rpcs,
                         total_errors,
                         wall_time_ms: max_wall,
@@ -582,9 +727,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .await?;
 
-            print_summary(&results);
+            emit_results(&results, args.json);
 
-            let has_errors = results.iter().any(|m| m.total_errors > 0);
+            let has_errors = results.iter().any(has_failures);
             std::process::exit(if has_errors { 1 } else { 0 });
         }
     }

@@ -26,12 +26,14 @@ fn main() {
     let candidate_map: BTreeMap<String, &ScenarioResult> = candidate
         .scenarios
         .iter()
+        .filter(|s| s.params.get("measurement").and_then(|v| v.as_str()) != Some("run"))
         .map(|s| (s.name.clone(), s))
         .collect();
 
     let baseline_map: BTreeMap<String, &ScenarioResult> = baseline
         .scenarios
         .iter()
+        .filter(|s| s.params.get("measurement").and_then(|v| v.as_str()) != Some("run"))
         .map(|s| (s.name.clone(), s))
         .collect();
 

@@ -27,12 +27,16 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 | Flag | Default | Description |
 |---|---|---|
 | `--addr` | (required) | Server address (host:port) |
-| `--profile` | (required) | Profile name: coordinator, gateway, executor, db-shard, auth, echo |
+| `--profile` | (required) | Profile name: coordinator, gateway, executor, db-shard, auth, echo, cpu-prefix-ready |
 | `--connections` | profile default | Connection count (FixedSerialPool pool size, DynamicPool max) |
 | `--duration` | 5 | Test duration in seconds |
 | `--max-inflight` | 100 | Max concurrent in-flight RPCs |
 | `--pool` | fixed | Pool type: `fixed`, `dynamic`, or `cpu` |
 | `--tracing` | (none) | Enable tracing subscriber at given level (info, debug) |
+
+Server options include `--max-concurrent <N>` and
+`--inline-ready-dispatch <true|false>`. The latter provides a separate-process
+control for measuring the ready-handler fast path without changing client code.
 
 ## Pool Types
 
@@ -48,9 +52,11 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 |---|---|---|
 | `--duration` | 5 | Test duration per client (seconds) |
 | `--server-max-concurrent` | 64 | Server concurrency limit (ignored with `--server-addr`) |
+| `--server-inline-ready-dispatch <true\|false>` | false | Configure a local server; with `--server-addr`, explicitly records the declared remote mode |
 | `--server-addr` | (spawn local) | Remote server address (host:port) |
 | `--pool` | (none = fixed) | Pool type for all clients: `fixed`, `dynamic`, or `cpu` |
 | `--tracing` | (none) | Enable tracing subscriber on server and client (info, debug) |
+| `--json` | false | Emit machine-readable metrics, including dispatch mode and completion counts |
 
 ## Harness Scenarios
 
@@ -62,6 +68,20 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 | `single` | One named profile |
 
 Server RSS is reported after each run for leak detection.
+
+With `--json`, each result records whether the server dispatch mode was
+configured locally or declared for a remote server, plus submitted, completed,
+failed, timed-out, and outstanding RPC counts. A successful run satisfies
+`submitted = completed + failed + timed_out + outstanding` with the last three
+counts at zero.
+
+The `cpu-prefix-ready` profile is an adverse control for inline dispatch. Use a
+multiplexing pool so multiple CALLs reach one connection concurrently:
+
+```sh
+rpc-smoke single cpu-prefix-ready --pool dynamic --connections 1 \
+    --max-inflight 10 --server-inline-ready-dispatch true
+```
 
 ## Tracing
 

@@ -61,6 +61,8 @@
 //! ```
 //!
 //! With this feature:
+//! - An optional ready-first mode polls handlers once on the dispatch loop;
+//!   immediately-ready work replies without a handler task
 //! - Multiple handlers execute concurrently per connection (default limit: 64)
 //! - Handlers can call back to the peer inline without deadlocking
 //! - Handler panics are caught and returned as [`RpcError::SystemError`] —
@@ -68,7 +70,10 @@
 //! - Load shedding engages when pending tasks exceed 5× the concurrency
 //!   limit — excess calls receive `SystemError`
 //!
-//! Tune the concurrency limit via [`ConnectionConfig::with_max_concurrent_dispatches`].
+//! Tune the concurrency limit via [`ConnectionConfig::with_max_concurrent_dispatches`]
+//! and opt into the ready-first path via
+//! [`ConnectionConfig::with_inline_ready_dispatch`]. Work before a handler's
+//! first `.await` runs on the dispatch loop and should remain short.
 //!
 //! ## Bidirectional RPC
 //!
@@ -139,9 +144,12 @@
 //!   Lives for the connection's lifetime. Fields: `peer` (socket address), `role`
 //!   (`"server"` or `"client"`).
 //!
-//! - **`rpc_call`** (DEBUG) — created per CALL message. On the server, the span
-//!   measures handler dispatch time. On the client, it measures round-trip time
-//!   (send to receive). Fields: `xid`, `prog`, `vers`, `proc`.
+//! - **`rpc_call`** (DEBUG) — created per CALL message. On a concurrent server,
+//!   wall duration runs from admission through response enqueue, so semaphore
+//!   queueing appears as idle time. On a serial server it covers dispatch and
+//!   response enqueue. On the client it measures round-trip time. Common fields:
+//!   `xid`, `prog`, `vers`, `proc`; concurrent inbound spans also record
+//!   `probed` and, when probed, `ready`.
 //!
 //! ### Subscriber Setup
 //!

@@ -7,7 +7,9 @@ An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [
 - Async TCP-based RPC client and server
 - XDR serialization via the `xdrs` crate
 - Service registration with program/version dispatching
-- **Concurrent dispatch** (opt-in) — spawn-per-CALL with configurable concurrency limit
+- **Concurrent dispatch** (opt-in) — spawn-per-CALL with a configurable
+  concurrency limit and an optional inline fast path for handlers that finish
+  on their first poll
 - **Connection pools** — `FixedSerialPool` (serial per-conn), `DynamicPool` (min-pending), `CpuSetPool` (LLC-affine)
 - **Bidirectional RPC** — handlers can call back to the peer via `peer()`
 - Panic isolation and load shedding with `concurrent-dispatch`; connection
@@ -43,6 +45,40 @@ rpc_driver = { version = "0.10.0", features = ["concurrent-dispatch"] }
 ```
 
 Tune concurrency via `ConnectionConfig::with_max_concurrent_dispatches`.
+
+Enable the ready-first path with
+`ConnectionConfig::with_inline_ready_dispatch(true)`. Each CALL's handler is
+then polled once on the dispatch loop. Handlers that finish on that first poll —
+null procs, cache hits, anything that enqueues work and returns — are answered
+without a handler task. Handlers that suspend are moved into a task, keeping the
+progress their first poll made. This is x23's `await_ready()` shape: create
+asynchronous handler work only when the service actually suspends.
+
+The permit is reserved *before* that first poll, so `max_concurrent_dispatches`
+keeps bounding handler execution even for work a handler starts before it
+suspends. While a connection is saturated the fast path stands down and
+does not barge ahead of work already waiting for a permit.
+
+Ready responses use a nonblocking writer-channel enqueue so output
+backpressure cannot stall dispatch ahead of a bidirectional REPLY. If the
+writer channel is full, response sends are deferred up to a bounded backlog of
+5x `write_channel_capacity`; exceeding that limit fails the connection closed
+rather than allowing unbounded memory growth while the peer is not reading.
+
+Each concurrent inbound `rpc_call` span records `probed`; probed calls also
+record whether they were `ready`. This distinguishes handlers that suspended
+from calls that were not probed because the connection was saturated or the
+fast path was disabled.
+`with_inline_ready_dispatch(false)` provides an unconditional-spawn control,
+which is mainly useful for A/B measurement. It still uses the new common
+boxed-handler construction, so compare separate builds for an exact before/after
+measurement.
+
+One thing to know: every probed handler starts on the dispatch loop, so
+CPU-heavy work before its first `.await` delays dispatching the next record on
+that connection even if the handler later suspends. Handlers that block should
+suspend promptly — via `spawn_blocking` or a worker queue — rather than compute
+inline.
 
 Without the feature, dispatch is serial: each connection awaits its handler
 before reading the next record. Serial dispatch has no per-CALL task spawn or

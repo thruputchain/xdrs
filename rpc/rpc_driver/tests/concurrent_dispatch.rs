@@ -5,6 +5,8 @@
 
 #![cfg(feature = "concurrent-dispatch")]
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -70,6 +72,57 @@ impl RpcHandler for SleepService {
     }
 }
 
+/// Service that records whether each dispatch ran on the dispatch loop's
+/// probe poll (never suspending) or was moved to a task.
+///
+/// Proc 0 returns without ever awaiting, so it must complete on the first
+/// poll. Proc 1 yields once first, so it must suspend.
+struct ReadinessService {
+    entered: Arc<AtomicUsize>,
+}
+
+#[async_trait]
+impl RpcHandler for ReadinessService {
+    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        self.entered.fetch_add(1, Ordering::SeqCst);
+        match proc {
+            0 => Ok(data.to_vec()),
+            1 => {
+                tokio::task::yield_now().await;
+                Ok(data.to_vec())
+            }
+            _ => Err(RpcError::InvalidProcedure),
+        }
+    }
+    fn prog_vers(&self) -> ProgVers {
+        ECHO_PROG
+    }
+}
+
+/// Service that panics before its first await, so the panic surfaces during
+/// the dispatch loop's probe poll rather than inside a spawned task.
+struct PanicBeforeAwaitService;
+
+#[async_trait]
+impl RpcHandler for PanicBeforeAwaitService {
+    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        match proc {
+            0 => Ok(data.to_vec()),
+            1 => panic!("intentional panic on first poll"),
+            // Suspends, so it needs a permit — used to prove the panicking
+            // call released the one it held.
+            2 => {
+                tokio::task::yield_now().await;
+                Ok(data.to_vec())
+            }
+            _ => Err(RpcError::InvalidProcedure),
+        }
+    }
+    fn prog_vers(&self) -> ProgVers {
+        ECHO_PROG
+    }
+}
+
 /// Service that panics on proc 1.
 struct PanickingService;
 
@@ -105,6 +158,13 @@ async fn start_server_with_config(config: ConnectionConfig) -> std::net::SocketA
     let server = RpcServer::new_with_config(listener, config);
     server.start().await;
     addr
+}
+
+async fn start_inline_server(service: Box<dyn RpcHandler>) -> std::net::SocketAddr {
+    let mut services = ServiceMap::new();
+    services.add_service(service);
+    start_server_with_config(ConnectionConfig::new(None, services).with_inline_ready_dispatch(true))
+        .await
 }
 
 #[tokio::test]
@@ -382,6 +442,218 @@ async fn test_load_shedding() {
     assert!(
         errors >= 3,
         "expected >=3 load-shed errors but got: ok={ok}, timeouts={timeouts}, errors={errors}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Inline fast path for ready handlers
+// ---------------------------------------------------------------------------
+
+/// A handler that never awaits is answered correctly on the probe poll.
+#[tokio::test]
+async fn test_ready_handler_answered_inline() {
+    let entered = Arc::new(AtomicUsize::new(0));
+    let addr = start_inline_server(Box::new(ReadinessService {
+        entered: entered.clone(),
+    }))
+    .await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+
+    for i in 0..20u8 {
+        let payload = [i; 4];
+        let response = client.send_call(ECHO_PROG, 0, &payload).await.unwrap();
+        assert_eq!(response, payload, "ready handler returned wrong payload");
+    }
+    assert_eq!(entered.load(Ordering::SeqCst), 20);
+}
+
+/// A handler that suspends still completes — it is moved into a task after the
+/// probe poll returns `Pending`, and must not lose the work already done.
+#[tokio::test]
+async fn test_suspending_handler_completes_after_probe() {
+    let entered = Arc::new(AtomicUsize::new(0));
+    let addr = start_inline_server(Box::new(ReadinessService {
+        entered: entered.clone(),
+    }))
+    .await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+
+    // proc 1 yields before returning, so every call takes the spawn path.
+    for i in 0..20u8 {
+        let payload = [i; 4];
+        let response = client.send_call(ECHO_PROG, 1, &payload).await.unwrap();
+        assert_eq!(
+            response, payload,
+            "suspended handler returned wrong payload"
+        );
+    }
+    assert_eq!(entered.load(Ordering::SeqCst), 20);
+}
+
+/// Ready and suspending calls interleaved on one connection: each must get its
+/// own reply, with no cross-talk between the inline and spawned paths.
+#[tokio::test]
+async fn test_mixed_ready_and_suspending_calls() {
+    let entered = Arc::new(AtomicUsize::new(0));
+    let addr = start_inline_server(Box::new(ReadinessService {
+        entered: entered.clone(),
+    }))
+    .await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+
+    let mut handles = Vec::new();
+    for i in 0..40u8 {
+        let handle = client.handle().clone();
+        // Alternate ready (proc 0) and suspending (proc 1) handlers.
+        let proc = u32::from(i % 2);
+        handles.push(tokio::spawn(async move {
+            let payload = [i; 4];
+            let response = handle.send_call(ECHO_PROG, proc, &payload).await.unwrap();
+            assert_eq!(response, payload, "reply routed to the wrong xid");
+        }));
+    }
+    for h in handles {
+        h.await.unwrap();
+    }
+    assert_eq!(entered.load(Ordering::SeqCst), 40);
+}
+
+/// A panic during the probe poll must not take down the dispatch loop: the
+/// caller gets SystemError and the connection stays usable.
+#[tokio::test]
+async fn test_panic_on_probe_poll_is_isolated() {
+    let addr = start_inline_server(Box::new(PanicBeforeAwaitService)).await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        client.send_call(ECHO_PROG, 1, b"boom"),
+    )
+    .await;
+    assert!(result.is_ok(), "panic on probe poll hung the dispatch loop");
+    assert!(result.unwrap().is_err(), "expected an error reply");
+
+    // Connection must survive the panic.
+    let response = client.send_call(ECHO_PROG, 0, b"still alive").await;
+    assert_eq!(response.unwrap(), b"still alive");
+}
+
+/// A panic on the probe poll happens while the CALL holds a concurrency
+/// permit. If that permit leaked, a connection with `max_concurrent=1` would
+/// wedge: no suspending handler could ever acquire one again.
+#[tokio::test]
+async fn test_panic_on_probe_poll_releases_permit() {
+    let mut services = ServiceMap::new();
+    services.add_service(Box::new(PanicBeforeAwaitService));
+    // One permit total, so a single leak is fatal and observable.
+    let config = ConnectionConfig::new(None, services)
+        .with_max_concurrent_dispatches(1)
+        .with_inline_ready_dispatch(true);
+    let addr = start_server_with_config(config).await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+
+    // Panic three times — each would leak the connection's only permit.
+    // Timeouts matter here: a leaked permit starves the *next* call, so
+    // without them a regression hangs the test binary instead of failing it.
+    for i in 0..3 {
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            client.send_call(ECHO_PROG, 1, b"boom"),
+        )
+        .await;
+        let Ok(result) = result else {
+            panic!("panicking call {i} never completed — probe poll leaked a permit");
+        };
+        assert!(result.is_err(), "expected an error reply from the panic");
+    }
+
+    // proc 2 suspends, so it must acquire a permit to finish.
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        client.send_call(ECHO_PROG, 2, b"needs-permit"),
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "suspending handler never got a permit — probe poll leaked one per panic"
+    );
+    assert_eq!(result.unwrap().unwrap(), b"needs-permit");
+}
+
+/// With the fast path disabled, every CALL takes the spawn path and results
+/// must be identical. Guards the A/B toggle used for measurement.
+#[tokio::test]
+async fn test_fast_path_disabled_matches() {
+    let entered = Arc::new(AtomicUsize::new(0));
+    let mut services = ServiceMap::new();
+    services.add_service(Box::new(ReadinessService {
+        entered: entered.clone(),
+    }));
+    let config = ConnectionConfig::new(None, services).with_inline_ready_dispatch(false);
+    let addr = start_server_with_config(config).await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+
+    for i in 0..10u8 {
+        let payload = [i; 4];
+        assert_eq!(
+            client.send_call(ECHO_PROG, 0, &payload).await.unwrap(),
+            payload
+        );
+        assert_eq!(
+            client.send_call(ECHO_PROG, 1, &payload).await.unwrap(),
+            payload
+        );
+    }
+    assert_eq!(entered.load(Ordering::SeqCst), 20);
+}
+
+/// The fast path must not let handler work escape `max_concurrent_dispatches`.
+///
+/// A handler that starts a timer and then suspends does real work on its first
+/// poll. If the probe ran without a permit, all six sleeps would overlap and
+/// finish in one delay; the permit reserved before probing keeps them batched.
+#[tokio::test(start_paused = true)]
+async fn test_probe_poll_respects_concurrency_limit() {
+    let delay = Duration::from_millis(200);
+    let mut services = ServiceMap::new();
+    services.add_service(Box::new(SleepService { delay }));
+    let config = ConnectionConfig::new(None, services)
+        .with_max_concurrent_dispatches(2)
+        .with_inline_ready_dispatch(true);
+    let addr = start_server_with_config(config).await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+
+    let start = tokio::time::Instant::now();
+    let mut handles = Vec::new();
+    for i in 0..6u8 {
+        let handle = client.handle().clone();
+        handles.push(tokio::spawn(async move {
+            handle.send_call(ECHO_PROG, 1, &[i]).await.unwrap()
+        }));
+    }
+    for h in handles {
+        h.await.unwrap();
+    }
+
+    // 6 calls at 2 concurrent = 3 batches of 200ms.
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(500),
+        "probe poll bypassed the concurrency limit ({elapsed:?} for 3 expected batches)"
     );
 }
 

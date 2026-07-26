@@ -12,6 +12,7 @@ pub const TAG_SLEEP: u8 = 0x02;
 pub const TAG_MUTEX: u8 = 0x03;
 pub const TAG_CPU_SPIN: u8 = 0x04;
 pub const TAG_SLEEP_MUTEX: u8 = 0x05;
+pub const TAG_CPU_PREFIX_READY: u8 = 0x06;
 
 /// Encode a profile-tagged payload.
 ///
@@ -22,6 +23,7 @@ pub const TAG_SLEEP_MUTEX: u8 = 0x05;
 /// - TAG_MUTEX: hold mutex for this many microseconds
 /// - TAG_CPU_SPIN: busy-spin for this many microseconds
 /// - TAG_SLEEP_MUTEX: sleep then hold mutex, each for duration_us / 2
+/// - TAG_CPU_PREFIX_READY: spin inline before returning without suspension
 /// - TAG_ECHO: ignored (just echoes the payload)
 pub fn encode_payload(tag: u8, duration_us: u32, total_size: usize) -> Vec<u8> {
     let mut buf = Vec::with_capacity(total_size.max(5));
@@ -113,6 +115,14 @@ pub fn builtin_profiles() -> Vec<PairingProfile> {
             payload_bytes: 64,
             tag: TAG_ECHO,
             handler_duration_us: 0,
+            duration_secs: 5,
+        },
+        PairingProfile {
+            name: "cpu-prefix-ready".into(),
+            connections: 1,
+            payload_bytes: 64,
+            tag: TAG_CPU_PREFIX_READY,
+            handler_duration_us: 25,
             duration_secs: 5,
         },
     ]

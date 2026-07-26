@@ -66,6 +66,12 @@ impl RpcHandler for SmokeHandler {
                 .await
                 .unwrap();
             }
+            TAG_CPU_PREFIX_READY => {
+                let deadline = std::time::Instant::now() + dur;
+                while std::time::Instant::now() < deadline {
+                    std::hint::spin_loop();
+                }
+            }
             TAG_MUTEX => {
                 let mut guard = self.shared.lock.lock().await;
                 tokio::time::sleep(dur).await;
@@ -110,6 +116,10 @@ struct Args {
     #[arg(long, default_value = "64")]
     max_concurrent: usize,
 
+    /// Poll handlers once inline before spawning
+    #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+    inline_ready_dispatch: bool,
+
     /// Enable tracing subscriber at the given level (info, debug)
     #[arg(long)]
     tracing: Option<String>,
@@ -153,8 +163,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut services = ServiceMap::new();
     services.add_service(Box::new(handler));
 
-    let config =
-        ConnectionConfig::new(None, services).with_max_concurrent_dispatches(args.max_concurrent);
+    let config = ConnectionConfig::new(None, services)
+        .with_max_concurrent_dispatches(args.max_concurrent)
+        .with_inline_ready_dispatch(args.inline_ready_dispatch);
 
     let listener = TcpListener::bind(format!("{}:{}", args.bind, args.port)).await?;
     let addr = listener.local_addr()?;

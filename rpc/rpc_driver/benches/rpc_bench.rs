@@ -22,7 +22,7 @@
 //! # Flags (after `--`)
 //!
 //! - `--scenario <name>` — run only scenarios whose name contains `<name>`
-//! - `--quick`           — 10x fewer iterations for fast smoke runs
+//! - `--quick`           — reduced iterations for fast smoke runs
 //! - `--json`            — write detailed JSON to `target/bench/`
 //! - `--gh-bench`        — emit p99 latency JSON to stdout (for github-action-benchmark)
 //! - `--tracing <level>` — install a tracing subscriber at the given level (info,
@@ -223,6 +223,27 @@ impl RpcHandler for FanoutService {
     }
 }
 
+/// Minimal accept-and-return handler that always completes on its first poll.
+/// This isolates dispatch overhead; it deliberately excludes the worker-queue
+/// submission and application work performed by a real Dogwood handler.
+struct ReadySubmitService;
+
+#[async_trait]
+impl RpcHandler for ReadySubmitService {
+    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        match proc {
+            // Null proc: pure transport and dispatch overhead.
+            0 => Ok(vec![]),
+            // Accept-and-return: no await anywhere on this path.
+            1 => Ok(data.to_vec()),
+            _ => Err(RpcError::InvalidProcedure),
+        }
+    }
+    fn prog_vers(&self) -> ProgVers {
+        ECHO_PROG
+    }
+}
+
 /// Simulates handler contention: all handlers acquire a shared lock
 /// (like hogd's `commit_lock_`) before doing work, then release.
 /// Models serialized critical sections within concurrent dispatch.
@@ -266,6 +287,69 @@ async fn start_server_multi(services_list: Vec<Box<dyn RpcHandler>>) -> SocketAd
     }
     RpcServer::new(listener, services).start().await;
     addr
+}
+
+async fn start_server_with_config(
+    config: ConnectionConfig,
+) -> (
+    SocketAddr,
+    tokio::task::JoinHandle<Result<(), std::io::Error>>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = RpcServer::new_with_config(listener, config).start().await;
+    (addr, server)
+}
+
+async fn run_closed_loop(
+    sender: Arc<dyn RpcSender>,
+    progvers: ProgVers,
+    proc: u32,
+    payload: &[u8],
+    concurrency: usize,
+    iters: usize,
+) -> (Vec<Duration>, Duration) {
+    assert!(concurrency > 0, "concurrency must be at least 1");
+    let payload: Arc<[u8]> = Arc::from(payload);
+    let ready = Arc::new(tokio::sync::Barrier::new(concurrency + 1));
+    let start = Arc::new(tokio::sync::Barrier::new(concurrency + 1));
+    let mut handles = Vec::with_capacity(concurrency);
+
+    // Use a fixed set of closed-loop workers. Task creation happens before the
+    // barrier and is excluded from the timed section.
+    for worker in 0..concurrency {
+        let sender = sender.clone();
+        let payload = payload.clone();
+        let ready = ready.clone();
+        let start = start.clone();
+        let calls = iters / concurrency + usize::from(worker < iters % concurrency);
+        handles.push(tokio::spawn(async move {
+            let mut samples = Vec::with_capacity(calls);
+            ready.wait().await;
+            start.wait().await;
+            for _ in 0..calls {
+                let t0 = Instant::now();
+                sender.send_call(progvers, proc, &payload).await.unwrap();
+                samples.push(t0.elapsed());
+            }
+            (samples, Instant::now())
+        }));
+    }
+
+    // Do not start timing until every worker has reached the ready barrier.
+    ready.wait().await;
+    let wall_start = Instant::now();
+    start.wait().await;
+    let mut samples = Vec::with_capacity(iters);
+    let mut wall_end = wall_start;
+    for h in handles {
+        let (worker_samples, finished) = h.await.unwrap();
+        samples.extend(worker_samples);
+        wall_end = wall_end.max(finished);
+    }
+    let wall = wall_end.duration_since(wall_start);
+    assert_eq!(samples.len(), iters);
+    (samples, wall)
 }
 
 async fn run_concurrent(
@@ -357,19 +441,20 @@ fn write_json(results: &BenchResult) {
 }
 
 fn to_gh_bench_json(results: &[ScenarioResult]) -> String {
-    let entries: Vec<serde_json::Value> = results
+    let mut entries = Vec::new();
+    for result in results
         .iter()
         .filter(|r| !r.timed_out)
-        .filter_map(|r| {
-            r.latency_us.as_ref().map(|lat| {
-                serde_json::json!({
-                    "name": r.name,
-                    "value": lat.p99,
-                    "unit": "µs"
-                })
-            })
-        })
-        .collect();
+        .filter(|r| r.params.get("measurement").and_then(|v| v.as_str()) != Some("run"))
+    {
+        if let Some(latency) = &result.latency_us {
+            entries.push(serde_json::json!({
+                "name": result.name,
+                "value": latency.p99,
+                "unit": "µs"
+            }));
+        }
+    }
     serde_json::to_string_pretty(&entries).unwrap()
 }
 
@@ -957,6 +1042,127 @@ async fn scenario_handler_fanout(quick: bool) -> Vec<ScenarioResult> {
     results
 }
 
+async fn measure_ready_dispatch(
+    inline_ready: bool,
+    concurrency: usize,
+    warmup: usize,
+    iters: usize,
+) -> (Vec<Duration>, Duration) {
+    let mut services = ServiceMap::new();
+    services.add_service(Box::new(ReadySubmitService));
+    let config = ConnectionConfig::new(None, services);
+    #[cfg(feature = "concurrent-dispatch")]
+    let config = config.with_inline_ready_dispatch(inline_ready);
+    #[cfg(not(feature = "concurrent-dispatch"))]
+    let _ = inline_ready;
+    let (addr, server) = start_server_with_config(config).await;
+
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let sender = client.handle().clone() as Arc<dyn RpcSender>;
+
+    // Warm up with the same closed-loop concurrency as the measured run.
+    let _ = run_closed_loop(
+        sender.clone(),
+        ECHO_PROG,
+        1,
+        &[0u8; 64],
+        concurrency,
+        warmup,
+    )
+    .await;
+    let measured = run_closed_loop(sender, ECHO_PROG, 1, &[0u8; 64], concurrency, iters).await;
+
+    client.shutdown().await;
+    server.abort();
+    let _ = server.await;
+    measured
+}
+
+/// Ready-handler throughput: the workload the inline fast path exists for.
+///
+/// Every handler completes on its first poll, so with the fast path enabled no
+/// CALL should spawn a task or touch the `JoinSet`; it only holds a permit for
+/// the synchronous probe. Concurrent builds aggregate two runs per mode in
+/// ABBA order. Serial builds run once as a reference point.
+async fn scenario_ready_dispatch(quick: bool) -> Vec<ScenarioResult> {
+    let concurrency_levels: &[usize] = &[1, 10, 50];
+    let (warmup, iters) = if quick { (100, 500) } else { (2_000, 100_000) };
+    let variants: &[(&str, bool)] = if cfg!(feature = "concurrent-dispatch") {
+        &[
+            ("fastpath", true),
+            ("spawn", false),
+            ("spawn", false),
+            ("fastpath", true),
+        ]
+    } else {
+        &[("serial", true)]
+    };
+    let output_order: &[&str] = if cfg!(feature = "concurrent-dispatch") {
+        &["fastpath", "spawn"]
+    } else {
+        &["serial"]
+    };
+
+    let mut results = Vec::new();
+    for &concurrency in concurrency_levels {
+        let mut measurements: BTreeMap<&str, (Vec<Duration>, Duration, usize)> = BTreeMap::new();
+        let mut variant_runs: BTreeMap<&str, usize> = BTreeMap::new();
+
+        for (position, &(variant, inline_ready)) in variants.iter().enumerate() {
+            let (mut samples, wall) =
+                measure_ready_dispatch(inline_ready, concurrency, warmup, iters).await;
+            let variant_run = variant_runs.entry(variant).or_default();
+            *variant_run += 1;
+
+            let mut params = BTreeMap::new();
+            params.insert("payload_bytes".into(), serde_json::json!(64));
+            params.insert("concurrency".into(), serde_json::json!(concurrency));
+            params.insert("dispatch".into(), serde_json::json!(variant));
+            params.insert("measurement".into(), serde_json::json!("run"));
+            params.insert("abba_position".into(), serde_json::json!(position + 1));
+            params.insert("variant_run".into(), serde_json::json!(*variant_run));
+            results.push(ScenarioResult {
+                name: format!("ready_dispatch/{variant}/{concurrency}/run{variant_run}"),
+                params,
+                samples: samples.len(),
+                timed_out: false,
+                latency_us: Some(compute_latency_stats(&mut samples)),
+                wall_time_ms: Some(wall.as_secs_f64() * 1000.0),
+                throughput_calls_per_sec: Some(samples.len() as f64 / wall.as_secs_f64()),
+            });
+
+            let entry = measurements.entry(variant).or_default();
+            entry.0.extend(samples);
+            entry.1 += wall;
+            entry.2 += 1;
+        }
+
+        for &variant in output_order {
+            let (mut samples, wall, runs) = measurements.remove(variant).unwrap();
+            let mut params = BTreeMap::new();
+            params.insert("payload_bytes".into(), serde_json::json!(64));
+            params.insert("concurrency".into(), serde_json::json!(concurrency));
+            params.insert("dispatch".into(), serde_json::json!(variant));
+            params.insert("measurement".into(), serde_json::json!("aggregate"));
+            params.insert("measurement_runs".into(), serde_json::json!(runs));
+
+            results.push(ScenarioResult {
+                name: format!("ready_dispatch/{variant}/{concurrency}"),
+                params,
+                samples: samples.len(),
+                timed_out: false,
+                latency_us: Some(compute_latency_stats(&mut samples)),
+                wall_time_ms: Some(wall.as_secs_f64() * 1000.0),
+                throughput_calls_per_sec: Some(samples.len() as f64 / wall.as_secs_f64()),
+            });
+        }
+    }
+    results
+}
+
 /// Simulates handler contention: concurrent dispatches compete for a shared
 /// lock inside the handler.  Models hogd's `commit_lock_` pattern where some
 /// operations serialize through a mutex even under concurrent dispatch.
@@ -1036,7 +1242,7 @@ async fn main() {
     if cli.gh_bench {
         eprintln!("=== rpc_driver benchmark (loopback TCP) ===");
         if cfg!(feature = "concurrent-dispatch") {
-            eprintln!("    dispatch: concurrent (spawn + Semaphore)");
+            eprintln!("    dispatch: concurrent (spawn default; ready_dispatch includes A/B)");
         } else {
             eprintln!("    dispatch: serial (inline await)");
         }
@@ -1045,7 +1251,7 @@ async fn main() {
     } else {
         println!("=== rpc_driver benchmark (loopback TCP) ===");
         if cfg!(feature = "concurrent-dispatch") {
-            println!("    dispatch: concurrent (spawn + Semaphore)");
+            println!("    dispatch: concurrent (spawn default; ready_dispatch includes A/B)");
         } else {
             println!("    dispatch: serial (inline await)");
         }
@@ -1057,6 +1263,14 @@ async fn main() {
 
     if should_run("sequential_latency", &cli.scenario_filter) {
         let results = scenario_sequential_latency(cli.quick).await;
+        for r in &results {
+            print_scenario(r, cli.gh_bench);
+        }
+        all_results.extend(results);
+    }
+
+    if should_run("ready_dispatch", &cli.scenario_filter) {
+        let results = scenario_ready_dispatch(cli.quick).await;
         for r in &results {
             print_scenario(r, cli.gh_bench);
         }

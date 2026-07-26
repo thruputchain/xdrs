@@ -2,14 +2,13 @@ mod metrics;
 mod profile;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
 use rpc_driver::{CpuSetPool, DynamicPool, FixedSerialPool, ProgVers, RpcSender};
 use tokio::sync::Semaphore;
 
-use metrics::ClientMetrics;
+use metrics::{ClientMetrics, ClientRunConfig, RpcCounts};
 use profile::*;
 
 #[derive(Parser)]
@@ -19,7 +18,8 @@ struct Args {
     #[arg(long)]
     addr: String,
 
-    /// Profile name (coordinator, gateway, executor, db-shard, auth, echo)
+    /// Profile name (coordinator, gateway, executor, db-shard, auth, echo,
+    /// cpu-prefix-ready)
     #[arg(long)]
     profile: String,
 
@@ -103,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             dp
         }
-        _ => Arc::new(
+        "fixed" => Arc::new(
             FixedSerialPool::connect(&addr, prof.connections)
                 .await
                 .map_err(|e| {
@@ -113,6 +113,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )
                 })?,
         ),
+        other => {
+            return Err(format!("unknown pool type: {other} (use fixed, dynamic, or cpu)").into());
+        }
     };
 
     // Arc<[u8]> avoids cloning the payload bytes on every RPC
@@ -121,7 +124,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let progvers = ProgVers::new(SMOKE_PROG, 1);
     let duration = Duration::from_secs(prof.duration_secs);
 
-    let errors = Arc::new(AtomicU64::new(0));
     let sem = Arc::new(Semaphore::new(args.max_inflight));
 
     let start = Instant::now();
@@ -131,12 +133,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (no shared mutex needed).
     let mut tasks = tokio::task::JoinSet::new();
     let mut samples = Vec::new();
+    let mut counts = RpcCounts::default();
 
     while Instant::now() < deadline {
         // Async acquire — suspends instead of busy-spinning when at capacity
-        let permit = match sem.clone().acquire_owned().await {
-            Ok(p) => p,
-            Err(_) => break, // semaphore closed
+        let permit = match tokio::time::timeout_at(
+            tokio::time::Instant::from_std(deadline),
+            sem.clone().acquire_owned(),
+        )
+        .await
+        {
+            Ok(Ok(p)) => p,
+            Ok(Err(_)) | Err(_) => break,
         };
 
         if Instant::now() >= deadline {
@@ -145,24 +153,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let pool = pool.clone();
         let payload = payload.clone();
-        let errors = errors.clone();
-
         tasks.spawn(async move {
             let _permit = permit;
             let call_start = Instant::now();
             match pool.send_call(progvers, 1, &payload).await {
-                Ok(_) => Some(call_start.elapsed()),
-                Err(_) => {
-                    errors.fetch_add(1, Ordering::Relaxed);
-                    None
-                }
+                Ok(_) => Ok(call_start.elapsed()),
+                Err(_) => Err(()),
             }
         });
+        counts.submitted += 1;
 
         // Reap completed tasks and collect latencies to bound memory
         while let Some(res) = tasks.try_join_next() {
-            if let Ok(Some(lat)) = res {
-                samples.push(lat);
+            match res {
+                Ok(Ok(lat)) => {
+                    samples.push(lat);
+                    counts.completed += 1;
+                }
+                Ok(Err(())) | Err(_) => counts.failed += 1,
             }
         }
     }
@@ -170,23 +178,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Drain remaining in-flight tasks
     let drain = tokio::time::timeout(Duration::from_secs(10), async {
         while let Some(res) = tasks.join_next().await {
-            if let Ok(Some(lat)) = res {
-                samples.push(lat);
+            match res {
+                Ok(Ok(lat)) => {
+                    samples.push(lat);
+                    counts.completed += 1;
+                }
+                Ok(Err(())) | Err(_) => counts.failed += 1,
             }
         }
     });
-    let _ = drain.await;
+    if drain.await.is_err() {
+        counts.timed_out = tasks.len() as u64;
+        tasks.abort_all();
+        while tasks.join_next().await.is_some() {}
+    }
+    counts.outstanding = tasks.len() as u64;
 
     let wall_time = start.elapsed();
-    let error_count = errors.load(Ordering::Relaxed);
 
-    let metrics = ClientMetrics::from_samples(
-        prof.name,
-        prof.connections,
-        error_count,
-        wall_time,
-        &mut samples,
-    );
+    let mut metrics =
+        ClientMetrics::from_samples(prof.name, prof.connections, wall_time, &mut samples, counts);
+    metrics.run_config = Some(ClientRunConfig {
+        server_addr: args.addr,
+        pool_type: args.pool,
+        client_processes: 1,
+        max_inflight_per_process: args.max_inflight,
+        duration_secs: prof.duration_secs,
+    });
 
     // Output JSON to stdout for harness collection
     println!("{}", serde_json::to_string(&metrics)?);

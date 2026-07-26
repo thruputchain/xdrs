@@ -507,6 +507,10 @@ pub struct ConnectionHandle {
     pub(crate) max_concurrent_dispatches: usize,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) read_channel_capacity: usize,
+    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
+    pub(crate) inline_ready_dispatch: bool,
+    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
+    pub(crate) write_channel_capacity: usize,
     writer_handle: StdMutex<Option<JoinHandle<()>>>,
     client_read_runner: StdMutex<Option<crate::tasks::ClientReadRunner>>,
 }
@@ -537,6 +541,8 @@ impl ConnectionHandle {
             client_read_runner: StdMutex::new(None),
             max_concurrent_dispatches: config.max_concurrent_dispatches,
             read_channel_capacity: config.read_channel_capacity,
+            inline_ready_dispatch: config.inline_ready_dispatch,
+            write_channel_capacity: config.write_channel_capacity,
         }
     }
 
@@ -576,6 +582,37 @@ impl ConnectionHandle {
             .send(msg)
             .await
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "writer closed"))
+    }
+
+    /// Attempt to enqueue a pre-serialized message without waiting for channel
+    /// capacity.
+    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
+    #[inline(always)]
+    pub(crate) fn try_send_msg(
+        &self,
+        msg: Vec<u8>,
+    ) -> Result<(), mpsc::error::TrySendError<Vec<u8>>> {
+        self.write_tx.try_send(msg)
+    }
+
+    #[cfg(all(test, feature = "concurrent-dispatch"))]
+    pub(crate) fn new_with_write_sender_for_test(
+        write_tx: mpsc::Sender<Vec<u8>>,
+        config: &crate::ConnectionConfig,
+    ) -> Self {
+        Self {
+            connection_state: StdMutex::new(ConnectionState::new()),
+            write_tx,
+            buf_pool: Arc::new(BufPool::new()),
+            pending_count: AtomicUsize::new(0),
+            connection_span: tracing::Span::none(),
+            writer_handle: StdMutex::new(None),
+            client_read_runner: StdMutex::new(None),
+            max_concurrent_dispatches: config.max_concurrent_dispatches,
+            read_channel_capacity: config.read_channel_capacity,
+            inline_ready_dispatch: config.inline_ready_dispatch,
+            write_channel_capacity: config.write_channel_capacity,
+        }
     }
 
     fn prepare_call_msg(
