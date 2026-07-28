@@ -31,8 +31,8 @@ cargo test -p xdr-common --features alloc
 cargo test -p xdr-common --features serde
 cargo test -p xdr-common --features schemars
 
-cargo +nightly build -p xdr-common --no-default-features -Zbuild-std=core,alloc
-cargo +nightly build -p xdr-common --features alloc -Zbuild-std=core,alloc
+cargo +nightly-2026-05-26 build -p xdr-common --no-default-features -Zbuild-std=core,alloc
+cargo +nightly-2026-05-26 build -p xdr-common --features alloc -Zbuild-std=core,alloc
 
 # check that the benchmarks compile
 cargo test --benches --all-features
@@ -42,14 +42,13 @@ cargo doc --workspace --all-features
 
 # docsrs docs
 RUSTDOCFLAGS="--cfg docsrs" \
-    cargo +nightly doc --workspace --all-features --no-deps
+    cargo +nightly-2026-05-26 doc --workspace --all-features --no-deps
 
 # Test Documentation Examples
 cargo test --doc -p xdr-repr --features "ns,int128"
 cargo test --doc --features "alloc,derive,repr,ns,int128"
 
 cargo clippy --workspace --all-features
-cargo +nightly clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
 
 set +x
 

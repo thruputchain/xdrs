@@ -1,13 +1,17 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 7 * * 1'
 
 jobs:
-  build-and-test:
+  stable:
+    name: Rust 1.96
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "--deny warnings"
@@ -18,12 +22,11 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.XDRS_TO_XDR_COMMON_ACCESS_KEY }}
       - uses: actions/checkout@v5
-      - name: Set up Rust toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Set up Rust 1.96.0
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly
-          override: true
-          components: rust-src, rustfmt, clippy
+          toolchain: 1.96.0
+          components: rustfmt,clippy
       - name: Check format
         run: cargo fmt --check
       - name: Build workspace (no features)
@@ -48,25 +51,53 @@ jobs:
         run: cargo test --benches --all-features
       - name: Docs
         run: cargo doc --workspace --all-features
-      - name: Docs (docsrs)
-        run: cargo +nightly doc --workspace --all-features --no-deps
-        env:
-          RUSTDOCFLAGS: "--cfg docsrs"
       - name: Test (xdr-common)
         run: |
           cargo test -p xdr-common --no-default-features
           cargo test -p xdr-common --features alloc
           cargo test -p xdr-common --features serde
           cargo test -p xdr-common --features schemars
-      - name: Build (xdr-common, build-std)
-        # Make sure that we can build std, i.e. for wasm contracts
-        run: |
-          cargo +nightly build -p xdr-common --no-default-features -Zbuild-std=core,alloc
-          cargo +nightly build -p xdr-common --features alloc -Zbuild-std=core,alloc
-
       - name: Check clippy
         run: cargo clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
       - name: Test Documentation Examples
         run: |
           cargo test --doc -p xdr-repr --features "ns,int128"
           cargo test --doc --features "alloc,derive,repr,ns,int128"
+
+  nightly:
+    name: Nightly-only checks
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--deny warnings"
+      RUSTDOCFLAGS: "--deny warnings"
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up pinned nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-05-26
+          components: rust-src
+      - name: Build xdr-common with build-std
+        run: |
+          cargo +nightly-2026-05-26 build -p xdr-common --no-default-features -Zbuild-std=core,alloc
+          cargo +nightly-2026-05-26 build -p xdr-common --features alloc -Zbuild-std=core,alloc
+      - name: Docs (docsrs)
+        run: cargo +nightly-2026-05-26 doc --workspace --all-features --no-deps
+        env:
+          RUSTDOCFLAGS: "--cfg docsrs --deny warnings"
+
+  stable-compat:
+    name: Current stable compatibility
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "--deny warnings"
+      RUSTDOCFLAGS: "--deny warnings"
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up current stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test workspace on current stable
+        run: cargo +stable test --workspace --all-features
