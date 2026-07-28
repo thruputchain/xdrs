@@ -1,13 +1,17 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 7 * * 1'
 
 jobs:
   build-and-test:
+    name: Rust 1.96
     runs-on: ubuntu-latest
     env:
       CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
@@ -15,27 +19,46 @@ jobs:
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust 1.96.0
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
+          components: rustfmt,clippy
       # Note: `--workspace` builds rpc-smoke, which enables rpc_driver's
       # `concurrent-dispatch`. Cargo unifies features across members, so any
       # workspace-wide command builds rpc_driver WITH the feature. Serial
       # dispatch — the default, and what every consumer ships — is only
       # covered by the `-p rpc_driver` steps below.
       - name: Test (Workspace)
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
       - name: Test rpc_driver (No Features)
-        run: cargo test -p rpc_driver --no-default-features
+        run: cargo test -p rpc_driver --no-default-features --locked
       - name: Test (All Features)
-        run: cargo test --workspace --all-features
+        run: cargo test --workspace --all-features --locked
       - name: Check format
         run: cargo fmt --check
       - name: Clippy (Workspace)
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Clippy rpc_driver (Serial Dispatch)
-        run: cargo clippy -p rpc_driver --all-targets -- -D warnings
+        run: cargo clippy -p rpc_driver --all-targets --locked -- -D warnings
       - name: Clippy rpc_driver (Concurrent Dispatch)
-        run: cargo clippy -p rpc_driver --all-targets --features concurrent-dispatch -- -D warnings
+        run: cargo clippy -p rpc_driver --all-targets --features concurrent-dispatch --locked -- -D warnings
       - name: Bench smoke (Serial Dispatch)
-        run: cargo bench -p rpc_driver --bench rpc_bench -- --quick
+        run: cargo bench -p rpc_driver --bench rpc_bench --locked -- --quick
       - name: Bench smoke (Concurrent Dispatch)
-        run: cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch -- --quick
+        run: cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch --locked -- --quick
+
+  stable-compat:
+    name: Current stable compatibility
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+      CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up current stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test workspace on current stable
+        run: cargo +stable test --workspace --all-features --locked

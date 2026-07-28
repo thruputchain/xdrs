@@ -2,6 +2,7 @@
 name = "rpc_driver"
 version.workspace = true
 edition = "2024"
+rust-version.workspace = true
 authors = ["Groundhog Team"]
 license = "Apache-2.0"
 publish = ["groundhog"]

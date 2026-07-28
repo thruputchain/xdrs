@@ -19,13 +19,16 @@ jobs:
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust 1.96.0
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.96.0
       # Both dispatch modes are tracked as separate series. `-p rpc_driver` is
       # required: without it cargo builds rpc-smoke too, which enables
       # `concurrent-dispatch`, and feature unification makes the "serial" run
       # silently measure the concurrent path.
       - name: Run benchmarks (Serial Dispatch)
-        run: cargo bench -p rpc_driver --bench rpc_bench -- --gh-bench > bench-serial.json
+        run: cargo bench -p rpc_driver --bench rpc_bench --locked -- --gh-bench > bench-serial.json
       - name: Store benchmark results (Serial Dispatch)
         uses: benchmark-action/github-action-benchmark@v1
         with:
@@ -39,7 +42,7 @@ jobs:
           comment-on-alert: false
           fail-on-alert: false
       - name: Run benchmarks (Concurrent Dispatch)
-        run: cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch -- --gh-bench > bench-concurrent.json
+        run: cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch --locked -- --gh-bench > bench-concurrent.json
       - name: Store benchmark results (Concurrent Dispatch)
         uses: benchmark-action/github-action-benchmark@v1
         with:

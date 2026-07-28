@@ -2,6 +2,7 @@
 name = "bench-compare"
 version.workspace = true
 edition = "2024"
+rust-version.workspace = true
 publish = false
 
 [lints]
