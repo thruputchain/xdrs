@@ -11,6 +11,7 @@ exclude = [
 [workspace.package]
 version = "0.8.3"
 edition = "2024"
+rust-version = "1.96"
 authors = ["Groundhog Team"]
 license = "Apache-2.0"  
 publish = ["groundhog"]
@@ -39,6 +40,7 @@ unsafe_code = "allow"
 name = "xdrs"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 publish.workspace = true

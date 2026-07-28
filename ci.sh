@@ -5,6 +5,13 @@ export RUSTDOCFLAGS="--deny warnings"
 set -e
 set -x
 
+readonly XDRS_NIGHTLY_TOOLCHAIN="nightly-2026-05-26"
+rustup toolchain install \
+    "${XDRS_NIGHTLY_TOOLCHAIN}" \
+    --profile minimal \
+    --component rust-src \
+    --no-self-update
+
 # check the root library without alloc
 cargo test -F int128
 
@@ -31,8 +38,8 @@ cargo test -p xdr-common --features alloc
 cargo test -p xdr-common --features serde
 cargo test -p xdr-common --features schemars
 
-cargo +nightly build -p xdr-common --no-default-features -Zbuild-std=core,alloc
-cargo +nightly build -p xdr-common --features alloc -Zbuild-std=core,alloc
+cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build -p xdr-common --no-default-features -Zbuild-std=core,alloc
+cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build -p xdr-common --features alloc -Zbuild-std=core,alloc
 
 # check that the benchmarks compile
 cargo test --benches --all-features
@@ -42,14 +49,13 @@ cargo doc --workspace --all-features
 
 # docsrs docs
 RUSTDOCFLAGS="--cfg docsrs" \
-    cargo +nightly doc --workspace --all-features --no-deps
+    cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" doc --workspace --all-features --no-deps
 
 # Test Documentation Examples
 cargo test --doc -p xdr-repr --features "ns,int128"
 cargo test --doc --features "alloc,derive,repr,ns,int128"
 
 cargo clippy --workspace --all-features
-cargo +nightly clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
 
 set +x
 

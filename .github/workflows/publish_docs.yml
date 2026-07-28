@@ -57,6 +57,6 @@ jobs:
           packages: ${{ inputs.packages }}
           registry-name: groundhog
           registry-token: ${{ secrets.CARGO_PUBLISH_TOKEN }}
-          toolchain: nightly-2026-01-30
+          toolchain: nightly-2026-05-26
           force: 'true'
           expected-tag: v${{ inputs.version }}
