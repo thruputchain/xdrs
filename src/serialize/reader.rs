@@ -11,7 +11,6 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use crate::mu;
 use core::mem::MaybeUninit as MU;
 
 /// A reader that can produce XDR values, some borrowed with lifetime `'r`.
@@ -74,10 +73,9 @@ pub unsafe trait Reader<'r>: Sized {
     /// Reads a byte array of known length, copying into a provided buffer
     /// rather than borrowing from the reader.
     ///
-    /// # Safety
+    /// Panics if `dst.len()` does not equal `len as usize`.
     ///
-    /// `dst.len()` must equal `len as usize`.
-    unsafe fn read_opaque_fixed_into<'a>(
+    fn read_opaque_fixed_into<'a>(
         &mut self,
         dst: &'a mut [MU<u8>],
         len: u32,
@@ -88,9 +86,9 @@ pub unsafe trait Reader<'r>: Sized {
 
         let data = self.read_opaque_fixed(len as usize)?;
 
-        // SAFETY: read_opaque_fixed returns exactly `len` bytes, and
+        // Cannot panic: read_opaque_fixed returns exactly `len` bytes, and
         // dst.len() == len as usize (caller invariant).
-        let initialized = unsafe { mu::write_copy_of_slice(dst, data) };
+        let initialized = dst.write_copy_of_slice(data);
 
         Ok(initialized)
     }
@@ -113,8 +111,8 @@ pub unsafe trait Reader<'r>: Sized {
             return Err(ReadError::max_length_exceeded());
         }
 
-        // SAFETY: dst[..len as usize] has exactly `len` elements.
-        unsafe { self.read_opaque_fixed_into(&mut dst[..len as usize], len) }
+        // Panic-safe: dst[..len as usize] has exactly `len` elements.
+        self.read_opaque_fixed_into(&mut dst[..len as usize], len)
     }
 
     /// Reads a byte array of known length, returning an owned `Vec<u8>`.

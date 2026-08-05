@@ -6,7 +6,6 @@
 //! `MaybeUninit<u8>` that the caller guarantees is large enough.
 
 use super::put::*;
-use crate::mu;
 use core::mem::MaybeUninit;
 
 type Mu8 = MaybeUninit<u8>;
@@ -85,11 +84,10 @@ impl PutUnchecked for UncheckedBufWriter<'_> {
     #[inline]
     unsafe fn put_bytes(&mut self, bytes: &[u8]) {
         // SAFETY: the caller guarantees space for bytes.len() more bytes;
-        // reserve returns a slice of exactly that length.
-        unsafe {
-            let buf = self.reserve(bytes.len());
-            mu::write_copy_of_slice(buf, bytes);
-        }
+        // reserve returns a slice of exactly that length (so the copy below
+        // cannot panic either).
+        let buf = unsafe { self.reserve(bytes.len()) };
+        buf.write_copy_of_slice(bytes);
     }
 }
 
@@ -113,8 +111,8 @@ mod tests {
         // SAFETY: both writers initialized their first `len` bytes.
         let (c, u) = unsafe {
             (
-                mu::assume_init_ref(&cbuf[..clen]),
-                mu::assume_init_ref(&ubuf[..ulen]),
+                cbuf[..clen].assume_init_ref(),
+                ubuf[..ulen].assume_init_ref(),
             )
         };
         assert_eq!(c, u);

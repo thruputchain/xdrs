@@ -4,7 +4,7 @@
 //! contract violations (debug builds only).
 
 use core::mem::MaybeUninit as MU;
-use xdrs::{BytesM, StringM, VecM, WriteXDR, cxs, mu, txs};
+use xdrs::{BytesM, StringM, VecM, WriteXDR, cxs, txs};
 
 fn assert_unchecked_matches_checked<T: WriteXDR>(value: &T) {
     // TXS
@@ -18,8 +18,8 @@ fn assert_unchecked_matches_checked<T: WriteXDR>(value: &T) {
     // SAFETY: both writers initialized their first `len` bytes.
     let (c, u) = unsafe {
         (
-            mu::assume_init_ref(&cbuf[..clen]),
-            mu::assume_init_ref(&ubuf[..ulen]),
+            cbuf[..clen].assume_init_ref(),
+            ubuf[..ulen].assume_init_ref(),
         )
     };
     assert_eq!(c, u, "TXS bytes mismatch");
@@ -34,8 +34,8 @@ fn assert_unchecked_matches_checked<T: WriteXDR>(value: &T) {
     // SAFETY: both writers initialized their first `len` bytes.
     let (c, u) = unsafe {
         (
-            mu::assume_init_ref(&cbuf[..clen]),
-            mu::assume_init_ref(&ubuf[..ulen]),
+            cbuf[..clen].assume_init_ref(),
+            ubuf[..ulen].assume_init_ref(),
         )
     };
     assert_eq!(c, u, "CXS bytes mismatch");
