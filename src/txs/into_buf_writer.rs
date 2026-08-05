@@ -5,7 +5,6 @@
 //! `MaybeUninit<u8>`.
 
 use super::put::*;
-use crate::mu;
 use crate::serialize::writer::*;
 use core::mem::MaybeUninit;
 
@@ -64,9 +63,9 @@ impl<'a> Put for IntoBufWriter<'a> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 
-        // SAFETY: reserve returns a slice of exactly `len` bytes,
+        // Cannot panic: reserve returns a slice of exactly `len` bytes,
         // and bytes.len() == len.
-        unsafe { mu::write_copy_of_slice(buf, bytes) };
+        buf.write_copy_of_slice(bytes);
 
         Ok(())
     }
@@ -88,13 +87,12 @@ impl<'a> Put for IntoBufWriter<'a> {
 
         let buf = self.reserve(size)?;
 
-        // SAFETY: all sub-slices partition `buf` (of length `size = 4 + len + rem`)
-        // exactly, so each pair of slices has matching lengths.
-        unsafe {
-            mu::write_copy_of_slice(&mut buf[0..4], &(len as u32).to_be_bytes());
-            mu::write_copy_of_slice(&mut buf[4..4 + len], bytes);
-            mu::write_copy_of_slice(&mut buf[4 + len..4 + len + rem], &PAD[0..rem]);
-        }
+        // Cannot panic: all sub-slices partition `buf` (of length
+        // `size = 4 + len + rem`) exactly, so each pair of slices has
+        // matching lengths.
+        buf[0..4].write_copy_of_slice(&(len as u32).to_be_bytes());
+        buf[4..4 + len].write_copy_of_slice(bytes);
+        buf[4 + len..4 + len + rem].write_copy_of_slice(&PAD[0..rem]);
 
         Ok(())
     }
@@ -115,12 +113,10 @@ impl<'a> Put for IntoBufWriter<'a> {
 
         let buf = self.reserve(size)?;
 
-        // SAFETY: buf[0..len] and bytes both have length `len`;
+        // Cannot panic: buf[0..len] and bytes both have length `len`;
         // buf[len..size] and PAD[0..rem] both have length `rem`.
-        unsafe {
-            mu::write_copy_of_slice(&mut buf[0..len], bytes);
-            mu::write_copy_of_slice(&mut buf[len..size], &PAD[0..rem]);
-        }
+        buf[0..len].write_copy_of_slice(bytes);
+        buf[len..size].write_copy_of_slice(&PAD[0..rem]);
 
         Ok(())
     }

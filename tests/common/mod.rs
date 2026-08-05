@@ -2,7 +2,6 @@
 
 use core::fmt::Debug;
 use core::mem::MaybeUninit as MU;
-use xdrs::mu;
 use xdrs::*;
 
 pub trait Format {
@@ -160,7 +159,7 @@ pub trait Check: Format {
         let written = Self::encode_into(value, &mut buf).unwrap();
 
         // SAFETY: `encode_into` just initialized the first `written` bytes.
-        let encoded = unsafe { mu::assume_init_ref(&buf[..written]) };
+        let encoded = unsafe { buf[..written].assume_init_ref() };
 
         Self::check_eq(encoded, expected);
 
@@ -181,7 +180,7 @@ pub trait Check: Format {
         );
         // SAFETY: `encode_into_unchecked` just initialized the first
         // `uwritten` bytes.
-        let uencoded = unsafe { mu::assume_init_ref(&ubuf[..uwritten]) };
+        let uencoded = unsafe { ubuf[..uwritten].assume_init_ref() };
         Self::check_eq(uencoded, expected);
     }
 

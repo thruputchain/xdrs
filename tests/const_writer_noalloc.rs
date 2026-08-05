@@ -13,14 +13,14 @@ use xdrs::{BytesM, StringM, VecM};
 fn txs_runtime_encode<'a, T: xdrs::WriteXDR>(val: &T, buf: &'a mut [MaybeUninit<u8>]) -> &'a [u8] {
     let n = xdrs::txs::encode_into(val, buf).unwrap();
     // SAFETY: encode_into initialized the first `n` bytes.
-    unsafe { xdrs::mu::assume_init_ref(&buf[..n]) }
+    unsafe { buf[..n].assume_init_ref() }
 }
 
 /// Runtime-encode `val` with CXS into a fixed buffer, returning the bytes.
 fn cxs_runtime_encode<'a, T: xdrs::WriteXDR>(val: &T, buf: &'a mut [MaybeUninit<u8>]) -> &'a [u8] {
     let n = xdrs::cxs::encode_into(val, buf).unwrap();
     // SAFETY: encode_into initialized the first `n` bytes.
-    unsafe { xdrs::mu::assume_init_ref(&buf[..n]) }
+    unsafe { buf[..n].assume_init_ref() }
 }
 
 #[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]

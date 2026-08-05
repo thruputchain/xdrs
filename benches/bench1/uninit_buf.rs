@@ -1,5 +1,4 @@
 use core::mem::MaybeUninit as MU;
-use xdrs::mu;
 use xdrs::serialize::writer::WriteResult;
 
 pub struct UninitBuf<const N: usize> {
@@ -34,7 +33,7 @@ impl<const N: usize> UninitBuf<N> {
     /// must have initialized the buffer prefix it claimed to.
     #[allow(dead_code)]
     pub unsafe fn assume_init(&self) -> &[u8] {
-        unsafe { mu::assume_init_ref(&self.buf[..self.valid_len]) }
+        unsafe { self.buf[..self.valid_len].assume_init_ref() }
     }
 }
 

@@ -585,7 +585,7 @@ mod tests {
         unsafe { (1u32, 2u32).write_xdr_unchecked(&mut w) };
         assert_eq!(w.written(), 8);
         // SAFETY: the first 8 bytes were just initialized.
-        let bytes = unsafe { crate::mu::assume_init_ref(&buf[..8]) };
+        let bytes = unsafe { buf[..8].assume_init_ref() };
         assert_eq!(bytes, [0, 0, 0, 1, 0, 0, 0, 2]);
     }
 }

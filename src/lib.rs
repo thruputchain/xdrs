@@ -96,7 +96,7 @@ pub mod cxs;
 // TXS serialization
 pub mod txs;
 
-pub mod mu; // used by integration tests
+pub(crate) mod mu;
 
 pub(crate) mod valid_u32;
 

@@ -6,7 +6,6 @@
 //! `MaybeUninit<u8>` that the caller guarantees is large enough.
 
 use super::put::*;
-use crate::mu;
 use core::mem::MaybeUninit;
 
 type Mu8 = MaybeUninit<u8>;
@@ -75,11 +74,10 @@ impl PutUnchecked for UncheckedBufWriter<'_> {
     #[inline]
     unsafe fn put_bytes(&mut self, bytes: &[u8]) {
         // SAFETY: the caller guarantees space for bytes.len() more bytes;
-        // reserve returns a slice of exactly that length.
-        unsafe {
-            let buf = self.reserve(bytes.len());
-            mu::write_copy_of_slice(buf, bytes);
-        }
+        // reserve returns a slice of exactly that length (so the copy below
+        // cannot panic either).
+        let buf = unsafe { self.reserve(bytes.len()) };
+        buf.write_copy_of_slice(bytes);
     }
 
     #[inline]
@@ -102,12 +100,11 @@ impl PutUnchecked for UncheckedBufWriter<'_> {
         // copy has matching lengths; rem <= 3 = PAD.len().
         unsafe {
             let buf = self.reserve(size);
-            mu::write_copy_of_slice(buf.get_unchecked_mut(0..4), &(len as u32).to_be_bytes());
-            mu::write_copy_of_slice(buf.get_unchecked_mut(4..4 + len), bytes);
-            mu::write_copy_of_slice(
-                buf.get_unchecked_mut(4 + len..size),
-                PAD.get_unchecked(0..rem),
-            );
+            buf.get_unchecked_mut(0..4)
+                .write_copy_of_slice(&(len as u32).to_be_bytes());
+            buf.get_unchecked_mut(4..4 + len).write_copy_of_slice(bytes);
+            buf.get_unchecked_mut(4 + len..size)
+                .write_copy_of_slice(PAD.get_unchecked(0..rem));
         }
     }
 
@@ -129,8 +126,9 @@ impl PutUnchecked for UncheckedBufWriter<'_> {
         // sub-slices partition the reserved slice exactly; rem <= 3 = PAD.len().
         unsafe {
             let buf = self.reserve(size);
-            mu::write_copy_of_slice(buf.get_unchecked_mut(0..len), bytes);
-            mu::write_copy_of_slice(buf.get_unchecked_mut(len..size), PAD.get_unchecked(0..rem));
+            buf.get_unchecked_mut(0..len).write_copy_of_slice(bytes);
+            buf.get_unchecked_mut(len..size)
+                .write_copy_of_slice(PAD.get_unchecked(0..rem));
         }
     }
 }
@@ -152,7 +150,7 @@ mod tests {
         let written = w.written();
         assert_eq!(written, 8);
         // SAFETY: the first `written` bytes were just initialized.
-        let bytes = unsafe { mu::assume_init_ref(&buf[..written]) };
+        let bytes = unsafe { buf[..written].assume_init_ref() };
         assert_eq!(bytes, [0, 0, 0, 42, 0, 0, 0, 1]);
     }
 
@@ -165,7 +163,7 @@ mod tests {
         let written = w.written();
         assert_eq!(written, 8);
         // SAFETY: the first `written` bytes were just initialized.
-        let bytes = unsafe { mu::assume_init_ref(&buf[..written]) };
+        let bytes = unsafe { buf[..written].assume_init_ref() };
         assert_eq!(bytes, [0, 0, 0, 2, 0x68, 0x69, 0, 0]);
     }
 
@@ -178,7 +176,7 @@ mod tests {
         let written = w.written();
         assert_eq!(written, 4);
         // SAFETY: the first `written` bytes were just initialized.
-        let bytes = unsafe { mu::assume_init_ref(&buf[..written]) };
+        let bytes = unsafe { buf[..written].assume_init_ref() };
         assert_eq!(bytes, [0xAA, 0xBB, 0xCC, 0x00]);
     }
 

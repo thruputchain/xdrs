@@ -11,7 +11,6 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use crate::mu;
 use core::mem::MaybeUninit as MU;
 
 /// A reader that can produce XDR values, some borrowed with lifetime `'r`.
@@ -88,9 +87,9 @@ pub unsafe trait Reader<'r>: Sized {
 
         let data = self.read_opaque_fixed(len as usize)?;
 
-        // SAFETY: read_opaque_fixed returns exactly `len` bytes, and
+        // Cannot panic: read_opaque_fixed returns exactly `len` bytes, and
         // dst.len() == len as usize (caller invariant).
-        let initialized = unsafe { mu::write_copy_of_slice(dst, data) };
+        let initialized = dst.write_copy_of_slice(data);
 
         Ok(initialized)
     }

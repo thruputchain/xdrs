@@ -5,7 +5,6 @@
 //! `MaybeUninit<u8>`.
 
 use super::put::*;
-use crate::mu;
 use crate::serialize::writer::*;
 use core::mem::MaybeUninit;
 
@@ -71,9 +70,9 @@ impl<'a> Put for IntoBufWriter<'a> {
         let len = bytes.len();
         let buf = self.reserve(len)?;
 
-        // SAFETY: reserve returns a slice of exactly `len` bytes,
+        // Cannot panic: reserve returns a slice of exactly `len` bytes,
         // and bytes.len() == len.
-        unsafe { mu::write_copy_of_slice(buf, bytes) };
+        buf.write_copy_of_slice(bytes);
 
         Ok(())
     }
