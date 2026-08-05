@@ -96,7 +96,9 @@ pub mod cxs;
 // TXS serialization
 pub mod txs;
 
-pub(crate) mod mu;
+// No longer used in tests; make `pub(crate)` for next breaking release
+#[doc(hidden)]
+pub mod mu;
 
 pub(crate) mod valid_u32;
 

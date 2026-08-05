@@ -73,9 +73,13 @@ pub unsafe trait Reader<'r>: Sized {
     /// Reads a byte array of known length, copying into a provided buffer
     /// rather than borrowing from the reader.
     ///
+    /// Panics if `dst.len()` does not equal `len as usize`.
+    ///
     /// # Safety
     ///
-    /// `dst.len()` must equal `len as usize`.
+    /// No longer actually unsafe.  (The annotation can be removed when we're
+    /// ready for a breaking API change.)
+    ///
     unsafe fn read_opaque_fixed_into<'a>(
         &mut self,
         dst: &'a mut [MU<u8>],
