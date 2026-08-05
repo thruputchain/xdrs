@@ -41,7 +41,7 @@ Enable per-connection concurrent handler execution:
 
 ```toml
 [dependencies]
-rpc_driver = { version = "0.10.0", features = ["concurrent-dispatch"] }
+rpc_driver = { version = "0.10.1", features = ["concurrent-dispatch"] }
 ```
 
 Tune concurrency via `ConnectionConfig::with_max_concurrent_dispatches`.

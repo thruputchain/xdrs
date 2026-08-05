@@ -20,8 +20,8 @@ concurrent-dispatch = []
 async-trait = "0.1.89"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
-tracing = "0.1"
-xdrs = { registry = "groundhog", version = "0.8.0", features = ["derive", "alloc"] }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+xdrs = { registry = "groundhog", version = "0.8.4", features = ["derive", "alloc"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
