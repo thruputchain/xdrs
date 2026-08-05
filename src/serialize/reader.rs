@@ -75,12 +75,7 @@ pub unsafe trait Reader<'r>: Sized {
     ///
     /// Panics if `dst.len()` does not equal `len as usize`.
     ///
-    /// # Safety
-    ///
-    /// No longer actually unsafe.  (The annotation can be removed when we're
-    /// ready for a breaking API change.)
-    ///
-    unsafe fn read_opaque_fixed_into<'a>(
+    fn read_opaque_fixed_into<'a>(
         &mut self,
         dst: &'a mut [MU<u8>],
         len: u32,
@@ -116,8 +111,8 @@ pub unsafe trait Reader<'r>: Sized {
             return Err(ReadError::max_length_exceeded());
         }
 
-        // SAFETY: dst[..len as usize] has exactly `len` elements.
-        unsafe { self.read_opaque_fixed_into(&mut dst[..len as usize], len) }
+        // Panic-safe: dst[..len as usize] has exactly `len` elements.
+        self.read_opaque_fixed_into(&mut dst[..len as usize], len)
     }
 
     /// Reads a byte array of known length, returning an owned `Vec<u8>`.
