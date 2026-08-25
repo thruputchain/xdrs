@@ -12,10 +12,7 @@ use tracing::Instrument;
 use async_trait::async_trait;
 
 use crate::{
-    ProgVers,
-    rpc_error::{DEFAULT_OPAQUE_AUTH, RpcError},
-    rpc_msg,
-    tcp_connection::WriteHalf,
+    ProgVers, RpcError, rpc_error::DEFAULT_OPAQUE_AUTH, rpc_msg, tcp_connection::WriteHalf,
 };
 
 const MAX_BATCH: usize = 64;
@@ -193,128 +190,11 @@ pub(crate) fn frame_rpc_record_owned(
     Ok(data)
 }
 
-/// Response from an RPC call. Wraps the raw record buffer and payload
-/// offset, providing zero-copy access to the payload via `Deref<Target = [u8]>`.
-///
-/// The caller deserializes directly from `&*response` without any copy.
-#[derive(Clone)]
-pub struct RpcResponse {
-    buf: Vec<u8>,
-    offset: usize,
-}
-
-impl RpcResponse {
-    /// Create a response from a payload Vec with no header (offset 0).
-    pub fn from_payload(payload: Vec<u8>) -> Self {
-        Self {
-            buf: payload,
-            offset: 0,
-        }
-    }
-
-    pub(crate) fn from_record(buf: Vec<u8>, offset: usize) -> Self {
-        Self { buf, offset }
-    }
-}
-
-impl std::ops::Deref for RpcResponse {
-    type Target = [u8];
-    fn deref(&self) -> &[u8] {
-        &self.buf[self.offset..]
-    }
-}
-
-impl AsRef<[u8]> for RpcResponse {
-    fn as_ref(&self) -> &[u8] {
-        self
-    }
-}
-
-impl PartialEq<[u8]> for RpcResponse {
-    fn eq(&self, other: &[u8]) -> bool {
-        &**self == other
-    }
-}
-
-impl<const N: usize> PartialEq<[u8; N]> for RpcResponse {
-    fn eq(&self, other: &[u8; N]) -> bool {
-        &**self == other
-    }
-}
-
-impl<const N: usize> PartialEq<&[u8; N]> for RpcResponse {
-    fn eq(&self, other: &&[u8; N]) -> bool {
-        &**self == *other
-    }
-}
-
-impl PartialEq<&[u8]> for RpcResponse {
-    fn eq(&self, other: &&[u8]) -> bool {
-        &**self == *other
-    }
-}
-
-impl PartialEq<Vec<u8>> for RpcResponse {
-    fn eq(&self, other: &Vec<u8>) -> bool {
-        &**self == other.as_slice()
-    }
-}
-
-impl PartialEq for RpcResponse {
-    fn eq(&self, other: &Self) -> bool {
-        **self == **other
-    }
-}
-
-impl Eq for RpcResponse {}
-
-impl std::fmt::Debug for RpcResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RpcResponse")
-            .field("len", &self.len())
-            .finish()
-    }
-}
-
-/// Trait for making outgoing RPC calls.
-///
-/// Implemented by [`ConnectionHandle`] for real TCP connections,
-/// and by [`FixedSerialPool`](crate::FixedSerialPool), [`DynamicPool`](crate::DynamicPool),
-/// and [`CpuSetPool`](crate::CpuSetPool) for pooled connections.
-///
-/// Inside an [`RpcHandler`](crate::handler::RpcHandler) dispatch, the
-/// per-connection sender is available via [`peer()`](crate::peer).
-///
-/// Implement on a mock struct for unit testing without TCP.
-#[async_trait]
-pub trait RpcSender: Send + Sync {
-    /// Send an RPC call and return the response.
-    ///
-    /// The returned [`RpcResponse`] derefs to `&[u8]` for zero-copy
-    /// deserialization, or can be copied to an owned `Vec<u8>` via
-    /// `.to_vec()`.
-    async fn send_call(
-        &self,
-        progvers: ProgVers,
-        proc: u32,
-        data: &[u8],
-    ) -> Result<RpcResponse, RpcError>;
-
-    /// Send an RPC call without waiting for the response.
-    ///
-    /// Default implementation calls [`send_call`](Self::send_call) and
-    /// discards the response. Implementations may override this to return
-    /// after queueing the request, in which case success does not confirm
-    /// socket delivery or peer-side dispatch.
-    async fn send_fire_and_forget(
-        &self,
-        progvers: ProgVers,
-        proc: u32,
-        data: &[u8],
-    ) -> Result<(), RpcError> {
-        self.send_call(progvers, proc, data).await.map(|_| ())
-    }
-}
+// RpcResponse and the RpcSender trait live in the stable `rpc_api` crate;
+// re-exported here at their historical paths for source compatibility.
+// This module implements RpcSender for [`ConnectionHandle`] and
+// [`ClientConnection`]; the pools in [`crate::pool`] implement it too.
+pub use rpc_api::{RpcResponse, RpcSender};
 
 #[async_trait]
 impl RpcSender for ConnectionHandle {
@@ -627,8 +507,8 @@ impl ConnectionHandle {
             body: rpc_msg::rpc_msg_body::CALL {
                 cbody: rpc_msg::call_body {
                     rpcvers: 2,
-                    prog: progvers.prog,
-                    vers: progvers.vers,
+                    prog: progvers.prog(),
+                    vers: progvers.vers(),
                     proc,
                     cred: DEFAULT_OPAQUE_AUTH,
                     verf: DEFAULT_OPAQUE_AUTH,
@@ -657,8 +537,8 @@ impl ConnectionHandle {
             parent: &self.connection_span,
             "rpc_call",
             xid,
-            prog = progvers.prog,
-            vers = progvers.vers,
+            prog = progvers.prog(),
+            vers = progvers.vers(),
             proc = proc,
         );
 
@@ -715,8 +595,8 @@ impl ConnectionHandle {
             parent: &self.connection_span,
             "rpc_call",
             xid,
-            prog = progvers.prog,
-            vers = progvers.vers,
+            prog = progvers.prog(),
+            vers = progvers.vers(),
             proc = proc,
             fire_and_forget = true,
         );
@@ -767,8 +647,8 @@ impl ConnectionHandle {
             parent: &self.connection_span,
             "rpc_call",
             xid,
-            prog = progvers.prog,
-            vers = progvers.vers,
+            prog = progvers.prog(),
+            vers = progvers.vers(),
             proc = proc,
             fire_and_forget = true,
         );
@@ -785,8 +665,8 @@ impl ConnectionHandle {
             body: rpc_msg::rpc_msg_body::CALL {
                 cbody: rpc_msg::call_body {
                     rpcvers: 2,
-                    prog: progvers.prog,
-                    vers: progvers.vers,
+                    prog: progvers.prog(),
+                    vers: progvers.vers(),
                     proc,
                     cred: DEFAULT_OPAQUE_AUTH,
                     verf: DEFAULT_OPAQUE_AUTH,
@@ -827,8 +707,8 @@ impl ConnectionHandle {
             parent: &self.connection_span,
             "rpc_call",
             xid,
-            prog = progvers.prog,
-            vers = progvers.vers,
+            prog = progvers.prog(),
+            vers = progvers.vers(),
             proc = proc,
         );
 
@@ -844,8 +724,8 @@ impl ConnectionHandle {
             body: rpc_msg::rpc_msg_body::CALL {
                 cbody: rpc_msg::call_body {
                     rpcvers: 2,
-                    prog: progvers.prog,
-                    vers: progvers.vers,
+                    prog: progvers.prog(),
+                    vers: progvers.vers(),
                     proc,
                     cred: DEFAULT_OPAQUE_AUTH,
                     verf: DEFAULT_OPAQUE_AUTH,

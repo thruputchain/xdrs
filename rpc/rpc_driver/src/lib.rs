@@ -57,7 +57,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rpc_driver = { version = "0.10.1", features = ["concurrent-dispatch"] }
+//! rpc_driver = { version = "0.10.2", features = ["concurrent-dispatch"] }
 //! ```
 //!
 //! With this feature:
@@ -235,34 +235,13 @@ pub mod tcp_connection;
 mod rpc_msg;
 
 mod rpc_error;
-pub use rpc_error::RpcError;
 
-mod prog_error;
-pub use prog_error::ProgramError;
+// The stable API boundary — sender/handler traits and shared response/error
+// types — lives in the independently-versioned `rpc_api` crate so that
+// implementation-only driver releases do not force generated protocol
+// bindings to republish. Re-exported here at their historical paths for
+// source compatibility.
+pub use rpc_api::{ProgVers, ProgramError, RpcError};
 
 #[doc(hidden)]
 pub mod tasks;
-
-/// RPC program and version identifier.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ProgVers {
-    prog: u32,
-    vers: u32,
-}
-
-impl ProgVers {
-    /// Create a new program/version pair.
-    pub const fn new(prog: u32, vers: u32) -> Self {
-        Self { prog, vers }
-    }
-
-    /// Returns the program number.
-    pub fn prog(&self) -> u32 {
-        self.prog
-    }
-
-    /// Returns the version number.
-    pub fn vers(&self) -> u32 {
-        self.vers
-    }
-}

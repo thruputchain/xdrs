@@ -36,5 +36,10 @@ jobs:
           path: actions
           ref: main
 
+      # Explicit package list, in dependency order: the action packages each
+      # listed crate into vendor/ before the next one resolves against it, so
+      # rpc_api must precede rpc_driver. Keep in sync with publish.yml.
       - name: publish dry run
         uses: ./actions/cargo-publish-dry-run
+        with:
+          packages: rpc_api rpc_driver

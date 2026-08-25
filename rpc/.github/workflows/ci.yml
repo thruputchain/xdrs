@@ -29,6 +29,20 @@ jobs:
       # workspace-wide command builds rpc_driver WITH the feature. Serial
       # dispatch — the default, and what every consumer ships — is only
       # covered by the `-p rpc_driver` steps below.
+      # A consumer must never end up with two incompatible copies of the RPC
+      # boundary crates in one build — that is exactly the type-identity
+      # split this workspace exists to prevent (see "Versioning and
+      # releases" in README.md).
+      - name: Check for duplicate RPC boundary crates
+        run: |
+          DUPES=$(cargo tree --workspace --duplicates --edges normal --locked | grep -E '^(rpc_api|rpc_driver) v' || true)
+          if [ -n "$DUPES" ]; then
+            echo "::error::Duplicate RPC boundary crates in the dependency graph:"
+            echo "$DUPES"
+            cargo tree --workspace --duplicates --edges normal --locked
+            exit 1
+          fi
+          echo "OK: no duplicate rpc_api/rpc_driver in the graph"
       - name: Test (Workspace)
         run: cargo test --workspace --locked
       - name: Test rpc_driver (No Features)

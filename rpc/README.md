@@ -41,7 +41,7 @@ Enable per-connection concurrent handler execution:
 
 ```toml
 [dependencies]
-rpc_driver = { version = "0.10.1", features = ["concurrent-dispatch"] }
+rpc_driver = { version = "0.10.2", features = ["concurrent-dispatch"] }
 ```
 
 Tune concurrency via `ConnectionConfig::with_max_concurrent_dispatches`.
@@ -148,9 +148,36 @@ See `rpc-smoke/src/server.rs` for a complete reference example.
 
 | Crate | Purpose |
 |---|---|
-| `rpc_driver` | Core RPC library |
+| `rpc_api` | Stable API boundary: `RpcSender`/`RpcHandler` traits, `RpcResponse`, `RpcError`, `ProgramError`, `ProgVers` |
+| `rpc_driver` | Core RPC library (transports, pools, server, dispatch); re-exports `rpc_api` |
 | `rpc-smoke` | Multi-connection smoke test suite |
 | `bench-compare` | Local benchmark comparison tooling |
+| `rpc-api-fixture` | Unpublished fixture proving generated-style bindings need only `rpc_api` |
+
+### Versioning and releases
+
+`rpc_api` is the stability contract between `rpc_driver` and generated
+protocol bindings (protocol-rs): everything generated code needs lives
+there, so implementation-only `rpc_driver` releases don't force protocol
+crates to republish. It versions independently of the workspace:
+
+- **`rpc_api` changes must be additive** — new `#[non_exhaustive]`
+  `RpcError` variants, new trait methods with default implementations —
+  and bump 0.1.z. A breaking change (0.2.0) forces a coordinated republish
+  of every generated protocol crate; treat it as a last resort. The
+  driver's error encoder maps variants it doesn't know to SYSTEM_ERR, so a
+  newer `rpc_api` never changes an older driver's wire behavior.
+- **`rpc_driver` keeps the workspace version** and its own cadence,
+  depending on `rpc_api ^0.1` and re-exporting it at the historical paths
+  (the 0.10.2 split was a source-compatible patch).
+- **Releases** (`publish.yml`) publish `rpc_api` under its own
+  `rpc_api-v<version>` tag first — skipped when unchanged, and failing
+  loudly if its source changed without a version bump — then `rpc_driver`
+  under `v<version>`. Keep the workspace `rpc_api` dependency pin in sync
+  with `rpc_api/Cargo.toml`.
+- **Migration:** until x23c emits `::rpc_api::` paths and protocol crates
+  depend on `rpc_api` directly, a *breaking* driver release still recreates
+  the version diamond for pre-split protocol crates — regenerate first.
 
 ## Documentation
 

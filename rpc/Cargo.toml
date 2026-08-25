@@ -1,13 +1,16 @@
 [workspace]
-members = ["rpc_driver", "bench-compare", "rpc-smoke"]
+members = ["rpc_api", "rpc_driver", "bench-compare", "rpc-smoke", "rpc-api-fixture"]
 
 resolver = "2"
 
 [workspace.dependencies]
-rpc_driver = { path = "rpc_driver", version = "0.10.1" }
+rpc_driver = { path = "rpc_driver", version = "0.10.2" }
+# rpc_api versions independently of the workspace (it is the stable API
+# boundary crate); the version here must match rpc_api/Cargo.toml.
+rpc_api = { path = "rpc_api", version = "0.1.0", registry = "groundhog" }
 
 [workspace.package]
-version = "0.10.1"
+version = "0.10.2"
 rust-version = "1.96"
 
 [workspace.lints.rust]

@@ -12,7 +12,7 @@ use std::fmt;
 /// # Example
 ///
 /// ```no_run
-/// use rpc_driver::ProgramError;
+/// use rpc_api::ProgramError;
 ///
 /// fn load_config() -> Result<Vec<u8>, ProgramError> {
 ///     let bytes = std::fs::read("config.bin")?;

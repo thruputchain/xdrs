@@ -1,10 +1,48 @@
+# Releases every published crate in this repository in one idempotent pass.
+#
+# Publishing runs in dependency order:
+#
+#   1. `rpc_api` — the stable API boundary crate (sender/handler traits and
+#      shared response/error types). It versions independently of the
+#      workspace and publishes under its own `rpc_api-v<version>` tag.
+#   2. `rpc_driver` — the transport/pool implementation, workspace-versioned
+#      and published under the `v<version>` tag. It depends on the published
+#      `rpc_api`.
+#
+# Every step tolerates re-runs: the cargo-release-tag action recreates tags
+# at HEAD and treats an already-pushed tag on this commit as released, and
+# `cargo publish` skips versions the registry already has — so a run that
+# fails partway is resumed by dispatching it again (on the tagged commit;
+# running on a later commit without a version bump fails at the tag step,
+# deliberately). When a release doesn't bump `rpc_api`, its tag stays at the
+# previous release commit and — after verifying the version is really in the
+# registry and the source still matches the tag — its publish step is
+# skipped.
+#
+# Dispatch with dry_run for all of the verification and none of the tagging
+# or publishing.
 name: Release package
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run only (no tag/publish)'
+        required: false
+        type: boolean
+        default: false
+
+# Two concurrent releases would race on tags and registry state; queue them.
+concurrency:
+  group: publish
 
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  # The stable API boundary crate: versioned independently of the workspace,
+  # published under its own `rpc_api-v<version>` tag.
+  API_PACKAGES: rpc_api
+  # Workspace-versioned crates published under the `v<version>` tag.
+  PRIMARY_PACKAGES: rpc_driver
 
 jobs:
   publish:
@@ -16,7 +54,7 @@ jobs:
       - name: Clean up .gitconfig
         run: |
             echo "Cleaning up .gitconfig"
-            rm -f /home/hogci/.gitconfig\
+            rm -f /home/hogci/.gitconfig
 
       - name: Setup SSH Agent
         uses: webfactory/ssh-agent@v0.9.1
@@ -40,24 +78,90 @@ jobs:
           path: actions
           ref: main
 
-      - name: dry run
+      # Verifies both crates offline, in dependency order: the action
+      # packages each listed crate into vendor/ before the next one resolves
+      # against it, so rpc_api must precede rpc_driver.
+      - name: Publish dry run
         uses: ./actions/cargo-publish-dry-run
-
-      - name: tag commit with version
-        id: publish-tag
-        uses: ./actions/cargo-version-tag
         with:
-          packages: rpc_driver
-      
-      - name: push tag
+          packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
+
+      # Tags HEAD `v<workspace version>`, pushes, and fails when the tag
+      # already exists on another commit (a release commit re-run is a no-op;
+      # a new commit without a version bump fails here, loudly — the action's
+      # default).
+      - name: Tag commit with version
+        if: ${{ inputs.dry_run == false }}
+        id: publish-tag
+        uses: ./actions/cargo-release-tag
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          github-token: ${{ github.token }}
+
+      # rpc_api gets its own `rpc_api-v<version>` tag, which legitimately
+      # pre-exists at an older commit whenever a release doesn't bump rpc_api.
+      # skip-if-published verifies against the registry that such a version is
+      # really already published — released=false then skips the publish step
+      # below — and fails the run when it is NOT published (a previous run
+      # died between tag push and publish; publishing HEAD would ship content
+      # that doesn't match the tag — re-run from the tagged commit, or delete
+      # the stale tag).
+      - name: Tag rpc_api
+        if: ${{ inputs.dry_run == false }}
+        id: tag-rpc-api
+        uses: ./actions/cargo-release-tag
+        with:
+          packages: ${{ env.API_PACKAGES }}
+          tag-prefix: 'rpc_api-v'
+          github-token: ${{ github.token }}
+          on-existing-tag: 'skip-if-published'
+          registry-name: groundhog
+          registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+
+      # released=false means the registry already has this rpc_api version —
+      # but that alone doesn't prove HEAD's rpc_api source matches it. Require
+      # the source tree to be identical to the tagged commit; otherwise
+      # rpc_api changed without a version bump, and rpc_driver would publish
+      # against an older registry rpc_api than the source the dry run
+      # validated.
+      - name: Verify unreleased rpc_api is unchanged
+        if: ${{ inputs.dry_run == false && steps.tag-rpc-api.outputs.released == 'false' }}
+        env:
+          TAG: ${{ steps.tag-rpc-api.outputs.tag }}
         run: |
-          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git
-          git push origin ${{ steps.publish-tag.outputs.tag }}
-          git remote set-url origin git@github.com:${{ github.repository }}.git
-          
-      - name: publish
+          set -euo pipefail
+          # Fetch the remote tag's commit (the checkout is shallow); the
+          # peeled `^{}` entry is the commit for an annotated tag.
+          git fetch origin "refs/tags/$TAG"
+          LS=$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
+          PEELED_SHA=$(grep '\^{}$' <<<"$LS" | cut -f1 | head -1 || true)
+          DIRECT_SHA=$(grep -v '\^{}$' <<<"$LS" | cut -f1 | head -1 || true)
+          REMOTE_SHA="${PEELED_SHA:-$DIRECT_SHA}"
+          if ! git diff --quiet "$REMOTE_SHA" HEAD -- rpc_api; then
+            echo "::error::rpc_api changed since tag $TAG ($REMOTE_SHA) but its version was not bumped"
+            echo "::error::Bump the version in rpc_api/Cargo.toml (and the workspace dependency pin) before releasing"
+            exit 1
+          fi
+          echo "OK: rpc_api source matches tag $TAG; skipping its publish is safe"
+
+      # Unlike the dry run, the publish steps resolve deps against the live
+      # registry — hence the dependency order: rpc_api publishes before
+      # rpc_driver, whose publish-time verify build needs it in the registry.
+      - name: Publish rpc_api
+        if: ${{ inputs.dry_run == false && steps.tag-rpc-api.outputs.released == 'true' }}
         uses: ./actions/cargo-publish
         with:
+          packages: ${{ env.API_PACKAGES }}
+          git-tag: ${{ steps.tag-rpc-api.outputs.tag }}
+          tag-prefix: 'rpc_api-v'
+          registry-name: groundhog
+          registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+
+      - name: Publish rpc_driver
+        if: ${{ inputs.dry_run == false }}
+        uses: ./actions/cargo-publish
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
           git-tag: ${{ steps.publish-tag.outputs.tag }}
           registry-name: groundhog
           registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}

@@ -92,14 +92,14 @@ fn route_reply(
 fn prepare_response(
     client_cbs: &ConnectionHandle,
     xid: u32,
-    result: Result<Vec<u8>, crate::rpc_error::RpcError>,
+    result: Result<Vec<u8>, crate::RpcError>,
 ) -> Result<Vec<u8>, ReadTaskError> {
     match result {
         Ok(response) => {
             let buf = client_cbs.buf_pool.take();
             prepare_success_response(buf, xid, &response)
         }
-        Err(e) => Ok(e.to_error_record(xid)),
+        Err(e) => Ok(crate::rpc_error::to_error_record(&e, xid)),
     }
 }
 
@@ -108,7 +108,7 @@ fn prepare_response(
 async fn send_response(
     client_cbs: &ConnectionHandle,
     xid: u32,
-    result: Result<Vec<u8>, crate::rpc_error::RpcError>,
+    result: Result<Vec<u8>, crate::RpcError>,
 ) -> Result<(), ReadTaskError> {
     let msg = prepare_response(client_cbs, xid, result)?;
     client_cbs
@@ -157,10 +157,7 @@ fn parse_record(record: Vec<u8>) -> Result<ParsedRecord, ReadTaskError> {
             xid: msg.xid,
             record,
             payload_offset,
-            vers: ProgVers {
-                prog: cbody.prog,
-                vers: cbody.vers,
-            },
+            vers: ProgVers::new(cbody.prog, cbody.vers),
             rpcvers: cbody.rpcvers,
             proc: cbody.proc,
         }),
@@ -202,10 +199,7 @@ async fn run_client_read_task(
                 match msg.body {
                     rpc_msg::rpc_msg_body::CALL { cbody } => {
                         let xid = msg.xid;
-                        let vers = ProgVers {
-                            prog: cbody.prog,
-                            vers: cbody.vers,
-                        };
+                        let vers = ProgVers::new(cbody.prog, cbody.vers);
                         let sender: Arc<dyn RpcSender> = client_handle.clone();
                         let res = with_peer(sender, async {
                             service_map
@@ -359,15 +353,12 @@ pub async fn launch_read_task(
         match msg.body {
             rpc_msg::rpc_msg_body::CALL { cbody } => {
                 let xid = msg.xid;
-                let vers = ProgVers {
-                    prog: cbody.prog,
-                    vers: cbody.vers,
-                };
+                let vers = ProgVers::new(cbody.prog, cbody.vers);
                 let span = tracing::debug_span!(
                     "rpc_call",
                     xid,
-                    prog = vers.prog,
-                    vers = vers.vers,
+                    prog = vers.prog(),
+                    vers = vers.vers(),
                     proc = cbody.proc,
                 );
                 let sender: Arc<dyn RpcSender> = client_cbs.clone();
@@ -485,7 +476,7 @@ mod concurrent {
     /// one.
     type HandlerFuture =
         Pin<Box<dyn Future<Output = Result<HandlerResult, Panic>> + Send + 'static>>;
-    type HandlerResult = Result<Vec<u8>, crate::rpc_error::RpcError>;
+    type HandlerResult = Result<Vec<u8>, crate::RpcError>;
     type Panic = Box<dyn std::any::Any + Send>;
 
     /// Build the `'static` handler future for one CALL.
@@ -522,7 +513,7 @@ mod concurrent {
             Err(panic) => {
                 tracing::error!(xid, "handler panicked");
                 discard_panic_payload(panic, xid, "handler panic");
-                Err(crate::rpc_error::RpcError::SystemError)
+                Err(crate::RpcError::SystemError)
             }
         }
     }
@@ -617,7 +608,7 @@ mod concurrent {
                     if count >= pending_cap {
                         tracing::warn!(xid, pending = count, "rejecting CALL: pending queue full");
                         let error_bytes =
-                            crate::rpc_error::RpcError::SystemError.to_error_record(xid);
+                            crate::rpc_error::to_error_record(&crate::RpcError::SystemError, xid);
                         match client_cbs.try_send_msg(error_bytes) {
                             Ok(()) => {}
                             Err(tokio::sync::mpsc::error::TrySendError::Full(msg)) => {
@@ -651,8 +642,8 @@ mod concurrent {
                         parent: &client_cbs.connection_span,
                         "rpc_call",
                         xid,
-                        prog = vers.prog,
-                        vers = vers.vers,
+                        prog = vers.prog(),
+                        vers = vers.vers(),
                         proc = proc,
                         probed = tracing::field::Empty,
                         ready = tracing::field::Empty,
@@ -714,7 +705,7 @@ mod concurrent {
                                 let _enter = span.enter();
                                 let result = handler_outcome(result, xid);
                                 if drop_ready_handler(handler, xid) {
-                                    Err(crate::rpc_error::RpcError::SystemError)
+                                    Err(crate::RpcError::SystemError)
                                 } else {
                                     result
                                 }
@@ -956,11 +947,7 @@ mod tests {
     #[cfg(feature = "concurrent-dispatch")]
     #[async_trait::async_trait]
     impl crate::handler::RpcHandler for ReadyTestService {
-        async fn dispatch(
-            &self,
-            proc: u32,
-            data: &[u8],
-        ) -> Result<Vec<u8>, crate::rpc_error::RpcError> {
+        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, crate::RpcError> {
             self.entered.send(proc).unwrap();
             Ok(data.to_vec())
         }
@@ -1130,7 +1117,7 @@ mod tests {
         }
 
         let result = concurrent::handler_outcome(Err(Box::new(PanicOnDrop)), 7);
-        assert_eq!(result.unwrap_err(), crate::rpc_error::RpcError::SystemError);
+        assert_eq!(result.unwrap_err(), crate::RpcError::SystemError);
     }
 
     #[cfg(feature = "concurrent-dispatch")]
@@ -1138,8 +1125,7 @@ mod tests {
     fn ready_handler_destructor_cannot_unwind_dispatch() {
         struct ReadyPanicOnDrop;
         impl std::future::Future for ReadyPanicOnDrop {
-            type Output =
-                Result<Result<Vec<u8>, crate::rpc_error::RpcError>, Box<dyn std::any::Any + Send>>;
+            type Output = Result<Result<Vec<u8>, crate::RpcError>, Box<dyn std::any::Any + Send>>;
 
             fn poll(
                 self: std::pin::Pin<&mut Self>,
@@ -1158,7 +1144,7 @@ mod tests {
             Box<
                 dyn std::future::Future<
                         Output = Result<
-                            Result<Vec<u8>, crate::rpc_error::RpcError>,
+                            Result<Vec<u8>, crate::RpcError>,
                             Box<dyn std::any::Any + Send>,
                         >,
                     > + Send,

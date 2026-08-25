@@ -17,6 +17,7 @@ categories = ["rpc"]
 concurrent-dispatch = []
 
 [dependencies]
+rpc_api = { workspace = true }
 async-trait = "0.1.89"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"

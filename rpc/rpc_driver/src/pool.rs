@@ -32,8 +32,8 @@ use tokio::time::Instant;
 #[cfg(test)]
 use crate::connect_client;
 use crate::{
-    ConnectionConfig, ConnectionHandle, ProgVers, RpcResponse, RpcSender,
-    connect_client_with_config, rpc_error::RpcError,
+    ConnectionConfig, ConnectionHandle, ProgVers, RpcError, RpcResponse, RpcSender,
+    connect_client_with_config,
 };
 #[cfg(test)]
 use std::future::Future;

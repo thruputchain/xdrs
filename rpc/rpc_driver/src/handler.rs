@@ -1,27 +1,11 @@
 //! RPC handler dispatch and service registration.
 
-use crate::{ProgVers, rpc_error::RpcError};
-use async_trait::async_trait;
+use crate::{ProgVers, RpcError};
 use std::collections::BTreeMap;
 
-/// Trait for implementing RPC service handlers.
-///
-/// Implement this trait to define how your service handles incoming RPC calls.
-///
-/// For bidirectional RPC (calling back to the peer from within a handler),
-/// use [`peer()`](crate::peer) to obtain the per-connection sender.
-///
-/// With the default serial dispatch, calling back to the peer inline will
-/// deadlock — spawn a separate task instead. With the `concurrent-dispatch`
-/// feature enabled, inline callbacks work without deadlocking.
-#[async_trait]
-pub trait RpcHandler: Send + Sync {
-    /// Handle an incoming RPC call for the given procedure number.
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError>;
-
-    /// Return the program number and version this service handles.
-    fn prog_vers(&self) -> ProgVers;
-}
+// The RpcHandler trait lives in the stable `rpc_api` crate; re-exported here
+// at its historical path for source compatibility.
+pub use rpc_api::RpcHandler;
 
 /// Registry of RPC services, keyed by program number and version.
 pub struct ServiceMap {
@@ -103,6 +87,7 @@ impl ServiceMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
 
     /// Test service that echoes data back or returns the proc number as a u32.
     struct TestService {
