@@ -11,6 +11,13 @@ output = root / "target/coverage-regression"
 output.mkdir(parents=True, exist_ok=True)
 toolchain = os.environ.get("XDRS_COVERAGE_TOOLCHAIN", "nightly-2026-05-26")
 env = dict(os.environ, RUSTFLAGS="--deny warnings")
+# LLVM can omit schema and conversion-writer mappings even when called. Check
+# those generators directly in both feature modes as well.
+for features in ([], ["--features", "include-generated-coverage"]):
+    subprocess.run(["cargo", f"+{toolchain}", "test", "-p", "xdr-derive", "--lib",
+                    *features, "generated_coverage_policy"],
+                   cwd=root, env=env, check=True)
+
 reports = {}
 for mode in ("included", "excluded", "nightly-cfg-disabled"):
     report = output / f"{mode}.json"
@@ -32,7 +39,11 @@ generated = ("read_xdr", "write_xdr", "type_def", "type_ident",
 # The unused generic reader/writer mappings reproduce the reported issue.
 for method in ("read_xdr", "write_xdr"):
     for mode in ("included", "nightly-cfg-disabled"):
-        assert any(method in f["name"] for f in reports[mode]), (mode, method)
+        for type_name in ("Record", "Choice", "Converted", "Fieldless"):
+            if type_name == "Converted" and method == "write_xdr":
+                continue  # Checked directly above; LLVM omits this mapping.
+            assert any(method in f["name"] and type_name in f["name"]
+                       for f in reports[mode]), (mode, type_name, method)
 assert not any(any(m in f["name"] for m in generated) for f in reports["excluded"])
 for mode, functions in reports.items():
     assert any("handwritten" in f["name"] and f["count"] > 0 for f in functions), mode
