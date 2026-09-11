@@ -34,6 +34,7 @@ pretty_assertions = "1.4.1"
 heapless = "0.9.3"
 
 [workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 unsafe_code = "allow"
 
 [package]
@@ -79,6 +80,7 @@ serde = ["xdr-common/serde"] # serde support for xdr-common types
 schemars = ["xdr-common/schemars"] # schemars JsonSchema support for xdr-common types
 
 # Enable optional dependencies
+include-generated-coverage = ["xdr-derive?/include-generated-coverage"] # include generated code in nightly coverage reports
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
 repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
 heapless = ["dep:heapless", "xdr-repr?/heapless"] # serialization and schema support for types from the `heapless` package

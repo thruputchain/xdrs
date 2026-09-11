@@ -17,6 +17,10 @@ categories.workspace = true
 proc-macro = true
 doctest = true
 
+[features]
+# Opt back into coverage of generated code (excluded by default on nightly).
+include-generated-coverage = []
+
 [dependencies]
 darling = "0.24.0"
 proc-macro2 = "1.0.105"
@@ -27,6 +31,7 @@ syn = { version = "3.0.3", features = ["visit"] }
 xdrs = { path = "..", features = ["alloc", "derive", "repr"] }
 
 [lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 unsafe_code = "forbid"
 
 [package.metadata.docs.rs]

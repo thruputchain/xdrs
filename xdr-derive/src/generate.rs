@@ -72,12 +72,14 @@ fn write_data(input: &syn::DeriveInput, attrs: &InputAttrs) -> Result<TokenStrea
 }
 
 fn write_into_type(input: &syn::DeriveInput, into_type: &syn::Type) -> TokenStream {
+    let coverage = crate::util::coverage_attribute();
     let ty_ident = &input.ident;
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
                 <#into_type as __xdrs::WriteXDR>::write_xdr(
                     &::core::convert::Into::into(::core::clone::Clone::clone(self)),
@@ -85,6 +87,7 @@ fn write_into_type(input: &syn::DeriveInput, into_type: &syn::Type) -> TokenStre
                 )
             }
 
+            #coverage
             unsafe fn write_xdr_unchecked<F, W: __xdrs::WriterUnchecked<F>>(&self, w: &mut W) {
                 unsafe {
                     <#into_type as __xdrs::WriteXDR>::write_xdr_unchecked(
@@ -98,6 +101,7 @@ fn write_into_type(input: &syn::DeriveInput, into_type: &syn::Type) -> TokenStre
 }
 
 fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let write_fields = item
@@ -116,12 +120,14 @@ fn write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Toke
 
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, w: &mut W) -> __xdrs::WriteResult<()> {
                 #(#write_fields)*
                 Ok(())
             }
 
             #[allow(unused_unsafe)]
+            #coverage
             unsafe fn write_xdr_unchecked<F, W: __xdrs::WriterUnchecked<F>>(&self, w: &mut W) {
                 unsafe {
                     #(#write_fields_unchecked)*
@@ -155,6 +161,7 @@ fn write_field(index: usize, field: &syn::Field, mode: Mode) -> Result<TokenStre
 }
 
 fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
 
@@ -193,6 +200,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
 
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::WriteResult<()> {
                 let __xdr_discriminant: i32 = match self {
                     #(#discriminant_arms)*
@@ -206,6 +214,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
             }
 
             #[allow(unused_unsafe)]
+            #coverage
             unsafe fn write_xdr_unchecked<F, W: __xdrs::WriterUnchecked<F>>(&self, __write_xdr_writer: &mut W) {
                 unsafe {
                     let __xdr_discriminant: i32 = match self {
@@ -403,6 +412,7 @@ fn read_data(input: &syn::DeriveInput, attrs: &InputAttrs) -> Result<TokenStream
 
 // Target type must impl From<from_type>
 fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     let ty_ident = &input.ident;
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
     let generics = modify_for_reader_impl(input.generics.clone());
@@ -410,6 +420,7 @@ fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<Tok
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let from_val: #from_type = __xdrs::read_xdr(r)?;
                 Ok(::core::convert::Into::into(from_val))
@@ -419,6 +430,7 @@ fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<Tok
 }
 
 fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     let ty_ident = &input.ident;
 
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -429,6 +441,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 Ok(#ty_ident #read_fields)
             }
@@ -475,6 +488,7 @@ fn read_field(_index: usize, field: &syn::Field) -> Result<TokenStream> {
 }
 
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
     let default_variant = find_default_variant(item);
@@ -499,6 +513,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let d = r.read_i32()?;
 

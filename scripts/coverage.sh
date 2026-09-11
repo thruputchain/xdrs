@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Include generated code in every run; keep permissive decoding a separate run.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+coverage_toolchain="${XDRS_COVERAGE_TOOLCHAIN:-nightly-2026-05-26}"
+cov() { cargo +"$coverage_toolchain" llvm-cov "$@"; }
+cov clean --workspace
+cov --no-report --workspace --lib --tests \
+    --features include-generated-coverage,alloc,derive,repr,ns,int128,heapless,serde,schemars
+cov --no-report --lib --tests --features include-generated-coverage,derive,int128
+cov --no-report --lib --tests --no-default-features --features include-generated-coverage,derive,int128
+cov --no-report --features include-generated-coverage,permissive,int128 --test ints
+cov report -p xdrs -p xdr-common -p xdr-derive -p xdr-repr --html
+cov report -p xdrs -p xdr-common -p xdr-derive -p xdr-repr --lcov --output-path target/llvm-cov/lcov.info
+cov report -p xdrs -p xdr-common -p xdr-derive -p xdr-repr

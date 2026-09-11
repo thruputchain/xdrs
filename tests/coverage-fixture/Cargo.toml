@@ -1,0 +1,16 @@
+[package]
+name = "xdrs-coverage-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+xdrs = { path = "../..", default-features = false, features = ["alloc", "derive", "repr"] }
+
+[features]
+include-generated-coverage = ["xdrs/include-generated-coverage"]
+
+[lints.rust]
+unexpected_cfgs = { level = "deny", check-cfg = ["cfg(coverage_nightly)"] }
