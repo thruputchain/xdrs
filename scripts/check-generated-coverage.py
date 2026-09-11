@@ -16,8 +16,8 @@ for mode in ("included", "excluded", "nightly-cfg-disabled"):
     report = output / f"{mode}.json"
     cmd = ["cargo", f"+{toolchain}", "llvm-cov", "--manifest-path",
            str(fixture / "Cargo.toml"), "--lib", "--json", "--output-path", str(report)]
-    if mode != "included":
-        cmd += ["--features", "exclude-generated-coverage"]
+    if mode == "included":
+        cmd += ["--features", "include-generated-coverage"]
     if mode == "nightly-cfg-disabled":
         cmd += ["--no-cfg-coverage-nightly"]
     subprocess.run(cmd, cwd=root, env=env, check=True)
@@ -36,4 +36,4 @@ for method in ("read_xdr", "write_xdr"):
 assert not any(any(m in f["name"] for m in generated) for f in reports["excluded"])
 for mode, functions in reports.items():
     assert any("handwritten" in f["name"] and f["count"] > 0 for f in functions), mode
-print("Generated methods are excluded only when opted in; handwritten code stays covered.")
+print("Generated methods are excluded by default; inclusion is opt-in; handwritten code stays covered.")

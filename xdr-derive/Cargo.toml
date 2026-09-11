@@ -18,8 +18,8 @@ proc-macro = true
 doctest = true
 
 [features]
-# Emit coverage exclusions for consumers that opt in. Normal builds are unchanged.
-exclude-generated-coverage = []
+# Opt back into coverage of generated code (excluded by default on nightly).
+include-generated-coverage = []
 
 [dependencies]
 darling = "0.24.0"

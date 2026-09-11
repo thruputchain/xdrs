@@ -7,10 +7,10 @@ publish = false
 [workspace]
 
 [dependencies]
-xdrs = { path = "../..", features = ["alloc", "derive", "repr"] }
+xdrs = { path = "../..", default-features = false, features = ["alloc", "derive", "repr"] }
 
 [features]
-exclude-generated-coverage = ["xdrs/exclude-generated-coverage"]
+include-generated-coverage = ["xdrs/include-generated-coverage"]
 
 [lints.rust]
 unexpected_cfgs = { level = "deny", check-cfg = ["cfg(coverage_nightly)"] }

@@ -266,7 +266,7 @@ pub fn check_enum_repr(input: &syn::DeriveInput) -> Result<()> {
 /// Evaluate the feature here, but the coverage cfg at the invocation site:
 /// cargo-llvm-cov does not necessarily instrument dependency proc-macro crates.
 pub fn coverage_attribute() -> proc_macro2::TokenStream {
-    if cfg!(feature = "exclude-generated-coverage") {
+    if !cfg!(feature = "include-generated-coverage") {
         quote::quote! {
             #[cfg_attr(coverage_nightly, coverage(off))]
         }

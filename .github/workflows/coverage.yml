@@ -23,7 +23,7 @@ jobs:
         run: cargo +nightly-2026-05-26 install cargo-llvm-cov --version 0.9.1 --locked
       - name: Measure library and generated code
         run: bash scripts/coverage.sh
-      - name: Check opt-in generated-code exclusion
+      - name: Check default generated-code exclusion
         run: python3 scripts/check-generated-coverage.py
       - name: Upload coverage reports
         uses: actions/upload-artifact@v7
