@@ -74,11 +74,14 @@ fn from_input(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn named_type_reference_methods(ty_name: String) -> TokenStream {
+    let coverage = crate::util::coverage_attribute();
     quote! {
+        #coverage
         fn type_ident() -> __xdrs::Ident {
             __xdrs::ident(#ty_name)
         }
 
+        #coverage
         fn named_declaration(name: __xdrs::Ident) -> __xdrs::Declaration {
             __xdrs::Declaration::Named {
                 name,
@@ -89,6 +92,7 @@ fn named_type_reference_methods(ty_name: String) -> TokenStream {
 }
 
 fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     // Structs with no fields are allowed per RFC4506:
     // ```
     // struct Empty {
@@ -123,6 +127,7 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
 
     Ok(quote! {
         impl #impl_generics __xdrs::HasTypeDef for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn type_def() -> __xdrs::TypeDef {
                 #struct_typedef
             }
@@ -150,6 +155,7 @@ fn from_enum_fieldless(
     item: &syn::DataEnum,
     attrs: &Attrs,
 ) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
@@ -160,6 +166,7 @@ fn from_enum_fieldless(
     // For a fieldless enum, we define an XDR enumeration
     Ok(quote! {
         impl #impl_generics __xdrs::HasTypeDef for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn type_def() -> __xdrs::TypeDef {
                 #enum_typedef
             }
@@ -174,6 +181,7 @@ fn from_enum_with_fields(
     item: &syn::DataEnum,
     attrs: &Attrs,
 ) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
@@ -185,6 +193,7 @@ fn from_enum_with_fields(
     let union_typedef = union_typedef(input, item, attrs)?;
     impls.push(quote! {
         impl #impl_generics __xdrs::HasTypeDef for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn type_def() -> __xdrs::TypeDef {
                 #union_typedef
             }
@@ -213,6 +222,7 @@ fn from_enum_with_fields(
 
     impls.push(quote! {
         impl #impl_generics __xdrs::HasSpecification for #ty_ident #ty_generics #where_clause {
+            #coverage
             fn spec() -> __xdrs::Specification {
                 __xdrs::Specification {
                     definitions: __xdrs::vec![#(#spec_definitions),*]

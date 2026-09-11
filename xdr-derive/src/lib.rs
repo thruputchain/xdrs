@@ -127,6 +127,16 @@
 //! All three derives accept `#[xdr(crate = "path")]` to override the default
 //! `::xdrs` import path (useful when the dependency is renamed or re-exported).
 //!
+//! ### Coverage
+//!
+//! The opt-in `exclude-generated-coverage` Cargo feature excludes generated
+//! methods when the consuming crate is built with `coverage_nightly` (set by
+//! cargo-llvm-cov on nightly). Consumers must enable the unstable attribute with
+//! `#![cfg_attr(coverage_nightly, feature(coverage_attribute))]` in each crate
+//! invoking these derives. Normal and stable coverage builds are unchanged.
+//! Leave the feature disabled to measure generated code; Cargo features unify
+//! across dependencies, so enabling it affects all users of this macro crate.
+//!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 #![warn(missing_docs)]

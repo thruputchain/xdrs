@@ -1,0 +1,36 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly-2026-05-26
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        run: cargo +nightly-2026-05-26 install cargo-llvm-cov --version 0.9.1 --locked
+      - name: Measure library and generated code
+        run: bash scripts/coverage.sh
+      - name: Check opt-in generated-code exclusion
+        run: python3 scripts/check-generated-coverage.py
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: |
+            target/llvm-cov/html
+            target/llvm-cov/lcov.info
+            target/coverage-regression/*.json
+          if-no-files-found: error

@@ -72,6 +72,7 @@ fn const_write_data(input: &syn::DeriveInput) -> Result<TokenStream> {
 }
 
 fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -107,20 +108,24 @@ fn const_write_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Resul
 
     Ok(quote! {
         impl #impl_generics #ty_ident #ty_generics #where_clause {
+            #coverage
             pub const fn const_write_cxs<const #buf: usize>(&self, w: &mut cxs::ConstWriter<#buf>) {
                 #(#cxs_fields)*
             }
 
+            #coverage
             pub const fn const_write_txs<const #buf: usize>(&self, w: &mut txs::ConstWriter<#buf>) {
                 #(#txs_fields)*
             }
 
             /// Returns the CXS encoded size of this value in bytes.
+            #coverage
             pub const fn const_cxs_size(&self) -> usize {
                 0 #(+ #cxs_size_fields)*
             }
 
             /// Returns the TXS encoded size of this value in bytes.
+            #coverage
             pub const fn const_txs_size(&self) -> usize {
                 0 #(+ #txs_size_fields)*
             }
@@ -638,6 +643,7 @@ fn const_write_value_expr(
 }
 
 fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
+    let coverage = crate::util::coverage_attribute();
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
 
@@ -676,12 +682,14 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
 
     Ok(quote! {
         impl #impl_generics #ty_ident #ty_generics #where_clause {
+            #coverage
             pub const fn const_write_cxs<const #buf: usize>(&self, w: &mut cxs::ConstWriter<#buf>) {
                 match self {
                     #(#cxs_arms)*
                 }
             }
 
+            #coverage
             pub const fn const_write_txs<const #buf: usize>(&self, w: &mut txs::ConstWriter<#buf>) {
                 match self {
                     #(#txs_arms)*
@@ -689,6 +697,7 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
             }
 
             /// Returns the CXS encoded size of this value in bytes.
+            #coverage
             pub const fn const_cxs_size(&self) -> usize {
                 match self {
                     #(#cxs_size_arms)*
@@ -696,6 +705,7 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
             }
 
             /// Returns the TXS encoded size of this value in bytes.
+            #coverage
             pub const fn const_txs_size(&self) -> usize {
                 match self {
                     #(#txs_size_arms)*
