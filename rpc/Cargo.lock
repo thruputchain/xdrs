@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "bench-compare"
-version = "0.10.4"
+version = "0.10.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -332,7 +332,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-api-fixture"
-version = "0.10.4"
+version = "0.10.5"
 dependencies = [
  "async-trait",
  "rpc_api",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-smoke"
-version = "0.10.4"
+version = "0.10.5"
 dependencies = [
  "async-trait",
  "clap",
@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "rpc_driver"
-version = "0.10.4"
+version = "0.10.5"
 dependencies = [
  "async-trait",
  "libc",
@@ -635,18 +635,18 @@ dependencies = [
 
 [[package]]
 name = "xdr-common"
-version = "0.8.5"
+version = "0.10.1"
 source = "sparse+https://crates.thruput.network/api/v1/crates/"
-checksum = "5a836bf613f92d9140111688391ddada4e4d2cc69493d2158f1c505f15136d0a"
+checksum = "02f9fcf0cfda9c8a1f23f294bfd03afa4183de2d1ed3ab84044b803814370eb8"
 dependencies = [
  "escape-bytes",
 ]
 
 [[package]]
 name = "xdr-derive"
-version = "0.8.5"
+version = "0.10.1"
 source = "sparse+https://crates.thruput.network/api/v1/crates/"
-checksum = "e0dfd0bfff707c20648bd1df3397e56e6a470cbf5f9daa606a26a5f46cdcc127"
+checksum = "bbc16a3342ab1fc2d3ecbb31ecc04e3256178473021399f048ad465e253f4c8e"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -656,9 +656,9 @@ dependencies = [
 
 [[package]]
 name = "xdrs"
-version = "0.8.5"
+version = "0.10.1"
 source = "sparse+https://crates.thruput.network/api/v1/crates/"
-checksum = "417aa8baac4246f82277edac39ea30a55ddc0b50cda37ef1e9652a2410a5e0fa"
+checksum = "86a8dd30be6b30553e5733697fadf8d85ee59092f561145339c4813011833c81"
 dependencies = [
  "xdr-common",
  "xdr-derive",
