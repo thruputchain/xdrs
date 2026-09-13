@@ -127,16 +127,6 @@
 //! All three derives accept `#[xdr(crate = "path")]` to override the default
 //! `::xdrs` import path (useful when the dependency is renamed or re-exported).
 //!
-//! ### Coverage
-//!
-//! Generated methods are excluded by default when the consuming crate is built
-//! with `coverage_nightly` (set by cargo-llvm-cov on nightly). Consumers must
-//! enable `#![cfg_attr(coverage_nightly, feature(coverage_attribute))]` and
-//! register `cfg(coverage_nightly)` in their Cargo lint configuration.
-//! The default-off `include-generated-coverage` Cargo feature restores generated
-//! method coverage, including for this crate's own coverage runs. Cargo features
-//! unify across dependencies. Normal and stable coverage builds are unchanged.
-//!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
 #![warn(missing_docs)]

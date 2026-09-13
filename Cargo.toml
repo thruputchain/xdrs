@@ -9,7 +9,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.10.0"
+version = "0.10.1"
 edition = "2024"
 rust-version = "1.96"
 authors = ["Groundhog Team"]
@@ -26,15 +26,14 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.10.0", registry = "groundhog" }
-xdr-repr = { path = "xdr-repr", version = "=0.10.0", registry = "groundhog" }
-xdr-common = { path = "xdr-common", version = "=0.10.0", registry = "groundhog" }
+xdr-derive = { path = "xdr-derive", version = "=0.10.1", registry = "groundhog" }
+xdr-repr = { path = "xdr-repr", version = "=0.10.1", registry = "groundhog" }
+xdr-common = { path = "xdr-common", version = "=0.10.1", registry = "groundhog" }
 
 pretty_assertions = "1.4.1"
 heapless = "0.9.3"
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 unsafe_code = "allow"
 
 [package]
@@ -80,7 +79,6 @@ serde = ["xdr-common/serde"] # serde support for xdr-common types
 schemars = ["xdr-common/schemars"] # schemars JsonSchema support for xdr-common types
 
 # Enable optional dependencies
-include-generated-coverage = ["xdr-derive?/include-generated-coverage"] # include generated code in nightly coverage reports
 derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
 repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
 heapless = ["dep:heapless", "xdr-repr?/heapless"] # serialization and schema support for types from the `heapless` package

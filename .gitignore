@@ -7,5 +7,3 @@ actions/
 #mac nonsense
 **/.DS_Store
 
-/tests/coverage-fixture/target/
-/tests/coverage-fixture/Cargo.lock
