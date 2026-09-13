@@ -130,13 +130,12 @@ jobs:
           TAG: ${{ steps.tag-rpc-api.outputs.tag }}
         run: |
           set -euo pipefail
-          # Fetch the remote tag's commit (the checkout is shallow); the
-          # peeled `^{}` entry is the commit for an annotated tag.
-          git fetch origin "refs/tags/$TAG"
-          LS=$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")
-          PEELED_SHA=$(grep '\^{}$' <<<"$LS" | cut -f1 | head -1 || true)
-          DIRECT_SHA=$(grep -v '\^{}$' <<<"$LS" | cut -f1 | head -1 || true)
-          REMOTE_SHA="${PEELED_SHA:-$DIRECT_SHA}"
+          # Use checkout's persisted HTTPS credentials. The shared actions use
+          # SSH for their own repository and may restore origin as an SSH URL;
+          # that deploy key does not grant access to this source repository.
+          GIT_CONFIG_GLOBAL=/dev/null git fetch \
+            "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$TAG"
+          REMOTE_SHA=$(git rev-parse 'FETCH_HEAD^{commit}')
           if ! git diff --quiet "$REMOTE_SHA" HEAD -- rpc_api; then
             echo "::error::rpc_api changed since tag $TAG ($REMOTE_SHA) but its version was not bumped"
             echo "::error::Bump the version in rpc_api/Cargo.toml (and the workspace dependency pin) before releasing"
