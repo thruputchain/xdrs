@@ -21,7 +21,6 @@ xdr-common = { workspace = true }
 heapless = { workspace = true, optional = true }
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
 unsafe_code = "forbid"
 
 [package.metadata.docs.rs]

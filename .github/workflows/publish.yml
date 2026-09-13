@@ -49,10 +49,7 @@ jobs:
         uses: ./actions/cargo-publish-dry-run
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
-          # Coverage-only opt-in has its own regression tests; do not multiply
-          # the release feature powerset for it.
-          cargo-hack-feature-options: >-
-            --feature-powerset --exclude-features include-generated-coverage
+          cargo-hack-feature-options: --feature-powerset
 
       - name: tag commit with version
         id: publish-tag

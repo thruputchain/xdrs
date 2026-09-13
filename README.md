@@ -55,11 +55,10 @@ Install the report tool and LLVM tools for the pinned coverage nightly:
 cargo +nightly-2026-05-26 install cargo-llvm-cov --version 0.9.1 --locked
 rustup component add llvm-tools-preview --toolchain nightly-2026-05-26
 bash scripts/coverage.sh
-python3 scripts/check-generated-coverage.py
 ```
 
-The coverage workflow runs the same scripts and uploads `coverage` artifacts
-containing HTML (`target/llvm-cov/html/index.html`), LCOV, and regression reports.
+The coverage workflow runs the same script and uploads `coverage` artifacts
+containing HTML (`target/llvm-cov/html/index.html`) and LCOV.
 It merges the allocating workspace, no-alloc, compact-error, and permissive
 integer tests. This is a baseline report, without a minimum percentage gate;
 doctests and benchmarks are not included. Generated code remains instrumented.
@@ -69,38 +68,13 @@ those in integration tests.
 
 ### Generated code coverage
 
-Generated methods are **excluded by default** from nightly coverage reports.
-Downstream applications and SDKs do not need to enable or forward a Cargo
-feature. To measure generated code itself, enable the default-off
-`include-generated-coverage` feature on `xdrs` (or directly on `xdr-derive`).
-This repo's coverage script enables it in every run. Release and dry-run
-workflows exclude it from their cargo-hack feature powersets; the coverage
-regression fixture tests it separately.
+Derive-generated methods are always instrumented, like any other code. The
+derives emit no coverage attributes, so consuming crates need no nightly feature
+gate and no `cfg` registration, and they see no `unexpected_cfgs` diagnostics.
 
-Rust's `coverage(off)` attribute still requires a nightly feature gate. In each
-crate that invokes the derives, add:
-
-```rust,ignore
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
-```
-
-Register the cfg so ordinary builds accept both this gate and the generated
-attributes without warnings:
-
-```toml
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage_nightly)"] }
-```
-
-Then run `cargo +nightly llvm-cov` as usual. The generator emits
-`#[cfg_attr(coverage_nightly, coverage(off))]` on readers, checked/unchecked
-writers, schema methods, and const writers/size methods. The cfg is evaluated
-in the consuming crate; cargo-llvm-cov sets it on nightly. Handwritten methods
-remain instrumented. Normal builds and stable coverage retain their existing
-instrumentation behavior; `--no-cfg-coverage-nightly` also disables exclusion.
-
-The inclusion feature is additive: enabling it anywhere in a dependency graph
-can enable generated-code coverage for all users of the same `xdr-derive`
-instance. `--all-features` includes generated code as well. Exclusion is the
-baseline behavior rather than a Cargo default feature, so it also works with
-`default-features = false` (commonly used by no-alloc consumers).
+Earlier versions emitted `#[cfg_attr(coverage_nightly, coverage(off))]` to keep
+generated methods out of reports, behind an opt-out `include-generated-coverage`
+feature. That feature is gone. Because `coverage(off)` is still unstable, the
+attribute had to be gated on a `cfg` that only cargo-llvm-cov sets — which every
+downstream crate then had to register to build warning-free. Excluding generated
+code from a report is not worth imposing that on consumers.
