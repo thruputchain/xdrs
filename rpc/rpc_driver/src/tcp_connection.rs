@@ -28,8 +28,6 @@ pub struct ReadHalf {
     pos: usize,
     /// End of valid data.
     len: usize,
-    /// Scratch space for records that span two reads.
-    record: Vec<u8>,
     max_message_size: u32,
 }
 
@@ -123,7 +121,6 @@ impl ReadHalf {
             buf: vec![0u8; read_buffer_size],
             pos: 0,
             len: 0,
-            record: Vec::with_capacity(8192),
             max_message_size,
         }
     }
@@ -184,32 +181,16 @@ impl ReadHalf {
             return Ok(None);
         }
 
-        // Consume header.
-        self.pos += 4;
-
-        // Fast path: entire record already in the read buffer.
-        if self.buffered() >= size {
-            let start = self.pos;
-            self.pos += size;
-            return Ok(Some(&self.buf[start..start + size]));
+        // Keep the header until the whole record is buffered. Besides avoiding
+        // a second allocation/copy for split records, fill reads ahead into any
+        // spare capacity. Its progress lives in self, so cancelling this future
+        // never loses a partial header or body.
+        if self.buffered() < size + 4 {
+            self.fill(size + 4).await?;
         }
-
-        // Slow path: record spans a buffer boundary. Copy what we have
-        // into `self.record`, then read the rest directly into it.
-        self.record.clear();
-        self.record.reserve(size);
-        let available = self.buffered();
-        self.record.extend_from_slice(&self.buf[self.pos..self.len]);
-        self.pos = 0;
-        self.len = 0;
-
-        // Extend the length so read_exact can fill the rest.
-        self.record.resize(size, 0);
-        self.read_half
-            .read_exact(&mut self.record[available..])
-            .await?;
-
-        Ok(Some(&self.record[..size]))
+        let start = self.pos + 4;
+        self.pos = start + size;
+        Ok(Some(&self.buf[start..self.pos]))
     }
 }
 
@@ -217,6 +198,69 @@ impl ReadHalf {
 mod tests {
     use super::*;
     use tokio::net::TcpListener;
+
+    async fn record_pair(buffer_size: usize) -> (ReadHalf, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (client, server) = tokio::join!(
+            TcpStream::connect(listener.local_addr().unwrap()),
+            listener.accept(),
+        );
+        let (read, _) = client.unwrap().into_split();
+        (ReadHalf::new(read, 1024, buffer_size), server.unwrap().0)
+    }
+
+    fn record(payload: &[u8]) -> Vec<u8> {
+        let mut bytes = (0x8000_0000 | payload.len() as u32).to_be_bytes().to_vec();
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    #[tokio::test]
+    async fn split_record_survives_cancellation_at_every_byte() {
+        let expected = record(b"split payload");
+        for split in 1..expected.len() {
+            let (mut read, mut peer) = record_pair(8).await;
+            peer.write_all(&expected[..split]).await.unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(5), read.read_record())
+                    .await
+                    .is_err()
+            );
+            peer.write_all(&expected[split..]).await.unwrap();
+            peer.write_all(&record(b"next")).await.unwrap();
+            peer.shutdown().await.unwrap();
+            assert_eq!(read.read_record().await.unwrap().unwrap(), b"split payload");
+            assert_eq!(read.read_record().await.unwrap().unwrap(), b"next");
+            assert_eq!(
+                read.read_record().await.unwrap_err().kind(),
+                std::io::ErrorKind::UnexpectedEof
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn records_survive_buffer_compaction_and_growth() {
+        for buffer_size in [0, 1, 4, 17, 64, 4096] {
+            let (mut read, mut peer) = record_pair(buffer_size).await;
+            let payloads = [vec![], vec![1; 11], vec![2; 1024], vec![3; 5]];
+            let bytes: Vec<u8> = payloads.iter().flat_map(|p| record(p)).collect();
+            peer.write_all(&bytes).await.unwrap();
+            peer.shutdown().await.unwrap();
+            for payload in &payloads {
+                assert_eq!(read.read_record().await.unwrap().unwrap(), payload);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_header_does_not_grow_receive_buffer() {
+        for header in [0x8000_0401u32, 0x0000_0001] {
+            let (mut read, mut peer) = record_pair(8).await;
+            peer.write_all(&header.to_be_bytes()).await.unwrap();
+            assert!(read.read_record().await.unwrap().is_none());
+            assert_eq!(read.buf.len(), 8);
+        }
+    }
 
     #[tokio::test]
     async fn configure_stream_sets_nodelay_and_keepalive_on_both_ends() {

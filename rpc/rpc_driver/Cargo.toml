@@ -41,3 +41,7 @@ workspace = true
 [[bench]]
 name = "rpc_bench"
 harness = false
+
+[[bench]]
+name = "primitives"
+harness = false

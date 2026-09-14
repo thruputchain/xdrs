@@ -29,3 +29,7 @@ path = "src/client.rs"
 [[bin]]
 name = "rpc-smoke"
 path = "src/harness.rs"
+
+[[bin]]
+name = "rpc-bench-client"
+path = "src/bench_client.rs"

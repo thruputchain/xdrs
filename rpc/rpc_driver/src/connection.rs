@@ -45,10 +45,13 @@ impl BufPool {
         self.0.lock().unwrap().pop().unwrap_or_default()
     }
 
-    /// Return a spent buffer to the pool for reuse.
-    pub(crate) fn put(&self, mut buf: Vec<u8>) {
-        buf.clear();
-        self.0.lock().unwrap().push(buf);
+    /// Return a writer batch with one lock acquisition, rather than contending
+    /// with callers once per record in the batch.
+    fn put_batch(&self, batch: &mut Vec<Vec<u8>>) {
+        for buf in batch.iter_mut() {
+            buf.clear();
+        }
+        self.0.lock().unwrap().extend(batch.drain(..));
     }
 }
 
@@ -75,9 +78,7 @@ async fn writer_task(
         let err = write_batch(&mut write_half, &batch).await.err();
 
         // Recycle all buffers back to the pool regardless of write outcome.
-        for buf in batch.drain(..) {
-            pool.put(buf);
-        }
+        pool.put_batch(&mut batch);
 
         if let Some(e) = err {
             tracing::error!(error = %e, "writer task error");

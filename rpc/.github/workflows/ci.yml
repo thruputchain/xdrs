@@ -57,10 +57,6 @@ jobs:
         run: cargo clippy -p rpc_driver --all-targets --locked -- -D warnings
       - name: Clippy rpc_driver (Concurrent Dispatch)
         run: cargo clippy -p rpc_driver --all-targets --features concurrent-dispatch --locked -- -D warnings
-      - name: Bench smoke (Serial Dispatch)
-        run: cargo bench -p rpc_driver --bench rpc_bench --locked -- --quick
-      - name: Bench smoke (Concurrent Dispatch)
-        run: cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch --locked -- --quick
 
   stable-compat:
     name: Current stable compatibility
@@ -76,3 +72,4 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Test workspace on current stable
         run: cargo +stable test --workspace --all-features --locked
+

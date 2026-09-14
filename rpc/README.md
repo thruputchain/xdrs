@@ -200,3 +200,60 @@ cargo doc --open
 ## License
 
 See [LICENSE](LICENSE).
+
+
+## Reproducible performance runs
+
+```sh
+python3 scripts/benchmark.py --output target/bench-report
+python3 scripts/benchmark.py --quick --output target/bench-smoke
+```
+
+The script builds release binaries with the lockfile, then runs:
+
+- `cargo bench -p rpc_driver --bench primitives`: x23-style empty function,
+  ready future, scalar XDR encode/decode (0, 4, and 400 wire bytes), scheduler
+  yield, and buffered TCP record timings. Codec measurements time batches and
+  retain seven trials. The scalar loops match x23 wire sizes, not its generated
+  struct specialization; current-thread yield is not a cross-thread migration.
+- Separate server/client processes using the actual RPC transport. Fixed workers
+  reuse connections and finish warmup before a barrier starts measurement. No
+  per-request task spawn occurs in the load generator. Each reply is checked.
+  The matrix covers 64/4096-byte payloads, 1/32 in-flight calls, and 1/4 connections.
+  Concurrent server dispatch runs with the inline probe off/on/on/off (ABBA).
+
+`--threads 2` is the default Tokio worker count **per process**. Keep it and the
+host constant for comparisons. `--quick` only checks that measurements run; its
+short samples are not regression evidence. Full runs use 1000 warmup and 5000
+measured calls per worker. Latency runs from invocation to response delivery;
+throughput includes client validation and the slowest worker's completion.
+This is closed-loop offered load: it does not measure queueing under an externally
+fixed request rate, and its tail latency must not be presented as such.
+
+`e2e.json` retains all runs, throughput, p50/p95/p99, payload/concurrency,
+completion counts, dispatch mode, source SHA, CPU, Rust version, and worker count.
+`primitives.json`, `summary.md`, and diagnostic logs accompany it. Benchmarks do
+not execute in PR CI. Pushes to main after merges trigger the RPC Metrics
+workflow; a manual rerun on main is also available. It dispatches the exact
+merged source through `hog_sched` to an exclusively reserved host selected by `?`, runs the
+full matrix, and writes JSON to `groundhogchain/metrics_history` using hogd's
+`metrics/<name>/main/<commit-time>_<commit>` layout. The metric names are
+`xdr-rpc-e2e` and `xdr-rpc-components`. The source travels as a git archive;
+`--source-sha` preserves its identity without copying checkout credentials.
+Publication uses the selected cluster host's metrics-history credentials. Failed or partial
+runs are not published as successful measurements; their logs remain in the job
+artifacts. Results are also shown in the job summary and retained as artifacts
+for 90 days. No timing threshold gates PRs.
+
+To measure already-built baseline/candidate binaries with exactly the same
+harness, pass `--bin-dir /absolute/path/to/release`. Metadata labels these as
+prebuilt and records the path; the SHA identifies the harness checkout, so retain
+the binary build SHA alongside the report. Run baseline/candidate alternately on
+an otherwise idle host and compare individual repeated runs, not just minima.
+
+These end-to-end results cover Rust client → TCP → Rust RPC server → reply,
+including framing, dispatch and scheduling. They are not gateway/transaction
+execution benchmarks or a measured claim of parity with C++ x23. A direct C++
+comparison also needs the same handler, wire payload, connection count, in-flight
+load, CPU placement, and logging settings. Rust and C++ can plausibly reach similar
+performance; their scheduler and task/channel allocation paths still differ.

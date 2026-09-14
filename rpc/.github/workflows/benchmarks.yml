@@ -1,57 +1,50 @@
-name: Benchmarks
+name: RPC Metrics (hog_sched)
 
-# Disabled: requires GitHub Pages (GitHub Enterprise or public repo).
-# To enable, uncomment the trigger and ensure gh-pages branch exists.
-# on:
-#   push:
-#     branches: [main]
 on:
-  workflow_dispatch: # manual trigger only
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  benchmark:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+  metrics:
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    timeout-minutes: 60
     env:
       CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
-      CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Rust 1.96.0
-        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.96.0
-      # Both dispatch modes are tracked as separate series. `-p rpc_driver` is
-      # required: without it cargo builds rpc-smoke too, which enables
-      # `concurrent-dispatch`, and feature unification makes the "serial" run
-      # silently measure the concurrent path.
-      - name: Run benchmarks (Serial Dispatch)
-        run: cargo bench -p rpc_driver --bench rpc_bench --locked -- --gh-bench > bench-serial.json
-      - name: Store benchmark results (Serial Dispatch)
-        uses: benchmark-action/github-action-benchmark@v1
+          persist-credentials: false
+      - name: Prepare source for the cluster
+        run: |
+          git archive --format=tar.gz --output=rpc-source.tar.gz HEAD
+          echo "METRICS_COMMIT_TIME=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+      - name: Run metrics on an available cluster host
+        shell: bash
+        run: |
+          hog_sched \
+            --i="xdr-rpc-metrics-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --key=git_commit --value="$GITHUB_SHA" \
+            --key=git_commit_time --value="$METRICS_COMMIT_TIME" \
+            --key=cargo_registry_token --value="$CARGO_REGISTRIES_GROUNDHOG_TOKEN" \
+            --timeout-sec=3000 \
+            ./scripts/schedules/metrics.toml
+      - name: Show results
+        if: always()
+        run: |
+          if [ -f benchmark-results/summary.md ]; then
+            cat benchmark-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Preserve results and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: rpc_driver (serial dispatch)
-          tool: customSmallerIsBetter
-          output-file-path: bench-serial.json
-          gh-pages-branch: gh-pages
-          benchmark-data-dir-path: dev/bench/serial
-          auto-push: true
-          alert-threshold: "150%"
-          comment-on-alert: false
-          fail-on-alert: false
-      - name: Run benchmarks (Concurrent Dispatch)
-        run: cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch --locked -- --gh-bench > bench-concurrent.json
-      - name: Store benchmark results (Concurrent Dispatch)
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          name: rpc_driver (concurrent dispatch)
-          tool: customSmallerIsBetter
-          output-file-path: bench-concurrent.json
-          gh-pages-branch: gh-pages
-          benchmark-data-dir-path: dev/bench/concurrent
-          auto-push: true
-          alert-threshold: "150%"
-          comment-on-alert: false
-          fail-on-alert: false
+          name: rpc-metrics-${{ github.sha }}-${{ github.run_attempt }}
+          path: benchmark-results/
+          if-no-files-found: warn
+          retention-days: 90
