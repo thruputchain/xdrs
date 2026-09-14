@@ -4,6 +4,11 @@ use crate::ServiceMap;
 
 /// Configuration shared by client and server connections.
 ///
+/// TCP connections attempt to enable keepalive with a 60-second idle delay.
+/// Failure to configure keepalive logs a warning and preserves the connection.
+/// Probe intervals and retry counts retain OS defaults; this does not impose
+/// an RPC deadline. Callers must enforce their own request deadlines.
+///
 /// The default accepts messages up to 16 MiB and has no handlers for inbound
 /// calls. Client connections need a [`ServiceMap`] only when the remote peer
 /// can call back over the same connection.

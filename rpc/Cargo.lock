@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "bench-compare"
-version = "0.10.5"
+version = "0.10.6"
 dependencies = [
  "serde",
  "serde_json",
@@ -332,7 +332,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-api-fixture"
-version = "0.10.5"
+version = "0.10.6"
 dependencies = [
  "async-trait",
  "rpc_api",
@@ -342,7 +342,7 @@ dependencies = [
 
 [[package]]
 name = "rpc-smoke"
-version = "0.10.5"
+version = "0.10.6"
 dependencies = [
  "async-trait",
  "clap",
@@ -364,13 +364,14 @@ dependencies = [
 
 [[package]]
 name = "rpc_driver"
-version = "0.10.5"
+version = "0.10.6"
 dependencies = [
  "async-trait",
  "libc",
  "rpc_api",
  "serde",
  "serde_json",
+ "socket2",
  "thiserror",
  "tokio",
  "tracing",

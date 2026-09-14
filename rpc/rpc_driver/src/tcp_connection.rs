@@ -1,6 +1,9 @@
 //! TCP connection handling for RPC record streams.
 
 use std::net::SocketAddr;
+use std::time::Duration;
+
+use socket2::{SockRef, TcpKeepalive};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
@@ -30,15 +33,35 @@ pub struct ReadHalf {
     max_message_size: u32,
 }
 
+fn configure_stream(stream: &TcpStream) -> std::io::Result<()> {
+    configure_stream_with_keepalive(stream, |stream| {
+        // Send probes after 60s idle to preserve connection tracking through
+        // middleboxes with longer idle timeouts. This is not an RPC deadline.
+        SockRef::from(stream)
+            .set_tcp_keepalive(&TcpKeepalive::new().with_time(Duration::from_secs(60)))
+    })
+}
+
+fn configure_stream_with_keepalive(
+    stream: &TcpStream,
+    configure_keepalive: impl FnOnce(&TcpStream) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    // RPC latency is more important than Nagle aggregation; batching happens
+    // explicitly in the connection writer.
+    stream.set_nodelay(true)?;
+    if let Err(error) = configure_keepalive(stream) {
+        tracing::warn!(%error, "could not fully configure TCP keepalive; continuing with connection");
+    }
+    Ok(())
+}
+
 pub async fn connect<A: ToSocketAddrs>(
     addr: A,
     max_message_size: u32,
     read_buffer_size: usize,
 ) -> Result<(ReadHalf, WriteHalf), std::io::Error> {
     let stream = TcpStream::connect(addr).await?;
-    // RPC latency is more important than Nagle aggregation; batching happens
-    // explicitly in the connection writer.
-    stream.set_nodelay(true)?;
+    configure_stream(&stream)?;
     let (read_half, write_half) = stream.into_split();
     Ok((
         ReadHalf::new(read_half, max_message_size, read_buffer_size),
@@ -52,8 +75,7 @@ pub async fn accept(
     read_buffer_size: usize,
 ) -> Result<(ReadHalf, WriteHalf, SocketAddr), std::io::Error> {
     let (stream, addr) = listener.accept().await?;
-    // Match client sockets: the connection writer performs explicit batching.
-    stream.set_nodelay(true)?;
+    configure_stream(&stream)?;
     let (read_half, write_half) = stream.into_split();
     Ok((
         ReadHalf::new(read_half, max_message_size, read_buffer_size),
@@ -195,6 +217,61 @@ impl ReadHalf {
 mod tests {
     use super::*;
     use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn configure_stream_sets_nodelay_and_keepalive_on_both_ends() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (client, server) = tokio::join!(
+            connect(listener.local_addr().unwrap(), 1024, 65536),
+            accept(&listener, 1024, 65536),
+        );
+        let (client_read, _client_write) = client.unwrap();
+        let (server_read, _server_write, _) = server.unwrap();
+        for read in [&client_read, &server_read] {
+            let stream = read.read_half.as_ref();
+            assert!(stream.nodelay().unwrap());
+            let socket = SockRef::from(stream);
+            assert!(socket.keepalive().unwrap());
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            assert_eq!(
+                socket.tcp_keepalive_time().unwrap(),
+                Duration::from_secs(60)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn keepalive_configuration_failure_preserves_stream_io() {
+        for kind in [
+            std::io::ErrorKind::PermissionDenied,
+            std::io::ErrorKind::Unsupported,
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let (client, server) = tokio::join!(
+                TcpStream::connect(listener.local_addr().unwrap()),
+                listener.accept(),
+            );
+            let mut client = client.unwrap();
+            let (mut server, _) = server.unwrap();
+            for stream in [&client, &server] {
+                configure_stream_with_keepalive(stream, |_| Err(std::io::Error::from(kind)))
+                    .unwrap();
+                assert!(stream.nodelay().unwrap());
+            }
+            tokio::time::timeout(Duration::from_secs(5), async {
+                client.write_all(b"request").await.unwrap();
+                let mut request = [0; 7];
+                server.read_exact(&mut request).await.unwrap();
+                assert_eq!(&request, b"request");
+                server.write_all(b"reply").await.unwrap();
+                let mut reply = [0; 5];
+                client.read_exact(&mut reply).await.unwrap();
+                assert_eq!(&reply, b"reply");
+            })
+            .await
+            .unwrap();
+        }
+    }
 
     #[tokio::test]
     async fn test_tcp_connection() {

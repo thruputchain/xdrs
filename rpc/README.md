@@ -17,6 +17,14 @@ An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [
 - **Structured tracing** — `tracing` spans and events for logging, OpenTelemetry, and e2e waterfalls
 - Max message size limit (16 MiB default)
 
+TCP sockets attempt to enable keepalive with a 60-second idle delay, including
+accepted sockets and connections opened by pool recovery. Configuration failures
+emit a warning and preserve the connection; some socket options may already have
+been applied before the failure.
+Probe intervals and retry counts retain OS defaults. Keepalive helps prevent idle
+middlebox expiry; it does not impose an RPC deadline or bound recovery from a
+network failure. Callers must enforce their own request deadlines.
+
 ## Usage
 
 ```rust
