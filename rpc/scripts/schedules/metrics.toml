@@ -2,27 +2,40 @@ name = "xdr_rpc_metrics"
 
 [[jobs]]
 name = "{{ .hog_schedule }}_metrics"
-file_in = ["rpc-source.tar.gz"]
-file_out = ["benchmark-results"]
 script = '''
-set -euo pipefail
-mkdir -p benchmark-results
-# Transfer the exact merged source without forwarding GitHub checkout credentials
-# or requiring a new source-repository deploy key on the benchmark host.
-tar -xzf rpc-source.tar.gz
-export PATH="$HOME/.cargo/bin:$PATH"
-python3 scripts/benchmark.py --source-sha "$GIT_COMMIT" \
-  --threads 2 --output benchmark-results 2>&1 | tee benchmark-results/run.log
-# Publish using the selected cluster host's metrics-history credentials.
-python3 scripts/publish_metrics.py --report benchmark-results \
-  --commit "$GIT_COMMIT" --commit-time "$GIT_COMMIT_TIME"
+
+set -x
+
+echo 'cloning xdr_rpc'
+git init -q .
+git remote add origin git@github.com:{{ .github_repo }}.git
+git fetch --depth 1 origin {{ .git_commit }} --no-progress --quiet
+git checkout -q {{ .git_commit }}
+
+echo 'setting up cargo'
+# hog_sched points HOME at the job directory. Use the host user's rustup and
+# cargo homes, as hogd's setup_cargo.sh does by symlinking them, but through
+# the environment so the checked-in .cargo/config.toml stays in place.
+export RUSTUP_HOME="$USER_HOME/.rustup"
+export CARGO_HOME="$USER_HOME/.cargo"
+export PATH="$CARGO_HOME/bin:$PATH"
+rustup toolchain list
+cargo --version
+
+echo 'run metrics'
+python3 scripts/benchmark.py --threads 2 --output benchmark-results
+
+echo 'commit metrics'
+python3 scripts/publish_metrics.py --report benchmark-results --branch "$GIT_BRANCH" \
+  --commit "$GIT_COMMIT" --commit-time "$(git show -s --format=%ct HEAD)"
+
 '''
 
 [jobs.env]
 GIT_COMMIT = "{{ .git_commit }}"
-GIT_COMMIT_TIME = "{{ .git_commit_time }}"
+GIT_BRANCH = "{{ .git_branch }}"
 CARGO_REGISTRIES_GROUNDHOG_TOKEN = "{{ .cargo_registry_token }}"
-CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS = "cargo:token"
+CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS = "{{ .cargo_registry_global_credential_providers }}"
 CARGO_NET_GIT_FETCH_WITH_CLI = "true"
 
 # Reserve any available cluster host using the scheduler wildcard.

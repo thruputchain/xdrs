@@ -13,6 +13,7 @@ import tempfile
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', type=Path, required=True)
+    parser.add_argument('--branch', required=True, help='source branch; selects the series directory')
     parser.add_argument('--commit', required=True)
     parser.add_argument('--commit-time', type=int, required=True)
     parser.add_argument('--history-url', default='https://github.com/groundhogchain/metrics_history.git')
@@ -37,8 +38,8 @@ def main():
     timestamp = datetime.fromtimestamp(args.commit_time, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
     filename = f'{timestamp}_{args.commit}'
     files = {
-        f'metrics/xdr-rpc-e2e/main/{filename}': e2e,
-        f'metrics/xdr-rpc-components/main/{filename}': {'metadata': metadata, 'benchmarks': primitives},
+        f'metrics/xdr-rpc-e2e/{args.branch}/{filename}': e2e,
+        f'metrics/xdr-rpc-components/{args.branch}/{filename}': {'metadata': metadata, 'benchmarks': primitives},
     }
     env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
     with tempfile.TemporaryDirectory(prefix='rpc-metrics-history-') as directory:
@@ -63,7 +64,7 @@ def main():
             if git('diff', '--cached', '--quiet', check=False).returncode == 0:
                 print('Measurements are already recorded.')
                 return
-            git('commit', '--quiet', '-m', f'Add metrics for xdr_rpc main {args.commit}')
+            git('commit', '--quiet', '-m', f'Add metrics for xdr_rpc {args.branch} {args.commit}')
             if git('push', '--quiet', 'origin', 'HEAD:main', check=False).returncode == 0:
                 print(f'Recorded RPC metrics for {args.commit}')
                 return

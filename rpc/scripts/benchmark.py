@@ -37,7 +37,7 @@ def main():
         'platform': platform.platform(), 'machine': platform.machine(),
         'hostname': platform.node(),
         'cpu_count': os.cpu_count(), 'tokio_workers_per_process': args.threads,
-        'rustc': command(['rustc', '--version'], capture_output=True).stdout.strip(),
+        'toolchain': command(['cargo', '--version'], capture_output=True).stdout.strip(),
         'quick': args.quick, 'timestamp_unix': time.time(),
         'prebuilt_bin_dir': str(args.bin_dir) if args.bin_dir else None,
     }
