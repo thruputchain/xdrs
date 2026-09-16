@@ -1,5 +1,5 @@
 use rpc_driver::{
-    connection::ConnectionHandle, handler::ServiceMap, tasks::launch_read_task,
+    CallBuf, connection::ConnectionHandle, handler::ServiceMap, tasks::launch_read_task,
     tcp_connection::connect,
 };
 use tokio::net::TcpListener;
@@ -9,6 +9,12 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Weak};
+
+    fn call_with(payload: &[u8]) -> CallBuf {
+        let mut call = CallBuf::new();
+        call.extend_from_slice(payload);
+        call
+    }
 
     use async_trait::async_trait;
     use rpc_driver::{
@@ -151,7 +157,7 @@ mod tests {
 
         let response = client_handle
             .as_ref()
-            .send_call(ProgVers::new(1, 1), 1, b"hello")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"hello"))
             .await
             .unwrap();
         assert_eq!(response, b"hello");
@@ -161,7 +167,7 @@ mod tests {
         assert_eq!(
             client_handle
                 .as_ref()
-                .send_call(ProgVers::new(1, 1), 2, b"world")
+                .send_call(ProgVers::new(1, 1), 2, call_with(b"world"))
                 .await
                 .unwrap_err(),
             RpcError::InvalidProcedure
@@ -169,7 +175,7 @@ mod tests {
         assert_eq!(
             client_handle
                 .as_ref()
-                .send_call(ProgVers::new(2, 1), 1, b"world2")
+                .send_call(ProgVers::new(2, 1), 1, call_with(b"world2"))
                 .await
                 .unwrap_err(),
             RpcError::ProgUnavail
@@ -177,7 +183,7 @@ mod tests {
         assert_eq!(
             client_handle
                 .as_ref()
-                .send_call(ProgVers::new(1, 2), 1, b"world3")
+                .send_call(ProgVers::new(1, 2), 1, call_with(b"world3"))
                 .await
                 .unwrap_err(),
             RpcError::InvalidVersion { low: 1, high: 1 }
@@ -227,7 +233,7 @@ mod tests {
 
         let response = client_handle
             .as_ref()
-            .send_call(ProgVers::new(1, 1), 1, b"hello")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"hello"))
             .await
             .unwrap();
         assert_eq!(response, b"hello");
@@ -264,7 +270,7 @@ mod tests {
 
         // Try to make a call - should fail because the connection was closed
         let result = client_handle
-            .send_call(ProgVers::new(1, 1), 1, b"test")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"test"))
             .await;
 
         println!("result: {result:?}");
@@ -336,7 +342,7 @@ mod tests {
                 let client_handle = client_handle.handle().clone();
                 async move {
                     let res = client_handle
-                        .send_call(ProgVers::new(1, 1), 1, b"test")
+                        .send_call(ProgVers::new(1, 1), 1, call_with(b"test"))
                         .await;
                     println!("res: {res:?}");
                     assert!(res.is_err());
@@ -364,7 +370,7 @@ mod tests {
             let new_client_handle = new_client_handle.handle().clone();
             async move {
                 new_client_handle
-                    .send_call(ProgVers::new(1, 1), 1, b"new_test")
+                    .send_call(ProgVers::new(1, 1), 1, call_with(b"new_test"))
                     .await
             }
         });
@@ -412,14 +418,14 @@ mod tests {
         // Small message should work fine
         let small_data = vec![0u8; 100];
         let result = client_handle
-            .send_call(ProgVers::new(1, 1), 1, &small_data)
+            .send_call(ProgVers::new(1, 1), 1, call_with(&small_data))
             .await;
         assert!(result.is_ok());
 
         // Message larger than 1KB should fail
         let large_data = vec![0u8; 2000];
         let result = client_handle
-            .send_call(ProgVers::new(1, 1), 1, &large_data)
+            .send_call(ProgVers::new(1, 1), 1, call_with(&large_data))
             .await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
@@ -459,7 +465,7 @@ mod tests {
 
         // Try to send a call with data that's too large
         let result = client_handle
-            .send_call(ProgVers::new(1, 1), 1, &large_data)
+            .send_call(ProgVers::new(1, 1), 1, call_with(&large_data))
             .await;
 
         // The call should fail with SystemError because the connection was closed
@@ -469,7 +475,7 @@ mod tests {
 
         // Connection should be closed, so future calls should fail
         let result = client_handle
-            .send_call(ProgVers::new(1, 1), 1, b"test")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"test"))
             .await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
@@ -510,7 +516,7 @@ mod tests {
 
         // Try to send a call with data that's too large
         let result = client_handle
-            .send_call(ProgVers::new(1, 1), 1, &large_data)
+            .send_call(ProgVers::new(1, 1), 1, call_with(&large_data))
             .await;
 
         // The call should fail with SystemError because the call failed to encode
@@ -555,30 +561,7 @@ mod tests {
 
         // fire-and-forget on a poisoned connection should return SystemError.
         let result = client
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"hello")
-            .await;
-        assert_eq!(result.unwrap_err(), RpcError::SystemError);
-        assert_eq!(client.num_pending_requests(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_fire_and_forget_owned_after_server_drop() {
-        // Same as above but for the _owned variant.
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            drop(stream);
-        });
-
-        let client = connect_client(&addr).await.unwrap();
-
-        // Wait for read task to detect EOF and poison the connection.
-        wait_for_poison(&client).await;
-
-        let result = client
-            .send_fire_and_forget_owned(ProgVers::new(1, 1), 1, b"hello".to_vec())
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"hello"))
             .await;
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
         assert_eq!(client.num_pending_requests(), 0);
@@ -600,7 +583,7 @@ mod tests {
         let pool =
             rpc_driver::pool::DynamicPool::new(addr, 2, std::time::Duration::from_secs(60), None);
         let _ = pool
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"open")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"open"))
             .await;
         drop(pool);
         wait_for_closed(&closed, 1).await;
@@ -616,7 +599,7 @@ mod tests {
             None,
         ));
         let _ = pool
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"open")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"open"))
             .await;
         let weak = Arc::downgrade(&pool);
         // The evictor must not keep the pool alive after the last user-owned Arc is dropped.
@@ -643,7 +626,7 @@ mod tests {
             let conn = connect_client(&addr).await.unwrap();
             // Send a message so the server-side connection is fully established.
             let _ = conn
-                .send_fire_and_forget(ProgVers::new(1, 1), 1, b"hello")
+                .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"hello"))
                 .await;
         }
         // ClientConnection dropped — begin_poison fires, aborting the read task
@@ -675,7 +658,7 @@ mod tests {
                 handles.push(tokio::spawn(async move {
                     let data = format!("open-{i}");
                     dynamic
-                        .send_fire_and_forget(ProgVers::new(1, 1), 1, data.as_bytes())
+                        .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                         .await
                         .unwrap();
                 }));
@@ -734,7 +717,7 @@ mod tests {
 
         // Open the first connection via fire-and-forget.
         let _ = pool
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"probe")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"probe"))
             .await;
         assert_eq!(pool.active_connections().await, 1);
 
@@ -820,7 +803,7 @@ mod tests {
         let pool_clone = pool.clone();
         let blocked_call = tokio::spawn(async move {
             pool_clone
-                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"blocked"))
                 .await
         });
 
@@ -831,7 +814,7 @@ mod tests {
         // Send a second call. Connection 1 is busy (pending > 0), so the pool
         // opens connection 2.
         let resp = pool
-            .send_call(ProgVers::new(1, 1), 1, b"conn2")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"conn2"))
             .await
             .unwrap();
         assert_eq!(&*resp, b"conn2");
@@ -849,7 +832,10 @@ mod tests {
         // next lease returns a healthy connection (connection 2).
         let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(2);
         loop {
-            match pool.send_call(ProgVers::new(1, 1), 1, b"after").await {
+            match pool
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"after"))
+                .await
+            {
                 Ok(resp) => {
                     assert_eq!(&*resp, b"after");
                     break;
@@ -903,7 +889,7 @@ mod tests {
 
         // Open the first connection.
         let _ = pool
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"probe")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"probe"))
             .await;
 
         // Wait for the server to drop the first connection, then wait for the
@@ -915,7 +901,10 @@ mod tests {
         // iteration will sweep the poisoned connection and open a fresh one.
         let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(5);
         loop {
-            match pool.send_call(ProgVers::new(1, 1), 1, b"alive").await {
+            match pool
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"alive"))
+                .await
+            {
                 Ok(resp) => {
                     assert_eq!(&*resp, b"alive");
                     break;
@@ -976,7 +965,7 @@ mod tests {
         // The call completes after queueing the request, without waiting for
         // the server's response.
         client
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"hello")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"hello"))
             .await
             .unwrap();
 
@@ -989,7 +978,7 @@ mod tests {
 
         // Regular send_call should still work after fire-and-forget.
         let resp = client
-            .send_call(ProgVers::new(1, 1), 1, b"echo")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"echo"))
             .await
             .unwrap();
         assert_eq!(&*resp, b""); // CountingService returns empty vec

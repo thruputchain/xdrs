@@ -31,8 +31,9 @@ use tokio::time::Instant;
 
 #[cfg(test)]
 use crate::connect_client;
+use crate::connection::BufPool;
 use crate::{
-    ConnectionConfig, ConnectionHandle, ProgVers, RpcError, RpcResponse, RpcSender,
+    CallBuf, ConnectionConfig, ConnectionHandle, ProgVers, RpcError, RpcResponse, RpcSender,
     connect_client_with_config,
 };
 #[cfg(test)]
@@ -53,15 +54,20 @@ type ConnectOverride = Arc<dyn Fn() -> ConnectFuture + Send + Sync>;
 struct ConnectionFactory {
     addr: SocketAddr,
     config: ConnectionConfig,
+    /// Record-buffer pool every connection this factory opens shares, so
+    /// the pool's callers can draw call buffers from one place.
+    buf_pool: Arc<BufPool>,
     #[cfg(test)]
     connect_override: Option<ConnectOverride>,
 }
 
 impl ConnectionFactory {
     fn new(addr: SocketAddr, config: ConnectionConfig) -> Self {
+        let buf_pool = Arc::new(BufPool::new());
         Self {
             addr,
-            config,
+            config: config.with_shared_buf_pool(buf_pool.clone()),
+            buf_pool,
             #[cfg(test)]
             connect_override: None,
         }
@@ -91,6 +97,7 @@ impl ConnectionFactory {
         Self {
             addr,
             config: ConnectionConfig::default(),
+            buf_pool: Arc::new(BufPool::new()),
             connect_override: Some(connect_override),
         }
     }
@@ -100,7 +107,7 @@ impl ConnectionFactory {
 struct PoolRequest {
     progvers: ProgVers,
     proc_num: u32,
-    data: Vec<u8>,
+    call: CallBuf,
     queue_permit: OwnedSemaphorePermit,
     /// `Some` for normal calls, `None` for fire-and-forget.
     reply: Option<oneshot::Sender<Result<RpcResponse, RpcError>>>,
@@ -144,6 +151,7 @@ impl Drop for FixedWorkerConnectionGuard {
 pub struct FixedSerialPool {
     inner: Arc<FixedSerialPoolInner>,
     size: usize,
+    buf_pool: Arc<BufPool>,
 }
 
 /// Action taken when an active fixed-pool request is canceled or its connection
@@ -391,6 +399,7 @@ impl FixedSerialPool {
             return Err(RpcError::InvalidPoolConfiguration);
         }
 
+        let buf_pool = connection_factory.buf_pool.clone();
         let queue_capacity = pool_size.saturating_mul(16).max(16);
         let queue_slots = Arc::new(Semaphore::new(queue_capacity));
         let (tx, rx) = mpsc::unbounded_channel::<PoolRequest>();
@@ -454,7 +463,7 @@ impl FixedSerialPool {
                     let PoolRequest {
                         progvers,
                         proc_num,
-                        data,
+                        call,
                         queue_permit,
                         reply,
                     } = req;
@@ -482,7 +491,7 @@ impl FixedSerialPool {
                                 continue;
                             }
                             let result = tokio::select! {
-                                result = client.send_call_owned(progvers, proc_num, data) => {
+                                result = client.send_call(progvers, proc_num, call) => {
                                     Some(result)
                                 }
                                 () = reply_tx.closed() => None,
@@ -515,9 +524,8 @@ impl FixedSerialPool {
                             }
                         }
                         None => {
-                            if let Err(e) = client
-                                .send_fire_and_forget_owned(progvers, proc_num, data)
-                                .await
+                            if let Err(e) =
+                                client.send_fire_and_forget(progvers, proc_num, call).await
                             {
                                 tracing::warn!(error = %e, "fire-and-forget send failed");
                             }
@@ -543,6 +551,7 @@ impl FixedSerialPool {
         Ok(Self {
             inner,
             size: pool_size,
+            buf_pool,
         })
     }
 
@@ -550,7 +559,7 @@ impl FixedSerialPool {
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
         reply: Option<oneshot::Sender<Result<RpcResponse, RpcError>>>,
     ) -> Result<(), RpcError> {
         let queue_permit = self
@@ -566,7 +575,7 @@ impl FixedSerialPool {
             .send(PoolRequest {
                 progvers,
                 proc_num: proc,
-                data: data.to_vec(),
+                call,
                 queue_permit,
                 reply,
             })
@@ -604,6 +613,10 @@ impl Drop for FixedSerialPool {
 
 #[async_trait]
 impl RpcSender for FixedSerialPool {
+    fn call_buf(&self) -> CallBuf {
+        self.buf_pool.take_call_buf()
+    }
+
     /// Send an RPC call through the pool.
     ///
     /// The request is dispatched to the next idle worker via FIFO ordering.
@@ -611,10 +624,10 @@ impl RpcSender for FixedSerialPool {
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
         let (reply_tx, rx) = oneshot::channel();
-        self.enqueue_request(progvers, proc, data, Some(reply_tx))
+        self.enqueue_request(progvers, proc, call, Some(reply_tx))
             .await?;
         rx.await.map_err(|_| {
             if self.inner.closed.load(Ordering::SeqCst) {
@@ -629,9 +642,9 @@ impl RpcSender for FixedSerialPool {
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<(), RpcError> {
-        self.enqueue_request(progvers, proc, data, None).await
+        self.enqueue_request(progvers, proc, call, None).await
     }
 }
 
@@ -999,6 +1012,10 @@ impl Drop for DynamicPool {
 
 #[async_trait]
 impl RpcSender for DynamicPool {
+    fn call_buf(&self) -> CallBuf {
+        self.connection_factory.buf_pool.take_call_buf()
+    }
+
     /// Send an RPC call through the pool.
     ///
     /// Routed to the connection with the fewest pending requests.
@@ -1006,10 +1023,10 @@ impl RpcSender for DynamicPool {
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
         let conn = self.connection_for_request().await?;
-        let result = conn.send_call(progvers, proc, data).await;
+        let result = conn.send_call(progvers, proc, call).await;
         self.touch_connection(&conn);
         result
     }
@@ -1018,10 +1035,10 @@ impl RpcSender for DynamicPool {
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<(), RpcError> {
         let conn = self.connection_for_request().await?;
-        let result = conn.send_fire_and_forget(progvers, proc, data).await;
+        let result = conn.send_fire_and_forget(progvers, proc, call).await;
         self.touch_connection(&conn);
         result
     }
@@ -1051,7 +1068,9 @@ impl RpcSender for DynamicPool {
 ///
 /// let pool = CpuSetPool::connect(&"127.0.0.1:9876".parse().unwrap()).await?;
 /// println!("opened {} CPU-affine connections", pool.size());
-/// let resp = pool.send_call(ProgVers::new(100, 1), 0, b"hello").await?;
+/// let mut call = pool.call_buf();
+/// call.extend_from_slice(b"hello");
+/// let resp = pool.send_call(ProgVers::new(100, 1), 0, call).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -1061,6 +1080,7 @@ pub struct CpuSetPool {
     /// Maps logical CPU id → index into `connections`.
     cpu_map: Vec<usize>,
     closed: AtomicBool,
+    buf_pool: Arc<BufPool>,
 }
 
 impl std::fmt::Debug for CpuSetPool {
@@ -1209,6 +1229,7 @@ impl CpuSetPool {
             connections: StdMutex::new(pending.into_iter().map(|c| c.into_handle()).collect()),
             cpu_map,
             closed: AtomicBool::new(false),
+            buf_pool: connection_factory.buf_pool.clone(),
         })
     }
 
@@ -1284,24 +1305,28 @@ impl Drop for CpuSetPool {
 
 #[async_trait]
 impl RpcSender for CpuSetPool {
+    fn call_buf(&self) -> CallBuf {
+        self.buf_pool.take_call_buf()
+    }
+
     async fn send_call(
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
         let conn = self.connection_for_request()?;
-        conn.send_call(progvers, proc, data).await
+        conn.send_call(progvers, proc, call).await
     }
 
     async fn send_fire_and_forget(
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<(), RpcError> {
         let conn = self.connection_for_request()?;
-        conn.send_fire_and_forget(progvers, proc, data).await
+        conn.send_fire_and_forget(progvers, proc, call).await
     }
 }
 
@@ -1382,6 +1407,12 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
+
+    fn call_with(payload: &[u8]) -> CallBuf {
+        let mut call = CallBuf::new();
+        call.extend_from_slice(payload);
+        call
+    }
 
     /// Echo service that returns the input data unchanged.
     struct EchoService;
@@ -1576,7 +1607,7 @@ mod tests {
         for i in 0..9u32 {
             let data = format!("call-{i}");
             let result = pool
-                .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                .send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                 .await
                 .unwrap();
             assert_eq!(result, data.as_bytes());
@@ -1599,7 +1630,7 @@ mod tests {
             let pool = pool.clone();
             handles.push(tokio::spawn(async move {
                 let data = format!("slow-{i}");
-                pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                pool.send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                     .await
                     .unwrap()
             }));
@@ -1627,11 +1658,16 @@ mod tests {
         let pool = FixedSerialPool::connect(&addr, 2).await.unwrap();
 
         // Call an invalid procedure — error should propagate through the pool.
-        let result = pool.send_call(ProgVers::new(1, 1), 99, b"bad").await;
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 99, call_with(b"bad"))
+            .await;
         assert_eq!(result, Err(RpcError::InvalidProcedure));
 
         // Pool should still work for valid calls after an error.
-        let result = pool.send_call(ProgVers::new(1, 1), 1, b"ok").await.unwrap();
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"ok"))
+            .await
+            .unwrap();
         assert_eq!(result, b"ok");
     }
 
@@ -1644,7 +1680,7 @@ mod tests {
         let response = tokio::time::timeout(Duration::from_secs(2), async {
             loop {
                 match pool
-                    .send_call(ProgVers::new(1, 1), 1, b"after-restart")
+                    .send_call(ProgVers::new(1, 1), 1, call_with(b"after-restart"))
                     .await
                 {
                     Ok(response) => break response,
@@ -1673,7 +1709,7 @@ mod tests {
 
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            pool.send_call(ProgVers::new(1, 1), 1, b"after-disconnect"),
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(b"after-disconnect")),
         )
         .await
         .expect("peer disconnect should resolve the active request");
@@ -1691,7 +1727,7 @@ mod tests {
         .expect("poison policy should terminate the disconnected worker");
 
         assert_eq!(
-            pool.send_call(ProgVers::new(1, 1), 1, b"after-worker-exit")
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(b"after-worker-exit"))
                 .await,
             Err(RpcError::PoolClosed)
         );
@@ -1715,7 +1751,7 @@ mod tests {
         for i in 0..5u32 {
             let data = format!("single-{i}");
             let result = pool
-                .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                .send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                 .await
                 .unwrap();
             assert_eq!(result, data.as_bytes());
@@ -1732,7 +1768,7 @@ mod tests {
         let oversized_response = vec![0; 256];
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            pool.send_call(ProgVers::new(1, 1), 1, &oversized_response),
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(&oversized_response)),
         )
         .await
         .expect("configured message limit should reject the response promptly");
@@ -1747,7 +1783,7 @@ mod tests {
         let blocked_pool = pool.clone();
         let blocked = tokio::spawn(async move {
             blocked_pool
-                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"blocked"))
                 .await
         });
         blocked_started.notified().await;
@@ -1756,7 +1792,7 @@ mod tests {
         assert!(blocked.await.unwrap_err().is_cancelled());
         let response = tokio::time::timeout(
             Duration::from_secs(1),
-            pool.send_call(ProgVers::new(1, 1), 1, b"after"),
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(b"after")),
         )
         .await
         .expect("a canceled active call should release its worker")
@@ -1786,7 +1822,7 @@ mod tests {
         let blocked_pool = pool.clone();
         let blocked = tokio::spawn(async move {
             blocked_pool
-                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"blocked"))
                 .await
         });
         blocked_started.notified().await;
@@ -1797,7 +1833,7 @@ mod tests {
         let oversized_response = vec![0; 256];
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            pool.send_call(ProgVers::new(1, 1), 1, &oversized_response),
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(&oversized_response)),
         )
         .await
         .expect("replacement connection should retain the configured message limit");
@@ -1817,16 +1853,17 @@ mod tests {
         let blocked_pool = pool.clone();
         let blocked = tokio::spawn(async move {
             blocked_pool
-                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"blocked"))
                 .await
         });
         blocked_started.notified().await;
 
         let stale_pool = pool.clone();
-        let stale =
-            tokio::spawn(
-                async move { stale_pool.send_call(ProgVers::new(1, 1), 1, b"stale").await },
-            );
+        let stale = tokio::spawn(async move {
+            stale_pool
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"stale"))
+                .await
+        });
         tokio::time::timeout(Duration::from_secs(1), async {
             while pool.inner.queue_slots.available_permits() == 16 {
                 tokio::task::yield_now().await;
@@ -1841,7 +1878,7 @@ mod tests {
 
         let response = tokio::time::timeout(
             Duration::from_secs(1),
-            pool.send_call(ProgVers::new(1, 1), 1, b"after"),
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(b"after")),
         )
         .await
         .expect("canceled queued work should not block a later call")
@@ -1869,7 +1906,7 @@ mod tests {
         let blocked_pool = pool.clone();
         let blocked = tokio::spawn(async move {
             blocked_pool
-                .send_call(ProgVers::new(1, 1), 1, b"blocked")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"blocked"))
                 .await
         });
         blocked_started.notified().await;
@@ -1877,7 +1914,7 @@ mod tests {
         let queued_pool = pool.clone();
         let queued = tokio::spawn(async move {
             queued_pool
-                .send_call(ProgVers::new(1, 1), 1, b"queued")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"queued"))
                 .await
         });
         tokio::time::timeout(Duration::from_secs(1), async {
@@ -1907,7 +1944,8 @@ mod tests {
         let worker = pool.inner.worker_handles.lock().unwrap().pop().unwrap();
         worker.await.expect("poisoned worker should exit cleanly");
         assert_eq!(
-            pool.send_call(ProgVers::new(1, 1), 1, b"after").await,
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(b"after"))
+                .await,
             Err(RpcError::PoolClosed)
         );
         assert_eq!(&*calls.lock().unwrap(), &[b"blocked".to_vec()]);
@@ -2067,7 +2105,7 @@ mod tests {
         let pool = FixedSerialPool::connect(&addr, 2).await.unwrap();
 
         let ok = pool
-            .send_call(ProgVers::new(1, 1), 1, b"before")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"before"))
             .await
             .unwrap();
         assert_eq!(&*ok, b"before");
@@ -2075,13 +2113,13 @@ mod tests {
         pool.shutdown().await;
 
         let err = pool
-            .send_call(ProgVers::new(1, 1), 1, b"after")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"after"))
             .await
             .unwrap_err();
         assert_eq!(err, RpcError::PoolClosed);
 
         let err = pool
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"after-faf")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"after-faf"))
             .await
             .unwrap_err();
         assert_eq!(err, RpcError::PoolClosed);
@@ -2093,7 +2131,7 @@ mod tests {
         let pool = DynamicPool::new(addr, 2, Duration::from_secs(60), None);
 
         let ok = pool
-            .send_call(ProgVers::new(1, 1), 1, b"before")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"before"))
             .await
             .unwrap();
         assert_eq!(&*ok, b"before");
@@ -2101,13 +2139,13 @@ mod tests {
         pool.shutdown().await;
 
         let err = pool
-            .send_call(ProgVers::new(1, 1), 1, b"after")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"after"))
             .await
             .unwrap_err();
         assert_eq!(err, RpcError::PoolClosed);
 
         let err = pool
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"after-faf")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"after-faf"))
             .await
             .unwrap_err();
         assert_eq!(err, RpcError::PoolClosed);
@@ -2121,7 +2159,7 @@ mod tests {
             .unwrap();
 
         let ok = pool
-            .send_call(ProgVers::new(1, 1), 1, b"before")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"before"))
             .await
             .unwrap();
         assert_eq!(&*ok, b"before");
@@ -2129,13 +2167,13 @@ mod tests {
         pool.shutdown().await;
 
         let err = pool
-            .send_call(ProgVers::new(1, 1), 1, b"after")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"after"))
             .await
             .unwrap_err();
         assert_eq!(err, RpcError::PoolClosed);
 
         let err = pool
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"after-faf")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"after-faf"))
             .await
             .unwrap_err();
         assert_eq!(err, RpcError::PoolClosed);
@@ -2177,7 +2215,7 @@ mod tests {
         assert_eq!(pool.active_connections().await, 0);
 
         let result = pool
-            .send_call(ProgVers::new(1, 1), 1, b"hello")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"hello"))
             .await
             .unwrap();
         assert_eq!(result, b"hello");
@@ -2194,7 +2232,7 @@ mod tests {
         for i in 0..5u32 {
             let data = format!("seq-{i}");
             let result = pool
-                .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                .send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                 .await
                 .unwrap();
             assert_eq!(result, data.as_bytes());
@@ -2229,7 +2267,7 @@ mod tests {
             handles.push(tokio::spawn(async move {
                 let data = format!("bal-{i}");
                 call_pool
-                    .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                    .send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                     .await
                     .unwrap()
             }));
@@ -2262,7 +2300,7 @@ mod tests {
             let pool = pool.clone();
             handles.push(tokio::spawn(async move {
                 let data = format!("max-{i}");
-                pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                pool.send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                     .await
                     .unwrap()
             }));
@@ -2285,7 +2323,7 @@ mod tests {
         let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(200), None));
 
         // Make a call to open a connection.
-        pool.send_call(ProgVers::new(1, 1), 1, b"open")
+        pool.send_call(ProgVers::new(1, 1), 1, call_with(b"open"))
             .await
             .unwrap();
         assert_eq!(pool.active_connections().await, 1);
@@ -2317,7 +2355,7 @@ mod tests {
         let pool2 = pool.clone();
         let call_handle = tokio::spawn(async move {
             pool2
-                .send_call(ProgVers::new(1, 1), 1, b"busy")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"busy"))
                 .await
                 .unwrap()
         });
@@ -2358,7 +2396,7 @@ mod tests {
             let pool = pool.clone();
             handles.push(tokio::spawn(async move {
                 let data = format!("pend-{i}");
-                pool.send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                pool.send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                     .await
                     .unwrap()
             }));
@@ -2389,11 +2427,16 @@ mod tests {
         let pool = DynamicPool::new(addr, 2, Duration::from_secs(60), None);
 
         // Invalid procedure should propagate the error.
-        let result = pool.send_call(ProgVers::new(1, 1), 99, b"bad").await;
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 99, call_with(b"bad"))
+            .await;
         assert_eq!(result, Err(RpcError::InvalidProcedure));
 
         // Pool should still work after an error.
-        let result = pool.send_call(ProgVers::new(1, 1), 1, b"ok").await.unwrap();
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"ok"))
+            .await
+            .unwrap();
         assert_eq!(result, b"ok");
     }
 
@@ -2401,7 +2444,9 @@ mod tests {
     async fn dynamic_pool_connect_failure() {
         let addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
         let pool = DynamicPool::new(addr, 3, Duration::from_secs(60), None);
-        let result = pool.send_call(ProgVers::new(1, 1), 1, b"fail").await;
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"fail"))
+            .await;
         assert_eq!(result, Err(RpcError::ConnectFailed));
         assert_eq!(pool.connecting.load(Ordering::SeqCst), 0);
     }
@@ -2433,7 +2478,7 @@ mod tests {
         let leasing_pool = pool.clone();
         let leasing = tokio::spawn(async move {
             leasing_pool
-                .send_call(ProgVers::new(1, 1), 1, b"canceled")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"canceled"))
                 .await
         });
         tokio::time::timeout(Duration::from_secs(1), in_connect.notified())
@@ -2452,7 +2497,7 @@ mod tests {
         // With max_connections = 1, a leaked slot would park this call forever.
         let response = tokio::time::timeout(
             Duration::from_secs(1),
-            pool.send_call(ProgVers::new(1, 1), 1, b"after"),
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(b"after")),
         )
         .await
         .expect("canceled lease should not exhaust pool capacity")
@@ -2482,7 +2527,7 @@ mod tests {
         let connecting_pool = pool.clone();
         let connecting = tokio::spawn(async move {
             connecting_pool
-                .send_call(ProgVers::new(1, 1), 1, b"stuck")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"stuck"))
                 .await
         });
         tokio::time::timeout(Duration::from_secs(1), in_connect.notified())
@@ -2493,7 +2538,7 @@ mod tests {
         let waiting_pool = pool.clone();
         let waiting = tokio::spawn(async move {
             waiting_pool
-                .send_call(ProgVers::new(1, 1), 1, b"waiting")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"waiting"))
                 .await
         });
         // Let the waiter reach its wait state before shutting down. The
@@ -2540,7 +2585,7 @@ mod tests {
         let leasing_pool = pool.clone();
         let leasing = tokio::spawn(async move {
             leasing_pool
-                .send_call(ProgVers::new(1, 1), 1, b"canceled")
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"canceled"))
                 .await
         });
 
@@ -2593,7 +2638,7 @@ mod tests {
         let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_millis(100), None));
 
         // Open a connection.
-        pool.send_call(ProgVers::new(1, 1), 1, b"first")
+        pool.send_call(ProgVers::new(1, 1), 1, call_with(b"first"))
             .await
             .unwrap();
         assert_eq!(pool.active_connections().await, 1);
@@ -2605,7 +2650,7 @@ mod tests {
 
         // New call should open a fresh connection.
         let result = pool
-            .send_call(ProgVers::new(1, 1), 1, b"second")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"second"))
             .await
             .unwrap();
         assert_eq!(result, b"second");
@@ -2622,7 +2667,7 @@ mod tests {
         // Use pool through the RpcSender trait object
         let sender: Arc<dyn RpcSender> = pool;
         let result = sender
-            .send_call(ProgVers::new(1, 1), 1, b"via-trait")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"via-trait"))
             .await
             .unwrap();
         assert_eq!(result, b"via-trait");
@@ -2636,7 +2681,7 @@ mod tests {
         // Use pool through the RpcSender trait object
         let sender: Arc<dyn RpcSender> = pool;
         let result = sender
-            .send_call(ProgVers::new(1, 1), 1, b"via-trait")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"via-trait"))
             .await
             .unwrap();
         assert_eq!(result, b"via-trait");
@@ -2670,7 +2715,7 @@ mod tests {
 
         // Basic echo
         let result = pool
-            .send_call(ProgVers::new(1, 1), 1, b"cpu-pool")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"cpu-pool"))
             .await
             .unwrap();
         assert_eq!(result, b"cpu-pool");
@@ -2689,7 +2734,7 @@ mod tests {
         for i in 0..10u32 {
             let data = format!("call-{i}");
             let result = pool
-                .send_call(ProgVers::new(1, 1), 1, data.as_bytes())
+                .send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                 .await
                 .unwrap();
             assert_eq!(result, data.as_bytes());
@@ -2707,7 +2752,7 @@ mod tests {
         let oversized_response = vec![0; 256];
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            pool.send_call(ProgVers::new(1, 1), 1, &oversized_response),
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(&oversized_response)),
         )
         .await
         .expect("configured message limit should reject the response promptly");
@@ -2851,7 +2896,7 @@ mod tests {
 
         let sender: Arc<dyn RpcSender> = pool;
         let result = sender
-            .send_call(ProgVers::new(1, 1), 1, b"via-trait")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"via-trait"))
             .await
             .unwrap();
         assert_eq!(result, b"via-trait");
@@ -2864,12 +2909,12 @@ mod tests {
         let addr = start_echo_server().await;
         let pool = FixedSerialPool::connect(&addr, 2).await.unwrap();
 
-        pool.send_fire_and_forget(ProgVers::new(1, 1), 1, b"faf-data")
+        pool.send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"faf-data"))
             .await
             .unwrap();
 
         let result = pool
-            .send_call(ProgVers::new(1, 1), 1, b"after-faf")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"after-faf"))
             .await
             .unwrap();
         assert_eq!(result, b"after-faf");
@@ -2880,7 +2925,7 @@ mod tests {
         let addr = start_echo_server().await;
         let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60), None));
 
-        pool.send_fire_and_forget(ProgVers::new(1, 1), 1, b"faf-data")
+        pool.send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"faf-data"))
             .await
             .unwrap();
 
@@ -2895,7 +2940,7 @@ mod tests {
 
         // Normal send_call should still work afterwards.
         let result = pool
-            .send_call(ProgVers::new(1, 1), 1, b"after-faf")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"after-faf"))
             .await
             .unwrap();
         assert_eq!(result, b"after-faf");
@@ -2911,13 +2956,13 @@ mod tests {
 
         // Fire-and-forget through trait object.
         sender
-            .send_fire_and_forget(ProgVers::new(1, 1), 1, b"trait-faf")
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"trait-faf"))
             .await
             .unwrap();
 
         // Normal send_call should still work through the trait object.
         let result = sender
-            .send_call(ProgVers::new(1, 1), 1, b"trait-call")
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"trait-call"))
             .await
             .unwrap();
         assert_eq!(result, b"trait-call");

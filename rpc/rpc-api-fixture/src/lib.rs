@@ -92,14 +92,16 @@ impl EchoClient {
     /// Call the null procedure (proc 0).
     pub async fn null(&self) -> Result<(), RpcError> {
         self.handle
-            .send_call(Self::prog_vers(), 0, &[])
+            .send_call(Self::prog_vers(), 0, self.handle.call_buf())
             .await
             .map(|_| ())
     }
 
     /// Call the echo procedure (proc 1).
     pub async fn echo(&self, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let buf = self.handle.send_call(Self::prog_vers(), 1, data).await?;
+        let mut call = self.handle.call_buf();
+        call.extend_from_slice(data);
+        let buf = self.handle.send_call(Self::prog_vers(), 1, call).await?;
         Ok(buf.to_vec())
     }
 }

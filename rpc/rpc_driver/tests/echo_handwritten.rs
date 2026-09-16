@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rpc_driver::{ProgVers, ProgramError, RpcError, RpcSender};
+use rpc_driver::{CallBuf, ProgVers, ProgramError, RpcError, RpcSender};
 
 #[allow(non_camel_case_types)]
 #[async_trait]
@@ -95,18 +95,22 @@ impl TestProgram_TestVersion_Client {
     }
 
     pub async fn null(&self) -> Result<(), RpcError> {
-        let data = xdrs::txs::encode(&()).map_err(|_| RpcError::GarbageArguments)?;
-        let buf = self.handle.send_call(Self::prog_vers(), 0, &data).await?;
+        let mut call = self.handle.call_buf();
+        call.encode(&()).map_err(|_| RpcError::GarbageArguments)?;
+        let buf = self.handle.send_call(Self::prog_vers(), 0, call).await?;
         xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
     pub async fn takes_int(&self, i: i32) -> Result<i32, RpcError> {
-        let data = xdrs::txs::encode(&(i,)).map_err(|_| RpcError::GarbageArguments)?;
-        let buf = self.handle.send_call(Self::prog_vers(), 1, &data).await?;
+        let mut call = self.handle.call_buf();
+        call.encode(&(i,)).map_err(|_| RpcError::GarbageArguments)?;
+        let buf = self.handle.send_call(Self::prog_vers(), 1, call).await?;
         xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
     pub async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, RpcError> {
-        let data = xdrs::txs::encode(&(i1, i2)).map_err(|_| RpcError::GarbageArguments)?;
-        let buf = self.handle.send_call(Self::prog_vers(), 2, &data).await?;
+        let mut call = self.handle.call_buf();
+        call.encode(&(i1, i2))
+            .map_err(|_| RpcError::GarbageArguments)?;
+        let buf = self.handle.send_call(Self::prog_vers(), 2, call).await?;
         xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
 }
@@ -451,11 +455,15 @@ mod tests {
 
         #[async_trait]
         impl RpcSender for FixedResponseSender {
+            fn call_buf(&self) -> CallBuf {
+                CallBuf::new()
+            }
+
             async fn send_call(
                 &self,
                 _: ProgVers,
                 _: u32,
-                _: &[u8],
+                _: CallBuf,
             ) -> Result<rpc_driver::RpcResponse, RpcError> {
                 Ok(rpc_driver::RpcResponse::from_payload(self.response.clone()))
             }

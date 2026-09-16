@@ -6,10 +6,17 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rpc_driver::{
-    ProgVers, RpcError, RpcServer, connect_client, handler::RpcHandler, handler::ServiceMap,
+    CallBuf, ProgVers, RpcError, RpcServer, connect_client, handler::RpcHandler,
+    handler::ServiceMap,
 };
 use tokio::net::TcpListener;
 use tracing_subscriber::fmt::format::FmtSpan;
+
+fn call_with(payload: &[u8]) -> CallBuf {
+    let mut call = CallBuf::new();
+    call.extend_from_slice(payload);
+    call
+}
 
 /// Thread-safe buffer that captures tracing output for assertions.
 #[derive(Clone)]
@@ -102,14 +109,14 @@ async fn test_tracing_connection_and_call_spans() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let response = client
-        .send_call(ProgVers::new(100, 1), 1, b"hello")
+        .send_call(ProgVers::new(100, 1), 1, call_with(b"hello"))
         .await
         .unwrap();
     assert_eq!(response, b"hello");
 
     // Null call
     let response = client
-        .send_call(ProgVers::new(100, 1), 0, b"")
+        .send_call(ProgVers::new(100, 1), 0, call_with(b""))
         .await
         .unwrap();
     assert_eq!(response, b"");
@@ -184,14 +191,14 @@ async fn test_tracing_spans_for_failed_calls() {
     // Call a non-existent program — this produces a normal RPC error response,
     // not a tracing error. But the rpc_call span should still appear on both sides.
     let err = client
-        .send_call(ProgVers::new(999, 1), 0, b"")
+        .send_call(ProgVers::new(999, 1), 0, call_with(b""))
         .await
         .unwrap_err();
     assert_eq!(err, RpcError::ProgUnavail);
 
     // Call an invalid procedure — same, produces RPC error with rpc_call spans
     let err = client
-        .send_call(ProgVers::new(100, 1), 99, b"")
+        .send_call(ProgVers::new(100, 1), 99, call_with(b""))
         .await
         .unwrap_err();
     assert_eq!(err, RpcError::InvalidProcedure);
@@ -235,7 +242,7 @@ async fn test_tracing_span_nesting() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     client
-        .send_call(ProgVers::new(100, 1), 1, b"test")
+        .send_call(ProgVers::new(100, 1), 1, call_with(b"test"))
         .await
         .unwrap();
 
@@ -283,7 +290,7 @@ async fn test_no_subscriber() {
 
     // Should work without any subscriber — no panics, no output
     let response = client
-        .send_call(ProgVers::new(100, 1), 1, b"hello")
+        .send_call(ProgVers::new(100, 1), 1, call_with(b"hello"))
         .await
         .unwrap();
     assert_eq!(response, b"hello");
@@ -316,7 +323,7 @@ async fn test_info_level_filters_rpc_calls() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     client
-        .send_call(ProgVers::new(100, 1), 1, b"hello")
+        .send_call(ProgVers::new(100, 1), 1, call_with(b"hello"))
         .await
         .unwrap();
 

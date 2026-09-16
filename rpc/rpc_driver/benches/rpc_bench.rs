@@ -35,11 +35,18 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use rpc_driver::{
-    ConnectionConfig, DynamicPool, FixedSerialPool, ProgVers, RpcError, RpcSender, RpcServer,
-    connect_client_with_config,
+    CallBuf, ConnectionConfig, DynamicPool, FixedSerialPool, ProgVers, RpcError, RpcSender,
+    RpcServer, connect_client_with_config,
     handler::{RpcHandler, ServiceMap},
 };
 use serde::Serialize;
+
+/// A call carrying `payload`, in a buffer recycled from `sender`.
+fn call_with<S: RpcSender + ?Sized>(sender: &S, payload: &[u8]) -> CallBuf {
+    let mut call = sender.call_buf();
+    call.extend_from_slice(payload);
+    call
+}
 use tokio::net::TcpListener;
 
 // ---------------------------------------------------------------------------
@@ -172,7 +179,9 @@ impl RpcHandler for InlineCallbackService {
             1 => {
                 // Call back to the peer on the same connection, inline.
                 let peer = rpc_driver::peer();
-                let response = peer.send_call(ECHO_PROG, 1, data).await?;
+                let mut call = peer.call_buf();
+                call.extend_from_slice(data);
+                let response = peer.send_call(ECHO_PROG, 1, call).await?;
                 Ok(response.to_vec())
             }
             _ => Err(RpcError::InvalidProcedure),
@@ -203,9 +212,10 @@ impl RpcHandler for FanoutService {
                 let mut handles = Vec::with_capacity(self.fanout);
                 for _ in 0..self.fanout {
                     let peer = peer.clone();
-                    let payload = data.to_vec();
+                    let mut call = peer.call_buf();
+                    call.extend_from_slice(data);
                     handles.push(tokio::spawn(async move {
-                        peer.send_call(ECHO_PROG, 1, &payload).await
+                        peer.send_call(ECHO_PROG, 1, call).await
                     }));
                 }
                 let mut total_len: u32 = 0;
@@ -329,7 +339,10 @@ async fn run_closed_loop(
             start.wait().await;
             for _ in 0..calls {
                 let t0 = Instant::now();
-                sender.send_call(progvers, proc, &payload).await.unwrap();
+                sender
+                    .send_call(progvers, proc, call_with(&*sender, &payload))
+                    .await
+                    .unwrap();
                 samples.push(t0.elapsed());
             }
             (samples, Instant::now())
@@ -371,7 +384,10 @@ async fn run_concurrent(
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.unwrap();
             let t0 = Instant::now();
-            sender.send_call(progvers, proc, &payload).await.unwrap();
+            sender
+                .send_call(progvers, proc, call_with(&*sender, &payload))
+                .await
+                .unwrap();
             t0.elapsed()
         }));
     }
@@ -594,14 +610,20 @@ async fn scenario_sequential_latency(quick: bool) -> Vec<ScenarioResult> {
     let mut results = Vec::new();
     for (label, payload) in payloads {
         for _ in 0..warmup {
-            client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+            client
+                .send_call(ECHO_PROG, 1, call_with(&*client, payload))
+                .await
+                .unwrap();
         }
 
         let wall_start = Instant::now();
         let mut samples = Vec::with_capacity(iters);
         for _ in 0..iters {
             let t0 = Instant::now();
-            client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+            client
+                .send_call(ECHO_PROG, 1, call_with(&*client, payload))
+                .await
+                .unwrap();
             samples.push(t0.elapsed());
         }
         let wall = wall_start.elapsed();
@@ -647,7 +669,10 @@ async fn scenario_concurrent_throughput(quick: bool) -> Vec<ScenarioResult> {
     let mut results = Vec::new();
     for &concurrency in concurrency_levels {
         for _ in 0..warmup {
-            client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+            client
+                .send_call(ECHO_PROG, 1, call_with(&*client, payload))
+                .await
+                .unwrap();
         }
 
         let (mut samples, wall) = run_concurrent(
@@ -705,7 +730,7 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
     // Check if bidirectional even works (serial dispatch will deadlock)
     let probe = tokio::time::timeout(
         timeout_duration,
-        client.send_call(CALLBACK_PROG, 1, payload),
+        client.send_call(CALLBACK_PROG, 1, call_with(&*client, payload)),
     )
     .await;
 
@@ -740,14 +765,20 @@ async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     for _ in 0..warmup {
-        client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
+        client
+            .send_call(CALLBACK_PROG, 1, call_with(&*client, payload))
+            .await
+            .unwrap();
     }
 
     let wall_start = Instant::now();
     let mut samples = Vec::with_capacity(iters);
     for _ in 0..iters {
         let t0 = Instant::now();
-        client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
+        client
+            .send_call(CALLBACK_PROG, 1, call_with(&*client, payload))
+            .await
+            .unwrap();
         samples.push(t0.elapsed());
     }
     let wall = wall_start.elapsed();
@@ -803,7 +834,10 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         for _ in 0..warmup {
-            client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+            client
+                .send_call(ECHO_PROG, 1, call_with(&*client, payload))
+                .await
+                .unwrap();
         }
 
         let (mut samples, wall) = run_concurrent(
@@ -838,7 +872,9 @@ async fn scenario_pool_vs_single(quick: bool) -> Vec<ScenarioResult> {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         for _ in 0..warmup {
-            pool.send_call(ECHO_PROG, 1, payload).await.unwrap();
+            pool.send_call(ECHO_PROG, 1, call_with(&*pool, payload))
+                .await
+                .unwrap();
         }
 
         let (mut samples, wall) = run_concurrent(
@@ -882,7 +918,9 @@ async fn scenario_dynamic_pool(quick: bool) -> Vec<ScenarioResult> {
     let (warmup, iters) = if quick { (10, 50) } else { (50, 500) };
 
     for _ in 0..warmup {
-        pool.send_call(ECHO_PROG, 1, payload).await.unwrap();
+        pool.send_call(ECHO_PROG, 1, call_with(&*pool, payload))
+            .await
+            .unwrap();
     }
 
     let (mut samples, wall) = run_concurrent(
@@ -932,7 +970,10 @@ async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
     let mut results = Vec::new();
     for (label, payload) in payloads {
         for _ in 0..warmup {
-            client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+            client
+                .send_call(ECHO_PROG, 1, call_with(&*client, payload))
+                .await
+                .unwrap();
         }
 
         let (mut samples, wall) = run_concurrent(
@@ -994,7 +1035,7 @@ async fn scenario_handler_fanout(quick: bool) -> Vec<ScenarioResult> {
         // Probe — if bidirectional doesn't work, skip
         let probe = tokio::time::timeout(
             timeout_duration,
-            client.send_call(CALLBACK_PROG, 1, payload),
+            client.send_call(CALLBACK_PROG, 1, call_with(&*client, payload)),
         )
         .await;
 
@@ -1014,14 +1055,20 @@ async fn scenario_handler_fanout(quick: bool) -> Vec<ScenarioResult> {
         }
 
         for _ in 0..warmup {
-            client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
+            client
+                .send_call(CALLBACK_PROG, 1, call_with(&*client, payload))
+                .await
+                .unwrap();
         }
 
         let wall_start = Instant::now();
         let mut samples = Vec::with_capacity(iters);
         for _ in 0..iters {
             let t0 = Instant::now();
-            client.send_call(CALLBACK_PROG, 1, payload).await.unwrap();
+            client
+                .send_call(CALLBACK_PROG, 1, call_with(&*client, payload))
+                .await
+                .unwrap();
             samples.push(t0.elapsed());
         }
         let wall = wall_start.elapsed();
@@ -1187,7 +1234,10 @@ async fn scenario_handler_contention(quick: bool) -> Vec<ScenarioResult> {
 
     // Warmup
     for _ in 0..warmup {
-        client.send_call(ECHO_PROG, 1, payload).await.unwrap();
+        client
+            .send_call(ECHO_PROG, 1, call_with(&*client, payload))
+            .await
+            .unwrap();
     }
 
     let (mut samples, wall) = run_concurrent(

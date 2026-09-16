@@ -4,7 +4,7 @@ name = "rpc_api"
 # boundary shared by rpc_driver and generated protocol bindings, and it
 # releases only when the boundary itself changes. See "Versioning and
 # releases" in the README.
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version.workspace = true
 authors = ["Groundhog Team"]
@@ -20,6 +20,7 @@ categories = ["rpc"]
 [dependencies]
 async-trait = "0.1.89"
 thiserror = "2.0"
+xdrs = { registry = "groundhog", version = "0.10.1", features = ["alloc"] }
 
 [lints]
 workspace = true

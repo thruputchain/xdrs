@@ -53,7 +53,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let warmup = args.warmup;
         workers.push(tokio::spawn(async move {
             for _ in 0..warmup {
-                let response = sender.send_call(prog, 1, &payload).await.unwrap();
+                let mut call = sender.call_buf();
+                call.extend_from_slice(&payload);
+                let response = sender.send_call(prog, 1, call).await.unwrap();
                 assert_eq!(response.as_ref(), payload.as_ref());
             }
             let mut samples = Vec::with_capacity(iterations);
@@ -61,7 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             start.wait().await;
             for _ in 0..iterations {
                 let before = Instant::now();
-                let response = sender.send_call(prog, 1, &payload).await.unwrap();
+                let mut call = sender.call_buf();
+                call.extend_from_slice(&payload);
+                let response = sender.send_call(prog, 1, call).await.unwrap();
                 let elapsed = before.elapsed();
                 assert_eq!(response.as_ref(), payload.as_ref());
                 samples.push(elapsed);

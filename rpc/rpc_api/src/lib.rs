@@ -23,18 +23,40 @@
 //! ## Stability
 //!
 //! This crate is intentionally tiny, and its dependencies are limited to
-//! `async-trait` and `thiserror`. Changes must be additive wherever
+//! `async-trait`, `thiserror`, and the `xdrs` serializer generated bindings
+//! already use. Changes must be additive wherever
 //! possible: new [`RpcError`] variants are non-breaking thanks to
-//! `#[non_exhaustive]`, and new trait methods must ship with default
-//! implementations. A breaking change here forces a coordinated republish
-//! of every generated protocol crate — treat it as a last resort.
+//! `#[non_exhaustive]`, and a new trait method ships with a default
+//! implementation when a correct one exists for every sender. A breaking
+//! change here forces a coordinated republish of every generated protocol
+//! crate — treat it as a last resort.
+//!
+//! ## Sending a call
+//!
+//! Callers take a [`CallBuf`] from the sender with [`RpcSender::call_buf`],
+//! encode the arguments into it, and pass it to [`RpcSender::send_call`].
+//! The buffer keeps the wire prefix reserved ahead of the payload so the
+//! driver frames the call in place, and driver senders recycle spent record
+//! buffers through `call_buf`, so a steady stream of calls allocates
+//! nothing. [`CallBuf::encode`] serializes XDR values into it directly;
+//! generated protocol clients use that path.
+//!
+//! ```
+//! use rpc_api::CallBuf;
+//!
+//! let mut call = CallBuf::new();
+//! call.extend_from_slice(&42u32.to_be_bytes());
+//! assert_eq!(call.payload(), &[0, 0, 0, 42]);
+//! ```
 
+mod call_buf;
 mod error;
 mod handler;
 mod prog_error;
 mod response;
 mod sender;
 
+pub use call_buf::CallBuf;
 pub use error::RpcError;
 pub use handler::RpcHandler;
 pub use prog_error::ProgramError;

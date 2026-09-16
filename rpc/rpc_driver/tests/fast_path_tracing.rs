@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rpc_driver::{
-    ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
+    CallBuf, ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
     handler::RpcHandler, handler::ServiceMap,
 };
 use tracing::field::{Field, Visit};
@@ -22,6 +22,12 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 use tracing_subscriber::util::SubscriberInitExt;
 
 const ECHO_PROG: ProgVers = ProgVers::new(1, 1);
+
+fn call_with(payload: &[u8]) -> CallBuf {
+    let mut call = CallBuf::new();
+    call.extend_from_slice(payload);
+    call
+}
 
 /// Proc 0 never awaits; proc 1 yields first.
 struct MixedService;
@@ -112,10 +118,16 @@ async fn ready_handlers_take_the_inline_path() {
 
     // 5 never-await calls, then 5 that yield.
     for _ in 0..5 {
-        client.send_call(ECHO_PROG, 0, b"ready").await.unwrap();
+        client
+            .send_call(ECHO_PROG, 0, call_with(b"ready"))
+            .await
+            .unwrap();
     }
     for _ in 0..5 {
-        client.send_call(ECHO_PROG, 1, b"yield").await.unwrap();
+        client
+            .send_call(ECHO_PROG, 1, call_with(b"yield"))
+            .await
+            .unwrap();
     }
 
     let values = collector.ready.lock().unwrap().clone();
@@ -146,7 +158,10 @@ async fn ready_handlers_take_the_inline_path() {
         .await
         .unwrap();
     for _ in 0..5 {
-        client.send_call(ECHO_PROG, 0, b"unprobed").await.unwrap();
+        client
+            .send_call(ECHO_PROG, 0, call_with(b"unprobed"))
+            .await
+            .unwrap();
     }
 
     assert_eq!(collector.ready.lock().unwrap().len(), 10);

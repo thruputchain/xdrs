@@ -11,12 +11,18 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rpc_driver::{
-    ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
+    CallBuf, ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
     handler::RpcHandler, handler::ServiceMap,
 };
 
 const ECHO_PROG: ProgVers = ProgVers::new(1, 1);
 const CALLBACK_PROG: ProgVers = ProgVers::new(2, 1);
+
+fn call_with(payload: &[u8]) -> CallBuf {
+    let mut call = CallBuf::new();
+    call.extend_from_slice(payload);
+    call
+}
 
 /// Simple echo service.
 struct EchoService;
@@ -45,7 +51,9 @@ impl RpcHandler for InlineCallbackService {
                 // Call back to the client's EchoService on the same connection.
                 // This requires the read loop to process the REPLY while this
                 // handler is still running — only possible with concurrent dispatch.
-                let response = peer.send_call(ECHO_PROG, 1, data).await?;
+                let mut call = peer.call_buf();
+                call.extend_from_slice(data);
+                let response = peer.send_call(ECHO_PROG, 1, call).await?;
                 Ok(response.to_vec())
             }
             _ => Err(RpcError::InvalidProcedure),
@@ -170,7 +178,7 @@ async fn start_inline_server(service: Box<dyn RpcHandler>) -> std::net::SocketAd
 #[tokio::test]
 async fn test_bidirectional_rpc() {
     // Server runs InlineCallbackService (prog=2, vers=1).
-    // On proc 1, it calls peer().send_call(ECHO_PROG, 1, data) — calling
+    // On proc 1, it calls peer().send_call(ECHO_PROG, 1, call) — calling
     // back to the CLIENT's EchoService on the same connection.
     let addr = start_server(Box::new(InlineCallbackService)).await;
 
@@ -185,7 +193,7 @@ async fn test_bidirectional_rpc() {
     // The server will call back to our EchoService, then return the result.
     let result = tokio::time::timeout(
         Duration::from_secs(2),
-        client.send_call(CALLBACK_PROG, 1, b"roundtrip"),
+        client.send_call(CALLBACK_PROG, 1, call_with(b"roundtrip")),
     )
     .await;
 
@@ -218,7 +226,7 @@ async fn test_bidirectional_at_concurrency_limit() {
     // it because the semaphore is fully acquired.
     let result = tokio::time::timeout(
         Duration::from_secs(2),
-        client.send_call(CALLBACK_PROG, 1, b"limit-test"),
+        client.send_call(CALLBACK_PROG, 1, call_with(b"limit-test")),
     )
     .await;
 
@@ -233,7 +241,7 @@ async fn test_bidirectional_at_concurrency_limit() {
         let payload = format!("iter-{i}");
         let resp = tokio::time::timeout(
             Duration::from_secs(2),
-            client.send_call(CALLBACK_PROG, 1, payload.as_bytes()),
+            client.send_call(CALLBACK_PROG, 1, call_with(payload.as_bytes())),
         )
         .await
         .expect("deadlock on repeat iteration")
@@ -275,7 +283,7 @@ async fn test_concurrent_bidirectional_at_capacity() {
         handles.push(tokio::spawn(async move {
             let result = tokio::time::timeout(
                 Duration::from_secs(5),
-                client.send_call(CALLBACK_PROG, 1, payload.as_bytes()),
+                client.send_call(CALLBACK_PROG, 1, call_with(payload.as_bytes())),
             )
             .await;
             (payload, result)
@@ -310,7 +318,10 @@ async fn test_concurrent_throughput() {
     for i in 0..n {
         let client = client.handle().clone();
         handles.push(tokio::spawn(async move {
-            client.send_call(ECHO_PROG, 1, &[i as u8]).await.unwrap()
+            client
+                .send_call(ECHO_PROG, 1, call_with(&[i as u8]))
+                .await
+                .unwrap()
         }));
     }
     for h in handles {
@@ -346,7 +357,10 @@ async fn test_backpressure() {
     for i in 0..n {
         let client = client.handle().clone();
         handles.push(tokio::spawn(async move {
-            client.send_call(ECHO_PROG, 1, &[i as u8]).await.unwrap()
+            client
+                .send_call(ECHO_PROG, 1, call_with(&[i as u8]))
+                .await
+                .unwrap()
         }));
     }
     for h in handles {
@@ -376,20 +390,22 @@ async fn test_panic_recovery() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     // proc 0 = normal echo, should work
-    let result = client.send_call(ECHO_PROG, 0, b"ok").await;
+    let result = client.send_call(ECHO_PROG, 0, call_with(b"ok")).await;
     assert_eq!(result.unwrap(), b"ok");
 
     // proc 1 = panic — should get error response, not hang
     let result = tokio::time::timeout(
         Duration::from_secs(2),
-        client.send_call(ECHO_PROG, 1, b"boom"),
+        client.send_call(ECHO_PROG, 1, call_with(b"boom")),
     )
     .await;
     assert!(result.is_ok(), "panic handler should not deadlock");
     assert_eq!(result.unwrap().unwrap_err(), RpcError::SystemError);
 
     // Connection should still be alive — send another normal request
-    let result = client.send_call(ECHO_PROG, 0, b"still alive").await;
+    let result = client
+        .send_call(ECHO_PROG, 0, call_with(b"still alive"))
+        .await;
     assert_eq!(result.unwrap(), b"still alive");
 }
 
@@ -419,7 +435,11 @@ async fn test_load_shedding() {
     for i in 0..n {
         let client = client.handle().clone();
         handles.push(tokio::spawn(async move {
-            tokio::time::timeout(Duration::from_secs(2), client.send_call(ECHO_PROG, 1, &[i])).await
+            tokio::time::timeout(
+                Duration::from_secs(2),
+                client.send_call(ECHO_PROG, 1, call_with(&[i])),
+            )
+            .await
         }));
     }
 
@@ -463,7 +483,10 @@ async fn test_ready_handler_answered_inline() {
 
     for i in 0..20u8 {
         let payload = [i; 4];
-        let response = client.send_call(ECHO_PROG, 0, &payload).await.unwrap();
+        let response = client
+            .send_call(ECHO_PROG, 0, call_with(&payload))
+            .await
+            .unwrap();
         assert_eq!(response, payload, "ready handler returned wrong payload");
     }
     assert_eq!(entered.load(Ordering::SeqCst), 20);
@@ -485,7 +508,10 @@ async fn test_suspending_handler_completes_after_probe() {
     // proc 1 yields before returning, so every call takes the spawn path.
     for i in 0..20u8 {
         let payload = [i; 4];
-        let response = client.send_call(ECHO_PROG, 1, &payload).await.unwrap();
+        let response = client
+            .send_call(ECHO_PROG, 1, call_with(&payload))
+            .await
+            .unwrap();
         assert_eq!(
             response, payload,
             "suspended handler returned wrong payload"
@@ -514,7 +540,10 @@ async fn test_mixed_ready_and_suspending_calls() {
         let proc = u32::from(i % 2);
         handles.push(tokio::spawn(async move {
             let payload = [i; 4];
-            let response = handle.send_call(ECHO_PROG, proc, &payload).await.unwrap();
+            let response = handle
+                .send_call(ECHO_PROG, proc, call_with(&payload))
+                .await
+                .unwrap();
             assert_eq!(response, payload, "reply routed to the wrong xid");
         }));
     }
@@ -535,14 +564,16 @@ async fn test_panic_on_probe_poll_is_isolated() {
 
     let result = tokio::time::timeout(
         Duration::from_secs(2),
-        client.send_call(ECHO_PROG, 1, b"boom"),
+        client.send_call(ECHO_PROG, 1, call_with(b"boom")),
     )
     .await;
     assert!(result.is_ok(), "panic on probe poll hung the dispatch loop");
     assert!(result.unwrap().is_err(), "expected an error reply");
 
     // Connection must survive the panic.
-    let response = client.send_call(ECHO_PROG, 0, b"still alive").await;
+    let response = client
+        .send_call(ECHO_PROG, 0, call_with(b"still alive"))
+        .await;
     assert_eq!(response.unwrap(), b"still alive");
 }
 
@@ -568,7 +599,7 @@ async fn test_panic_on_probe_poll_releases_permit() {
     for i in 0..3 {
         let result = tokio::time::timeout(
             Duration::from_secs(2),
-            client.send_call(ECHO_PROG, 1, b"boom"),
+            client.send_call(ECHO_PROG, 1, call_with(b"boom")),
         )
         .await;
         let Ok(result) = result else {
@@ -580,7 +611,7 @@ async fn test_panic_on_probe_poll_releases_permit() {
     // proc 2 suspends, so it must acquire a permit to finish.
     let result = tokio::time::timeout(
         Duration::from_secs(2),
-        client.send_call(ECHO_PROG, 2, b"needs-permit"),
+        client.send_call(ECHO_PROG, 2, call_with(b"needs-permit")),
     )
     .await;
     assert!(
@@ -608,11 +639,17 @@ async fn test_fast_path_disabled_matches() {
     for i in 0..10u8 {
         let payload = [i; 4];
         assert_eq!(
-            client.send_call(ECHO_PROG, 0, &payload).await.unwrap(),
+            client
+                .send_call(ECHO_PROG, 0, call_with(&payload))
+                .await
+                .unwrap(),
             payload
         );
         assert_eq!(
-            client.send_call(ECHO_PROG, 1, &payload).await.unwrap(),
+            client
+                .send_call(ECHO_PROG, 1, call_with(&payload))
+                .await
+                .unwrap(),
             payload
         );
     }
@@ -642,7 +679,10 @@ async fn test_probe_poll_respects_concurrency_limit() {
     for i in 0..6u8 {
         let handle = client.handle().clone();
         handles.push(tokio::spawn(async move {
-            handle.send_call(ECHO_PROG, 1, &[i]).await.unwrap()
+            handle
+                .send_call(ECHO_PROG, 1, call_with(&[i]))
+                .await
+                .unwrap()
         }));
     }
     for h in handles {
@@ -677,7 +717,7 @@ async fn test_client_disconnect_during_dispatch() {
     for i in 0..5 {
         let client = client.handle().clone();
         handles.push(tokio::spawn(async move {
-            client.send_call(ECHO_PROG, 1, &[i]).await
+            client.send_call(ECHO_PROG, 1, call_with(&[i])).await
         }));
     }
 
@@ -705,6 +745,6 @@ async fn test_client_disconnect_during_dispatch() {
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_millis(50)).await;
-    let result = client2.send_call(ECHO_PROG, 1, b"alive").await;
+    let result = client2.send_call(ECHO_PROG, 1, call_with(b"alive")).await;
     assert_eq!(result.unwrap(), b"alive");
 }

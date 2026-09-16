@@ -57,6 +57,9 @@ pub struct ConnectionConfig {
     ///
     /// Default: 65536 (64 KiB). Set via [`ConnectionConfig::with_read_buffer_size`].
     pub(crate) read_buffer_size: usize,
+    /// Record-buffer pool shared with sibling connections of one connection
+    /// pool; `None` gives the connection its own.
+    pub(crate) buf_pool: Option<Arc<crate::connection::BufPool>>,
 }
 
 impl Default for ConnectionConfig {
@@ -69,6 +72,7 @@ impl Default for ConnectionConfig {
             write_channel_capacity: 256,
             read_channel_capacity: 256,
             read_buffer_size: 65536,
+            buf_pool: None,
         }
     }
 }
@@ -88,7 +92,15 @@ impl ConnectionConfig {
             write_channel_capacity: 256,
             read_channel_capacity: 256,
             read_buffer_size: 65536,
+            buf_pool: None,
         }
+    }
+
+    /// Share `pool` between every connection opened with this config, so a
+    /// connection pool's callers can draw call buffers from one place.
+    pub(crate) fn with_shared_buf_pool(mut self, pool: Arc<crate::connection::BufPool>) -> Self {
+        self.buf_pool = Some(pool);
+        self
     }
 
     /// Set maximum concurrent handler dispatches per connection.

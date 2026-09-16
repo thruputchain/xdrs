@@ -11,7 +11,7 @@
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let conn = connect_client(&"127.0.0.1:111".parse()?).await?;
-//! let response = conn.send_call(ProgVers::new(100000, 1), 0, b"").await?;
+//! let response = conn.send_call(ProgVers::new(100000, 1), 0, conn.call_buf()).await?;
 //! // conn automatically shuts down when dropped
 //! # Ok(())
 //! # }
@@ -57,7 +57,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rpc_driver = { version = "0.10.2", features = ["concurrent-dispatch"] }
+//! rpc_driver = { version = "0.11", features = ["concurrent-dispatch"] }
 //! ```
 //!
 //! With this feature:
@@ -94,7 +94,7 @@
 //!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
 //!         let peer = rpc_driver::peer();
 //!         // With concurrent-dispatch: works inline
-//!         let resp = peer.send_call(ProgVers::new(200, 1), 0, b"").await?;
+//!         let resp = peer.send_call(ProgVers::new(200, 1), 0, peer.call_buf()).await?;
 //!         Ok(resp.to_vec())
 //!     }
 //! # }
@@ -115,7 +115,7 @@
 //!         tokio::spawn(async move {
 //!             // The read loop can process the callback reply after this
 //!             // dispatch returns.
-//!             let _ = peer.send_call(ProgVers::new(200, 1), 0, b"").await;
+//!             let _ = peer.send_call(ProgVers::new(200, 1), 0, peer.call_buf()).await;
 //!         });
 //!         Ok(vec![])
 //!     }

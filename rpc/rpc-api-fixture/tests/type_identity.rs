@@ -88,7 +88,7 @@ async fn fixture_client_and_dispatcher_interoperate_with_driver() {
         .send_call(
             rpc_api::ProgVers::new(rpc_api_fixture::ECHO_PROG, 1),
             99,
-            &[],
+            rpc_api::CallBuf::new(),
         )
         .await
         .unwrap_err();

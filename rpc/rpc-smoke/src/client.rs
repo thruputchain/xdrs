@@ -156,7 +156,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tasks.spawn(async move {
             let _permit = permit;
             let call_start = Instant::now();
-            match pool.send_call(progvers, 1, &payload).await {
+            let mut call = pool.call_buf();
+            call.extend_from_slice(&payload);
+            match pool.send_call(progvers, 1, call).await {
                 Ok(_) => Ok(call_start.elapsed()),
                 Err(_) => Err(()),
             }

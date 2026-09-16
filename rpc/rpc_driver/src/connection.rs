@@ -11,21 +11,32 @@ use tracing::Instrument;
 
 use async_trait::async_trait;
 
-use crate::{
-    ProgVers, RpcError, rpc_error::DEFAULT_OPAQUE_AUTH, rpc_msg, tcp_connection::WriteHalf,
-};
+use crate::{ProgVers, RpcError, rpc_msg, tcp_connection::WriteHalf};
 
 const MAX_BATCH: usize = 64;
 
 /// XDR header is ~40 bytes (xid + msg_type + rpcvers + prog + vers + proc + 2x opaque_auth).
 const XDR_HEADER_ESTIMATE: usize = 48;
 
+/// Most spent record buffers the pool keeps; enough for a few hundred calls
+/// in flight to cycle without allocating.
+const MAX_POOLED_BUFFERS: usize = 256;
+
+/// Largest allocation the pool keeps. A rare huge record does not pin its
+/// memory for the connection's lifetime.
+const MAX_POOLED_CAPACITY: usize = 1 << 20;
+
 // ---------------------------------------------------------------------------
 // Buffer pool — recycles Vec<u8> allocations across RPC messages
 // ---------------------------------------------------------------------------
 
-/// Pool of reusable `Vec<u8>` buffers shared between callers and the writer
-/// task. Reusing compatible buffers reduces steady-state allocation.
+/// Pool of spent record buffers the writer task hands back for reuse: callers
+/// draw their next [`CallBuf`] from it and the server reply path its framing
+/// buffer, so a steady stream of records allocates nothing. Bounded to
+/// [`MAX_POOLED_BUFFERS`] buffers of at most [`MAX_POOLED_CAPACITY`] bytes.
+///
+/// Every connection has one; a connection pool shares one across its
+/// connections.
 pub(crate) struct BufPool(StdMutex<Vec<Vec<u8>>>);
 
 impl std::fmt::Debug for BufPool {
@@ -36,7 +47,7 @@ impl std::fmt::Debug for BufPool {
 }
 
 impl BufPool {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(StdMutex::new(Vec::new()))
     }
 
@@ -45,13 +56,23 @@ impl BufPool {
         self.0.lock().unwrap().pop().unwrap_or_default()
     }
 
+    /// A call buffer backed by a pooled allocation when one is available.
+    pub(crate) fn take_call_buf(&self) -> CallBuf {
+        CallBuf::from_spare(self.take())
+    }
+
     /// Return a writer batch with one lock acquisition, rather than contending
-    /// with callers once per record in the batch.
+    /// with callers once per record in the batch. Buffers beyond the count
+    /// cap or over the capacity cap are dropped.
     fn put_batch(&self, batch: &mut Vec<Vec<u8>>) {
-        for buf in batch.iter_mut() {
+        let mut pooled = self.0.lock().unwrap();
+        for mut buf in batch.drain(..) {
+            if pooled.len() >= MAX_POOLED_BUFFERS || buf.capacity() > MAX_POOLED_CAPACITY {
+                continue;
+            }
             buf.clear();
+            pooled.push(buf);
         }
-        self.0.lock().unwrap().extend(batch.drain(..));
     }
 }
 
@@ -150,71 +171,81 @@ pub(crate) fn frame_rpc_record(
     Ok(Vec::from(writer))
 }
 
-/// Like [`frame_rpc_record`], but takes ownership of the payload Vec and
-/// reuses its allocation for the output. Shifts the payload right to make
-/// room for the record-length + XDR header prefix.
+/// Frame an outgoing call in place.
 ///
-/// Avoids copying the payload into a separate framing buffer when the caller
-/// already owns the data (for example, pool workers receiving it over a
-/// channel). The Vec may still grow if it lacks space for the header.
+/// Fills the prefix a [`CallBuf`] reserves with the record mark and the
+/// RFC 5531 CALL header (`AUTH_NONE` credentials and verifier), and returns
+/// the buffer as the complete single-part record. The payload is neither
+/// copied nor moved. Fails only when the record would exceed the 31-bit
+/// record-mark length.
 #[inline]
-pub(crate) fn frame_rpc_record_owned(
-    header: &rpc_msg::rpc_msg,
-    mut data: Vec<u8>,
+pub(crate) fn frame_call(
+    call: CallBuf,
+    xid: u32,
+    progvers: ProgVers,
+    proc: u32,
 ) -> Result<Vec<u8>, ()> {
-    // Serialize the XDR header into a small temp buffer.
-    let mut hdr_writer = xdrs::txs::buf_writer::BufWriter::with_capacity(XDR_HEADER_ESTIMATE);
-    xdrs::write_xdr(&0u32, &mut hdr_writer).map_err(drop)?;
-    xdrs::write_xdr(header, &mut hdr_writer).map_err(drop)?;
+    const CALL_HEADER_WORDS: usize = 10;
+    const { assert!(CallBuf::PREFIX_LEN == 4 + 4 * CALL_HEADER_WORDS) };
 
-    let hdr_bytes: &[u8] = hdr_writer.as_ref();
-    let hdr_xdr_len = hdr_bytes.len() - 4; // minus the placeholder
-    let total_len = hdr_xdr_len
-        .checked_add(data.len())
-        .and_then(|sum| u32::try_from(sum).ok())
+    let mut record = call.into_vec();
+    let body_len = record.len() - 4;
+    let msg_len = u32::try_from(body_len)
+        .ok()
         .filter(|&len| len <= 0x7FFF_FFFF)
-        .ok_or(())?;
+        .ok_or(())?
+        | 0x8000_0000;
 
-    let msg_len: u32 = total_len | 0x8000_0000;
-    let hdr_size = hdr_bytes.len();
-    let data_len = data.len();
-
-    // Shift payload right to make room for header.
-    data.reserve(hdr_size);
-    data.resize(data_len + hdr_size, 0);
-    data.copy_within(..data_len, hdr_size);
-
-    // Write record-length + XDR header at the front.
-    data[..4].copy_from_slice(&msg_len.to_be_bytes());
-    data[4..hdr_size].copy_from_slice(&hdr_bytes[4..]);
-
-    Ok(data)
+    let words: [u32; 1 + CALL_HEADER_WORDS] = [
+        msg_len,
+        xid,
+        rpc_msg::msg_type::CALL.0 as u32,
+        RPC_VERSION,
+        progvers.prog(),
+        progvers.vers(),
+        proc,
+        rpc_msg::auth_flavor::AUTH_NONE.0 as u32, // cred.flavor
+        0,                                        // cred.body length
+        rpc_msg::auth_flavor::AUTH_NONE.0 as u32, // verf.flavor
+        0,                                        // verf.body length
+    ];
+    for (slot, word) in record[..CallBuf::PREFIX_LEN].chunks_exact_mut(4).zip(words) {
+        slot.copy_from_slice(&word.to_be_bytes());
+    }
+    Ok(record)
 }
 
-// RpcResponse and the RpcSender trait live in the stable `rpc_api` crate;
-// re-exported here at their historical paths for source compatibility.
-// This module implements RpcSender for [`ConnectionHandle`] and
-// [`ClientConnection`]; the pools in [`crate::pool`] implement it too.
-pub use rpc_api::{RpcResponse, RpcSender};
+/// The ONC RPC version every call header carries.
+const RPC_VERSION: u32 = 2;
+
+// CallBuf, RpcResponse and the RpcSender trait live in the stable `rpc_api`
+// crate; re-exported here at their historical paths for source
+// compatibility. This module implements RpcSender for [`ConnectionHandle`]
+// and [`ClientConnection`]; the pools in [`crate::pool`] implement it too.
+pub use rpc_api::{CallBuf, RpcResponse, RpcSender};
 
 #[async_trait]
 impl RpcSender for ConnectionHandle {
+    fn call_buf(&self) -> CallBuf {
+        ConnectionHandle::call_buf(self)
+    }
+
     async fn send_call(
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
-        ConnectionHandle::send_call(self, progvers, proc, data).await
+        ConnectionHandle::send_call(self, progvers, proc, call).await
     }
 
     async fn send_fire_and_forget(
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<(), RpcError> {
-        ConnectionHandle::send_fire_and_forget(self, progvers, proc, data).await
+        ConnectionHandle::send_fire_and_forget(self, progvers, proc, call).await
     }
 }
 
@@ -408,7 +439,10 @@ impl ConnectionHandle {
         config: &crate::ConnectionConfig,
         span: tracing::Span,
     ) -> Self {
-        let pool = Arc::new(BufPool::new());
+        let pool = config
+            .buf_pool
+            .clone()
+            .unwrap_or_else(|| Arc::new(BufPool::new()));
         let (tx, rx) = mpsc::channel(config.write_channel_capacity);
         let handle =
             tokio::spawn(writer_task(rx, write_half, pool.clone()).instrument(span.clone()));
@@ -496,40 +530,23 @@ impl ConnectionHandle {
         }
     }
 
-    fn prepare_call_msg(
-        buf: Vec<u8>,
-        xid: u32,
-        progvers: ProgVers,
-        proc: u32,
-        data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
-        let header = rpc_msg::rpc_msg {
-            xid,
-            body: rpc_msg::rpc_msg_body::CALL {
-                cbody: rpc_msg::call_body {
-                    rpcvers: 2,
-                    prog: progvers.prog(),
-                    vers: progvers.vers(),
-                    proc,
-                    cred: DEFAULT_OPAQUE_AUTH,
-                    verf: DEFAULT_OPAQUE_AUTH,
-                },
-            },
-        };
-        frame_rpc_record(buf, &header, data).map_err(|()| {
-            tracing::warn!(data_len = data.len(), "message too large");
-            RpcError::SystemError
-        })
+    /// A buffer to encode the next call into, recycled from a record this
+    /// connection has already written when one is available.
+    pub fn call_buf(&self) -> CallBuf {
+        self.buf_pool.take_call_buf()
     }
 
     /// Send an RPC call and wait for the response.
     ///
-    /// Returns the response data on success, or an error if the call fails.
+    /// The call is framed in place: the driver fills the prefix `call`
+    /// reserves and hands the buffer to the socket without copying the
+    /// payload. Returns the response data on success, or an error if the
+    /// call fails.
     pub async fn send_call(
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
         let xid = self.connection_state.lock().unwrap().register_call()?;
         self.pending_count.fetch_add(1, Ordering::Relaxed);
@@ -551,13 +568,8 @@ impl ConnectionHandle {
             done: false,
         };
 
-        let msg = match Self::prepare_call_msg(self.buf_pool.take(), xid, progvers, proc, data) {
-            Ok(msg) => msg,
-            Err(e) => {
-                // guard.drop() will clean up pending_requests
-                return Err(e);
-            }
-        };
+        // On error the guard's drop cleans up the pending entry.
+        let msg = Self::frame_call_or_warn(call, xid, progvers, proc)?;
 
         let result = async {
             if self.write_tx.send(msg).await.is_err() {
@@ -583,7 +595,7 @@ impl ConnectionHandle {
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<(), RpcError> {
         let xid = self
             .connection_state
@@ -611,7 +623,7 @@ impl ConnectionHandle {
             sent: false,
         };
 
-        let msg = Self::prepare_call_msg(self.buf_pool.take(), xid, progvers, proc, data)?;
+        let msg = Self::frame_call_or_warn(call, xid, progvers, proc)?;
 
         // Use .instrument(span) instead of span.enter() — enter() is
         // thread-local and incorrect across .await points in multi-thread
@@ -627,133 +639,17 @@ impl ConnectionHandle {
         .await
     }
 
-    /// Like [`send_fire_and_forget`](Self::send_fire_and_forget), but takes
-    /// ownership of the data Vec. Reuses its allocation for the framed
-    /// message, saving one copy when the caller already owns the data
-    /// (e.g., pool workers).
-    pub async fn send_fire_and_forget_owned(
-        &self,
+    fn frame_call_or_warn(
+        call: CallBuf,
+        xid: u32,
         progvers: ProgVers,
         proc: u32,
-        data: Vec<u8>,
-    ) -> Result<(), RpcError> {
-        let xid = self
-            .connection_state
-            .lock()
-            .unwrap()
-            .register_fire_and_forget()?;
-        self.pending_count.fetch_add(1, Ordering::Relaxed);
-
-        let span = tracing::debug_span!(
-            parent: &self.connection_span,
-            "rpc_call",
-            xid,
-            prog = progvers.prog(),
-            vers = progvers.vers(),
-            proc = proc,
-            fire_and_forget = true,
-        );
-
-        let mut guard = FireAndForgetGuard {
-            state: &self.connection_state,
-            pending_count: &self.pending_count,
-            xid,
-            sent: false,
-        };
-
-        let header = rpc_msg::rpc_msg {
-            xid,
-            body: rpc_msg::rpc_msg_body::CALL {
-                cbody: rpc_msg::call_body {
-                    rpcvers: 2,
-                    prog: progvers.prog(),
-                    vers: progvers.vers(),
-                    proc,
-                    cred: DEFAULT_OPAQUE_AUTH,
-                    verf: DEFAULT_OPAQUE_AUTH,
-                },
-            },
-        };
-
-        let msg = frame_rpc_record_owned(&header, data).map_err(|()| {
-            tracing::warn!("message too large: exceeds max (0x7FFF_FFFF)");
+    ) -> Result<Vec<u8>, RpcError> {
+        let payload_len = call.payload().len();
+        frame_call(call, xid, progvers, proc).map_err(|()| {
+            tracing::warn!(payload_len, "message too large: exceeds max (0x7FFF_FFFF)");
             RpcError::SystemError
-        })?;
-
-        async {
-            if self.write_tx.send(msg).await.is_err() {
-                return Err(RpcError::SystemError); // guard drops and cleans up
-            }
-            guard.sent = true;
-            Ok(())
-        }
-        .instrument(span)
-        .await
-    }
-
-    /// Like [`send_call`](Self::send_call), but takes ownership of the data
-    /// Vec. Reuses its allocation for the framed message by shifting the
-    /// payload and prepending the header. Saves one copy when the caller
-    /// already owns the data (e.g., pool workers).
-    pub async fn send_call_owned(
-        &self,
-        progvers: ProgVers,
-        proc: u32,
-        data: Vec<u8>,
-    ) -> Result<RpcResponse, RpcError> {
-        let xid = self.connection_state.lock().unwrap().register_call()?;
-        self.pending_count.fetch_add(1, Ordering::Relaxed);
-
-        let span = tracing::debug_span!(
-            parent: &self.connection_span,
-            "rpc_call",
-            xid,
-            prog = progvers.prog(),
-            vers = progvers.vers(),
-            proc = proc,
-        );
-
-        let guard = CallGuard {
-            state: &self.connection_state,
-            pending_count: &self.pending_count,
-            xid,
-            done: false,
-        };
-
-        let header = rpc_msg::rpc_msg {
-            xid,
-            body: rpc_msg::rpc_msg_body::CALL {
-                cbody: rpc_msg::call_body {
-                    rpcvers: 2,
-                    prog: progvers.prog(),
-                    vers: progvers.vers(),
-                    proc,
-                    cred: DEFAULT_OPAQUE_AUTH,
-                    verf: DEFAULT_OPAQUE_AUTH,
-                },
-            },
-        };
-
-        let msg = match frame_rpc_record_owned(&header, data) {
-            Ok(msg) => msg,
-            Err(()) => {
-                tracing::warn!("message too large: exceeds max (0x7FFF_FFFF)");
-                return Err(RpcError::SystemError);
-            }
-        };
-
-        let result = async {
-            if self.write_tx.send(msg).await.is_err() {
-                return Err(RpcError::SystemError);
-            }
-
-            self.await_reply(xid).await
-        }
-        .instrument(span)
-        .await;
-
-        guard.complete();
-        result
+        })
     }
 
     /// Wait for the reader task to deliver a result for the given XID.
@@ -952,28 +848,100 @@ impl std::fmt::Debug for ClientConnection {
 
 #[async_trait]
 impl RpcSender for ClientConnection {
+    fn call_buf(&self) -> CallBuf {
+        (**self).call_buf()
+    }
+
     async fn send_call(
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
-        (**self).send_call(progvers, proc, data).await
+        (**self).send_call(progvers, proc, call).await
     }
 
     async fn send_fire_and_forget(
         &self,
         progvers: ProgVers,
         proc: u32,
-        data: &[u8],
+        call: CallBuf,
     ) -> Result<(), RpcError> {
-        (**self).send_fire_and_forget(progvers, proc, data).await
+        (**self).send_fire_and_forget(progvers, proc, call).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc_error::DEFAULT_OPAQUE_AUTH;
+
+    fn call_with(payload: &[u8]) -> CallBuf {
+        let mut call = CallBuf::new();
+        call.extend_from_slice(payload);
+        call
+    }
+
+    #[test]
+    fn frame_call_matches_xdr_encoded_header() {
+        let progvers = ProgVers::new(0x0102_0304, 7);
+        let payload = b"payload bytes";
+        let header = rpc_msg::rpc_msg {
+            xid: 0xDEAD_BEEF,
+            body: rpc_msg::rpc_msg_body::CALL {
+                cbody: rpc_msg::call_body {
+                    rpcvers: 2,
+                    prog: progvers.prog(),
+                    vers: progvers.vers(),
+                    proc: 9,
+                    cred: DEFAULT_OPAQUE_AUTH,
+                    verf: DEFAULT_OPAQUE_AUTH,
+                },
+            },
+        };
+        let expected = frame_rpc_record(Vec::new(), &header, payload).unwrap();
+
+        let framed = frame_call(call_with(payload), 0xDEAD_BEEF, progvers, 9).unwrap();
+
+        assert_eq!(framed, expected);
+        assert_eq!(framed.len(), CallBuf::PREFIX_LEN + payload.len());
+    }
+
+    #[test]
+    fn frame_call_empty_payload() {
+        let framed = frame_call(CallBuf::new(), 1, ProgVers::new(1, 1), 0).unwrap();
+        assert_eq!(framed.len(), CallBuf::PREFIX_LEN);
+        assert_eq!(&framed[..4], &(0x8000_0000u32 | 40).to_be_bytes());
+    }
+
+    #[test]
+    fn buf_pool_is_bounded() {
+        let pool = BufPool::new();
+        let mut batch: Vec<Vec<u8>> = (0..MAX_POOLED_BUFFERS + 10).map(|_| vec![1]).collect();
+        batch.push(Vec::with_capacity(MAX_POOLED_CAPACITY + 1));
+        pool.put_batch(&mut batch);
+        assert!(batch.is_empty());
+        let pooled = pool.0.lock().unwrap();
+        assert_eq!(pooled.len(), MAX_POOLED_BUFFERS);
+        assert!(pooled.iter().all(|b| b.capacity() <= MAX_POOLED_CAPACITY));
+        drop(pooled);
+        assert!(pool.take().is_empty());
+    }
+
+    #[test]
+    fn call_buf_reuses_written_records() {
+        let pool = BufPool::new();
+        let record = frame_call(call_with(&[9; 300]), 1, ProgVers::new(1, 1), 0).unwrap();
+        let ptr = record.as_ptr();
+        pool.put_batch(&mut vec![record]);
+
+        let call = pool.take_call_buf();
+        assert!(call.payload().is_empty());
+        let reused = call.into_vec();
+        assert_eq!(reused.as_ptr(), ptr);
+        // The pool is empty again; the next buffer is fresh.
+        assert!(pool.take_call_buf().into_vec().capacity() < 300);
+    }
 
     #[test]
     fn test_callback_roundtrip() {

@@ -25,7 +25,9 @@ tokio::task_local! {
 /// ```ignore
 /// let peer = rpc_driver::peer();  // capture inside dispatch
 /// tokio::spawn(async move {
-///     peer.send_call(prog, 1, &data).await.unwrap();
+///     let mut call = peer.call_buf();
+///     call.extend_from_slice(&data);
+///     peer.send_call(prog, 1, call).await.unwrap();
 /// });
 /// ```
 ///
