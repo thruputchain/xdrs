@@ -57,7 +57,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! rpc_driver = { version = "0.11", features = ["concurrent-dispatch"] }
+//! rpc_driver = { version = "0.12", features = ["concurrent-dispatch"] }
 //! ```
 //!
 //! With this feature:
