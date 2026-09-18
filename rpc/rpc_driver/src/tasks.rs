@@ -49,6 +49,25 @@ impl ClientReadRunner {
 // Shared helpers (used by both serial and concurrent paths)
 // ---------------------------------------------------------------------------
 
+/// Buffered records a read loop handles before it flushes and yields.
+///
+/// A burst that is already in the socket buffer never touches the socket
+/// again, so nothing else would make the loop give the runtime a turn. Yield
+/// every so often so other connections on the worker progress. The
+/// concurrent loop also yields whenever its spawned handlers hold every
+/// permit, which is what lets them run on a current-thread runtime; this
+/// coarser bound is only for fairness, and each yield is preceded by a flush
+/// so batching is not lost.
+const YIELD_EVERY: usize = 256;
+
+/// Flush what the read loop has queued and give the runtime a turn, then
+/// resume the burst.
+async fn yield_mid_burst(writer: &Arc<crate::connection::Writer>) {
+    writer.reader_yield();
+    tokio::task::yield_now().await;
+    writer.reader_busy();
+}
+
 /// Route an inbound REPLY message to the pending-call map.
 #[inline(always)]
 fn route_reply(
@@ -103,7 +122,8 @@ fn prepare_response(
     }
 }
 
-/// Send a dispatch result (success or error) back to the client.
+/// Send a dispatch result (success or error) back to the client, waiting for
+/// writer room if the connection's queue is full.
 #[inline]
 async fn send_response(
     client_cbs: &ConnectionHandle,
@@ -112,62 +132,30 @@ async fn send_response(
 ) -> Result<(), ReadTaskError> {
     let msg = prepare_response(client_cbs, xid, result)?;
     client_cbs
-        .send_msg(msg)
+        .send_reply(msg)
         .await
         .map_err(ReadTaskError::WriteError)
 }
 
-/// Parsed inbound record — either a CALL to dispatch or a REPLY to route.
-/// The `record` Vec is carried alongside a `payload_offset` to avoid an
-/// O(n) memmove that `drain(..pos)` would require.
-#[cfg(feature = "concurrent-dispatch")]
-enum ParsedRecord {
-    Call {
-        xid: u32,
-        record: Vec<u8>,
-        payload_offset: usize,
-        vers: ProgVers,
-        rpcvers: u32,
-        proc: u32,
-    },
-    Reply {
-        xid: u32,
-        rbody: rpc_msg::reply_body,
-        record: Vec<u8>,
-        payload_offset: usize,
-    },
+/// Copy `bytes` into a buffer recycled from the connection's pool, so
+/// records that must outlive the read buffer do not allocate.
+#[inline]
+fn pooled_copy(client_cbs: &ConnectionHandle, bytes: &[u8]) -> Vec<u8> {
+    let mut buf = client_cbs.buf_pool.take();
+    buf.extend_from_slice(bytes);
+    buf
 }
 
-/// Parse an XDR record into a CALL or REPLY.  Carries the offset into the
-/// record where the payload begins, avoiding the O(n) memmove from `drain`.
-#[cfg(feature = "concurrent-dispatch")]
-fn parse_record(record: Vec<u8>) -> Result<ParsedRecord, ReadTaskError> {
-    let mut reader = xdrs::txs::buf_reader::BufReader::new(&record);
-    let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
-        Ok(msg) => msg,
-        Err(e) => {
-            tracing::error!(error = %e, "failed to parse XDR record");
-            return Err(ReadTaskError::Shutdown);
-        }
-    };
-    let payload_offset = reader.position();
-
-    match msg.body {
-        rpc_msg::rpc_msg_body::CALL { cbody } => Ok(ParsedRecord::Call {
-            xid: msg.xid,
-            record,
-            payload_offset,
-            vers: ProgVers::new(cbody.prog, cbody.vers),
-            rpcvers: cbody.rpcvers,
-            proc: cbody.proc,
-        }),
-        rpc_msg::rpc_msg_body::REPLY { rbody } => Ok(ParsedRecord::Reply {
-            xid: msg.xid,
-            rbody,
-            record,
-            payload_offset,
-        }),
-    }
+/// Decode the RPC header at the front of `record`. The payload starts at the
+/// returned offset.
+#[inline]
+fn parse_header(record: &[u8]) -> Result<(rpc_msg::rpc_msg, usize), ReadTaskError> {
+    let mut reader = xdrs::txs::buf_reader::BufReader::new(record);
+    let msg: rpc_msg::rpc_msg = xdrs::read_xdr(&mut reader).map_err(|e| {
+        tracing::error!(error = %e, "failed to parse XDR record");
+        ReadTaskError::Shutdown
+    })?;
+    Ok((msg, reader.position()))
 }
 
 async fn run_client_read_task(
@@ -177,122 +165,28 @@ async fn run_client_read_task(
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), ReadTaskError> {
     #[cfg(not(feature = "concurrent-dispatch"))]
-    loop {
-        tokio::select! {
-            _ = shutdown_rx.changed() => return Ok(()),
-            record = read_half.read_record() => {
-                let record = match record? {
-                    Some(record) => record,
-                    None => return Err(ReadTaskError::Shutdown),
-                };
-
-                let mut reader = xdrs::txs::buf_reader::BufReader::new(record);
-                let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
-                    Ok(msg) => msg,
-                    Err(e) => {
-                        tracing::error!(error = %e, "failed to parse XDR record");
-                        return Err(ReadTaskError::Shutdown);
-                    }
-                };
-                let remaining = &record[reader.position()..];
-
-                match msg.body {
-                    rpc_msg::rpc_msg_body::CALL { cbody } => {
-                        let xid = msg.xid;
-                        let vers = ProgVers::new(cbody.prog, cbody.vers);
-                        let sender: Arc<dyn RpcSender> = client_handle.clone();
-                        let res = with_peer(sender, async {
-                            service_map
-                                .dispatch(cbody.rpcvers, vers, cbody.proc, remaining)
-                                .await
-                        })
-                        .await;
-                        send_response(&client_handle, xid, res).await?;
-                    }
-                    rpc_msg::rpc_msg_body::REPLY { rbody } => {
-                        route_reply(&client_handle, msg.xid, rbody, remaining.to_vec(), 0);
-                    }
-                }
-            }
-        }
+    {
+        serve_serial(
+            &service_map,
+            &client_handle,
+            &mut read_half,
+            Some(&mut shutdown_rx),
+        )
+        .await
     }
 
     #[cfg(feature = "concurrent-dispatch")]
     {
-        let (record_tx, mut record_rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, ReadTaskError>>(
-            client_handle.read_channel_capacity,
-        );
-        let cbs_for_reader = client_handle.clone();
-        let mut shutdown_for_reader = shutdown_rx.clone();
-        let reader_handle = tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = shutdown_for_reader.changed() => break,
-                    record = read_half.read_record() => {
-                        match record {
-                            Err(e) => {
-                                let _ = record_tx.send(Err(ReadTaskError::ReadError(e))).await;
-                                break;
-                            }
-                            Ok(None) => {
-                                let _ = record_tx.send(Err(ReadTaskError::Shutdown)).await;
-                                break;
-                            }
-                            Ok(Some(data)) => {
-                                let record = data.to_vec();
-                                let is_reply = record.len() >= 8
-                                    && u32::from_be_bytes(record[4..8].try_into().unwrap()) == 1;
-
-                                if is_reply {
-                                    match parse_record(record) {
-                                        Ok(ParsedRecord::Reply {
-                                            xid,
-                                            rbody,
-                                            record,
-                                            payload_offset,
-                                        }) => {
-                                            route_reply(
-                                                &cbs_for_reader,
-                                                xid,
-                                                rbody,
-                                                record,
-                                                payload_offset,
-                                            );
-                                        }
-                                        Ok(ParsedRecord::Call { record, .. }) => {
-                                            if record_tx.send(Ok(record)).await.is_err() {
-                                                break;
-                                            }
-                                        }
-                                        Err(e) => {
-                                            let _ = record_tx.send(Err(e)).await;
-                                            break;
-                                        }
-                                    }
-                                } else if record_tx.send(Ok(record)).await.is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        let dispatch_result = tokio::select! {
+        tokio::select! {
             _ = shutdown_rx.changed() => Ok(()),
-            result = concurrent::dispatch_loop(
+            result = concurrent::serve(
                 &service_map,
                 &client_handle,
-                &mut record_rx,
+                &mut read_half,
                 client_handle.max_concurrent_dispatches,
                 client_handle.inline_ready_dispatch,
             ) => result,
-        };
-
-        reader_handle.abort();
-        let _ = reader_handle.await;
-        dispatch_result
+        }
     }
 }
 
@@ -325,30 +219,51 @@ pub(crate) fn spawn_client_read_task(
 // Serial dispatch (default — no concurrent-dispatch feature)
 // ---------------------------------------------------------------------------
 
-/// Runs the serial read-dispatch loop. Returns only on error or connection close.
+/// Runs the serial read-dispatch loop. Returns only on error or connection
+/// close, or `Ok(())` when `shutdown` fires.
+///
+/// Records are parsed straight out of the read buffer. Replies are queued on
+/// the connection's writer and flushed together when the loop is about to
+/// wait for the socket, x23's `dwrite`: a burst of pipelined calls whose
+/// handlers finish on their first poll is answered with one `writev`. A
+/// handler that suspends flushes the replies queued before it first.
 #[cfg(not(feature = "concurrent-dispatch"))]
-pub async fn launch_read_task(
-    service_map: Arc<ServiceMap>,
-    client_cbs: Arc<ConnectionHandle>,
-    mut read_half: ReadHalf,
+async fn serve_serial(
+    service_map: &Arc<ServiceMap>,
+    client_cbs: &Arc<ConnectionHandle>,
+    read_half: &mut ReadHalf,
+    mut shutdown: Option<&mut tokio::sync::watch::Receiver<bool>>,
 ) -> Result<(), ReadTaskError> {
+    use crate::tcp_connection::TryRecord;
+    let mut since_yield = 0usize;
     loop {
-        let record = match read_half.read_record().await? {
-            Some(data) => data,
-            None => return Err(ReadTaskError::Shutdown),
-        };
-
-        // Parse inline from the borrowed slice — zero-copy for CALLs since
-        // the record lives in ReadHalf's buffer until dispatch completes.
-        let mut reader = xdrs::txs::buf_reader::BufReader::new(record);
-        let msg: rpc_msg::rpc_msg = match xdrs::read_xdr(&mut reader) {
-            Ok(msg) => msg,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to parse XDR record");
-                return Err(ReadTaskError::Shutdown);
+        if since_yield >= YIELD_EVERY {
+            since_yield = 0;
+            yield_mid_burst(&client_cbs.writer).await;
+        }
+        let record = match read_half.try_read_record()? {
+            TryRecord::Ready(record) => {
+                since_yield += 1;
+                record
+            }
+            TryRecord::Invalid => return Err(ReadTaskError::Shutdown),
+            TryRecord::WouldBlock => {
+                since_yield = 0;
+                client_cbs.writer.reader_waiting();
+                match shutdown.as_deref_mut() {
+                    Some(rx) => tokio::select! {
+                        _ = rx.changed() => return Ok(()),
+                        ready = read_half.readable() => ready?,
+                    },
+                    None => read_half.readable().await?,
+                }
+                client_cbs.writer.reader_busy();
+                continue;
             }
         };
-        let remaining = &record[reader.position()..];
+
+        let (msg, payload_offset) = parse_header(record)?;
+        let remaining = &record[payload_offset..];
 
         match msg.body {
             rpc_msg::rpc_msg_body::CALL { cbody } => {
@@ -362,23 +277,64 @@ pub async fn launch_read_task(
                     proc = cbody.proc,
                 );
                 let sender: Arc<dyn RpcSender> = client_cbs.clone();
-                async {
-                    let res = with_peer(sender, async {
+                let work = async {
+                    let dispatch = with_peer(sender, async {
                         service_map
                             .dispatch(cbody.rpcvers, vers, cbody.proc, remaining)
                             .await
-                    })
-                    .await;
-                    send_response(&client_cbs, xid, res).await
+                    });
+                    let mut dispatch = std::pin::pin!(dispatch);
+                    // Poll once right here. A handler that finishes on its
+                    // first poll keeps the reader busy, so its reply batches
+                    // with the rest of the burst. One that suspends may run
+                    // for a while and may call the peer: flush everything
+                    // queued so far and stop holding calls before waiting.
+                    // The no-op waker is safe because the real await below
+                    // re-registers its waker, per the Future contract.
+                    let probe = dispatch
+                        .as_mut()
+                        .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()));
+                    let res = match probe {
+                        std::task::Poll::Ready(res) => res,
+                        std::task::Poll::Pending => {
+                            client_cbs.writer.reader_yield();
+                            let res = dispatch.await;
+                            client_cbs.writer.reader_busy();
+                            res
+                        }
+                    };
+                    send_response(client_cbs, xid, res).await
                 }
-                .instrument(span)
-                .await?;
+                .instrument(span);
+                match shutdown.as_deref_mut() {
+                    Some(rx) => tokio::select! {
+                        _ = rx.changed() => return Ok(()),
+                        result = work => result?,
+                    },
+                    None => work.await?,
+                }
             }
             rpc_msg::rpc_msg_body::REPLY { rbody } => {
-                route_reply(&client_cbs, msg.xid, rbody, remaining.to_vec(), 0);
+                route_reply(
+                    client_cbs,
+                    msg.xid,
+                    rbody,
+                    pooled_copy(client_cbs, remaining),
+                    0,
+                );
             }
         }
     }
+}
+
+/// Runs the serial read-dispatch loop. Returns only on error or connection close.
+#[cfg(not(feature = "concurrent-dispatch"))]
+pub async fn launch_read_task(
+    service_map: Arc<ServiceMap>,
+    client_cbs: Arc<ConnectionHandle>,
+    mut read_half: ReadHalf,
+) -> Result<(), ReadTaskError> {
+    serve_serial(&service_map, &client_cbs, &mut read_half, None).await
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +344,7 @@ pub async fn launch_read_task(
 #[cfg(feature = "concurrent-dispatch")]
 mod concurrent {
     use super::*;
+    use crate::tcp_connection::TryRecord;
     use std::future::Future;
     use std::panic::AssertUnwindSafe;
     use std::pin::Pin;
@@ -454,7 +411,7 @@ mod concurrent {
         tasks.spawn(
             async move {
                 let _deferred = PendingGuard(deferred);
-                if let Err(e) = cbs.send_msg(msg).await {
+                if let Err(e) = cbs.send_reply(msg).await {
                     tracing::error!(xid, error = %e, "response write failed");
                     let _shutdown = cbs.begin_poison();
                 }
@@ -469,11 +426,10 @@ mod concurrent {
     /// The handler future for one CALL, owning everything it touches.
     ///
     /// The record is moved in rather than borrowed, so the future is `'static`
-    /// and can be polled on the dispatch loop and then — if it suspends —
-    /// moved into a task. `Box::pin` gives it a stable address across that
-    /// move; the inner `async_trait` dispatch allocates its own box on first
-    /// poll either way, so the ready path trades a task allocation for this
-    /// one.
+    /// and can be polled on the read loop and then — if it suspends — moved
+    /// into a task. `Box::pin` gives it a stable address across that move;
+    /// the inner `async_trait` dispatch allocates its own box on first poll
+    /// either way, so the ready path trades a task allocation for this one.
     type HandlerFuture =
         Pin<Box<dyn Future<Output = Result<HandlerResult, Panic>> + Send + 'static>>;
     type HandlerResult = Result<Vec<u8>, crate::RpcError>;
@@ -529,30 +485,53 @@ mod concurrent {
         }
     }
 
-    // -- Dispatch loop -------------------------------------------------------
+    /// Enqueue a ready reply without blocking the read loop: a full writer
+    /// defers it to a task rather than stalling the reader ahead of a
+    /// bidirectional REPLY further down the stream.
+    fn enqueue_ready_reply(
+        tasks: &mut tokio::task::JoinSet<()>,
+        client_cbs: &Arc<ConnectionHandle>,
+        deferred: &Arc<AtomicUsize>,
+        deferred_cap: usize,
+        xid: u32,
+        msg: Vec<u8>,
+        span: tracing::Span,
+    ) -> Result<(), ReadTaskError> {
+        match client_cbs.try_send_reply(msg) {
+            Ok(()) => Ok(()),
+            Err(crate::connection::TrySendError::Full(msg)) => {
+                defer_response(tasks, client_cbs, deferred, deferred_cap, xid, msg, span)
+            }
+            Err(crate::connection::TrySendError::Closed) => Err(ReadTaskError::WriteError(
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "writer closed"),
+            )),
+        }
+    }
 
-    /// Run the main dispatch loop.
+    // -- Read loop -----------------------------------------------------------
+
+    /// Run the connection's read loop: parse each record out of the read
+    /// buffer, route REPLYs, and dispatch CALLs.
     ///
-    /// Each incoming CALL's handler is polled once on this loop. Handlers that
-    /// complete on that first poll are answered inline; handlers that suspend
-    /// are moved into their own tokio task, where a semaphore limits how many
+    /// Each CALL's handler is polled once right here. Handlers that complete
+    /// on that first poll are answered inline; handlers that suspend are
+    /// moved into their own tokio task, where a semaphore limits how many
     /// run concurrently. This is x23's `await_ready()` shape: create
     /// asynchronous work only when the service actually suspends.
     ///
-    /// REPLYs are routed by the reader task, not here. Ready responses use a
+    /// Replies queue on the connection's writer and are flushed together
+    /// when this loop is about to wait for the socket (x23's `dwrite`), so a
+    /// burst of pipelined calls costs one `writev`. Ready responses use a
     /// nonblocking enqueue so write backpressure cannot stop this loop from
     /// draining CALLs that precede a bidirectional REPLY in the TCP stream.
     ///
     /// Set `inline_ready` to false for an unconditional-spawn control. This
     /// still uses the common boxed-handler construction introduced by the fast
     /// path, so exact before/after comparisons require separate builds.
-    ///
-    /// Separated from `launch_read_task` so that `reader_handle.abort()` runs
-    /// on all exit paths (the caller awaits this, then aborts the reader).
-    pub(super) async fn dispatch_loop(
+    pub(super) async fn serve(
         service_map: &Arc<ServiceMap>,
         client_cbs: &Arc<ConnectionHandle>,
-        record_rx: &mut tokio::sync::mpsc::Receiver<Result<Vec<u8>, ReadTaskError>>,
+        read_half: &mut ReadHalf,
         max_concurrent: usize,
         inline_ready: bool,
     ) -> Result<(), ReadTaskError> {
@@ -563,8 +542,8 @@ mod concurrent {
         // Total spawned tasks (executing + waiting for a permit) before load
         // shedding.  E.g. max=1 -> cap=5, max=64 -> cap=320.
         let pending_cap = max_concurrent.saturating_mul(5);
-        // Responses that cannot enter the bounded writer channel immediately
-        // are deferred without blocking this loop. Bound that extra backlog
+        // Responses that cannot enter the bounded writer immediately are
+        // deferred without blocking this loop. Bound that extra backlog
         // separately from handler admission; exhausting it fails the
         // connection closed rather than accumulating unbounded response tasks.
         let deferred_responses = Arc::new(AtomicUsize::new(0));
@@ -573,234 +552,223 @@ mod concurrent {
         // Fast-path hit rate, reported once on exit. Loop-local: this task is
         // the only writer.
         let (mut ready_calls, mut suspended_calls, mut unprobed_calls) = (0u64, 0u64, 0u64);
+        let writer = &client_cbs.writer;
+        let mut since_yield = 0usize;
 
         let result = loop {
             // Reap completed tasks to free memory in the JoinSet.
             while tasks.try_join_next().is_some() {}
 
-            let record = match record_rx.recv().await {
-                Some(Ok(data)) => data,
-                Some(Err(e)) => break Err(e),
-                None => break Err(ReadTaskError::Shutdown),
+            // Spawned handlers hold every permit: anything admitted now would
+            // only queue behind them, and on a current-thread runtime they
+            // cannot run at all until this loop yields. Let them, before the
+            // pending budget fills and calls are shed instead of served.
+            if since_yield >= YIELD_EVERY || pending.load(Ordering::Relaxed) >= max_concurrent {
+                since_yield = 0;
+                yield_mid_burst(writer).await;
+            }
+
+            let record = match read_half.try_read_record() {
+                Ok(TryRecord::Ready(record)) => {
+                    since_yield += 1;
+                    record
+                }
+                Ok(TryRecord::Invalid) => break Err(ReadTaskError::Shutdown),
+                Ok(TryRecord::WouldBlock) => {
+                    since_yield = 0;
+                    // Out of buffered input: flush every reply queued during
+                    // this pass, then park on the socket.
+                    writer.reader_waiting();
+                    if let Err(e) = read_half.readable().await {
+                        break Err(ReadTaskError::ReadError(e));
+                    }
+                    writer.reader_busy();
+                    continue;
+                }
+                Err(e) => break Err(ReadTaskError::ReadError(e)),
             };
 
-            let parsed = match parse_record(record) {
+            let (msg, payload_offset) = match parse_header(record) {
                 Ok(parsed) => parsed,
                 Err(e) => break Err(e),
             };
 
-            match parsed {
-                ParsedRecord::Call {
-                    xid,
-                    record,
-                    payload_offset,
-                    vers,
-                    rpcvers,
-                    proc,
-                } => {
-                    // Load shedding: reject if too many tasks are in-flight +
-                    // waiting for a concurrency permit. Checked before the
-                    // handler is built or polled, so a shed CALL never runs its
-                    // handler even partially — the client can safely retry.
-                    // Only suspended handlers occupy this budget, so a purely
-                    // ready workload never sheds.
-                    let count = pending.load(Ordering::Relaxed);
-                    if count >= pending_cap {
-                        tracing::warn!(xid, pending = count, "rejecting CALL: pending queue full");
-                        let error_bytes =
-                            crate::rpc_error::to_error_record(&crate::RpcError::SystemError, xid);
-                        match client_cbs.try_send_msg(error_bytes) {
-                            Ok(()) => {}
-                            Err(tokio::sync::mpsc::error::TrySendError::Full(msg)) => {
-                                if let Err(e) = defer_response(
-                                    &mut tasks,
-                                    client_cbs,
-                                    &deferred_responses,
-                                    deferred_response_cap,
-                                    xid,
-                                    msg,
-                                    tracing::Span::none(),
-                                ) {
-                                    break Err(e);
-                                }
-                            }
-                            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                break Err(ReadTaskError::WriteError(std::io::Error::new(
-                                    std::io::ErrorKind::BrokenPipe,
-                                    "writer closed",
-                                )));
-                            }
-                        }
-                        continue;
-                    }
-
-                    // Explicit parent: required because JoinSet::spawn doesn't
-                    // propagate tracing context. `ready` is recorded once the
-                    // probe poll has run. `ready` remains empty when probing is
-                    // disabled or saturation makes the fast path stand down.
-                    let span = tracing::debug_span!(
-                        parent: &client_cbs.connection_span,
-                        "rpc_call",
-                        xid,
-                        prog = vers.prog(),
-                        vers = vers.vers(),
-                        proc = proc,
-                        probed = tracing::field::Empty,
-                        ready = tracing::field::Empty,
-                    );
-
-                    let mut handler = handler_future(
-                        service_map,
+            let cbody = match msg.body {
+                rpc_msg::rpc_msg_body::REPLY { rbody } => {
+                    route_reply(
                         client_cbs,
-                        record,
-                        payload_offset,
-                        vers,
-                        rpcvers,
-                        proc,
+                        msg.xid,
+                        rbody,
+                        pooled_copy(client_cbs, &record[payload_offset..]),
+                        0,
                     );
-
-                    // Reserve a permit *before* probing. A handler's first poll
-                    // can start real work — a timer, a `spawn_blocking`, plain
-                    // CPU work — before it ever suspends, so probing without a
-                    // permit would let that work escape
-                    // `max_concurrent_dispatches` entirely.
-                    //
-                    // Probe only while `pending < max_concurrent`, which
-                    // guarantees a free permit exists. That matters because
-                    // tokio's `try_acquire` checks only the permit count and
-                    // not the waiter queue, so it can barge ahead of a spawned
-                    // handler already queued on `acquire_owned`. A waiter can
-                    // only exist once every permit is held by a spawned task,
-                    // i.e. `pending >= max_concurrent` — so under saturation the
-                    // fast path stands down instead of barging ahead of queued
-                    // work.
-                    let permit = if inline_ready && count < max_concurrent {
-                        semaphore.clone().try_acquire_owned().ok()
-                    } else {
-                        None
-                    };
-
-                    if permit.is_some() {
-                        span.record("probed", true);
-                        // Probe poll. Synchronous, so a plain span guard is
-                        // correct — nothing is awaited while it is held.
-                        //
-                        // The no-op waker is safe because a `Pending` handler
-                        // is always polled again by the task below, and the
-                        // `Future` contract requires a future to re-register
-                        // the waker it is given on each poll. Any wake that
-                        // lands between the two polls is therefore observed as
-                        // readiness by the second poll.
-                        let probe = {
-                            let _enter = span.enter();
-                            handler
-                                .as_mut()
-                                .poll(&mut Context::from_waker(Waker::noop()))
-                        };
-
-                        if let Poll::Ready(result) = probe {
-                            ready_calls += 1;
-                            span.record("ready", true);
-                            let result = {
-                                let _enter = span.enter();
-                                let result = handler_outcome(result, xid);
-                                if drop_ready_handler(handler, xid) {
-                                    Err(crate::RpcError::SystemError)
-                                } else {
-                                    result
-                                }
-                            };
-                            // Permit released here — a ready handler holds it
-                            // only for its own synchronous poll.
-                            drop(permit);
-                            let msg = {
-                                let _enter = span.enter();
-                                match prepare_response(client_cbs, xid, result) {
-                                    Ok(msg) => msg,
-                                    Err(e) => break Err(e),
-                                }
-                            };
-                            let enqueue = {
-                                let _enter = span.enter();
-                                client_cbs.try_send_msg(msg)
-                            };
-                            match enqueue {
-                                Ok(()) => {}
-                                Err(tokio::sync::mpsc::error::TrySendError::Full(msg)) => {
-                                    // Keep the dispatch loop live under output
-                                    // backpressure so the reader can reach
-                                    // bidirectional REPLYs behind queued CALLs.
-                                    if let Err(e) = defer_response(
-                                        &mut tasks,
-                                        client_cbs,
-                                        &deferred_responses,
-                                        deferred_response_cap,
-                                        xid,
-                                        msg,
-                                        span,
-                                    ) {
-                                        break Err(e);
-                                    }
-                                }
-                                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-                                    break Err(ReadTaskError::WriteError(std::io::Error::new(
-                                        std::io::ErrorKind::BrokenPipe,
-                                        "writer closed",
-                                    )));
-                                }
-                            }
-                            continue;
-                        }
-
-                        suspended_calls += 1;
-                        span.record("ready", false);
-                    } else {
-                        unprobed_calls += 1;
-                        span.record("probed", false);
-                    }
-
-                    // Suspended (or fast path stood down): commit to a task.
-                    pending.fetch_add(1, Ordering::Relaxed);
-
-                    let sem = semaphore.clone();
-                    let cbs = client_cbs.clone();
-                    let ctr = pending.clone();
-
-                    tasks.spawn(async move {
-                        let _pending = PendingGuard(ctr);
-
-                        // Reuse the probe's permit when we have one; otherwise
-                        // queue for one (may wait if at capacity).
-                        let _permit = match permit {
-                            Some(p) => p,
-                            None => match sem.acquire_owned().await {
-                                Ok(p) => p,
-                                Err(_) => return, // semaphore closed — shutting down
-                            },
-                        };
-
-                        async {
-                            let result = handler_outcome(handler.await, xid);
-                            if let Err(e) = send_response(&cbs, xid, result).await {
-                                tracing::error!(xid, error = %e, "response write failed");
-                                let _shutdown = cbs.begin_poison();
-                            }
-                        }
-                        .instrument(span)
-                        .await;
-                    });
+                    continue;
                 }
-                ParsedRecord::Reply {
+                rpc_msg::rpc_msg_body::CALL { cbody } => cbody,
+            };
+            let xid = msg.xid;
+            let vers = ProgVers::new(cbody.prog, cbody.vers);
+            let proc = cbody.proc;
+
+            // Load shedding: reject if too many tasks are in-flight + waiting
+            // for a concurrency permit. Checked before the handler is built or
+            // polled, so a shed CALL never runs its handler even partially —
+            // the client can safely retry. Only suspended handlers occupy
+            // this budget, so a purely ready workload never sheds.
+            let count = pending.load(Ordering::Relaxed);
+            if count >= pending_cap {
+                tracing::warn!(xid, pending = count, "rejecting CALL: pending queue full");
+                let error_bytes =
+                    crate::rpc_error::to_error_record(&crate::RpcError::SystemError, xid);
+                if let Err(e) = enqueue_ready_reply(
+                    &mut tasks,
+                    client_cbs,
+                    &deferred_responses,
+                    deferred_response_cap,
                     xid,
-                    rbody,
-                    record,
-                    payload_offset,
-                } => {
-                    // Pass the raw record + offset — no drain/memmove.
-                    // The consumer slices when reading the result.
-                    route_reply(client_cbs, xid, rbody, record, payload_offset);
+                    error_bytes,
+                    tracing::Span::none(),
+                ) {
+                    break Err(e);
                 }
+                continue;
             }
+
+            // Explicit parent: required because JoinSet::spawn doesn't
+            // propagate tracing context. `ready` is recorded once the probe
+            // poll has run. `ready` remains empty when probing is disabled or
+            // saturation makes the fast path stand down.
+            let span = tracing::debug_span!(
+                parent: &client_cbs.connection_span,
+                "rpc_call",
+                xid,
+                prog = vers.prog(),
+                vers = vers.vers(),
+                proc = proc,
+                probed = tracing::field::Empty,
+                ready = tracing::field::Empty,
+            );
+
+            // The handler future must own its record so it can outlive the
+            // read buffer if it suspends.
+            let mut handler = handler_future(
+                service_map,
+                client_cbs,
+                pooled_copy(client_cbs, record),
+                payload_offset,
+                vers,
+                cbody.rpcvers,
+                proc,
+            );
+
+            // Reserve a permit *before* probing. A handler's first poll can
+            // start real work — a timer, a `spawn_blocking`, plain CPU work —
+            // before it ever suspends, so probing without a permit would let
+            // that work escape `max_concurrent_dispatches` entirely.
+            //
+            // Probe only while `pending < max_concurrent`, which guarantees a
+            // free permit exists. That matters because tokio's `try_acquire`
+            // checks only the permit count and not the waiter queue, so it
+            // can barge ahead of a spawned handler already queued on
+            // `acquire_owned`. A waiter can only exist once every permit is
+            // held by a spawned task, i.e. `pending >= max_concurrent` — so
+            // under saturation the fast path stands down instead of barging
+            // ahead of queued work.
+            let permit = if inline_ready && count < max_concurrent {
+                semaphore.clone().try_acquire_owned().ok()
+            } else {
+                None
+            };
+
+            if permit.is_some() {
+                span.record("probed", true);
+                // Probe poll. Synchronous, so a plain span guard is correct —
+                // nothing is awaited while it is held.
+                //
+                // The no-op waker is safe because a `Pending` handler is
+                // always polled again by the task below, and the `Future`
+                // contract requires a future to re-register the waker it is
+                // given on each poll. Any wake that lands between the two
+                // polls is therefore observed as readiness by the second poll.
+                let probe = {
+                    let _enter = span.enter();
+                    handler
+                        .as_mut()
+                        .poll(&mut Context::from_waker(Waker::noop()))
+                };
+
+                if let Poll::Ready(result) = probe {
+                    ready_calls += 1;
+                    span.record("ready", true);
+                    let result = {
+                        let _enter = span.enter();
+                        let result = handler_outcome(result, xid);
+                        if drop_ready_handler(handler, xid) {
+                            Err(crate::RpcError::SystemError)
+                        } else {
+                            result
+                        }
+                    };
+                    // Permit released here — a ready handler holds it only for
+                    // its own synchronous poll.
+                    drop(permit);
+                    let enqueued = {
+                        let _enter = span.enter();
+                        prepare_response(client_cbs, xid, result).and_then(|msg| {
+                            enqueue_ready_reply(
+                                &mut tasks,
+                                client_cbs,
+                                &deferred_responses,
+                                deferred_response_cap,
+                                xid,
+                                msg,
+                                span.clone(),
+                            )
+                        })
+                    };
+                    if let Err(e) = enqueued {
+                        break Err(e);
+                    }
+                    continue;
+                }
+
+                suspended_calls += 1;
+                span.record("ready", false);
+            } else {
+                unprobed_calls += 1;
+                span.record("probed", false);
+            }
+
+            // Suspended (or fast path stood down): commit to a task.
+            pending.fetch_add(1, Ordering::Relaxed);
+
+            let sem = semaphore.clone();
+            let cbs = client_cbs.clone();
+            let ctr = pending.clone();
+
+            tasks.spawn(async move {
+                let _pending = PendingGuard(ctr);
+
+                // Reuse the probe's permit when we have one; otherwise queue
+                // for one (may wait if at capacity).
+                let _permit = match permit {
+                    Some(p) => p,
+                    None => match sem.acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => return, // semaphore closed — shutting down
+                    },
+                };
+
+                async {
+                    let result = handler_outcome(handler.await, xid);
+                    if let Err(e) = send_response(&cbs, xid, result).await {
+                        tracing::error!(xid, error = %e, "response write failed");
+                        let _shutdown = cbs.begin_poison();
+                    }
+                }
+                .instrument(span)
+                .await;
+            });
         };
 
         tracing::debug!(
@@ -808,99 +776,29 @@ mod concurrent {
             suspended_calls,
             unprobed_calls,
             inline_ready,
-            "dispatch loop exiting"
+            "read loop exiting"
         );
         result
     }
 }
 
+/// Runs the concurrent read-dispatch loop. Returns only on error or
+/// connection close. Dropping the loop cancels any still-running handler
+/// tasks with its `JoinSet`.
 #[cfg(feature = "concurrent-dispatch")]
 pub async fn launch_read_task(
     service_map: Arc<ServiceMap>,
     client_cbs: Arc<ConnectionHandle>,
     mut read_half: ReadHalf,
 ) -> Result<(), ReadTaskError> {
-    // Spawn a dedicated reader task that owns the ReadHalf and forwards
-    // CALL records over a channel to the dispatch loop. REPLY records are
-    // routed directly in the reader task — no channel hop — since they
-    // just write a result into the pending-call HashMap and wake the
-    // caller. This cuts one async task wakeup per reply.
-    //
-    // Channel capacity is configurable via ConnectionConfig::read_channel_capacity
-    // (default 256). The reader task may stay this many records ahead of the
-    // dispatch loop, smoothing latency spikes while still providing backpressure.
-    let (record_tx, mut record_rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, ReadTaskError>>(
-        client_cbs.read_channel_capacity,
-    );
-
-    let cbs_for_reader = client_cbs.clone();
-    let reader_handle = tokio::spawn(async move {
-        loop {
-            match read_half.read_record().await {
-                Err(e) => {
-                    let _ = record_tx.send(Err(ReadTaskError::ReadError(e))).await;
-                    break;
-                }
-                Ok(None) => {
-                    let _ = record_tx.send(Err(ReadTaskError::Shutdown)).await;
-                    break;
-                }
-                Ok(Some(data)) => {
-                    let record = data.to_vec();
-
-                    // Peek at msg_type (bytes 4..8): CALL=0, REPLY=1.
-                    // Route REPLYs directly in the reader task — skips
-                    // the dispatch channel + dispatch loop wakeup.
-                    let is_reply = record.len() >= 8
-                        && u32::from_be_bytes(record[4..8].try_into().unwrap()) == 1;
-
-                    if is_reply {
-                        match parse_record(record) {
-                            Ok(ParsedRecord::Reply {
-                                xid,
-                                rbody,
-                                record,
-                                payload_offset,
-                            }) => {
-                                route_reply(&cbs_for_reader, xid, rbody, record, payload_offset);
-                            }
-                            Ok(ParsedRecord::Call { record, .. }) => {
-                                if record_tx.send(Ok(record)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                let _ = record_tx.send(Err(e)).await;
-                                break;
-                            }
-                        }
-                        continue;
-                    }
-
-                    if record_tx.send(Ok(record)).await.is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-    });
-
-    let max_concurrent = client_cbs.max_concurrent_dispatches;
-
-    // Run the dispatch loop, then abort the reader task on any exit path
-    // (error, shutdown, or write failure). Dropping the JoinSet inside the
-    // loop cancels any still-running handler tasks.
-    let result = concurrent::dispatch_loop(
+    concurrent::serve(
         &service_map,
         &client_cbs,
-        &mut record_rx,
-        max_concurrent,
+        &mut read_half,
+        client_cbs.max_concurrent_dispatches,
         client_cbs.inline_ready_dispatch,
     )
-    .await;
-
-    reader_handle.abort();
-    result
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -957,6 +855,7 @@ mod tests {
         }
     }
 
+    /// A framed CALL record for `proc` carrying `payload`.
     #[cfg(feature = "concurrent-dispatch")]
     fn test_call_record(xid: u32, proc: u32, payload: &[u8]) -> Vec<u8> {
         let header = rpc_msg::rpc_msg {
@@ -972,8 +871,7 @@ mod tests {
                 },
             },
         };
-        let framed = crate::connection::frame_rpc_record(Vec::new(), &header, payload).unwrap();
-        framed[4..].to_vec()
+        crate::connection::frame_rpc_record(Vec::new(), &header, payload).unwrap()
     }
 
     #[tokio::test]
@@ -994,17 +892,65 @@ mod tests {
             .expect("shutdown should complete after begin_shutdown aborts the task");
     }
 
+    /// A framed reply record with no results, distinguishable by `xid`.
+    #[cfg(feature = "concurrent-dispatch")]
+    fn filler_record(xid: u32) -> Vec<u8> {
+        prepare_success_response(Vec::new(), xid, &[]).unwrap()
+    }
+
+    /// Read one record from the peer socket and return its xid, or `None` if
+    /// nothing arrives within 200ms.
+    #[cfg(feature = "concurrent-dispatch")]
+    async fn next_xid(peer: &mut ReadHalf) -> Option<u32> {
+        match tokio::time::timeout(std::time::Duration::from_millis(200), peer.read_record()).await
+        {
+            Ok(Ok(Some(record))) => Some(u32::from_be_bytes(record[..4].try_into().unwrap())),
+            Ok(other) => panic!("unexpected read result: {other:?}"),
+            Err(_) => None,
+        }
+    }
+
+    /// A stalled connection whose peer has already sent CALLs 1..=`calls`,
+    /// plus the peer's halves.
+    #[cfg(feature = "concurrent-dispatch")]
+    async fn stalled_connection_with_calls(
+        config: &crate::ConnectionConfig,
+        calls: u32,
+    ) -> (
+        Arc<ConnectionHandle>,
+        ReadHalf,
+        ReadHalf,
+        tokio::net::tcp::OwnedWriteHalf,
+    ) {
+        use tokio::io::AsyncWriteExt;
+        let (client, read_half, peer) = ConnectionHandle::new_stalled_for_test(config).await;
+        let (peer_read, mut peer_write) = peer.into_split();
+        for xid in 1..=calls {
+            peer_write
+                .write_all(&test_call_record(xid, xid, &[xid as u8]))
+                .await
+                .unwrap();
+        }
+        (
+            Arc::new(client),
+            read_half,
+            ReadHalf::new_for_test(peer_read),
+            peer_write,
+        )
+    }
+
     #[cfg(feature = "concurrent-dispatch")]
     #[tokio::test]
     async fn ready_responses_do_not_block_dispatch_when_write_channel_is_full() {
+        use tokio::io::AsyncWriteExt;
         let config = crate::ConnectionConfig::default()
             .with_max_concurrent_dispatches(1)
             .with_write_channel_capacity(1);
-        let (write_tx, mut write_rx) = tokio::sync::mpsc::channel(1);
-        write_tx.try_send(vec![0xAA]).unwrap();
-        let client = Arc::new(ConnectionHandle::new_with_write_sender_for_test(
-            write_tx, &config,
-        ));
+        let (client, mut read_half, mut peer, mut peer_write) =
+            stalled_connection_with_calls(&config, 5).await;
+        // The one queue slot is taken and the socket is stalled, so every
+        // response the read loop produces finds the writer full.
+        client.try_send_reply(filler_record(0xAA)).ok().unwrap();
 
         let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut services = ServiceMap::new();
@@ -1013,52 +959,39 @@ mod tests {
         }));
         let services = Arc::new(services);
 
-        let (record_tx, mut record_rx) = tokio::sync::mpsc::channel(5);
-        for xid in 1..=5 {
-            record_tx
-                .send(Ok(test_call_record(xid, xid, &[xid as u8])))
-                .await
-                .unwrap();
-        }
-
-        let dispatch_client = client.clone();
-        let dispatch_services = services.clone();
-        let dispatch = tokio::spawn(async move {
-            concurrent::dispatch_loop(
-                &dispatch_services,
-                &dispatch_client,
-                &mut record_rx,
-                1,
-                true,
-            )
-            .await
+        let serve_client = client.clone();
+        let serve = tokio::spawn(async move {
+            concurrent::serve(&services, &serve_client, &mut read_half, 1, true).await
         });
 
         for expected in 1..=5 {
             let entered =
                 tokio::time::timeout(std::time::Duration::from_secs(1), entered_rx.recv())
                     .await
-                    .expect("dispatch loop blocked on write-channel capacity")
+                    .expect("read loop blocked on writer capacity")
                     .unwrap();
             assert_eq!(entered, expected);
         }
 
-        assert_eq!(write_rx.recv().await.unwrap(), vec![0xAA]);
+        // Release the socket: the filler goes first, then the deferred
+        // responses trickle through the one-record queue.
+        client.writer.unstall_for_test();
+        assert_eq!(next_xid(&mut peer).await, Some(0xAA));
         let mut response_xids = Vec::new();
         for _ in 0..5 {
-            let response = tokio::time::timeout(std::time::Duration::from_secs(1), write_rx.recv())
-                .await
-                .expect("deferred response was not enqueued")
-                .unwrap();
-            response_xids.push(u32::from_be_bytes(response[4..8].try_into().unwrap()));
+            response_xids.push(
+                next_xid(&mut peer)
+                    .await
+                    .expect("deferred response was not written"),
+            );
         }
         response_xids.sort_unstable();
         assert_eq!(response_xids, [1, 2, 3, 4, 5]);
 
-        drop(record_tx);
+        peer_write.shutdown().await.unwrap();
         assert!(matches!(
-            dispatch.await.unwrap(),
-            Err(ReadTaskError::Shutdown)
+            serve.await.unwrap(),
+            Err(ReadTaskError::ReadError(_))
         ));
     }
 
@@ -1068,11 +1001,9 @@ mod tests {
         let config = crate::ConnectionConfig::default()
             .with_max_concurrent_dispatches(1)
             .with_write_channel_capacity(1);
-        let (write_tx, mut write_rx) = tokio::sync::mpsc::channel(1);
-        write_tx.try_send(vec![0xAA]).unwrap();
-        let client = Arc::new(ConnectionHandle::new_with_write_sender_for_test(
-            write_tx, &config,
-        ));
+        let (client, mut read_half, mut peer, _peer_write) =
+            stalled_connection_with_calls(&config, 6).await;
+        client.try_send_reply(filler_record(0xAA)).ok().unwrap();
 
         let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut services = ServiceMap::new();
@@ -1080,15 +1011,8 @@ mod tests {
             entered: entered_tx,
         }));
         let services = Arc::new(services);
-        let (record_tx, mut record_rx) = tokio::sync::mpsc::channel(6);
-        for xid in 1..=6 {
-            record_tx
-                .send(Ok(test_call_record(xid, xid, &[xid as u8])))
-                .await
-                .unwrap();
-        }
 
-        let result = concurrent::dispatch_loop(&services, &client, &mut record_rx, 1, true).await;
+        let result = concurrent::serve(&services, &client, &mut read_half, 1, true).await;
         assert!(matches!(
             result,
             Err(ReadTaskError::WriteError(ref error))
@@ -1098,12 +1022,68 @@ mod tests {
             assert_eq!(entered_rx.recv().await.unwrap(), expected);
         }
 
-        assert_eq!(write_rx.recv().await.unwrap(), vec![0xAA]);
+        // The deferred responses were cancelled with the read loop's JoinSet,
+        // so only the filler ever reaches the wire.
+        client.writer.unstall_for_test();
+        assert_eq!(next_xid(&mut peer).await, Some(0xAA));
+        assert_eq!(next_xid(&mut peer).await, None);
+    }
+
+    /// One socket write carrying `calls` ready echo CALLs, with the
+    /// unconditional-spawn control (`inline_ready = false`) on a
+    /// current-thread runtime: spawned handlers can only run when the read
+    /// loop yields, so without a mid-burst yield the pending budget fills
+    /// and calls past it are shed. Every call must be served.
+    #[cfg(feature = "concurrent-dispatch")]
+    #[tokio::test]
+    async fn a_large_burst_of_spawned_handlers_is_fully_served() {
+        use tokio::io::AsyncWriteExt;
+        let calls = 1000u32;
+        let config = crate::ConnectionConfig::default().with_max_concurrent_dispatches(64);
+        let (client, mut read_half, peer) = ConnectionHandle::new_stalled_for_test(&config).await;
+        let client = Arc::new(client);
+        client.writer.unstall_for_test();
+        let (peer_read, mut peer_write) = peer.into_split();
+        let mut peer = ReadHalf::new_for_test(peer_read);
+        let burst: Vec<u8> = (1..=calls)
+            .flat_map(|xid| test_call_record(xid, xid, &xid.to_be_bytes()))
+            .collect();
+        peer_write.write_all(&burst).await.unwrap();
+
+        let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(ReadyTestService {
+            entered: entered_tx,
+        }));
+        let services = Arc::new(services);
+        let serve_client = client.clone();
+        let serve = tokio::spawn(async move {
+            concurrent::serve(&services, &serve_client, &mut read_half, 64, false).await
+        });
+
+        let mut ok = 0;
+        let mut shed = 0;
+        for _ in 0..calls {
+            let record =
+                tokio::time::timeout(std::time::Duration::from_secs(10), peer.read_record())
+                    .await
+                    .expect("burst stalled")
+                    .unwrap()
+                    .unwrap();
+            match u32::from_be_bytes(record[20..24].try_into().unwrap()) {
+                0 => ok += 1,
+                _ => shed += 1,
+            }
+        }
+        assert_eq!((ok, shed), (calls, 0), "shed {shed} of {calls} calls");
+        let entered = std::iter::from_fn(|| entered_rx.try_recv().ok()).count();
+        assert_eq!(entered as u32, calls);
+
+        peer_write.shutdown().await.unwrap();
         assert!(matches!(
-            write_rx.try_recv(),
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            serve.await.unwrap(),
+            Err(ReadTaskError::ReadError(_))
         ));
-        drop(record_tx);
     }
 
     #[cfg(feature = "concurrent-dispatch")]

@@ -1,12 +1,11 @@
 //! Connection state and RPC call handling.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::task::Waker;
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::sync::Semaphore;
 use tracing::Instrument;
 
 use async_trait::async_trait;
@@ -76,60 +75,377 @@ impl BufPool {
     }
 }
 
-/// Dedicated writer task: owns the WriteHalf, drains the channel, and
-/// flushes batches via write_vectored. Spent buffers are returned to the pool.
-async fn writer_task(
-    mut rx: mpsc::Receiver<Vec<u8>>,
-    mut write_half: WriteHalf,
-    pool: Arc<BufPool>,
-) {
-    let mut batch: Vec<Vec<u8>> = Vec::with_capacity(MAX_BATCH);
+// ---------------------------------------------------------------------------
+// Writer — records go to the socket from the sending task itself
+// ---------------------------------------------------------------------------
 
-    while let Some(first) = rx.recv().await {
-        batch.push(first);
-
-        // Opportunistic drain — cap to avoid unbounded iovec arrays.
-        while batch.len() < MAX_BATCH {
-            match rx.try_recv() {
-                Ok(msg) => batch.push(msg),
-                Err(_) => break,
-            }
-        }
-
-        let err = write_batch(&mut write_half, &batch).await.err();
-
-        // Recycle all buffers back to the pool regardless of write outcome.
-        pool.put_batch(&mut batch);
-
-        if let Some(e) = err {
-            tracing::error!(error = %e, "writer task error");
-            break;
-        }
-    }
-    // rx.recv() returned None — all senders dropped.
-    // WriteHalf drops here → TCP FIN.
+/// Result of a [`Writer`] drain pass.
+enum Drain {
+    /// Everything queued so far is on the wire; the pass released the socket.
+    Done,
+    /// The socket is full; the pass still owns the socket and parked what is
+    /// left in `WriteState::batch` for a flusher task to finish.
+    WouldBlock,
+    /// The socket failed or the connection was poisoned.
+    Closed,
 }
 
-/// write_all_vectored: flush all messages in one (or few) syscalls.
-async fn write_batch(wh: &mut WriteHalf, msgs: &[Vec<u8>]) -> Result<(), io::Error> {
-    debug_assert!(msgs.len() <= MAX_BATCH);
-    let mut slices_arr = [io::IoSlice::new(&[]); MAX_BATCH];
-    let mut total: usize = 0;
-    for (i, m) in msgs.iter().enumerate() {
-        slices_arr[i] = io::IoSlice::new(m);
-        total += m.len();
-    }
-    let mut remaining: &mut [io::IoSlice<'_>] = &mut slices_arr[..msgs.len()];
+/// Buffered bytes at which the writer flushes regardless of reader phase.
+/// Matches x23's `WriteBuffer::kFlushThreshold`.
+const FLUSH_BYTES: usize = 1 << 16;
 
-    while total > 0 {
-        let n = wh.write_vectored(remaining).await?;
-        if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::WriteZero, "write returned 0"));
-        }
-        total -= n;
-        io::IoSlice::advance_slices(&mut remaining, n);
+#[derive(Default)]
+struct WriteState {
+    /// Records accepted since the active drain pass last looked.
+    queue: VecDeque<Vec<u8>>,
+    queued_bytes: usize,
+    /// Records the active drain pass is writing; `batch_off` bytes of the
+    /// front record are already on the wire.
+    batch: VecDeque<Vec<u8>>,
+    batch_off: usize,
+    /// Exactly one drain pass owns the socket at a time — either the task
+    /// that enqueued a record, running inline, or a flusher task parked on
+    /// writable().
+    draining: bool,
+    /// The connection's reader is working through records it already has
+    /// buffered and will flush when it runs out. Calls enqueued now ride
+    /// along in that flush instead of each taking a `writev`.
+    reader_busy: bool,
+    /// The connection's reader is parked waiting for the socket. Nothing
+    /// else will flush, so replies go out as soon as they are enqueued.
+    reader_waiting: bool,
+    closed: bool,
+}
+
+/// Per-connection record writer, in the shape of x23's `awrite`/`dwrite`.
+///
+/// Records are written from the task that produces them, with
+/// `try_write_vectored` on that task's own thread: no writer task is woken
+/// and no worker is unparked. Only when the socket returns `WouldBlock` does
+/// a flusher task exist, and it exits once the backlog is on the wire. While
+/// one task drains, others just enqueue; the drainer picks their records up
+/// before it lets go of the socket.
+///
+/// The connection's reader reports its phase so writes coalesce the way x23's
+/// do. While it is busy with records it has already buffered, calls are
+/// queued rather than written, because the reader flushes everything queued
+/// before it waits for the socket again (a burst of replies wakes a burst of
+/// callers whose next calls then leave in one `writev`). Replies are queued
+/// unless the reader is already waiting: a reply is produced by the reader or
+/// by a handler task it spawned, so it is either flushed at the end of the
+/// reader's pass or written immediately because nothing else would. A call
+/// is never delayed while the reader is neither busy nor waiting (a serial
+/// handler is running), so a handler's calls to its peer cannot deadlock.
+/// Two more rules keep every record moving: a serial reader flushes before
+/// it blocks on a handler, and a sender that finds the queue full flushes
+/// before it waits for room.
+///
+/// Sends are bounded by `capacity` queued records, exactly like the bounded
+/// channel this replaces: the `send_*` methods wait for room and the
+/// `try_send_*` methods report `Full`.
+pub(crate) struct Writer {
+    sock: tokio::net::tcp::OwnedWriteHalf,
+    state: StdMutex<WriteState>,
+    /// One permit per queued record; released when the record is written.
+    permits: Semaphore,
+    pool: Arc<BufPool>,
+}
+
+impl std::fmt::Debug for Writer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let state = self.state.lock().unwrap();
+        f.debug_struct("Writer")
+            .field("queued", &(state.queue.len() + state.batch.len()))
+            .field("draining", &state.draining)
+            .field("closed", &state.closed)
+            .finish()
     }
-    Ok(())
+}
+
+/// A record the writer could not accept right now.
+#[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
+pub(crate) enum TrySendError {
+    /// `capacity` records are already queued; the record is handed back.
+    Full(Vec<u8>),
+    /// The writer is closed; the record is dropped.
+    Closed,
+}
+
+/// Which kind of record is being enqueued; decides when it is flushed.
+#[derive(Clone, Copy)]
+enum Kind {
+    Call,
+    Reply,
+}
+
+impl Writer {
+    fn new(sock: tokio::net::tcp::OwnedWriteHalf, capacity: usize, pool: Arc<BufPool>) -> Self {
+        Self {
+            sock,
+            state: StdMutex::new(WriteState::default()),
+            permits: Semaphore::new(capacity),
+            pool,
+        }
+    }
+
+    /// Queue an outgoing CALL, waiting for queue room first when `capacity`
+    /// records are already pending.
+    pub(crate) async fn send_call(self: &Arc<Self>, msg: Vec<u8>) -> io::Result<()> {
+        self.send(msg, Kind::Call).await
+    }
+
+    /// Queue an outgoing REPLY, waiting for queue room first when `capacity`
+    /// records are already pending.
+    pub(crate) async fn send_reply(self: &Arc<Self>, msg: Vec<u8>) -> io::Result<()> {
+        self.send(msg, Kind::Reply).await
+    }
+
+    async fn send(self: &Arc<Self>, msg: Vec<u8>, kind: Kind) -> io::Result<()> {
+        let permit = match self.permits.try_acquire() {
+            Ok(permit) => permit,
+            Err(tokio::sync::TryAcquireError::Closed) => return Err(closed_error()),
+            Err(tokio::sync::TryAcquireError::NoPermits) => {
+                // The queue is full. Whatever is holding it back (a busy
+                // reader deferring replies, say) must not stop it draining,
+                // or a serial reader waiting here could never reach the idle
+                // point that flushes. Write it out, then wait for room.
+                self.kick();
+                self.permits.acquire().await.map_err(|_| closed_error())?
+            }
+        };
+        permit.forget();
+        if self.enqueue(msg, kind).map_err(|_| closed_error())? {
+            self.kick();
+        }
+        Ok(())
+    }
+
+    /// Like [`send_reply`](Self::send_reply) but never waits for queue room.
+    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
+    pub(crate) fn try_send_reply(self: &Arc<Self>, msg: Vec<u8>) -> Result<(), TrySendError> {
+        match self.permits.try_acquire() {
+            Ok(permit) => permit.forget(),
+            Err(tokio::sync::TryAcquireError::Closed) => return Err(TrySendError::Closed),
+            Err(tokio::sync::TryAcquireError::NoPermits) => return Err(TrySendError::Full(msg)),
+        }
+        if self
+            .enqueue(msg, Kind::Reply)
+            .map_err(|_| TrySendError::Closed)?
+        {
+            self.kick();
+        }
+        Ok(())
+    }
+
+    /// Queue `msg`; returns whether the caller should flush now.
+    fn enqueue(&self, msg: Vec<u8>, kind: Kind) -> Result<bool, Vec<u8>> {
+        let mut state = self.state.lock().unwrap();
+        if state.closed {
+            return Err(msg);
+        }
+        state.queued_bytes += msg.len();
+        state.queue.push_back(msg);
+        let full = state.queue.len() >= MAX_BATCH || state.queued_bytes >= FLUSH_BYTES;
+        Ok(full
+            || match kind {
+                Kind::Call => !state.reader_busy,
+                Kind::Reply => state.reader_waiting,
+            })
+    }
+
+    /// The reader has records buffered and is about to work through them
+    /// without waiting on the socket.
+    pub(crate) fn reader_busy(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.reader_busy = true;
+        state.reader_waiting = false;
+    }
+
+    /// The reader is about to await something other than the socket — a
+    /// serial handler — for an unbounded time. Flushes everything queued so
+    /// far: replies already produced must not wait behind that handler.
+    pub(crate) fn reader_yield(self: &Arc<Self>) {
+        {
+            let mut state = self.state.lock().unwrap();
+            state.reader_busy = false;
+            state.reader_waiting = false;
+        }
+        self.kick();
+    }
+
+    /// The reader has nothing buffered and is about to wait for the socket.
+    /// Flushes everything queued so far.
+    pub(crate) fn reader_waiting(self: &Arc<Self>) {
+        {
+            let mut state = self.state.lock().unwrap();
+            state.reader_busy = false;
+            state.reader_waiting = true;
+        }
+        self.kick();
+    }
+
+    /// Start a drain pass on the calling thread unless one already owns the
+    /// socket; that pass will find the new records itself.
+    fn kick(self: &Arc<Self>) {
+        {
+            let mut state = self.state.lock().unwrap();
+            if state.closed || state.draining || state.queue.is_empty() {
+                return;
+            }
+            state.draining = true;
+        }
+        if let Drain::WouldBlock = self.drain_pass() {
+            self.spawn_flusher();
+        }
+    }
+
+    fn spawn_flusher(self: &Arc<Self>) {
+        let writer = self.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = writer.sock.writable().await {
+                    writer.fail(&e);
+                    return;
+                }
+                match writer.drain_pass() {
+                    Drain::WouldBlock => {}
+                    Drain::Done | Drain::Closed => return,
+                }
+            }
+        });
+    }
+
+    /// Write until the queue is empty or the socket is full. The caller must
+    /// own the socket (`draining` is set); on `Done` this releases it.
+    fn drain_pass(&self) -> Drain {
+        let mut spent: Vec<Vec<u8>> = Vec::new();
+        let outcome = loop {
+            let (mut batch, mut off) = {
+                let mut state = self.state.lock().unwrap();
+                if state.closed {
+                    break Drain::Closed;
+                }
+                if state.batch.is_empty() {
+                    if state.queue.is_empty() {
+                        state.draining = false;
+                        break Drain::Done;
+                    }
+                    let WriteState { queue, batch, .. } = &mut *state;
+                    std::mem::swap(batch, queue);
+                    state.queued_bytes = 0;
+                    state.batch_off = 0;
+                }
+                (std::mem::take(&mut state.batch), state.batch_off)
+            };
+
+            let result = loop {
+                let mut slices = [io::IoSlice::new(&[]); MAX_BATCH];
+                let mut n = 0;
+                for (slot, record) in slices.iter_mut().zip(&batch) {
+                    let skip = if n == 0 { off } else { 0 };
+                    *slot = io::IoSlice::new(&record[skip..]);
+                    n += 1;
+                }
+                match self.sock.try_write_vectored(&slices[..n]) {
+                    Ok(0) => {
+                        break Err(io::Error::new(io::ErrorKind::WriteZero, "write returned 0"));
+                    }
+                    Ok(mut written) => {
+                        while written > 0 {
+                            let remaining = batch[0].len() - off;
+                            if written < remaining {
+                                off += written;
+                                break;
+                            }
+                            written -= remaining;
+                            off = 0;
+                            spent.push(batch.pop_front().unwrap());
+                        }
+                        if batch.is_empty() {
+                            break Ok(());
+                        }
+                    }
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        let mut state = self.state.lock().unwrap();
+                        if state.closed {
+                            break Ok(());
+                        }
+                        state.batch = batch;
+                        state.batch_off = off;
+                        drop(state);
+                        self.recycle(&mut spent);
+                        return Drain::WouldBlock;
+                    }
+                    Err(e) => break Err(e),
+                }
+            };
+            if let Err(e) = result {
+                self.fail(&e);
+                break Drain::Closed;
+            }
+            // Give callers waiting for room their permits back promptly, and
+            // return the buffers before looking for more work.
+            self.recycle(&mut spent);
+        };
+        self.recycle(&mut spent);
+        outcome
+    }
+
+    fn recycle(&self, spent: &mut Vec<Vec<u8>>) {
+        if spent.is_empty() {
+            return;
+        }
+        self.permits.add_permits(spent.len());
+        self.pool.put_batch(spent);
+    }
+
+    fn fail(&self, error: &io::Error) {
+        tracing::error!(%error, "connection write failed");
+        self.close();
+    }
+
+    /// Stop accepting records, drop the backlog and shut the socket's write
+    /// side so the peer sees EOF. Idempotent.
+    pub(crate) fn close(&self) {
+        {
+            let mut state = self.state.lock().unwrap();
+            if state.closed {
+                return;
+            }
+            state.closed = true;
+            state.queue.clear();
+            state.queued_bytes = 0;
+            state.batch.clear();
+        }
+        self.permits.close();
+        let _ = socket2::SockRef::from(self.sock.as_ref()).shutdown(std::net::Shutdown::Write);
+    }
+
+    /// Pretend a flusher owns the socket, so nothing is written until
+    /// [`unstall_for_test`](Self::unstall_for_test). Lets tests fill the
+    /// queue deterministically.
+    #[cfg(test)]
+    pub(crate) fn stall_for_test(&self) {
+        self.state.lock().unwrap().draining = true;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn unstall_for_test(self: &Arc<Self>) {
+        if let Drain::WouldBlock = self.drain_pass() {
+            self.spawn_flusher();
+        }
+    }
+
+    /// Records queued and not yet handed to the socket.
+    #[cfg(test)]
+    pub(crate) fn queued_for_test(&self) -> usize {
+        let state = self.state.lock().unwrap();
+        state.queue.len() + state.batch.len()
+    }
+}
+
+fn closed_error() -> io::Error {
+    io::Error::new(io::ErrorKind::BrokenPipe, "writer closed")
 }
 
 /// Frame an XDR-encoded RPC header + payload into a single-part record.
@@ -375,15 +691,11 @@ impl Drop for ConnectionState {
 }
 
 pub(crate) struct ConnectionShutdown {
-    writer: Option<JoinHandle<()>>,
     client_read_runner: Option<crate::tasks::ClientReadRunner>,
 }
 
 impl ConnectionShutdown {
     pub(crate) fn start(&mut self) {
-        if let Some(join) = &self.writer {
-            join.abort();
-        }
         if let Some(runner) = self.client_read_runner.as_mut() {
             runner.begin_shutdown();
         }
@@ -391,9 +703,6 @@ impl ConnectionShutdown {
 
     pub(crate) async fn finish(mut self) {
         self.start();
-        if let Some(join) = self.writer.take() {
-            let _ = join.await;
-        }
         if let Some(mut runner) = self.client_read_runner.take() {
             runner.shutdown().await;
         }
@@ -408,7 +717,7 @@ impl ConnectionShutdown {
 pub struct ConnectionHandle {
     // Hot — accessed on every RPC:
     pub(crate) connection_state: StdMutex<ConnectionState>,
-    write_tx: mpsc::Sender<Vec<u8>>,
+    pub(crate) writer: Arc<Writer>,
     pub(crate) buf_pool: Arc<BufPool>,
     /// Atomic pending-request counter — avoids locking `connection_state`
     /// for load-balancing queries in DynamicPool.
@@ -417,13 +726,14 @@ pub struct ConnectionHandle {
     pub(crate) connection_span: tracing::Span,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) max_concurrent_dispatches: usize,
-    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
+    /// Accepted for configuration compatibility; the read loop dispatches
+    /// straight out of the read buffer and no longer queues records.
+    #[allow(dead_code)]
     pub(crate) read_channel_capacity: usize,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) inline_ready_dispatch: bool,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) write_channel_capacity: usize,
-    writer_handle: StdMutex<Option<JoinHandle<()>>>,
     client_read_runner: StdMutex<Option<crate::tasks::ClientReadRunner>>,
 }
 
@@ -443,16 +753,17 @@ impl ConnectionHandle {
             .buf_pool
             .clone()
             .unwrap_or_else(|| Arc::new(BufPool::new()));
-        let (tx, rx) = mpsc::channel(config.write_channel_capacity);
-        let handle =
-            tokio::spawn(writer_task(rx, write_half, pool.clone()).instrument(span.clone()));
+        let writer = Arc::new(Writer::new(
+            write_half.into_inner(),
+            config.write_channel_capacity,
+            pool.clone(),
+        ));
         Self {
             connection_state: StdMutex::new(ConnectionState::new()),
-            write_tx: tx,
+            writer,
             buf_pool: pool,
             pending_count: AtomicUsize::new(0),
             connection_span: span,
-            writer_handle: StdMutex::new(Some(handle)),
             client_read_runner: StdMutex::new(None),
             max_concurrent_dispatches: config.max_concurrent_dispatches,
             read_channel_capacity: config.read_channel_capacity,
@@ -477,8 +788,8 @@ impl ConnectionHandle {
                 });
         }
 
+        self.writer.close();
         let mut shutdown = ConnectionShutdown {
-            writer: self.writer_handle.lock().unwrap().take(),
             client_read_runner: self.client_read_runner.lock().unwrap().take(),
         };
         shutdown.start();
@@ -490,44 +801,44 @@ impl ConnectionHandle {
         self.begin_poison().finish().await;
     }
 
-    /// Send a pre-serialized message through the write channel.
+    /// Send a pre-serialized REPLY record, waiting for queue room if the
+    /// writer already holds `write_channel_capacity` records.
     #[inline(always)]
-    pub(crate) async fn send_msg(&self, msg: Vec<u8>) -> Result<(), io::Error> {
-        self.write_tx
-            .send(msg)
-            .await
-            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "writer closed"))
+    pub(crate) async fn send_reply(&self, msg: Vec<u8>) -> Result<(), io::Error> {
+        self.writer.send_reply(msg).await
     }
 
-    /// Attempt to enqueue a pre-serialized message without waiting for channel
-    /// capacity.
+    /// Attempt to enqueue a pre-serialized REPLY record without waiting for
+    /// queue room.
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     #[inline(always)]
-    pub(crate) fn try_send_msg(
-        &self,
-        msg: Vec<u8>,
-    ) -> Result<(), mpsc::error::TrySendError<Vec<u8>>> {
-        self.write_tx.try_send(msg)
+    pub(crate) fn try_send_reply(&self, msg: Vec<u8>) -> Result<(), TrySendError> {
+        self.writer.try_send_reply(msg)
     }
 
-    #[cfg(all(test, feature = "concurrent-dispatch"))]
-    pub(crate) fn new_with_write_sender_for_test(
-        write_tx: mpsc::Sender<Vec<u8>>,
+    /// A handle whose writer is stalled, its own read half, and the peer
+    /// socket its records arrive on once the test unstalls the writer.
+    #[cfg(test)]
+    pub(crate) async fn new_stalled_for_test(
         config: &crate::ConnectionConfig,
-    ) -> Self {
-        Self {
-            connection_state: StdMutex::new(ConnectionState::new()),
-            write_tx,
-            buf_pool: Arc::new(BufPool::new()),
-            pending_count: AtomicUsize::new(0),
-            connection_span: tracing::Span::none(),
-            writer_handle: StdMutex::new(None),
-            client_read_runner: StdMutex::new(None),
-            max_concurrent_dispatches: config.max_concurrent_dispatches,
-            read_channel_capacity: config.read_channel_capacity,
-            inline_ready_dispatch: config.inline_ready_dispatch,
-            write_channel_capacity: config.write_channel_capacity,
-        }
+    ) -> (Self, crate::tcp_connection::ReadHalf, tokio::net::TcpStream) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (local, peer) = tokio::join!(
+            tokio::net::TcpStream::connect(listener.local_addr().unwrap()),
+            listener.accept(),
+        );
+        let (read, write) = local.unwrap().into_split();
+        let handle = Self::new(
+            crate::tcp_connection::WriteHalf::from_inner(write),
+            config,
+            tracing::Span::none(),
+        );
+        handle.writer.stall_for_test();
+        (
+            handle,
+            crate::tcp_connection::ReadHalf::new_for_test(read),
+            peer.unwrap().0,
+        )
     }
 
     /// A buffer to encode the next call into, recycled from a record this
@@ -571,17 +882,25 @@ impl ConnectionHandle {
         // On error the guard's drop cleans up the pending entry.
         let msg = Self::frame_call_or_warn(call, xid, progvers, proc)?;
 
+        let mut replied = false;
         let result = async {
-            if self.write_tx.send(msg).await.is_err() {
+            if self.writer.send_call(msg).await.is_err() {
                 return Err(RpcError::SystemError);
             }
 
-            self.await_reply(xid).await
+            let result = self.await_reply(xid).await;
+            replied = true;
+            result
         }
         .instrument(span)
         .await;
 
-        guard.complete();
+        if replied {
+            // await_reply took the entry with it, so skip the lock.
+            guard.complete_without_entry();
+        } else {
+            guard.complete();
+        }
         result
     }
 
@@ -629,7 +948,7 @@ impl ConnectionHandle {
         // thread-local and incorrect across .await points in multi-thread
         // runtimes (the future may resume on a different thread).
         async {
-            if self.write_tx.send(msg).await.is_err() {
+            if self.writer.send_call(msg).await.is_err() {
                 return Err(RpcError::SystemError); // guard drops and cleans up
             }
             guard.sent = true;
@@ -652,7 +971,9 @@ impl ConnectionHandle {
         })
     }
 
-    /// Wait for the reader task to deliver a result for the given XID.
+    /// Wait for the read loop to deliver a result for the given XID. Either
+    /// way — reply or poisoned connection — the pending entry is gone when
+    /// this returns.
     async fn await_reply(&self, xid: u32) -> Result<RpcResponse, RpcError> {
         std::future::poll_fn(|cx| {
             let mut state = self.connection_state.lock().unwrap();
@@ -726,6 +1047,13 @@ impl CallGuard<'_> {
 
     fn complete(mut self) {
         self.cleanup();
+    }
+
+    /// Finish a call whose entry `await_reply` already removed.
+    fn complete_without_entry(mut self) {
+        debug_assert!(!self.done);
+        self.done = true;
+        self.pending_count.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -941,6 +1269,247 @@ mod tests {
         assert_eq!(reused.as_ptr(), ptr);
         // The pool is empty again; the next buffer is fresh.
         assert!(pool.take_call_buf().into_vec().capacity() < 300);
+    }
+
+    /// A connection handle over a live loopback socket, its peer's read
+    /// half, and the peer's write half (kept alive so the socket stays open).
+    async fn live_pair(
+        capacity: usize,
+    ) -> (
+        Arc<ConnectionHandle>,
+        crate::tcp_connection::ReadHalf,
+        tokio::net::tcp::OwnedWriteHalf,
+    ) {
+        let config = crate::ConnectionConfig::default().with_write_channel_capacity(capacity);
+        let (handle, _read, peer) = ConnectionHandle::new_stalled_for_test(&config).await;
+        let (peer_read, peer_write) = peer.into_split();
+        (
+            Arc::new(handle),
+            crate::tcp_connection::ReadHalf::new_for_test(peer_read),
+            peer_write,
+        )
+    }
+
+    fn record_with_xid(xid: u32, payload: &[u8]) -> Vec<u8> {
+        frame_call(call_with(payload), xid, ProgVers::new(1, 1), 0).unwrap()
+    }
+
+    async fn peer_xid(peer: &mut crate::tcp_connection::ReadHalf) -> Option<u32> {
+        match tokio::time::timeout(std::time::Duration::from_millis(200), peer.read_record()).await
+        {
+            Ok(Ok(Some(record))) => Some(u32::from_be_bytes(record[..4].try_into().unwrap())),
+            Ok(other) => panic!("unexpected read result: {other:?}"),
+            Err(_) => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn replies_wait_for_the_reader_to_go_idle() {
+        let (handle, mut peer, _peer_write) = live_pair(16).await;
+        handle.writer.unstall_for_test();
+
+        // While the reader works through buffered input, replies queue up.
+        handle.writer.reader_busy();
+        handle
+            .writer
+            .send_reply(record_with_xid(1, b"a"))
+            .await
+            .unwrap();
+        handle
+            .writer
+            .try_send_reply(record_with_xid(2, b"b"))
+            .ok()
+            .unwrap();
+        assert_eq!(handle.writer.queued_for_test(), 2);
+        assert_eq!(peer_xid(&mut peer).await, None);
+
+        // Going idle flushes them together, and a reply produced while the
+        // reader is idle goes out on its own.
+        handle.writer.reader_waiting();
+        assert_eq!(peer_xid(&mut peer).await, Some(1));
+        assert_eq!(peer_xid(&mut peer).await, Some(2));
+        handle
+            .writer
+            .send_reply(record_with_xid(3, b"c"))
+            .await
+            .unwrap();
+        assert_eq!(peer_xid(&mut peer).await, Some(3));
+    }
+
+    #[tokio::test]
+    async fn calls_are_held_only_while_the_reader_is_busy() {
+        let (handle, mut peer, _peer_write) = live_pair(16).await;
+        handle.writer.unstall_for_test();
+
+        handle.writer.reader_busy();
+        handle
+            .writer
+            .send_call(record_with_xid(1, b"a"))
+            .await
+            .unwrap();
+        assert_eq!(handle.writer.queued_for_test(), 1);
+        assert_eq!(peer_xid(&mut peer).await, None);
+
+        // A serial handler is running: calls must not wait for the reader.
+        handle.writer.reader_yield();
+        handle
+            .writer
+            .send_call(record_with_xid(2, b"b"))
+            .await
+            .unwrap();
+        assert_eq!(peer_xid(&mut peer).await, Some(1));
+        assert_eq!(peer_xid(&mut peer).await, Some(2));
+
+        // Idle reader: same.
+        handle.writer.reader_waiting();
+        handle
+            .writer
+            .send_call(record_with_xid(3, b"c"))
+            .await
+            .unwrap();
+        assert_eq!(peer_xid(&mut peer).await, Some(3));
+    }
+
+    #[tokio::test]
+    async fn a_full_queue_flushes_before_the_sender_waits() {
+        // Capacity 1 with a busy reader: the second reply must push the
+        // first out rather than wait for an idle point the reader (blocked
+        // here in a serial handler) would never reach.
+        let (handle, mut peer, _peer_write) = live_pair(1).await;
+        handle.writer.unstall_for_test();
+        handle.writer.reader_busy();
+        handle
+            .writer
+            .send_reply(record_with_xid(1, b"a"))
+            .await
+            .unwrap();
+        assert_eq!(handle.writer.queued_for_test(), 1);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            handle.writer.send_reply(record_with_xid(2, b"b")),
+        )
+        .await
+        .expect("send must not wait forever on a full queue")
+        .unwrap();
+        assert_eq!(peer_xid(&mut peer).await, Some(1));
+        handle.writer.reader_waiting();
+        assert_eq!(peer_xid(&mut peer).await, Some(2));
+    }
+
+    #[tokio::test]
+    async fn yielding_to_a_handler_flushes_pending_replies() {
+        let (handle, mut peer, _peer_write) = live_pair(16).await;
+        handle.writer.unstall_for_test();
+        handle.writer.reader_busy();
+        handle
+            .writer
+            .send_reply(record_with_xid(1, b"a"))
+            .await
+            .unwrap();
+        assert_eq!(peer_xid(&mut peer).await, None);
+        // About to block on a slow serial handler: the reply already
+        // produced must not wait for it.
+        handle.writer.reader_yield();
+        assert_eq!(peer_xid(&mut peer).await, Some(1));
+    }
+
+    #[tokio::test]
+    async fn a_large_backlog_flushes_regardless_of_reader_phase() {
+        let (handle, mut peer, _peer_write) = live_pair(1024).await;
+        handle.writer.unstall_for_test();
+        handle.writer.reader_busy();
+        for xid in 0..MAX_BATCH as u32 - 1 {
+            handle
+                .writer
+                .send_reply(record_with_xid(xid, b"x"))
+                .await
+                .unwrap();
+        }
+        assert_eq!(peer_xid(&mut peer).await, None);
+        handle
+            .writer
+            .send_reply(record_with_xid(MAX_BATCH as u32 - 1, b"x"))
+            .await
+            .unwrap();
+        for xid in 0..MAX_BATCH as u32 {
+            assert_eq!(peer_xid(&mut peer).await, Some(xid));
+        }
+    }
+
+    #[tokio::test]
+    async fn full_and_closed_writers_are_reported() {
+        let (handle, mut peer, _peer_write) = live_pair(1).await;
+        // Stalled: the one slot fills and stays full.
+        handle
+            .writer
+            .try_send_reply(record_with_xid(1, b"a"))
+            .ok()
+            .unwrap();
+        let held = record_with_xid(2, b"b");
+        match handle.writer.try_send_reply(held.clone()) {
+            Err(TrySendError::Full(msg)) => assert_eq!(msg, held),
+            _ => panic!("expected Full"),
+        }
+        let blocked = handle.clone();
+        let waiting = tokio::spawn(async move { blocked.writer.send_call(held).await });
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished());
+
+        handle.writer.close();
+        assert_eq!(
+            waiting.await.unwrap().unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe
+        );
+        assert!(matches!(
+            handle.writer.try_send_reply(record_with_xid(3, b"c")),
+            Err(TrySendError::Closed)
+        ));
+        assert_eq!(
+            handle
+                .writer
+                .send_reply(record_with_xid(4, b"d"))
+                .await
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::BrokenPipe
+        );
+        // The peer sees EOF, not the dropped backlog.
+        assert_eq!(
+            peer.read_record().await.unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+    }
+
+    #[tokio::test]
+    async fn backlog_beyond_the_socket_buffer_drains_through_the_flusher() {
+        let (handle, mut peer, _peer_write) = live_pair(256).await;
+        handle.writer.unstall_for_test();
+        handle.writer.reader_waiting();
+        // Far more than a loopback socket buffers, so writes hit WouldBlock
+        // and senders wait for permits while the peer drains.
+        let count = 4000u32;
+        let payload = vec![7u8; 4096];
+        let reader = tokio::spawn(async move {
+            for expected in 0..count {
+                let record = peer.read_record().await.unwrap().unwrap();
+                assert_eq!(
+                    u32::from_be_bytes(record[..4].try_into().unwrap()),
+                    expected
+                );
+                assert_eq!(record.len(), CallBuf::PREFIX_LEN - 4 + 4096);
+            }
+        });
+        for xid in 0..count {
+            handle
+                .writer
+                .send_reply(record_with_xid(xid, &payload))
+                .await
+                .unwrap();
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(10), reader)
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     #[test]

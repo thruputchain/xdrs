@@ -87,26 +87,13 @@ impl WriteHalf {
         self.write_half.write_all(data).await
     }
 
-    pub async fn write_vectored<'a>(
-        &mut self,
-        bufs: &'a [std::io::IoSlice<'a>],
-    ) -> Result<usize, std::io::Error> {
-        // Try non-blocking first to skip the async poll machinery when the
-        // socket is already writable (common for small batches on loopback).
-        match self.write_half.try_write_vectored(bufs) {
-            Ok(n) => return Ok(n),
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-            Err(e) => return Err(e),
-        }
-        self.write_half.writable().await?;
-        match self.write_half.try_write_vectored(bufs) {
-            Ok(n) => Ok(n),
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                // Spurious readiness — fall back to async write.
-                self.write_half.write_vectored(bufs).await
-            }
-            Err(e) => Err(e),
-        }
+    #[cfg(test)]
+    pub(crate) fn from_inner(write_half: tokio::net::tcp::OwnedWriteHalf) -> Self {
+        Self { write_half }
+    }
+
+    pub(crate) fn into_inner(self) -> tokio::net::tcp::OwnedWriteHalf {
+        self.write_half
     }
 }
 
@@ -125,40 +112,83 @@ impl ReadHalf {
         }
     }
 
+    /// A reader over `read_half` with test-sized limits.
+    #[cfg(test)]
+    pub(crate) fn new_for_test(read_half: tokio::net::tcp::OwnedReadHalf) -> Self {
+        Self::new(read_half, 1 << 20, 4096)
+    }
+
     /// Number of unconsumed bytes in the read buffer.
     #[inline]
     fn buffered(&self) -> usize {
         self.len - self.pos
     }
 
-    /// Ensure at least `need` bytes are available in `buf[pos..]`.
-    /// Compacts the buffer first if necessary to make room, then reads
-    /// from the socket until we have enough.
-    async fn fill(&mut self, need: usize) -> Result<(), std::io::Error> {
-        // Compact: move unconsumed data to the front if we can't fit
-        // `need` more bytes at the end of the buffer.
+    /// Make room for `need` bytes of record in `buf[pos..]`: compact if the
+    /// unconsumed data cannot be extended in place, grow if the whole buffer
+    /// is too small.
+    fn make_room(&mut self, need: usize) {
         if self.pos > 0 && self.buf.len() - self.len < need.saturating_sub(self.buffered()) {
             self.buf.copy_within(self.pos..self.len, 0);
             self.len -= self.pos;
             self.pos = 0;
         }
-
-        // Grow if even the full buffer can't hold `need` bytes.
         if need > self.buf.len() {
             self.buf.resize(need, 0);
         }
+    }
 
+    /// Ensure at least `need` bytes are available in `buf[pos..]`.
+    /// Compacts the buffer first if necessary to make room, then reads
+    /// from the socket until we have enough.
+    async fn fill(&mut self, need: usize) -> Result<(), std::io::Error> {
+        self.make_room(need);
         while self.buffered() < need {
             let n = self.read_half.read(&mut self.buf[self.len..]).await?;
             if n == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "connection closed",
-                ));
+                return Err(eof());
             }
             self.len += n;
         }
         Ok(())
+    }
+
+    /// Like [`fill`](Self::fill) but never waits: returns `Ok(false)` when
+    /// the socket has no more data right now.
+    fn try_fill(&mut self, need: usize) -> Result<bool, std::io::Error> {
+        self.make_room(need);
+        while self.buffered() < need {
+            match self.read_half.try_read(&mut self.buf[self.len..]) {
+                Ok(0) => return Err(eof()),
+                Ok(n) => self.len += n,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(false),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(true)
+    }
+
+    /// Validate the record mark at `pos`; `Some(size)` is the body length of
+    /// a single-fragment record within the size limit.
+    fn record_size(&self) -> Option<usize> {
+        let header = u32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
+        let size = (header & 0x7FFF_FFFF) as usize;
+        if header & 0x8000_0000 == 0 {
+            tracing::warn!(header, "multi-part messages unsupported");
+            return None;
+        }
+        if size as u32 > self.max_message_size {
+            tracing::warn!(header, "message size too large");
+            return None;
+        }
+        Some(size)
+    }
+
+    /// Consume the record whose `size`-byte body follows the mark at `pos`.
+    fn take_record(&mut self, size: usize) -> &[u8] {
+        let start = self.pos + 4;
+        self.pos = start + size;
+        &self.buf[start..self.pos]
     }
 
     /// Read a single RPC record from the connection.
@@ -167,20 +197,9 @@ impl ReadHalf {
     pub async fn read_record(&mut self) -> Result<Option<&[u8]>, std::io::Error> {
         // Read the 4-byte record header.
         self.fill(4).await?;
-        let header = u32::from_be_bytes(self.buf[self.pos..self.pos + 4].try_into().unwrap());
-        let size = (header & 0x7FFF_FFFF) as usize;
-        let last_fragment = header & 0x8000_0000 != 0;
-
-        if !last_fragment {
-            tracing::warn!(header, "multi-part messages unsupported");
+        let Some(size) = self.record_size() else {
             return Ok(None);
-        }
-
-        if size as u32 > self.max_message_size {
-            tracing::warn!(header, "message size too large");
-            return Ok(None);
-        }
-
+        };
         // Keep the header until the whole record is buffered. Besides avoiding
         // a second allocation/copy for split records, fill reads ahead into any
         // spare capacity. Its progress lives in self, so cancelling this future
@@ -188,10 +207,48 @@ impl ReadHalf {
         if self.buffered() < size + 4 {
             self.fill(size + 4).await?;
         }
-        let start = self.pos + 4;
-        self.pos = start + size;
-        Ok(Some(&self.buf[start..self.pos]))
+        Ok(Some(self.take_record(size)))
     }
+
+    /// Read a single RPC record if one is already available or can be read
+    /// without waiting.
+    ///
+    /// `WouldBlock` means the socket has no more data right now; the caller
+    /// should await [`readable`](Self::readable) and try again. Buffered
+    /// partial records are kept, so this never loses input.
+    pub fn try_read_record(&mut self) -> Result<TryRecord<'_>, std::io::Error> {
+        if !self.try_fill(4)? {
+            return Ok(TryRecord::WouldBlock);
+        }
+        let Some(size) = self.record_size() else {
+            return Ok(TryRecord::Invalid);
+        };
+        if self.buffered() < size + 4 && !self.try_fill(size + 4)? {
+            return Ok(TryRecord::WouldBlock);
+        }
+        Ok(TryRecord::Ready(self.take_record(size)))
+    }
+
+    /// Wait until the socket may have data for
+    /// [`try_read_record`](Self::try_read_record).
+    pub async fn readable(&self) -> Result<(), std::io::Error> {
+        self.read_half.readable().await
+    }
+}
+
+/// Outcome of [`ReadHalf::try_read_record`].
+#[derive(Debug)]
+pub enum TryRecord<'a> {
+    /// A complete record.
+    Ready(&'a [u8]),
+    /// The record mark was invalid (multi-part or over the size limit).
+    Invalid,
+    /// No complete record is available without waiting on the socket.
+    WouldBlock,
+}
+
+fn eof() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "connection closed")
 }
 
 #[cfg(test)]
@@ -248,6 +305,58 @@ mod tests {
             peer.shutdown().await.unwrap();
             for payload in &payloads {
                 assert_eq!(read.read_record().await.unwrap().unwrap(), payload);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn try_read_record_reports_would_block_and_keeps_partial_input() {
+        let (mut read, mut peer) = record_pair(8).await;
+        assert!(matches!(
+            read.try_read_record().unwrap(),
+            TryRecord::WouldBlock
+        ));
+        let expected = record(b"split payload");
+        peer.write_all(&expected[..7]).await.unwrap();
+        peer.flush().await.unwrap();
+        read.readable().await.unwrap();
+        assert!(matches!(
+            read.try_read_record().unwrap(),
+            TryRecord::WouldBlock
+        ));
+        peer.write_all(&expected[7..]).await.unwrap();
+        peer.write_all(&record(b"next")).await.unwrap();
+        peer.flush().await.unwrap();
+        read.readable().await.unwrap();
+        loop {
+            match read.try_read_record().unwrap() {
+                TryRecord::Ready(payload) => {
+                    assert_eq!(payload, b"split payload");
+                    break;
+                }
+                TryRecord::WouldBlock => read.readable().await.unwrap(),
+                TryRecord::Invalid => panic!("invalid record"),
+            }
+        }
+        loop {
+            match read.try_read_record().unwrap() {
+                TryRecord::Ready(payload) => {
+                    assert_eq!(payload, b"next");
+                    break;
+                }
+                TryRecord::WouldBlock => read.readable().await.unwrap(),
+                TryRecord::Invalid => panic!("invalid record"),
+            }
+        }
+        peer.shutdown().await.unwrap();
+        loop {
+            match read.try_read_record() {
+                Ok(TryRecord::WouldBlock) => read.readable().await.unwrap(),
+                Err(e) => {
+                    assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof);
+                    break;
+                }
+                other => panic!("unexpected: {other:?}"),
             }
         }
     }

@@ -246,6 +246,119 @@ mod tests {
         assert!(client_read_task.await.unwrap_err().is_cancelled());
     }
 
+    /// proc 1 echoes; proc 2 sleeps `delay` before echoing.
+    struct SleepyEchoService {
+        delay: std::time::Duration,
+    }
+
+    #[async_trait]
+    impl RpcHandler for SleepyEchoService {
+        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+            match proc {
+                1 => Ok(data.to_vec()),
+                2 => {
+                    tokio::time::sleep(self.delay).await;
+                    Ok(data.to_vec())
+                }
+                _ => Err(RpcError::InvalidProcedure),
+            }
+        }
+
+        fn prog_vers(&self) -> ProgVers {
+            ProgVers::new(1, 1)
+        }
+    }
+
+    async fn start_sleepy_server(
+        delay: std::time::Duration,
+        config: impl FnOnce(ConnectionConfig) -> ConnectionConfig,
+    ) -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(SleepyEchoService { delay }));
+        RpcServer::new_with_config(listener, config(ConnectionConfig::new(None, services)))
+            .start()
+            .await;
+        addr
+    }
+
+    /// Pipelined calls must complete even when the server's writer holds a
+    /// single record: a full queue has to drain without waiting for the
+    /// read loop to go idle, which a serial reader blocked on a send never
+    /// does.
+    #[tokio::test]
+    async fn pipelined_calls_complete_with_write_capacity_one() {
+        let addr = start_sleepy_server(std::time::Duration::ZERO, |config| {
+            config.with_write_channel_capacity(1)
+        })
+        .await;
+        let client = Arc::new(connect_client(&addr).await.unwrap());
+        let calls: Vec<_> = (0..8u8)
+            .map(|i| {
+                let client = client.clone();
+                tokio::spawn(async move {
+                    client
+                        .send_call(ProgVers::new(1, 1), 1, call_with(&[i]))
+                        .await
+                        .unwrap()
+                })
+            })
+            .collect();
+        for (i, call) in calls.into_iter().enumerate() {
+            let response = tokio::time::timeout(std::time::Duration::from_secs(5), call)
+                .await
+                .expect("pipelined call deadlocked on a full writer")
+                .unwrap();
+            assert_eq!(response.as_ref(), &[i as u8]);
+        }
+    }
+
+    /// A framed CALL for prog 1 vers 1 with AUTH_NONE, as the driver frames it.
+    fn raw_call(xid: u32, proc: u32, payload: &[u8]) -> Vec<u8> {
+        let words: [u32; 11] = [
+            0x8000_0000 | (40 + payload.len() as u32),
+            xid,
+            0, // CALL
+            2, // rpcvers
+            1, // prog
+            1, // vers
+            proc,
+            0, // cred AUTH_NONE
+            0, // cred body length
+            0, // verf AUTH_NONE
+            0, // verf body length
+        ];
+        let mut record: Vec<u8> = words.iter().flat_map(|w| w.to_be_bytes()).collect();
+        record.extend_from_slice(payload);
+        record
+    }
+
+    /// A reply the server has already produced must not wait behind a slow
+    /// handler for a later call that arrived in the same read.
+    #[tokio::test]
+    async fn completed_reply_is_not_delayed_by_a_slow_later_handler() {
+        let slow = std::time::Duration::from_millis(800);
+        let addr = start_sleepy_server(slow, |config| config).await;
+        let (mut read, mut write) = connect(&addr, 1 << 20, 65536).await.unwrap();
+
+        // One write, so the server buffers both records before it dispatches
+        // either: the fast call is answered, then the slow handler runs.
+        let both = [raw_call(1, 1, b"fast"), raw_call(2, 2, b"slow")].concat();
+        let started = std::time::Instant::now();
+        write.write_data(&both).await.unwrap();
+
+        let first = tokio::time::timeout(slow / 2, read.read_record())
+            .await
+            .expect("fast reply waited behind the slow handler")
+            .unwrap()
+            .unwrap();
+        assert_eq!(u32::from_be_bytes(first[..4].try_into().unwrap()), 1);
+        let second = read.read_record().await.unwrap().unwrap();
+        assert_eq!(u32::from_be_bytes(second[..4].try_into().unwrap()), 2);
+        assert!(started.elapsed() >= slow);
+    }
+
     #[tokio::test]
     async fn test_server_closes_connection() {
         // Set up TCP listener

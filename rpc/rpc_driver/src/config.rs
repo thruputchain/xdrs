@@ -33,18 +33,17 @@ pub struct ConnectionConfig {
     ///
     /// Default: false. Set via [`ConnectionConfig::with_inline_ready_dispatch`].
     pub(crate) inline_ready_dispatch: bool,
-    /// Capacity of the per-connection write channel. Callers sending RPC
-    /// messages will apply backpressure (await) when the channel is full.
-    /// Concurrent inbound responses do not block the dispatch loop: they may
-    /// defer up to 5x this capacity in response tasks. Exceeding that bounded
-    /// backlog fails the connection closed so memory use cannot grow without
-    /// bound while a peer is not reading.
+    /// Most records the per-connection writer holds before callers sending
+    /// RPC messages apply backpressure (await). Concurrent inbound responses
+    /// do not block the read loop: they may defer up to 5x this capacity in
+    /// response tasks. Exceeding that bounded backlog fails the connection
+    /// closed so memory use cannot grow without bound while a peer is not
+    /// reading.
     ///
     /// Default: 256. Set via [`ConnectionConfig::with_write_channel_capacity`].
     pub(crate) write_channel_capacity: usize,
-    /// Capacity of the per-connection read channel (concurrent-dispatch only).
-    /// The reader task forwards CALL records over this channel to the dispatch
-    /// loop. Higher values let the reader stay further ahead of dispatch.
+    /// Accepted for compatibility; has no effect. The read loop dispatches
+    /// CALLs straight out of the socket buffer and no longer queues records.
     ///
     /// Default: 256. Set via [`ConnectionConfig::with_read_channel_capacity`].
     pub(crate) read_channel_capacity: usize,
@@ -153,7 +152,8 @@ impl ConnectionConfig {
         self
     }
 
-    /// Set the capacity of the per-connection write channel.
+    /// Set how many records the per-connection writer holds before senders
+    /// wait.
     ///
     /// Higher values allow more messages to buffer before backpressure
     /// kicks in. With concurrent dispatch, this also sets the deferred-response
@@ -164,11 +164,11 @@ impl ConnectionConfig {
         self
     }
 
-    /// Set the capacity of the per-connection read channel.
+    /// Accepted for compatibility; has no effect.
     ///
-    /// Only effective with the `concurrent-dispatch` feature. Higher values
-    /// let the reader task stay further ahead of the dispatch loop, smoothing
-    /// latency spikes at the cost of memory. Default: 256.
+    /// Earlier releases queued CALL records between a reader task and a
+    /// dispatch loop. The read loop now dispatches straight out of the socket
+    /// buffer, so there is nothing to size. Default: 256.
     #[cfg_attr(
         not(feature = "concurrent-dispatch"),
         deprecated(note = "has no effect without the `concurrent-dispatch` feature")
