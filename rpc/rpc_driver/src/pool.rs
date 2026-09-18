@@ -1527,6 +1527,46 @@ mod tests {
         addr
     }
 
+    /// Start a server that reports each call it receives on the returned
+    /// channel and holds the reply until a permit is added to the returned
+    /// semaphore.
+    ///
+    /// Dispatch is serial per connection by default, so a test that holds
+    /// several calls open at once must start them one at a time, waiting
+    /// for the server to observe each before starting the next: that
+    /// guarantees the previous call is already counted as pending, so the
+    /// pool leases a fresh connection instead of queueing behind the held
+    /// one.
+    async fn start_holding_server() -> (
+        SocketAddr,
+        tokio::sync::mpsc::UnboundedReceiver<()>,
+        Arc<Semaphore>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (started_tx, started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let release = Arc::new(Semaphore::new(0));
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(HoldingEchoService {
+            started: started_tx,
+            release: release.clone(),
+        }));
+        let server = RpcServer::new(listener, services);
+        server.start().await;
+        (addr, started_rx, release)
+    }
+
+    /// Wait until the holding server has observed one more call.
+    ///
+    /// The deadline only bounds a genuine hang; it is generous so that a
+    /// loaded machine cannot turn scheduling delay into a failure.
+    async fn await_call_started(started_rx: &mut tokio::sync::mpsc::UnboundedReceiver<()>) {
+        tokio::time::timeout(Duration::from_secs(30), started_rx.recv())
+            .await
+            .expect("server should observe the pending call")
+            .expect("holding service should remain connected");
+    }
+
     async fn start_cancellation_server() -> (
         SocketAddr,
         Arc<Notify>,
@@ -2244,17 +2284,7 @@ mod tests {
 
     #[tokio::test]
     async fn dynamic_pool_balances_by_pending() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
-        let release = Arc::new(Semaphore::new(0));
-        let mut services = ServiceMap::new();
-        services.add_service(Box::new(HoldingEchoService {
-            started: started_tx,
-            release: release.clone(),
-        }));
-        let server = RpcServer::new(listener, services);
-        server.start().await;
+        let (addr, mut started_rx, release) = start_holding_server().await;
 
         let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60), None));
 
@@ -2271,10 +2301,7 @@ mod tests {
                     .await
                     .unwrap()
             }));
-            tokio::time::timeout(Duration::from_secs(1), started_rx.recv())
-                .await
-                .expect("server should observe the pending call")
-                .expect("holding service should remain connected");
+            await_call_started(&mut started_rx).await;
             assert_eq!(pool.active_connections().await, i as usize + 1);
         }
 
@@ -2382,36 +2409,32 @@ mod tests {
 
     #[tokio::test]
     async fn dynamic_pool_reports_pending_count() {
-        let delay = std::time::Duration::from_millis(200);
-        let addr = start_slow_server(delay).await;
+        let (addr, mut started_rx, release) = start_holding_server().await;
 
         let pool = Arc::new(DynamicPool::new(addr, 3, Duration::from_secs(60), None));
 
         // Before any calls, pending should be 0.
         assert_eq!(pool.pending_count().await, 0);
 
-        // Send 3 concurrent slow calls.
+        // Hold three calls open. A call is counted as pending before it is
+        // written to the wire and stays counted until its reply arrives, so
+        // once the server has observed it the count is exact: no sleep and
+        // no dependence on how quickly the machine schedules the tasks.
         let mut handles = Vec::new();
         for i in 0..3u32 {
-            let pool = pool.clone();
+            let call_pool = pool.clone();
             handles.push(tokio::spawn(async move {
                 let data = format!("pend-{i}");
-                pool.send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
+                call_pool
+                    .send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
                     .await
                     .unwrap()
             }));
+            await_call_started(&mut started_rx).await;
+            assert_eq!(pool.pending_count().await, i as usize + 1);
         }
 
-        // Let the calls start.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        // Should have some pending calls.
-        let pending = pool.pending_count().await;
-        assert!(
-            pending >= 1,
-            "Expected at least 1 pending request, got {pending}"
-        );
-
+        release.add_permits(handles.len());
         for handle in handles {
             handle.await.unwrap();
         }
