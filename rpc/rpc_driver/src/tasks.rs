@@ -122,10 +122,10 @@ fn prepare_response(
     }
 }
 
-/// Send a dispatch result (success or error) back to the client, waiting for
-/// writer room if the connection's queue is full.
+/// Send a dispatch result (success or error) back to the client. Never
+/// waits; an error means the connection has failed.
 #[inline]
-async fn send_response(
+fn send_response(
     client_cbs: &ConnectionHandle,
     xid: u32,
     result: Result<Vec<u8>, crate::RpcError>,
@@ -133,7 +133,6 @@ async fn send_response(
     let msg = prepare_response(client_cbs, xid, result)?;
     client_cbs
         .send_reply(msg)
-        .await
         .map_err(ReadTaskError::WriteError)
 }
 
@@ -269,6 +268,14 @@ async fn serve_serial(
             rpc_msg::rpc_msg_body::CALL { cbody } => {
                 let xid = msg.xid;
                 let vers = ProgVers::new(cbody.prog, cbody.vers);
+                // The peer has fallen behind reading our replies: answer
+                // SYSTEM_ERR without running the handler, like the concurrent
+                // loop, so the backlog does not grow and nothing waits.
+                if client_cbs.writer.overloaded() {
+                    tracing::warn!(xid, reason = "peer not reading replies", "rejecting CALL");
+                    send_response(client_cbs, xid, Err(crate::RpcError::SystemError))?;
+                    continue;
+                }
                 let span = tracing::debug_span!(
                     "rpc_call",
                     xid,
@@ -303,7 +310,7 @@ async fn serve_serial(
                             res
                         }
                     };
-                    send_response(client_cbs, xid, res).await
+                    send_response(client_cbs, xid, res)
                 }
                 .instrument(span);
                 match shutdown.as_deref_mut() {
@@ -388,39 +395,6 @@ mod concurrent {
         }
     }
 
-    fn defer_response(
-        tasks: &mut tokio::task::JoinSet<()>,
-        client_cbs: &Arc<ConnectionHandle>,
-        deferred: &Arc<AtomicUsize>,
-        deferred_cap: usize,
-        xid: u32,
-        msg: Vec<u8>,
-        span: tracing::Span,
-    ) -> Result<(), ReadTaskError> {
-        let count = deferred.fetch_add(1, Ordering::Relaxed);
-        if count >= deferred_cap {
-            deferred.fetch_sub(1, Ordering::Relaxed);
-            return Err(ReadTaskError::WriteError(std::io::Error::new(
-                std::io::ErrorKind::WouldBlock,
-                "deferred response queue full",
-            )));
-        }
-
-        let cbs = client_cbs.clone();
-        let deferred = deferred.clone();
-        tasks.spawn(
-            async move {
-                let _deferred = PendingGuard(deferred);
-                if let Err(e) = cbs.send_reply(msg).await {
-                    tracing::error!(xid, error = %e, "response write failed");
-                    let _shutdown = cbs.begin_poison();
-                }
-            }
-            .instrument(span),
-        );
-        Ok(())
-    }
-
     // -- Handler futures -----------------------------------------------------
 
     /// The handler future for one CALL, owning everything it touches.
@@ -485,29 +459,6 @@ mod concurrent {
         }
     }
 
-    /// Enqueue a ready reply without blocking the read loop: a full writer
-    /// defers it to a task rather than stalling the reader ahead of a
-    /// bidirectional REPLY further down the stream.
-    fn enqueue_ready_reply(
-        tasks: &mut tokio::task::JoinSet<()>,
-        client_cbs: &Arc<ConnectionHandle>,
-        deferred: &Arc<AtomicUsize>,
-        deferred_cap: usize,
-        xid: u32,
-        msg: Vec<u8>,
-        span: tracing::Span,
-    ) -> Result<(), ReadTaskError> {
-        match client_cbs.try_send_reply(msg) {
-            Ok(()) => Ok(()),
-            Err(crate::connection::TrySendError::Full(msg)) => {
-                defer_response(tasks, client_cbs, deferred, deferred_cap, xid, msg, span)
-            }
-            Err(crate::connection::TrySendError::Closed) => Err(ReadTaskError::WriteError(
-                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "writer closed"),
-            )),
-        }
-    }
-
     // -- Read loop -----------------------------------------------------------
 
     /// Run the connection's read loop: parse each record out of the read
@@ -521,9 +472,11 @@ mod concurrent {
     ///
     /// Replies queue on the connection's writer and are flushed together
     /// when this loop is about to wait for the socket (x23's `dwrite`), so a
-    /// burst of pipelined calls costs one `writev`. Ready responses use a
-    /// nonblocking enqueue so write backpressure cannot stop this loop from
-    /// draining CALLs that precede a bidirectional REPLY in the TCP stream.
+    /// burst of pipelined calls costs one `writev`. Nothing here waits on
+    /// the writer, so output backpressure cannot stop this loop from
+    /// draining CALLs that precede a bidirectional REPLY in the TCP stream:
+    /// while the peer has fallen behind reading, new CALLs are shed with
+    /// SYSTEM_ERR instead.
     ///
     /// Set `inline_ready` to false for an unconditional-spawn control. This
     /// still uses the common boxed-handler construction introduced by the fast
@@ -542,12 +495,6 @@ mod concurrent {
         // Total spawned tasks (executing + waiting for a permit) before load
         // shedding.  E.g. max=1 -> cap=5, max=64 -> cap=320.
         let pending_cap = max_concurrent.saturating_mul(5);
-        // Responses that cannot enter the bounded writer immediately are
-        // deferred without blocking this loop. Bound that extra backlog
-        // separately from handler admission; exhausting it fails the
-        // connection closed rather than accumulating unbounded response tasks.
-        let deferred_responses = Arc::new(AtomicUsize::new(0));
-        let deferred_response_cap = client_cbs.write_channel_capacity.saturating_mul(5);
         let mut tasks = tokio::task::JoinSet::new();
         // Fast-path hit rate, reported once on exit. Loop-local: this task is
         // the only writer.
@@ -611,24 +558,22 @@ mod concurrent {
             let proc = cbody.proc;
 
             // Load shedding: reject if too many tasks are in-flight + waiting
-            // for a concurrency permit. Checked before the handler is built or
+            // for a concurrency permit, or if the peer has fallen behind
+            // reading our replies. Checked before the handler is built or
             // polled, so a shed CALL never runs its handler even partially —
             // the client can safely retry. Only suspended handlers occupy
-            // this budget, so a purely ready workload never sheds.
+            // the task budget, so a purely ready workload never sheds on it.
             let count = pending.load(Ordering::Relaxed);
-            if count >= pending_cap {
-                tracing::warn!(xid, pending = count, "rejecting CALL: pending queue full");
-                let error_bytes =
-                    crate::rpc_error::to_error_record(&crate::RpcError::SystemError, xid);
-                if let Err(e) = enqueue_ready_reply(
-                    &mut tasks,
-                    client_cbs,
-                    &deferred_responses,
-                    deferred_response_cap,
-                    xid,
-                    error_bytes,
-                    tracing::Span::none(),
-                ) {
+            let shed = if count >= pending_cap {
+                Some("pending queue full")
+            } else if writer.overloaded() {
+                Some("peer not reading replies")
+            } else {
+                None
+            };
+            if let Some(reason) = shed {
+                tracing::warn!(xid, pending = count, reason, "rejecting CALL");
+                if let Err(e) = send_response(client_cbs, xid, Err(crate::RpcError::SystemError)) {
                     break Err(e);
                 }
                 continue;
@@ -714,17 +659,7 @@ mod concurrent {
                     drop(permit);
                     let enqueued = {
                         let _enter = span.enter();
-                        prepare_response(client_cbs, xid, result).and_then(|msg| {
-                            enqueue_ready_reply(
-                                &mut tasks,
-                                client_cbs,
-                                &deferred_responses,
-                                deferred_response_cap,
-                                xid,
-                                msg,
-                                span.clone(),
-                            )
-                        })
+                        send_response(client_cbs, xid, result)
                     };
                     if let Err(e) = enqueued {
                         break Err(e);
@@ -761,7 +696,7 @@ mod concurrent {
 
                 async {
                     let result = handler_outcome(handler.await, xid);
-                    if let Err(e) = send_response(&cbs, xid, result).await {
+                    if let Err(e) = send_response(&cbs, xid, result) {
                         tracing::error!(xid, error = %e, "response write failed");
                         let _shutdown = cbs.begin_poison();
                     }
@@ -939,18 +874,38 @@ mod tests {
         )
     }
 
+    /// The accept_stat of a framed reply record (after xid, msg_type,
+    /// reply_stat, and the AUTH_NONE verifier).
+    #[cfg(feature = "concurrent-dispatch")]
+    fn accept_stat(record: &[u8]) -> u32 {
+        u32::from_be_bytes(record[20..24].try_into().unwrap())
+    }
+
+    /// Read one record from the peer, or `None` if nothing arrives in 200ms.
+    #[cfg(feature = "concurrent-dispatch")]
+    async fn next_record(peer: &mut ReadHalf) -> Option<Vec<u8>> {
+        match tokio::time::timeout(std::time::Duration::from_millis(200), peer.read_record()).await
+        {
+            Ok(Ok(Some(record))) => Some(record.to_vec()),
+            Ok(other) => panic!("unexpected read result: {other:?}"),
+            Err(_) => None,
+        }
+    }
+
     #[cfg(feature = "concurrent-dispatch")]
     #[tokio::test]
-    async fn ready_responses_do_not_block_dispatch_when_write_channel_is_full() {
+    async fn calls_are_shed_while_the_peer_is_not_reading_replies() {
         use tokio::io::AsyncWriteExt;
+        // One byte of outbound allowance with a stalled socket: the filler
+        // reply alone puts the writer over the soft limit, so the read loop
+        // must answer every CALL with SYSTEM_ERR without running a handler,
+        // and must keep going rather than block.
         let config = crate::ConnectionConfig::default()
             .with_max_concurrent_dispatches(1)
-            .with_write_channel_capacity(1);
+            .with_write_buffer_bytes(1);
         let (client, mut read_half, mut peer, mut peer_write) =
             stalled_connection_with_calls(&config, 5).await;
-        // The one queue slot is taken and the socket is stalled, so every
-        // response the read loop produces finds the writer full.
-        client.try_send_reply(filler_record(0xAA)).ok().unwrap();
+        client.send_reply(filler_record(0xAA)).unwrap();
 
         let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut services = ServiceMap::new();
@@ -964,29 +919,41 @@ mod tests {
             concurrent::serve(&services, &serve_client, &mut read_half, 1, true).await
         });
 
-        for expected in 1..=5 {
-            let entered =
-                tokio::time::timeout(std::time::Duration::from_secs(1), entered_rx.recv())
-                    .await
-                    .expect("read loop blocked on writer capacity")
-                    .unwrap();
-            assert_eq!(entered, expected);
-        }
-
-        // Release the socket: the filler goes first, then the deferred
-        // responses trickle through the one-record queue.
+        // Six records were produced without the socket moving; release it.
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while client.writer.queued_for_test() < 6 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("read loop stalled instead of shedding");
         client.writer.unstall_for_test();
+
         assert_eq!(next_xid(&mut peer).await, Some(0xAA));
-        let mut response_xids = Vec::new();
+        let mut shed = Vec::new();
         for _ in 0..5 {
-            response_xids.push(
-                next_xid(&mut peer)
-                    .await
-                    .expect("deferred response was not written"),
+            let record = next_record(&mut peer).await.expect("shed reply missing");
+            assert_eq!(
+                accept_stat(&record),
+                rpc_msg::accept_stat::SYSTEM_ERR.0 as u32
             );
+            shed.push(u32::from_be_bytes(record[..4].try_into().unwrap()));
         }
-        response_xids.sort_unstable();
-        assert_eq!(response_xids, [1, 2, 3, 4, 5]);
+        shed.sort_unstable();
+        assert_eq!(shed, [1, 2, 3, 4, 5]);
+        assert!(
+            entered_rx.try_recv().is_err(),
+            "a shed call ran its handler"
+        );
+
+        // Drained: calls are served again.
+        peer_write
+            .write_all(&test_call_record(6, 6, &[6]))
+            .await
+            .unwrap();
+        assert_eq!(entered_rx.recv().await, Some(6));
+        let record = next_record(&mut peer).await.unwrap();
+        assert_eq!(accept_stat(&record), rpc_msg::accept_stat::SUCCESS.0 as u32);
 
         peer_write.shutdown().await.unwrap();
         assert!(matches!(
@@ -997,13 +964,16 @@ mod tests {
 
     #[cfg(feature = "concurrent-dispatch")]
     #[tokio::test]
-    async fn deferred_response_cap_fails_closed_and_cancels_backlog() {
-        let config = crate::ConnectionConfig::default()
+    async fn replies_past_the_hard_limit_fail_the_connection_closed() {
+        // Room for one reply before the soft limit sheds, and a hard limit
+        // that even shed SYSTEM_ERR replies overflow while the socket is
+        // stalled.
+        let config = crate::ConnectionConfig::new(Some(64), ServiceMap::new())
             .with_max_concurrent_dispatches(1)
-            .with_write_channel_capacity(1);
+            .with_write_buffer_bytes(50)
+            .with_write_buffer_limit_bytes(100);
         let (client, mut read_half, mut peer, _peer_write) =
             stalled_connection_with_calls(&config, 6).await;
-        client.try_send_reply(filler_record(0xAA)).ok().unwrap();
 
         let (entered_tx, mut entered_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut services = ServiceMap::new();
@@ -1018,15 +988,16 @@ mod tests {
             Err(ReadTaskError::WriteError(ref error))
                 if error.kind() == std::io::ErrorKind::WouldBlock
         ));
-        for expected in 1..=6 {
-            assert_eq!(entered_rx.recv().await.unwrap(), expected);
-        }
+        // Each reply is 29 bytes: calls 1 and 2 dispatch (29, 58), call 3 is
+        // shed at 58 >= 50, and call 4's shed reply crosses the hard limit.
+        let entered = std::iter::from_fn(|| entered_rx.try_recv().ok()).count();
+        assert_eq!(entered, 2);
 
-        // The deferred responses were cancelled with the read loop's JoinSet,
-        // so only the filler ever reaches the wire.
-        client.writer.unstall_for_test();
-        assert_eq!(next_xid(&mut peer).await, Some(0xAA));
-        assert_eq!(next_xid(&mut peer).await, None);
+        // The writer closed: the peer sees EOF and nothing from the backlog.
+        assert_eq!(
+            peer.read_record().await.unwrap_err().kind(),
+            std::io::ErrorKind::UnexpectedEof
+        );
     }
 
     /// One socket write carrying `calls` ready echo CALLs, with the

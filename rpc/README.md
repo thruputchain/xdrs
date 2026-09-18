@@ -67,12 +67,13 @@ keeps bounding handler execution even for work a handler starts before it
 suspends. While a connection is saturated the fast path stands down and
 does not barge ahead of work already waiting for a permit.
 
-Ready responses use a nonblocking enqueue on the connection's writer so output
-backpressure cannot stall dispatch ahead of a bidirectional REPLY. If the
-writer already holds `write_channel_capacity` records, response sends are
-deferred up to a bounded backlog of 5x that capacity; exceeding that limit
-fails the connection closed rather than allowing unbounded memory growth while
-the peer is not reading.
+Nothing in the read loop waits on the connection's writer, so output
+backpressure cannot stall dispatch ahead of a bidirectional REPLY. If the peer
+has fallen more than `write_buffer_bytes` behind reading our replies, new
+CALLs are answered SYSTEM_ERR without running their handler; replies to calls
+already admitted are still written, and past `write_buffer_limit_bytes` the
+connection fails closed rather than buffer more for a peer that is not
+reading.
 
 Each concurrent inbound `rpc_call` span records `probed`; probed calls also
 record whether they were `ready`. This distinguishes handlers that suspended
@@ -118,14 +119,17 @@ working through buffered records and when it is about to wait for the socket.
 Replies queue until the read loop goes idle, so a burst of pipelined calls is
 answered with one `writev`; calls made while the read loop is busy ride along
 in that same flush, and calls made at any other time go out immediately. A
-queue over 64 records or 64 KiB flushes regardless, as does a queue that has
-reached `write_channel_capacity`. Calls are never held while a serial handler
-is running, so a handler's calls to its peer cannot deadlock, and a serial
-read loop flushes before it blocks on a handler so replies already produced
-are not delayed by it.
+queue over 64 records or 64 KiB flushes regardless. Calls are never held while
+a serial handler is running, so a handler's calls to its peer cannot deadlock,
+and a serial read loop flushes before it blocks on a handler so replies already
+produced are not delayed by it.
 
-`ConnectionConfig::with_write_channel_capacity` bounds the queue: senders wait
-once that many records are pending.
+Nothing waits on the queue. It only grows while the peer is not reading, and
+that is answered by failing work, not parking it, the way x23 leaves its
+writers unblocked. Past `ConnectionConfig::with_write_buffer_bytes` (1 MiB)
+of unsent output a new call on that connection fails immediately with
+`SystemError` and inbound calls are shed as described above; past
+`with_write_buffer_limit_bytes` (16 MiB) the connection fails closed.
 
 ## Tracing
 

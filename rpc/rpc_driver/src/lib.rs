@@ -208,7 +208,7 @@ pub mod handler;
 pub use handler::*;
 
 mod config;
-pub use config::ConnectionConfig;
+pub use config::{ConnectionConfig, DEFAULT_WRITE_BUFFER_BYTES, DEFAULT_WRITE_BUFFER_LIMIT_BYTES};
 
 mod server;
 pub use server::RpcServer;

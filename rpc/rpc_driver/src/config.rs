@@ -33,15 +33,20 @@ pub struct ConnectionConfig {
     ///
     /// Default: false. Set via [`ConnectionConfig::with_inline_ready_dispatch`].
     pub(crate) inline_ready_dispatch: bool,
-    /// Most records the per-connection writer holds before callers sending
-    /// RPC messages apply backpressure (await). Concurrent inbound responses
-    /// do not block the read loop: they may defer up to 5x this capacity in
-    /// response tasks. Exceeding that bounded backlog fails the connection
-    /// closed so memory use cannot grow without bound while a peer is not
-    /// reading.
+    /// Unsent outbound bytes past which the connection is overloaded: new
+    /// calls fail immediately with `SystemError` and inbound calls are shed
+    /// with SYSTEM_ERR instead of being dispatched. Replies to calls already
+    /// admitted are still written. The backlog only grows while the peer is
+    /// not reading, so nothing ever waits on it.
     ///
-    /// Default: 256. Set via [`ConnectionConfig::with_write_channel_capacity`].
-    pub(crate) write_channel_capacity: usize,
+    /// Default: 1 MiB. Set via [`ConnectionConfig::with_write_buffer_bytes`].
+    pub(crate) write_buffer_bytes: usize,
+    /// Unsent outbound bytes past which the connection fails closed rather
+    /// than buffer more for a peer that is not reading.
+    ///
+    /// Default: 16 MiB. Set via
+    /// [`ConnectionConfig::with_write_buffer_limit_bytes`].
+    pub(crate) write_buffer_limit_bytes: usize,
     /// Accepted for compatibility; has no effect. The read loop dispatches
     /// CALLs straight out of the socket buffer and no longer queues records.
     ///
@@ -61,6 +66,11 @@ pub struct ConnectionConfig {
     pub(crate) buf_pool: Option<Arc<crate::connection::BufPool>>,
 }
 
+/// Default [`ConnectionConfig::with_write_buffer_bytes`].
+pub const DEFAULT_WRITE_BUFFER_BYTES: usize = 1 << 20;
+/// Default [`ConnectionConfig::with_write_buffer_limit_bytes`].
+pub const DEFAULT_WRITE_BUFFER_LIMIT_BYTES: usize = 16 << 20;
+
 impl Default for ConnectionConfig {
     fn default() -> Self {
         Self {
@@ -68,7 +78,8 @@ impl Default for ConnectionConfig {
             services: Arc::new(ServiceMap::default()),
             max_concurrent_dispatches: 64,
             inline_ready_dispatch: false,
-            write_channel_capacity: 256,
+            write_buffer_bytes: DEFAULT_WRITE_BUFFER_BYTES,
+            write_buffer_limit_bytes: DEFAULT_WRITE_BUFFER_LIMIT_BYTES,
             read_channel_capacity: 256,
             read_buffer_size: 65536,
             buf_pool: None,
@@ -88,7 +99,8 @@ impl ConnectionConfig {
             services: Arc::new(services),
             max_concurrent_dispatches: 64,
             inline_ready_dispatch: false,
-            write_channel_capacity: 256,
+            write_buffer_bytes: DEFAULT_WRITE_BUFFER_BYTES,
+            write_buffer_limit_bytes: DEFAULT_WRITE_BUFFER_LIMIT_BYTES,
             read_channel_capacity: 256,
             read_buffer_size: 65536,
             buf_pool: None,
@@ -152,15 +164,42 @@ impl ConnectionConfig {
         self
     }
 
-    /// Set how many records the per-connection writer holds before senders
-    /// wait.
+    /// Set the unsent outbound bytes past which the connection is
+    /// overloaded.
     ///
-    /// Higher values allow more messages to buffer before backpressure
-    /// kicks in. With concurrent dispatch, this also sets the deferred-response
-    /// fail-closed threshold to 5x the capacity. Default: 256.
-    pub fn with_write_channel_capacity(mut self, capacity: usize) -> Self {
+    /// While more than this is waiting for the peer to read, new calls on
+    /// the connection fail immediately with `SystemError` and inbound calls
+    /// are answered SYSTEM_ERR without running their handler. Replies to
+    /// calls already admitted are still written. Nothing waits. Default:
+    /// [`DEFAULT_WRITE_BUFFER_BYTES`].
+    pub fn with_write_buffer_bytes(mut self, bytes: usize) -> Self {
+        assert!(bytes > 0, "write_buffer_bytes must be at least 1");
+        self.write_buffer_bytes = bytes;
+        self
+    }
+
+    /// Set the unsent outbound bytes past which the connection fails closed.
+    ///
+    /// Shed replies still cost a few bytes each, so a peer that keeps
+    /// sending calls without ever reading can push the backlog past the
+    /// overload threshold; this is the ceiling. A call that would cross it
+    /// is refused with `SystemError` rather than failing the connection.
+    /// Values below `write_buffer_bytes`, or below one maximum-size record
+    /// (`max_message_size` plus its record mark), are raised to that, so a
+    /// legal call is never refused by the memory bound when nothing else is
+    /// queued. Default: [`DEFAULT_WRITE_BUFFER_LIMIT_BYTES`].
+    pub fn with_write_buffer_limit_bytes(mut self, bytes: usize) -> Self {
+        self.write_buffer_limit_bytes = bytes;
+        self
+    }
+
+    /// Accepted for compatibility; has no effect.
+    ///
+    /// The outbound queue is bounded in bytes, not records: see
+    /// [`with_write_buffer_bytes`](Self::with_write_buffer_bytes).
+    #[deprecated(note = "use with_write_buffer_bytes; the outbound queue is bounded in bytes")]
+    pub fn with_write_channel_capacity(self, capacity: usize) -> Self {
         assert!(capacity > 0, "write_channel_capacity must be at least 1");
-        self.write_channel_capacity = capacity;
         self
     }
 

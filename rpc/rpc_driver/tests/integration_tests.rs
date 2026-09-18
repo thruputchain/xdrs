@@ -283,14 +283,13 @@ mod tests {
         addr
     }
 
-    /// Pipelined calls must complete even when the server's writer holds a
-    /// single record: a full queue has to drain without waiting for the
-    /// read loop to go idle, which a serial reader blocked on a send never
-    /// does.
+    /// With almost no outbound allowance, the server sheds most pipelined
+    /// calls with SYSTEM_ERR instead of blocking: every call gets a prompt
+    /// answer, and the ones it did serve are correct.
     #[tokio::test]
-    async fn pipelined_calls_complete_with_write_capacity_one() {
+    async fn pipelined_calls_get_prompt_answers_from_an_overloaded_server() {
         let addr = start_sleepy_server(std::time::Duration::ZERO, |config| {
-            config.with_write_channel_capacity(1)
+            config.with_write_buffer_bytes(1)
         })
         .await;
         let client = Arc::new(connect_client(&addr).await.unwrap());
@@ -301,17 +300,25 @@ mod tests {
                     client
                         .send_call(ProgVers::new(1, 1), 1, call_with(&[i]))
                         .await
-                        .unwrap()
                 })
             })
             .collect();
+        let mut served = 0;
         for (i, call) in calls.into_iter().enumerate() {
-            let response = tokio::time::timeout(std::time::Duration::from_secs(5), call)
+            match tokio::time::timeout(std::time::Duration::from_secs(5), call)
                 .await
-                .expect("pipelined call deadlocked on a full writer")
-                .unwrap();
-            assert_eq!(response.as_ref(), &[i as u8]);
+                .expect("pipelined call hung on an overloaded server")
+                .unwrap()
+            {
+                Ok(response) => {
+                    assert_eq!(response.as_ref(), &[i as u8]);
+                    served += 1;
+                }
+                Err(RpcError::SystemError) => {}
+                Err(other) => panic!("unexpected error {other:?}"),
+            }
         }
+        assert!(served >= 1);
     }
 
     /// A framed CALL for prog 1 vers 1 with AUTH_NONE, as the driver frames it.
@@ -581,17 +588,19 @@ mod tests {
             .send_call(ProgVers::new(1, 1), 1, call_with(&large_data))
             .await;
 
-        // The call should fail with SystemError because the connection was closed
-        // when the server detected the message was too large
+        // The record is larger than the connection's outbound ceiling (which
+        // is never below one maximum-size message), so the writer refuses it
+        // locally instead of shipping 16 MiB for the server to reject.
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
+        assert_eq!(client_handle.num_pending_requests(), 0);
 
-        // Connection should be closed, so future calls should fail
+        // Refusing a call is not fatal: the connection still works.
         let result = client_handle
             .send_call(ProgVers::new(1, 1), 1, call_with(b"test"))
-            .await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), RpcError::SystemError);
+            .await
+            .unwrap();
+        assert_eq!(result.as_ref(), b"test");
         assert_eq!(client_handle.num_pending_requests(), 0);
     }
 

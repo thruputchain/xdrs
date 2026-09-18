@@ -5,7 +5,6 @@ use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::task::Waker;
-use tokio::sync::Semaphore;
 use tracing::Instrument;
 
 use async_trait::async_trait;
@@ -98,7 +97,6 @@ const FLUSH_BYTES: usize = 1 << 16;
 struct WriteState {
     /// Records accepted since the active drain pass last looked.
     queue: VecDeque<Vec<u8>>,
-    queued_bytes: usize,
     /// Records the active drain pass is writing; `batch_off` bytes of the
     /// front record are already on the wire.
     batch: VecDeque<Vec<u8>>,
@@ -135,19 +133,29 @@ struct WriteState {
 /// by a handler task it spawned, so it is either flushed at the end of the
 /// reader's pass or written immediately because nothing else would. A call
 /// is never delayed while the reader is neither busy nor waiting (a serial
-/// handler is running), so a handler's calls to its peer cannot deadlock.
-/// Two more rules keep every record moving: a serial reader flushes before
-/// it blocks on a handler, and a sender that finds the queue full flushes
-/// before it waits for room.
+/// handler is running), so a handler's calls to its peer cannot deadlock,
+/// and a serial reader flushes before it blocks on a handler.
 ///
-/// Sends are bounded by `capacity` queued records, exactly like the bounded
-/// channel this replaces: the `send_*` methods wait for room and the
-/// `try_send_*` methods report `Full`.
+/// Nothing ever waits on the queue. The backlog only grows while the peer is
+/// not reading, and that is answered by failing work rather than parking
+/// it: past `soft_limit` unsent bytes a new call is rejected
+/// ([`SendError::Overloaded`]) and the read loop sheds new inbound calls
+/// with SYSTEM_ERR instead of dispatching them, while replies to calls that
+/// were already admitted are still accepted. Past `hard_limit` the
+/// connection fails closed.
 pub(crate) struct Writer {
     sock: tokio::net::tcp::OwnedWriteHalf,
     state: StdMutex<WriteState>,
-    /// One permit per queued record; released when the record is written.
-    permits: Semaphore,
+    /// Bytes of records accepted and not yet completely written, across
+    /// `queue` and `batch`. Only ever changed while `state` is locked, so
+    /// reads under the lock are exact; the read loop's admission check reads
+    /// it without the lock (the limit is advisory, a stale read is fine)
+    /// rather than contend with every producer on the connection.
+    pending_bytes: AtomicUsize,
+    /// Unsent bytes past which new calls are rejected and inbound calls shed.
+    soft_limit: usize,
+    /// Unsent bytes past which the connection fails closed.
+    hard_limit: usize,
     pool: Arc<BufPool>,
 }
 
@@ -156,19 +164,20 @@ impl std::fmt::Debug for Writer {
         let state = self.state.lock().unwrap();
         f.debug_struct("Writer")
             .field("queued", &(state.queue.len() + state.batch.len()))
+            .field("pending_bytes", &self.pending_bytes.load(Ordering::Relaxed))
             .field("draining", &state.draining)
             .field("closed", &state.closed)
             .finish()
     }
 }
 
-/// A record the writer could not accept right now.
-#[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
-pub(crate) enum TrySendError {
-    /// `capacity` records are already queued; the record is handed back.
-    Full(Vec<u8>),
-    /// The writer is closed; the record is dropped.
+/// Why the writer refused a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SendError {
+    /// The writer is closed.
     Closed,
+    /// More than `soft_limit` bytes are waiting for the peer to read.
+    Overloaded,
 }
 
 /// Which kind of record is being enqueued; decides when it is flushed.
@@ -179,78 +188,100 @@ enum Kind {
 }
 
 impl Writer {
-    fn new(sock: tokio::net::tcp::OwnedWriteHalf, capacity: usize, pool: Arc<BufPool>) -> Self {
+    /// `hard_limit` is raised to `soft_limit` and to one maximum-size record
+    /// (`max_message_size` plus its record mark), so the memory bound can
+    /// never refuse a call the protocol allows when nothing else is queued.
+    fn new(
+        sock: tokio::net::tcp::OwnedWriteHalf,
+        soft_limit: usize,
+        hard_limit: usize,
+        max_message_size: u32,
+        pool: Arc<BufPool>,
+    ) -> Self {
         Self {
             sock,
             state: StdMutex::new(WriteState::default()),
-            permits: Semaphore::new(capacity),
+            pending_bytes: AtomicUsize::new(0),
+            soft_limit,
+            hard_limit: hard_limit
+                .max(soft_limit)
+                .max(max_message_size as usize + 4),
             pool,
         }
     }
 
-    /// Queue an outgoing CALL, waiting for queue room first when `capacity`
-    /// records are already pending.
-    pub(crate) async fn send_call(self: &Arc<Self>, msg: Vec<u8>) -> io::Result<()> {
-        self.send(msg, Kind::Call).await
-    }
-
-    /// Queue an outgoing REPLY, waiting for queue room first when `capacity`
-    /// records are already pending.
-    pub(crate) async fn send_reply(self: &Arc<Self>, msg: Vec<u8>) -> io::Result<()> {
-        self.send(msg, Kind::Reply).await
-    }
-
-    async fn send(self: &Arc<Self>, msg: Vec<u8>, kind: Kind) -> io::Result<()> {
-        let permit = match self.permits.try_acquire() {
-            Ok(permit) => permit,
-            Err(tokio::sync::TryAcquireError::Closed) => return Err(closed_error()),
-            Err(tokio::sync::TryAcquireError::NoPermits) => {
-                // The queue is full. Whatever is holding it back (a busy
-                // reader deferring replies, say) must not stop it draining,
-                // or a serial reader waiting here could never reach the idle
-                // point that flushes. Write it out, then wait for room.
-                self.kick();
-                self.permits.acquire().await.map_err(|_| closed_error())?
+    /// Queue an outgoing CALL, or refuse it if the peer has fallen more than
+    /// `soft_limit` bytes behind or the call would push the backlog past
+    /// `hard_limit`. Never waits, and never fails the connection: refusing
+    /// the call is enough to hold the bound.
+    pub(crate) fn send_call(self: &Arc<Self>, msg: Vec<u8>) -> Result<(), SendError> {
+        let flush = {
+            let mut state = self.state.lock().unwrap();
+            if state.closed {
+                return Err(SendError::Closed);
             }
+            let pending = self.pending_bytes.load(Ordering::Relaxed);
+            if pending >= self.soft_limit || pending.saturating_add(msg.len()) > self.hard_limit {
+                drop(state);
+                // Whatever is queued should be on its way regardless.
+                self.kick();
+                return Err(SendError::Overloaded);
+            }
+            self.push(&mut state, msg, Kind::Call)
         };
-        permit.forget();
-        if self.enqueue(msg, kind).map_err(|_| closed_error())? {
+        if flush {
             self.kick();
         }
         Ok(())
     }
 
-    /// Like [`send_reply`](Self::send_reply) but never waits for queue room.
-    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
-    pub(crate) fn try_send_reply(self: &Arc<Self>, msg: Vec<u8>) -> Result<(), TrySendError> {
-        match self.permits.try_acquire() {
-            Ok(permit) => permit.forget(),
-            Err(tokio::sync::TryAcquireError::Closed) => return Err(TrySendError::Closed),
-            Err(tokio::sync::TryAcquireError::NoPermits) => return Err(TrySendError::Full(msg)),
-        }
-        if self
-            .enqueue(msg, Kind::Reply)
-            .map_err(|_| TrySendError::Closed)?
-        {
+    /// Queue an outgoing REPLY. Replies answer calls already admitted, so
+    /// they are accepted past `soft_limit`; past `hard_limit` the connection
+    /// fails closed instead. Never waits.
+    pub(crate) fn send_reply(self: &Arc<Self>, msg: Vec<u8>) -> io::Result<()> {
+        let flush = {
+            let mut state = self.state.lock().unwrap();
+            if state.closed {
+                return Err(closed_error());
+            }
+            let pending = self.pending_bytes.load(Ordering::Relaxed);
+            if pending.saturating_add(msg.len()) > self.hard_limit {
+                drop(state);
+                tracing::error!(
+                    pending_bytes = pending,
+                    hard_limit = self.hard_limit,
+                    "peer is not reading; closing connection"
+                );
+                self.close();
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "outbound buffer over hard limit",
+                ));
+            }
+            self.push(&mut state, msg, Kind::Reply)
+        };
+        if flush {
             self.kick();
         }
         Ok(())
     }
 
-    /// Queue `msg`; returns whether the caller should flush now.
-    fn enqueue(&self, msg: Vec<u8>, kind: Kind) -> Result<bool, Vec<u8>> {
-        let mut state = self.state.lock().unwrap();
-        if state.closed {
-            return Err(msg);
-        }
-        state.queued_bytes += msg.len();
+    /// More than `soft_limit` bytes are waiting for the peer to read. The
+    /// read loop sheds new inbound calls while this holds. Lock-free.
+    pub(crate) fn overloaded(&self) -> bool {
+        self.pending_bytes.load(Ordering::Relaxed) >= self.soft_limit
+    }
+
+    /// Append `msg` to the queue; returns whether the caller should flush now.
+    fn push(&self, state: &mut WriteState, msg: Vec<u8>, kind: Kind) -> bool {
+        let pending = self.pending_bytes.fetch_add(msg.len(), Ordering::Relaxed) + msg.len();
         state.queue.push_back(msg);
-        let full = state.queue.len() >= MAX_BATCH || state.queued_bytes >= FLUSH_BYTES;
-        Ok(full
+        state.queue.len() >= MAX_BATCH
+            || pending >= FLUSH_BYTES
             || match kind {
                 Kind::Call => !state.reader_busy,
                 Kind::Reply => state.reader_waiting,
-            })
+            }
     }
 
     /// The reader has records buffered and is about to work through them
@@ -332,7 +363,6 @@ impl Writer {
                     }
                     let WriteState { queue, batch, .. } = &mut *state;
                     std::mem::swap(batch, queue);
-                    state.queued_bytes = 0;
                     state.batch_off = 0;
                 }
                 (std::mem::take(&mut state.batch), state.batch_off)
@@ -383,19 +413,26 @@ impl Writer {
                 self.fail(&e);
                 break Drain::Closed;
             }
-            // Give callers waiting for room their permits back promptly, and
-            // return the buffers before looking for more work.
             self.recycle(&mut spent);
         };
         self.recycle(&mut spent);
         outcome
     }
 
+    /// Account for records now fully on the wire and return their buffers.
     fn recycle(&self, spent: &mut Vec<Vec<u8>>) {
         if spent.is_empty() {
             return;
         }
-        self.permits.add_permits(spent.len());
+        let bytes: usize = spent.iter().map(Vec::len).sum();
+        {
+            // close() zeroes the count under this lock; records written
+            // before a failing pass ended must not be subtracted after that.
+            let state = self.state.lock().unwrap();
+            if !state.closed {
+                self.pending_bytes.fetch_sub(bytes, Ordering::Relaxed);
+            }
+        }
         self.pool.put_batch(spent);
     }
 
@@ -414,10 +451,9 @@ impl Writer {
             }
             state.closed = true;
             state.queue.clear();
-            state.queued_bytes = 0;
             state.batch.clear();
+            self.pending_bytes.store(0, Ordering::Relaxed);
         }
-        self.permits.close();
         let _ = socket2::SockRef::from(self.sock.as_ref()).shutdown(std::net::Shutdown::Write);
     }
 
@@ -732,8 +768,6 @@ pub struct ConnectionHandle {
     pub(crate) read_channel_capacity: usize,
     #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
     pub(crate) inline_ready_dispatch: bool,
-    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
-    pub(crate) write_channel_capacity: usize,
     client_read_runner: StdMutex<Option<crate::tasks::ClientReadRunner>>,
 }
 
@@ -755,7 +789,9 @@ impl ConnectionHandle {
             .unwrap_or_else(|| Arc::new(BufPool::new()));
         let writer = Arc::new(Writer::new(
             write_half.into_inner(),
-            config.write_channel_capacity,
+            config.write_buffer_bytes,
+            config.write_buffer_limit_bytes,
+            config.max_message_size,
             pool.clone(),
         ));
         Self {
@@ -768,7 +804,6 @@ impl ConnectionHandle {
             max_concurrent_dispatches: config.max_concurrent_dispatches,
             read_channel_capacity: config.read_channel_capacity,
             inline_ready_dispatch: config.inline_ready_dispatch,
-            write_channel_capacity: config.write_channel_capacity,
         }
     }
 
@@ -801,19 +836,12 @@ impl ConnectionHandle {
         self.begin_poison().finish().await;
     }
 
-    /// Send a pre-serialized REPLY record, waiting for queue room if the
-    /// writer already holds `write_channel_capacity` records.
+    /// Send a pre-serialized REPLY record. Never waits; fails the connection
+    /// closed if the peer has stopped reading and the backlog is past its
+    /// hard limit.
     #[inline(always)]
-    pub(crate) async fn send_reply(&self, msg: Vec<u8>) -> Result<(), io::Error> {
-        self.writer.send_reply(msg).await
-    }
-
-    /// Attempt to enqueue a pre-serialized REPLY record without waiting for
-    /// queue room.
-    #[cfg_attr(not(feature = "concurrent-dispatch"), allow(dead_code))]
-    #[inline(always)]
-    pub(crate) fn try_send_reply(&self, msg: Vec<u8>) -> Result<(), TrySendError> {
-        self.writer.try_send_reply(msg)
+    pub(crate) fn send_reply(&self, msg: Vec<u8>) -> Result<(), io::Error> {
+        self.writer.send_reply(msg)
     }
 
     /// A handle whose writer is stalled, its own read half, and the peer
@@ -852,7 +880,9 @@ impl ConnectionHandle {
     /// The call is framed in place: the driver fills the prefix `call`
     /// reserves and hands the buffer to the socket without copying the
     /// payload. Returns the response data on success, or an error if the
-    /// call fails.
+    /// call fails. Sending never waits for the peer: if more than the
+    /// configured outbound buffer is already waiting for it to read, the
+    /// call fails immediately with [`RpcError::SystemError`].
     pub async fn send_call(
         &self,
         progvers: ProgVers,
@@ -884,7 +914,8 @@ impl ConnectionHandle {
 
         let mut replied = false;
         let result = async {
-            if self.writer.send_call(msg).await.is_err() {
+            if let Err(e) = self.writer.send_call(msg) {
+                tracing::debug!(?e, "call refused by the connection writer");
                 return Err(RpcError::SystemError);
             }
 
@@ -948,7 +979,8 @@ impl ConnectionHandle {
         // thread-local and incorrect across .await points in multi-thread
         // runtimes (the future may resume on a different thread).
         async {
-            if self.writer.send_call(msg).await.is_err() {
+            if let Err(e) = self.writer.send_call(msg) {
+                tracing::debug!(?e, "call refused by the connection writer");
                 return Err(RpcError::SystemError); // guard drops and cleans up
             }
             guard.sent = true;
@@ -1274,13 +1306,17 @@ mod tests {
     /// A connection handle over a live loopback socket, its peer's read
     /// half, and the peer's write half (kept alive so the socket stays open).
     async fn live_pair(
-        capacity: usize,
+        soft_limit: usize,
+        hard_limit: usize,
     ) -> (
         Arc<ConnectionHandle>,
         crate::tcp_connection::ReadHalf,
         tokio::net::tcp::OwnedWriteHalf,
     ) {
-        let config = crate::ConnectionConfig::default().with_write_channel_capacity(capacity);
+        // A small message limit so tiny byte limits are not raised past it.
+        let config = crate::ConnectionConfig::new(Some(64), crate::ServiceMap::new())
+            .with_write_buffer_bytes(soft_limit)
+            .with_write_buffer_limit_bytes(hard_limit);
         let (handle, _read, peer) = ConnectionHandle::new_stalled_for_test(&config).await;
         let (peer_read, peer_write) = peer.into_split();
         (
@@ -1305,21 +1341,13 @@ mod tests {
 
     #[tokio::test]
     async fn replies_wait_for_the_reader_to_go_idle() {
-        let (handle, mut peer, _peer_write) = live_pair(16).await;
+        let (handle, mut peer, _peer_write) = live_pair(1 << 20, 1 << 24).await;
         handle.writer.unstall_for_test();
 
         // While the reader works through buffered input, replies queue up.
         handle.writer.reader_busy();
-        handle
-            .writer
-            .send_reply(record_with_xid(1, b"a"))
-            .await
-            .unwrap();
-        handle
-            .writer
-            .try_send_reply(record_with_xid(2, b"b"))
-            .ok()
-            .unwrap();
+        handle.writer.send_reply(record_with_xid(1, b"a")).unwrap();
+        handle.writer.send_reply(record_with_xid(2, b"b")).unwrap();
         assert_eq!(handle.writer.queued_for_test(), 2);
         assert_eq!(peer_xid(&mut peer).await, None);
 
@@ -1328,84 +1356,38 @@ mod tests {
         handle.writer.reader_waiting();
         assert_eq!(peer_xid(&mut peer).await, Some(1));
         assert_eq!(peer_xid(&mut peer).await, Some(2));
-        handle
-            .writer
-            .send_reply(record_with_xid(3, b"c"))
-            .await
-            .unwrap();
+        handle.writer.send_reply(record_with_xid(3, b"c")).unwrap();
         assert_eq!(peer_xid(&mut peer).await, Some(3));
     }
 
     #[tokio::test]
     async fn calls_are_held_only_while_the_reader_is_busy() {
-        let (handle, mut peer, _peer_write) = live_pair(16).await;
+        let (handle, mut peer, _peer_write) = live_pair(1 << 20, 1 << 24).await;
         handle.writer.unstall_for_test();
 
         handle.writer.reader_busy();
-        handle
-            .writer
-            .send_call(record_with_xid(1, b"a"))
-            .await
-            .unwrap();
+        handle.writer.send_call(record_with_xid(1, b"a")).unwrap();
         assert_eq!(handle.writer.queued_for_test(), 1);
         assert_eq!(peer_xid(&mut peer).await, None);
 
         // A serial handler is running: calls must not wait for the reader.
         handle.writer.reader_yield();
-        handle
-            .writer
-            .send_call(record_with_xid(2, b"b"))
-            .await
-            .unwrap();
+        handle.writer.send_call(record_with_xid(2, b"b")).unwrap();
         assert_eq!(peer_xid(&mut peer).await, Some(1));
         assert_eq!(peer_xid(&mut peer).await, Some(2));
 
         // Idle reader: same.
         handle.writer.reader_waiting();
-        handle
-            .writer
-            .send_call(record_with_xid(3, b"c"))
-            .await
-            .unwrap();
+        handle.writer.send_call(record_with_xid(3, b"c")).unwrap();
         assert_eq!(peer_xid(&mut peer).await, Some(3));
     }
 
     #[tokio::test]
-    async fn a_full_queue_flushes_before_the_sender_waits() {
-        // Capacity 1 with a busy reader: the second reply must push the
-        // first out rather than wait for an idle point the reader (blocked
-        // here in a serial handler) would never reach.
-        let (handle, mut peer, _peer_write) = live_pair(1).await;
-        handle.writer.unstall_for_test();
-        handle.writer.reader_busy();
-        handle
-            .writer
-            .send_reply(record_with_xid(1, b"a"))
-            .await
-            .unwrap();
-        assert_eq!(handle.writer.queued_for_test(), 1);
-        tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            handle.writer.send_reply(record_with_xid(2, b"b")),
-        )
-        .await
-        .expect("send must not wait forever on a full queue")
-        .unwrap();
-        assert_eq!(peer_xid(&mut peer).await, Some(1));
-        handle.writer.reader_waiting();
-        assert_eq!(peer_xid(&mut peer).await, Some(2));
-    }
-
-    #[tokio::test]
     async fn yielding_to_a_handler_flushes_pending_replies() {
-        let (handle, mut peer, _peer_write) = live_pair(16).await;
+        let (handle, mut peer, _peer_write) = live_pair(1 << 20, 1 << 24).await;
         handle.writer.unstall_for_test();
         handle.writer.reader_busy();
-        handle
-            .writer
-            .send_reply(record_with_xid(1, b"a"))
-            .await
-            .unwrap();
+        handle.writer.send_reply(record_with_xid(1, b"a")).unwrap();
         assert_eq!(peer_xid(&mut peer).await, None);
         // About to block on a slow serial handler: the reply already
         // produced must not wait for it.
@@ -1415,21 +1397,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_large_backlog_flushes_regardless_of_reader_phase() {
-        let (handle, mut peer, _peer_write) = live_pair(1024).await;
+        let (handle, mut peer, _peer_write) = live_pair(1 << 20, 1 << 24).await;
         handle.writer.unstall_for_test();
         handle.writer.reader_busy();
         for xid in 0..MAX_BATCH as u32 - 1 {
             handle
                 .writer
                 .send_reply(record_with_xid(xid, b"x"))
-                .await
                 .unwrap();
         }
         assert_eq!(peer_xid(&mut peer).await, None);
         handle
             .writer
             .send_reply(record_with_xid(MAX_BATCH as u32 - 1, b"x"))
-            .await
             .unwrap();
         for xid in 0..MAX_BATCH as u32 {
             assert_eq!(peer_xid(&mut peer).await, Some(xid));
@@ -1437,38 +1417,63 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn full_and_closed_writers_are_reported() {
-        let (handle, mut peer, _peer_write) = live_pair(1).await;
-        // Stalled: the one slot fills and stays full.
-        handle
-            .writer
-            .try_send_reply(record_with_xid(1, b"a"))
-            .ok()
-            .unwrap();
-        let held = record_with_xid(2, b"b");
-        match handle.writer.try_send_reply(held.clone()) {
-            Err(TrySendError::Full(msg)) => assert_eq!(msg, held),
-            _ => panic!("expected Full"),
-        }
-        let blocked = handle.clone();
-        let waiting = tokio::spawn(async move { blocked.writer.send_call(held).await });
-        tokio::task::yield_now().await;
-        assert!(!waiting.is_finished());
-
-        handle.writer.close();
+    async fn overloaded_writer_refuses_calls_but_still_takes_replies() {
+        // Soft limit of one byte with a stalled socket: the first record
+        // puts the writer over the limit and nothing drains.
+        let (handle, mut peer, _peer_write) = live_pair(1, 1 << 20).await;
+        handle.writer.send_call(record_with_xid(1, b"a")).unwrap();
+        assert!(handle.writer.overloaded());
         assert_eq!(
-            waiting.await.unwrap().unwrap_err().kind(),
-            io::ErrorKind::BrokenPipe
+            handle.writer.send_call(record_with_xid(2, b"b")),
+            Err(SendError::Overloaded)
         );
-        assert!(matches!(
-            handle.writer.try_send_reply(record_with_xid(3, b"c")),
-            Err(TrySendError::Closed)
-        ));
+        // A reply answers a call the peer already made; it is not shed.
+        handle.writer.send_reply(record_with_xid(3, b"c")).unwrap();
+        assert_eq!(handle.writer.queued_for_test(), 2);
+
+        handle.writer.unstall_for_test();
+        assert_eq!(peer_xid(&mut peer).await, Some(1));
+        assert_eq!(peer_xid(&mut peer).await, Some(3));
+        assert!(!handle.writer.overloaded());
+        handle.writer.send_call(record_with_xid(4, b"d")).unwrap();
+        assert_eq!(peer_xid(&mut peer).await, Some(4));
+    }
+
+    #[tokio::test]
+    async fn a_call_that_would_cross_the_hard_limit_is_refused_not_fatal() {
+        // Nothing pending, so under the soft limit, but the record itself is
+        // larger than the ceiling: refuse the call, keep the connection.
+        let (handle, mut peer, _peer_write) = live_pair(100, 200).await;
+        handle.writer.unstall_for_test();
+        assert_eq!(
+            handle.writer.send_call(record_with_xid(1, &[0; 300])),
+            Err(SendError::Overloaded)
+        );
+        handle.writer.send_call(record_with_xid(2, b"b")).unwrap();
+        assert_eq!(peer_xid(&mut peer).await, Some(2));
+    }
+
+    #[tokio::test]
+    async fn replies_past_the_hard_limit_fail_the_connection_closed() {
+        let (handle, mut peer, _peer_write) = live_pair(64, 200).await;
+        let big = record_with_xid(1, &[0; 100]);
+        handle.writer.send_reply(big.clone()).unwrap();
+        assert_eq!(
+            handle
+                .writer
+                .send_reply(record_with_xid(2, &[0; 100]))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert_eq!(
+            handle.writer.send_call(record_with_xid(3, b"c")),
+            Err(SendError::Closed)
+        );
         assert_eq!(
             handle
                 .writer
                 .send_reply(record_with_xid(4, b"d"))
-                .await
                 .unwrap_err()
                 .kind(),
             io::ErrorKind::BrokenPipe
@@ -1482,11 +1487,11 @@ mod tests {
 
     #[tokio::test]
     async fn backlog_beyond_the_socket_buffer_drains_through_the_flusher() {
-        let (handle, mut peer, _peer_write) = live_pair(256).await;
+        let (handle, mut peer, _peer_write) = live_pair(1 << 20, 1 << 30).await;
         handle.writer.unstall_for_test();
         handle.writer.reader_waiting();
         // Far more than a loopback socket buffers, so writes hit WouldBlock
-        // and senders wait for permits while the peer drains.
+        // and the flusher task carries the backlog while the peer drains.
         let count = 4000u32;
         let payload = vec![7u8; 4096];
         let reader = tokio::spawn(async move {
@@ -1503,7 +1508,6 @@ mod tests {
             handle
                 .writer
                 .send_reply(record_with_xid(xid, &payload))
-                .await
                 .unwrap();
         }
         tokio::time::timeout(std::time::Duration::from_secs(10), reader)
