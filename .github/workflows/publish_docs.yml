@@ -28,13 +28,13 @@ jobs:
         run: rm -f /home/hogci/.gitconfig
 
       - name: Setup SSH Agent
-        uses: webfactory/ssh-agent@v0.9.1
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
         with:
           ssh-private-key: |
             ${{ secrets.XDRS_TO_ACTIONS_KEY }}
 
       - name: Checkout at tag
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: v${{ inputs.version }}
           fetch-depth: 0
@@ -44,7 +44,7 @@ jobs:
         run: git config --global url."git@github.com:".insteadOf "https://github.com/"
 
       - name: Checkout actions repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: groundhogchain/actions
           path: actions
