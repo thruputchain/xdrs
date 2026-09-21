@@ -1,0 +1,32 @@
+# cargo-deny configuration
+#   https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+ignore = []
+
+[licenses]
+# Workspace crates carry no license field of their own.
+private = { ignore = true }
+allow = [
+    "Apache-2.0",
+    "MIT",
+    # unicode-ident is (MIT OR Apache-2.0) AND Unicode-3.0
+    "Unicode-3.0",
+    # byteorder / memchr and similar, dual-licensed Unlicense OR MIT
+    "Unlicense",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = [
+    "https://github.com/rust-lang/crates.io-index",
+]

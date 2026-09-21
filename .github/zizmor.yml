@@ -1,0 +1,49 @@
+# zizmor configuration
+#   https://docs.zizmor.sh/configuration/
+
+rules:
+  # unpinned-uses: The default requires hash-pinning everywhere.
+
+  # HIGH. publish.yml interpolates untrusted-ish input into a run block, the
+  # same shape as groundhog-rpc's. Tracked with plan item 1.3.
+  template-injection:
+    ignore:
+      - publish.yml
+
+  # Checkout steps that do not set persist-credentials: false.
+  #
+  # NOTE: the entries for test.yml and coverage.yml are the cheap ones to
+  # retire (those jobs never push, so adding `persist-credentials: false`
+  # is safe).
+  artipacked:
+    ignore:
+      - coverage.yml
+      - publish.yml
+      - publish_docs.yml
+      - publish_dry_run.yml
+      - test.yml
+
+  # Jobs running with default (write) permissions instead of a permissions:
+  # block.
+  #
+  # NOTE: ignoring test.yml for this audit means a NEW job added there without
+  # a permissions: block will not be caught. Set permissions by hand on new
+  # jobs until this is retired.
+  excessive-permissions:
+    ignore:
+      - publish_docs.yml
+      - publish_dry_run.yml
+      - test.yml
+
+  # Style: prefers '$/...' over './...' for same-repo composite actions.
+  # Style audit: suggests '$/...' over './...' for same-repo composite
+  # actions. For test.yml and audit.yml the advice is simply wrong -- those
+  # './actions/...' paths point at groundhogchain/actions, checked out into
+  # the workspace, not at this repository.
+  self-repository:
+    ignore:
+      - publish.yml
+      - publish_docs.yml
+      - publish_dry_run.yml
+      - test.yml
+      - audit.yml
