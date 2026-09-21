@@ -49,8 +49,7 @@ impl From<rpc_msg::accepted_reply_reply_data> for RpcError {
 ///
 /// Local operational errors (and any future variant this driver release
 /// does not know) have no wire-level equivalent and encode as SYSTEM_ERR.
-#[allow(unreachable_pub)]
-pub fn to_rpc_msg(err: &RpcError, xid: u32) -> rpc_msg::rpc_msg {
+fn to_rpc_msg(err: &RpcError, xid: u32) -> rpc_msg::rpc_msg {
     match err {
         RpcError::InvalidVersion { low, high } => rpc_msg::rpc_msg {
             xid,
