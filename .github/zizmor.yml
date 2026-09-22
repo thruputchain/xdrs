@@ -10,40 +10,25 @@ rules:
     ignore:
       - publish.yml
 
-  # Checkout steps that do not set persist-credentials: false.
-  #
-  # NOTE: the entries for test.yml and coverage.yml are the cheap ones to
-  # retire (those jobs never push, so adding `persist-credentials: false`
-  # is safe).
+  # Checkout steps without persist-credentials: false. These jobs push tags
+  # and releases.
   artipacked:
     ignore:
-      - coverage.yml
       - publish.yml
       - publish_docs.yml
       - publish_dry_run.yml
-      - test.yml
 
-  # Jobs running with default (write) permissions instead of a permissions:
+  # Jobs running with default (write) permissions rather than a permissions:
   # block.
-  #
-  # NOTE: ignoring test.yml for this audit means a NEW job added there without
-  # a permissions: block will not be caught. Set permissions by hand on new
-  # jobs until this is retired.
   excessive-permissions:
     ignore:
       - publish_docs.yml
       - publish_dry_run.yml
-      - test.yml
 
-  # Style: prefers '$/...' over './...' for same-repo composite actions.
-  # Style audit: suggests '$/...' over './...' for same-repo composite
-  # actions. For test.yml and audit.yml the advice is simply wrong -- those
-  # './actions/...' paths point at groundhogchain/actions, checked out into
-  # the workspace, not at this repository.
+  # Style: prefers '$/...' over './...' for same-repo actions. Cannot be
+  # adopted yet -- actionlint 1.7.12 predates the syntax and rejects it.
   self-repository:
     ignore:
       - publish.yml
       - publish_docs.yml
       - publish_dry_run.yml
-      - test.yml
-      - audit.yml

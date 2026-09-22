@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: '0 7 * * 1'
 
+# Least privilege for the build/test jobs; the two jobs that call shared
+# reusable workflows narrow it further themselves.
+permissions:
+  contents: read
+
 jobs:
   # Audit Rust dependencies
   dependency-policy:
@@ -43,6 +48,8 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.XDRS_TO_XDR_COMMON_ACCESS_KEY }}
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Set up Rust 1.96.0
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         with:
@@ -94,6 +101,8 @@ jobs:
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Set up pinned nightly
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         with:
@@ -118,6 +127,8 @@ jobs:
       CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
       - name: Set up current stable
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
         with:
