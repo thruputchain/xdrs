@@ -14,6 +14,8 @@ env:
 jobs:
  publish:
     runs-on: hog1
+    permissions:
+      contents: read
 
     steps:
       - name: Clean up .gitconfig
@@ -28,6 +30,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
 
       - name: Configure git to use SSH
         run: |
@@ -39,6 +43,7 @@ jobs:
           repository: groundhogchain/actions
           path: actions
           ref: main
+          persist-credentials: false
 
       - name: publish dry run
         uses: ./actions/cargo-publish-dry-run
