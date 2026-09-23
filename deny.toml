@@ -8,7 +8,7 @@ all-features = true
 ignore = []
 
 [licenses]
-# Workspace crates carry no license field of their own.
+# Unpublished crates don't need a license
 private = { ignore = true }
 allow = [
     "Apache-2.0",

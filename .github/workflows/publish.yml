@@ -44,6 +44,7 @@ jobs:
           repository: groundhogchain/actions
           path: actions
           ref: main
+          persist-credentials: false
 
       - name: dry run
         uses: ./actions/cargo-publish-dry-run
@@ -58,10 +59,15 @@ jobs:
           packages: ${{ env.PUBLISH_PACKAGES }}
 
       - name: push tag
+        env:
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.publish-tag.outputs.tag }}
         run: |
-          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}.git
-          git push origin ${{ steps.publish-tag.outputs.tag }}
-          git remote set-url origin git@github.com:${{ github.repository }}.git
+          git remote set-url origin "https://${ACTOR}:${TOKEN}@github.com/${REPO}.git"
+          git push origin "$TAG"
+          git remote set-url origin "git@github.com:${REPO}.git"
 
       - name: publish
         uses: ./actions/cargo-publish

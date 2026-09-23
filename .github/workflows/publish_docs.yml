@@ -23,6 +23,8 @@ env:
 jobs:
   publish-docs:
     runs-on: hog1
+    permissions:
+      contents: read
     steps:
       - name: Clean up .gitconfig
         run: rm -f /home/hogci/.gitconfig
@@ -38,7 +40,7 @@ jobs:
         with:
           ref: v${{ inputs.version }}
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Configure git to use SSH
         run: git config --global url."git@github.com:".insteadOf "https://github.com/"
@@ -49,6 +51,7 @@ jobs:
           repository: groundhogchain/actions
           path: actions
           ref: main
+          persist-credentials: false
 
       - name: Build and publish docs
         uses: ./actions/cargo-doc
