@@ -11,6 +11,9 @@ env:
     xdr-repr
     xdrs
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     permissions:
