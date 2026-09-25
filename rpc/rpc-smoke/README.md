@@ -34,9 +34,9 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 | `--pool` | fixed | Pool type: `fixed`, `dynamic`, or `cpu` |
 | `--tracing` | (none) | Enable tracing subscriber at given level (info, debug) |
 
-Server options include `--max-concurrent <N>` and
-`--inline-ready-dispatch <true|false>`. The latter provides a separate-process
-control for measuring the ready-handler fast path without changing client code.
+The server always runs ready handlers inline, spawns suspended handlers, and
+batches replies automatically at read-buffer boundaries. No dispatch flags are
+needed. Configure application load with the client's `--max-inflight` option.
 
 ## Pool Types
 
@@ -51,8 +51,6 @@ control for measuring the ready-handler fast path without changing client code.
 | Flag | Default | Description |
 |---|---|---|
 | `--duration` | 5 | Test duration per client (seconds) |
-| `--server-max-concurrent` | 64 | Server concurrency limit (ignored with `--server-addr`) |
-| `--server-inline-ready-dispatch <true\|false>` | false | Configure a local server; with `--server-addr`, explicitly records the declared remote mode |
 | `--server-addr` | (spawn local) | Remote server address (host:port) |
 | `--pool` | (none = fixed) | Pool type for all clients: `fixed`, `dynamic`, or `cpu` |
 | `--tracing` | (none) | Enable tracing subscriber on server and client (info, debug) |
@@ -80,7 +78,7 @@ multiplexing pool so multiple CALLs reach one connection concurrently:
 
 ```sh
 rpc-smoke single cpu-prefix-ready --pool dynamic --connections 1 \
-    --max-inflight 10 --server-inline-ready-dispatch true
+    --max-inflight 10
 ```
 
 ## Tracing
@@ -109,7 +107,7 @@ Start the server once on A (all tests reuse it):
 
 ```sh
 # A:
-rpc-smoke-server --bind 0.0.0.0 --port 9876 --max-concurrent 256
+rpc-smoke-server --bind 0.0.0.0 --port 9876
 ```
 
 ### Full matrix run
@@ -217,3 +215,35 @@ it isolates server-side scaling by throwing independent client processes at it.
 - **Handler stress**: CPU-spin profiles run via `spawn_blocking` to avoid
   starving tokio workers. Watch for latency inflation on other profiles running
   simultaneously.
+
+### Full runtime evaluation
+
+`python3 scripts/evaluate_runtimes.py --output benchmark-results/evaluation`
+(from the repository root) builds main at the pinned comparison commit and the
+current checkout in separate Cargo target directories. It runs identical
+benchmark sources against both drivers, enabling main's inline-ready dispatch.
+The report records executable SHA-256 hashes, CPU topology, worker budgets, every
+repetition, and completion checks.
+
+The complete `rpc_bench` suite runs with 2, 4, and 8 total workers, comparing one
+shared runtime against separate client/server runtimes with half the workers each.
+Separate-process measurements use 2, 4, and 8 workers **per process**, 1/4/16
+connections, 64-byte/4-KiB payloads, and up to four independent runtimes per process.
+Connections and their caller tasks are assigned to the same runtime; all server
+shards retain shared service state. Each shard listens on a separate ephemeral
+port, so this measures explicit connection partitioning rather than accept-side
+load balancing. Workers are not pinned, so it does not establish NUMA locality.
+Three repetitions alternate main/candidate ordering. `--quick` is for harness
+validation only and cannot be published as performance evidence.
+
+The metrics workflow's `full_evaluation` manual input runs this comparison on a
+reserved cluster host and publishes it to `metrics_history` alongside normal
+metrics. These are benchmark options, not additional RPC driver modes.
+
+The full evaluation also runs the smoke harness's realistic service mix, scaling
+sweep (10–500 connections), multi-process throughput sweep, CPU-prefix handler,
+and dynamic/CPU-affinity pool workloads at 2 and 8 workers per process. Use
+`--smoke-only` to collect these as a supplementary run. `--skip-build` on the
+smoke harness uses the exact prebuilt sibling executables whose hashes were
+recorded, avoiding any rebuild during measurement. Summarize reports with
+`python3 scripts/summarize_runtimes.py path/to/evaluation.json`.

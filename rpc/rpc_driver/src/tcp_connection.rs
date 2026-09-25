@@ -158,7 +158,8 @@ impl ReadHalf {
     fn try_fill(&mut self, need: usize) -> Result<bool, std::io::Error> {
         self.make_room(need);
         while self.buffered() < need {
-            match self.read_half.try_read(&mut self.buf[self.len..]) {
+            let result = self.read_half.try_read(&mut self.buf[self.len..]);
+            match result {
                 Ok(0) => return Err(eof()),
                 Ok(n) => self.len += n,
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(false),

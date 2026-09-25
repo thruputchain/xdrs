@@ -24,11 +24,6 @@ jobs:
         with:
           toolchain: 1.96.0
           components: rustfmt,clippy
-      # Note: `--workspace` builds rpc-smoke, which enables rpc_driver's
-      # `concurrent-dispatch`. Cargo unifies features across members, so any
-      # workspace-wide command builds rpc_driver WITH the feature. Serial
-      # dispatch — the default, and what every consumer ships — is only
-      # covered by the `-p rpc_driver` steps below.
       # A consumer must never end up with two incompatible copies of the RPC
       # boundary crates in one build — that is exactly the type-identity
       # split this workspace exists to prevent (see "Versioning and
@@ -45,18 +40,10 @@ jobs:
           echo "OK: no duplicate rpc_api/rpc_driver in the graph"
       - name: Test (Workspace)
         run: cargo test --workspace --locked
-      - name: Test rpc_driver (No Features)
-        run: cargo test -p rpc_driver --no-default-features --locked
-      - name: Test (All Features)
-        run: cargo test --workspace --all-features --locked
       - name: Check format
         run: cargo fmt --check
       - name: Clippy (Workspace)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Clippy rpc_driver (Serial Dispatch)
-        run: cargo clippy -p rpc_driver --all-targets --locked -- -D warnings
-      - name: Clippy rpc_driver (Concurrent Dispatch)
-        run: cargo clippy -p rpc_driver --all-targets --features concurrent-dispatch --locked -- -D warnings
 
   stable-compat:
     name: Current stable compatibility

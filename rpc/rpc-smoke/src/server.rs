@@ -20,6 +20,7 @@
 
 mod metrics;
 mod profile;
+mod runtime;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -104,6 +105,8 @@ impl RpcHandler for SmokeHandler {
 #[derive(Parser)]
 #[command(name = "rpc-smoke-server")]
 struct Args {
+    #[command(flatten)]
+    runtime: runtime::RuntimeArgs,
     /// Address to bind to (use 0.0.0.0 for network access)
     #[arg(long, default_value = "127.0.0.1")]
     bind: String,
@@ -112,21 +115,12 @@ struct Args {
     #[arg(long, default_value = "0")]
     port: u16,
 
-    /// Max concurrent dispatches per connection
-    #[arg(long, default_value = "64")]
-    max_concurrent: usize,
-
-    /// Poll handlers once inline before spawning
-    #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
-    inline_ready_dispatch: bool,
-
     /// Enable tracing subscriber at the given level (info, debug)
     #[arg(long)]
     tracing: Option<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // -- Tracing subscriber setup (reference example) --
@@ -158,25 +152,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         lock: tokio::sync::Mutex::new(0),
     });
 
-    let handler = SmokeHandler { shared };
+    let runtimes = args.runtime.build()?;
+    if runtimes.len() > 1 && args.port != 0 {
+        return Err("multiple runtime shards require --port 0".into());
+    }
+    let mut addresses = Vec::new();
+    for runtime in &runtimes {
+        let shared = shared.clone();
+        let bind = format!("{}:{}", args.bind, args.port);
+        addresses.push(runtime.block_on(async move {
+            let handler = SmokeHandler { shared };
 
-    let mut services = ServiceMap::new();
-    services.add_service(Box::new(handler));
+            let mut services = ServiceMap::new();
+            services.add_service(Box::new(handler));
 
-    let config = ConnectionConfig::new(None, services)
-        .with_max_concurrent_dispatches(args.max_concurrent)
-        .with_inline_ready_dispatch(args.inline_ready_dispatch);
+            let config = ConnectionConfig::new(None, services);
 
-    let listener = TcpListener::bind(format!("{}:{}", args.bind, args.port)).await?;
-    let addr = listener.local_addr()?;
+            let listener = TcpListener::bind(bind).await?;
+            let addr = listener.local_addr()?;
 
-    let server = RpcServer::new_with_config(listener, config);
-    let _handle = server.start().await;
+            let server = RpcServer::new_with_config(listener, config);
+            let _handle = server.start().await;
 
-    // Signal readiness to harness
-    println!("READY {addr}");
+            Ok::<_, std::io::Error>(addr.to_string())
+        })?);
+    }
+    // Each listener and its accepted sockets belong to its runtime.
+    println!("READY {}", addresses.join(","));
 
     // Run until killed
-    tokio::signal::ctrl_c().await?;
+    runtimes[0].block_on(tokio::signal::ctrl_c())?;
     Ok(())
 }

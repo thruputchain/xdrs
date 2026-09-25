@@ -7,13 +7,10 @@ An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [
 - Async TCP-based RPC client and server
 - XDR serialization via the `xdrs` crate
 - Service registration with program/version dispatching
-- **Concurrent dispatch** (opt-in) — spawn-per-CALL with a configurable
-  concurrency limit and an optional inline fast path for handlers that finish
-  on their first poll
+- **Automatic dispatch** — ready handlers finish inline; only suspended handlers spawn tasks
 - **Connection pools** — `FixedSerialPool` (serial per-conn), `DynamicPool` (min-pending), `CpuSetPool` (LLC-affine)
 - **Bidirectional RPC** — handlers can call back to the peer via `peer()`
-- Panic isolation and load shedding with `concurrent-dispatch`; connection
-  poisoning for shutdown
+- Panic isolation and connection poisoning for shutdown
 - **Structured tracing** — `tracing` spans and events for logging, OpenTelemetry, and e2e waterfalls
 - Max message size limit (16 MiB default)
 
@@ -43,93 +40,96 @@ let conn = connect_client(&addr).await?;
 let response = conn.send_call(ProgVers::new(100000, 1), 0, conn.call_buf()).await?;
 ```
 
-## Concurrent Dispatch
+## Dispatch and write batching
 
-Enable per-connection concurrent handler execution:
+There is one dispatch path. Every CALL's handler starts on the reader task.
+A handler that completes on its first poll replies inline; a suspended handler
+moves to its own task, and the reader continues routing CALLs and REPLYs.
+Same-connection callbacks through `peer()` work without special configuration.
+CPU-heavy handlers should offload work promptly so they do not block the reader.
+Handler panics return SYSTEM_ERR without closing the connection.
 
-```toml
-[dependencies]
-rpc_driver = { version = "0.12", features = ["concurrent-dispatch"] }
+The writer uses x23-style delayed replies, adapted to Tokio's caller scheduling:
+
+- **Calls** flush immediately unless the reader is actively processing input;
+  calls produced by its woken Tokio tasks then share the flush before the
+  reader waits/yields, or at 64 records / 64 KiB. This differs from x23's
+  `awrite`, which always requests a flush and
+  works with direct inline caller resumption. Removing this request coalescing
+  significantly reduces pipelined throughput on Tokio.
+- **Replies (`dwrite`)** batch while the reader consumes buffered input. They
+  flush before the reader waits or yields, when queued output reaches 64 records or 64 KiB,
+  or when an outgoing call starts a flush. Replies produced while the reader is waiting go
+  out immediately.
+  A flush includes earlier calls in wire order. Read-buffer refills do not
+  split either kind of batch.
+- **Socket backpressure** preserves record order and partial-write offsets.
+  One producer drains with `writev`; concurrent producers append. Only a full
+  socket needs a writable-readiness task, which exits once output drains.
+
+Unlike x23's refill-triggered reply flush, this driver keeps a burst together
+across successful reads. With Tokio's separately scheduled callers, flushing at
+every refill fragments replies and regresses shared-runtime throughput. The
+record/byte thresholds and bounded reader fairness budget still guarantee flushing
+under continuous input.
+
+There is no timer or scheduling-turn delay to accumulate a batch. The reader
+also flushes before yielding for fairness under continuous input. Sparse calls
+and replies do not wait for another RPC to trigger a flush.
+
+Record allocations are reused through one cache per thread, shared by that
+thread's connections without a mutex. Each cache retains at most 256 buffers
+and 4 MiB of capacity; buffers larger than 1 MiB are freed. Completed handlers
+reuse their input allocation to frame the reply. There is no cache configuration
+or connection-pool-specific buffer-sharing policy.
+
+Applications own deadlines. Two optional per-connection settings control call
+admission and suspended handlers:
+
+```rust
+let config = ConnectionConfig::new(None, services)
+    .with_output_admission_threshold_bytes(Some(16 * 1024 * 1024))
+    .with_max_suspended_handlers(Some(320));
 ```
 
-Tune concurrency via `ConnectionConfig::with_max_concurrent_dispatches`.
+The output admission threshold counts the full allocation capacity of CALL and
+REPLY buffers, including active/parked and partially written records. A short
+reply reusing a large request buffer is charged for that entire allocation.
+Completed records retire at batch boundaries or when the socket blocks.
+Outgoing CALLs that would exceed the threshold fail locally with `SystemError`.
+At or above the threshold, incoming CALLs receive `SYSTEM_ERR` before their
+handler runs. Admission resumes as the backlog drains.
 
-Enable the ready-first path with
-`ConnectionConfig::with_inline_ready_dispatch(true)`. Each CALL's handler is
-then polled once on the dispatch loop. Handlers that finish on that first poll —
-null procs, cache hits, anything that enqueues work and returns — are answered
-without a handler task. Handlers that suspend are moved into a task, keeping the
-progress their first poll made. This is x23's `await_ready()` shape: create
-asynchronous handler work only when the service actually suspends.
+Replies always bypass output admission, including rejection responses and
+results of already accepted calls. Reaching the threshold never closes the
+connection or discards a queued call or reply. This is not a hard memory bound:
+a peer that keeps sending calls without reading responses can still grow the
+output queue. The separately bounded thread cache, allocator overhead, and
+kernel socket buffers are outside the accounting.
 
-The permit is reserved *before* that first poll, so `max_concurrent_dispatches`
-keeps bounding handler execution even for work a handler starts before it
-suspends. While a connection is saturated the fast path stands down and
-does not barge ahead of work already waiting for a permit.
+The handler cap allows at most that many suspended tasks plus one inline probe.
+Handlers are polled once before admission: a ready handler can still finish
+when the cap is full; an excess suspended handler is dropped and receives
+`SYSTEM_ERR`. Code before the first suspension may already have run. The reader
+continues routing replies, so admitted handlers can complete callbacks.
 
-Nothing in the read loop waits on the connection's writer, so output
-backpressure cannot stall dispatch ahead of a bidirectional REPLY. If the peer
-has fallen more than `write_buffer_bytes` behind reading our replies, new
-CALLs are answered SYSTEM_ERR without running their handler; replies to calls
-already admitted are still written, and past `write_buffer_limit_bytes` the
-connection fails closed rather than buffer more for a peer that is not
-reading.
+Both settings default to `None` (unlimited) and can be disabled independently.
+`Some(0)` rejects new calls while allowing replies, or allows only ready
+handlers, respectively.
 
-Each concurrent inbound `rpc_call` span records `probed`; probed calls also
-record whether they were `ready`. This distinguishes handlers that suspended
-from calls that were not probed because the connection was saturated or the
-fast path was disabled.
-`with_inline_ready_dispatch(false)` provides an unconditional-spawn control,
-which is mainly useful for A/B measurement. It still uses the new common
-boxed-handler construction, so compare separate builds for an exact before/after
-measurement.
+### Migration from 0.12
 
-One thing to know: every probed handler starts on the dispatch loop, so
-CPU-heavy work before its first `.await` delays dispatching the next record on
-that connection even if the handler later suspends. Handlers that block should
-suspend promptly — via `spawn_blocking` or a worker queue — rather than compute
-inline.
-
-Without the feature, dispatch is serial: each connection awaits its handler
-before reading the next record. Serial dispatch has no per-CALL task spawn or
-record copy, but one slow handler blocks that connection, and a handler that
-calls back to the peer via `peer()` on the same connection will deadlock.
-
-To benchmark the two paths, always pass `-p rpc_driver`:
-
-```sh
-cargo bench -p rpc_driver --bench rpc_bench -- --quick                                  # serial
-cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch -- --quick   # concurrent
-```
-
-Omitting `-p rpc_driver` selects the whole workspace, and `rpc-smoke` enables
-`concurrent-dispatch` — cargo's feature unification then turns the feature on
-for every member, so a "serial" run silently measures the concurrent path.
-
-## Write path
-
-There is no writer task. A record is written to the socket by the task that
-produces it, with a single non-blocking `writev`, and a flusher task exists
-only while the socket is full. This is x23's `awrite`/`dwrite` shape, and it
-matters on a multi-threaded runtime: every task hand-off can unpark an idle
-worker, and those wakeups — not serialization — dominated the per-call cost.
-
-Writes still coalesce. Each connection's read loop tells the writer when it is
-working through buffered records and when it is about to wait for the socket.
-Replies queue until the read loop goes idle, so a burst of pipelined calls is
-answered with one `writev`; calls made while the read loop is busy ride along
-in that same flush, and calls made at any other time go out immediately. A
-queue over 64 records or 64 KiB flushes regardless. Calls are never held while
-a serial handler is running, so a handler's calls to its peer cannot deadlock,
-and a serial read loop flushes before it blocks on a handler so replies already
-produced are not delayed by it.
-
-Nothing waits on the queue. It only grows while the peer is not reading, and
-that is answered by failing work, not parking it, the way x23 leaves its
-writers unblocked. Past `ConnectionConfig::with_write_buffer_bytes` (1 MiB)
-of unsent output a new call on that connection fails immediately with
-`SystemError` and inbound calls are shed as described above; past
-`with_write_buffer_limit_bytes` (16 MiB) the connection fails closed.
+Remove the `concurrent-dispatch` Cargo feature and calls to
+`with_inline_ready_dispatch`, `with_max_concurrent_dispatches`,
+`with_read_channel_capacity`, `with_write_channel_capacity`,
+`with_write_buffer_bytes`, and `with_write_buffer_limit_bytes`.
+The corresponding write-buffer constants are removed. The optional settings
+above replace the old output policies and pending-task cap; there is no
+connection-closing output cap or handler semaphore. Message-size and socket
+read-buffer settings remain. Like x23, the message-size limit also rejects
+oversized outgoing CALLs before transmission. `rpc_api` and the wire format are unchanged.
+`FixedSerialPool` still explicitly serializes client calls per connection;
+use a direct connection, `DynamicPool`, or `CpuSetPool` for multiplexed calls.
 
 ## Tracing
 
@@ -174,7 +174,7 @@ Instrumentation cost is workload- and subscriber-dependent. Measure it on the
 target system with:
 
 ```sh
-cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch -- --tracing debug
+cargo bench -p rpc_driver --bench rpc_bench -- --tracing debug
 ```
 
 See `rpc-smoke/src/server.rs` for a complete reference example.
@@ -262,16 +262,24 @@ fixed request rate, and its tail latency must not be presented as such.
 completion counts, dispatch mode, source SHA, CPU, Rust version, and worker count.
 `primitives.json`, `summary.md`, and diagnostic logs accompany it. Benchmarks do
 not execute in PR CI. Pushes to main after merges trigger the RPC Metrics
-workflow; a manual rerun on main is also available. It dispatches the exact
-merged source through `hog_sched` to an exclusively reserved host selected by `?`, runs the
-full matrix, and writes JSON to `groundhogchain/metrics_history` using hogd's
+workflow; a manual run is also available. It checks out the selected commit
+through `hog_sched` on an exclusively reserved host selected by `?`, runs the
+component and separate-process matrix, and writes JSON to `groundhogchain/metrics_history` using hogd's
 `metrics/<name>/main/<commit-time>_<commit>` layout. The metric names are
-`xdr-rpc-e2e` and `xdr-rpc-components`. The source travels as a git archive;
-`--source-sha` preserves its identity without copying checkout credentials.
-Publication uses the selected cluster host's metrics-history credentials. Failed or partial
-runs are not published as successful measurements; their logs remain in the job
-artifacts. Results are also shown in the job summary and retained as artifacts
-for 90 days. No timing threshold gates PRs.
+`xdr-rpc-e2e` and `xdr-rpc-components`. The workflow forwards repository deploy
+keys through the scheduler's SSH agent for checkout and metrics publication.
+Failed or partial runs are not published as successful measurements; diagnostics
+are printed in the workflow log. No timing threshold gates PRs.
+
+The manual workflow's `full_evaluation` input additionally compares the pinned
+main baseline and candidate with identical harnesses and isolated build directories.
+It runs all RPC scenarios, components, runtime layouts, and smoke workloads with
+three interleaved repetitions, recording executable hashes and host metadata under
+`xdr-rpc-runtime-evaluation`. Run it locally with
+`python3 scripts/evaluate_runtimes.py --output target/runtime-evaluation`, then
+summarize the raw report with `python3 scripts/summarize_runtimes.py
+target/runtime-evaluation/evaluation.json`. The smoke README describes the runtime
+partitioning controls; these belong to the benchmark programs, not the driver.
 
 To measure already-built baseline/candidate binaries with exactly the same
 harness, pass `--bin-dir /absolute/path/to/release`. Metadata labels these as

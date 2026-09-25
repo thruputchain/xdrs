@@ -15,21 +15,9 @@ tokio::task_local! {
 ///
 /// # Callbacks to the peer
 ///
-/// **With `concurrent-dispatch` feature:** Calling back to the peer inline
-/// works — the read loop processes replies concurrently with active handlers.
-///
-/// **Without `concurrent-dispatch` (default):** Calling back within `dispatch`
-/// will deadlock because the read loop awaits `dispatch` inline. Instead,
-/// capture the sender and spawn a separate task:
-///
-/// ```ignore
-/// let peer = rpc_driver::peer();  // capture inside dispatch
-/// tokio::spawn(async move {
-///     let mut call = peer.call_buf();
-///     call.extend_from_slice(&data);
-///     peer.send_call(prog, 1, call).await.unwrap();
-/// });
-/// ```
+/// Calling back to the peer inline works: a suspended handler runs in its
+/// own task while the reader continues routing replies. If you spawn an
+/// additional task yourself, capture its peer sender first.
 ///
 /// You **must** call `peer()` before `tokio::spawn` — task-locals do not
 /// propagate into spawned tasks, so calling `peer()` inside one will panic.

@@ -60,14 +60,13 @@ def main():
 
     results = []
     # Small sequential latency, pipelined throughput, larger payloads, and
-    # multiple connections. ABBA order reduces a simple thermal/order bias.
+    # multiple connections. Repeat the single automatic dispatch path.
     cases = [(1, 1, 64), (1, 32, 64), (1, 1, 4096), (1, 32, 4096), (4, 32, 64)]
     for connections, concurrency, payload in cases:
-        for position, inline in enumerate([False, True, True, False], 1):
+        for position in range(1, 5):
             label = f'c{connections}-q{concurrency}-b{payload}-run{position}'
             with (output / f'{label}.stderr.log').open('w') as stderr:
-                server = subprocess.Popen([str(binaries / 'rpc-smoke-server'), '--port', '0',
-                    '--inline-ready-dispatch', str(inline).lower()], stdout=subprocess.PIPE,
+                server = subprocess.Popen([str(binaries / 'rpc-smoke-server'), '--port', '0'], stdout=subprocess.PIPE,
                     stderr=stderr, text=True, env=env)
                 try:
                     with selectors.DefaultSelector() as selector:
@@ -85,10 +84,10 @@ def main():
                     row = json.loads(run.stdout)
                     if row['errors'] or row['completed'] != concurrency * (200 if args.quick else 5000):
                         raise RuntimeError(f'incomplete benchmark: {row}')
-                    row.update(server_inline_ready_dispatch=inline, abba_position=position)
+                    row.update(server_inline_ready_dispatch=True, run_position=position)
                     results.append(row)
                     (output / 'e2e.json').write_text(json.dumps({'metadata': metadata, 'runs': results}, indent=2) + '\n')
-                    print(f'{label} inline={inline}: {row["throughput_rps"]:.0f} RPC/s, '
+                    print(f'{label} automatic: {row["throughput_rps"]:.0f} RPC/s, '
                           f'p50={row["latency_us"]["p50"]:.1f} us, p99={row["latency_us"]["p99"]:.1f} us', flush=True)
                 finally:
                     server.terminate()
@@ -102,7 +101,7 @@ def main():
              '|---:|---:|---:|:---:|---:|---:|---:|---:|']
     for row in results:
         lines.append(f'| {row["connections"]} | {row["concurrency"]} | {row["payload_bytes"]} | '
-                     f'{row["server_inline_ready_dispatch"]} | {row["abba_position"]} | '
+                     f'{row["server_inline_ready_dispatch"]} | {row["run_position"]} | '
                      f'{row["throughput_rps"]:.0f} | {row["latency_us"]["p50"]:.1f} | {row["latency_us"]["p99"]:.1f} |')
     summary = '\n'.join(lines) + '\n'
     (output / 'summary.md').write_text(summary)

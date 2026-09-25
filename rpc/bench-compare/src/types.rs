@@ -13,6 +13,8 @@ pub struct Metadata {
     pub git_sha: String,
     pub timestamp: String,
     pub feature_flags: Vec<String>,
+    #[serde(default)]
+    pub dispatch_policy: Option<String>,
     pub hostname: String,
     pub rpc_driver_version: String,
 }

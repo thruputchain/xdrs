@@ -27,9 +27,9 @@ def main():
         raise ValueError('only full measurements of the requested commit may be published')
     expected = {(c, q, b, pos, inline) for c, q, b in
                 [(1, 1, 64), (1, 32, 64), (1, 1, 4096), (1, 32, 4096), (4, 32, 64)]
-                for pos, inline in enumerate([False, True, True, False], 1)}
+                for pos in range(1, 5) for inline in [True]}
     actual = {(r['connections'], r['concurrency'], r['payload_bytes'],
-               r['abba_position'], r['server_inline_ready_dispatch']) for r in e2e['runs']}
+               r['run_position'], r['server_inline_ready_dispatch']) for r in e2e['runs']}
     if actual != expected or len(e2e['runs']) != len(expected) or not primitives:
         raise ValueError('incomplete benchmark matrix')
     for row in e2e['runs']:
@@ -41,6 +41,13 @@ def main():
         f'metrics/xdr-rpc-e2e/{args.branch}/{filename}': e2e,
         f'metrics/xdr-rpc-components/{args.branch}/{filename}': {'metadata': metadata, 'benchmarks': primitives},
     }
+    evaluation_path = args.report / 'evaluation/evaluation.json'
+    if evaluation_path.exists():
+        evaluation = json.loads(evaluation_path.read_text())
+        if (not evaluation.get('complete') or evaluation['metadata']['quick']
+                or evaluation['metadata']['candidate_sha'] != args.commit):
+            raise ValueError('runtime evaluation is incomplete or has the wrong source commit')
+        files[f'metrics/xdr-rpc-runtime-evaluation/{args.branch}/{filename}'] = evaluation
     env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
     with tempfile.TemporaryDirectory(prefix='rpc-metrics-history-') as directory:
         def git(*argv, check=True):

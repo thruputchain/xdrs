@@ -9,21 +9,16 @@ use metrics::{ClientMetrics, DispatchModeSource, RpcCounts};
 #[derive(Parser)]
 #[command(name = "rpc-smoke")]
 struct Args {
+    /// Use the already-built sibling binaries (for controlled comparisons).
+    #[arg(long, global = true)]
+    skip_build: bool,
+
     #[command(subcommand)]
     scenario: Scenario,
 
     /// Override test duration per client (seconds)
     #[arg(long, default_value = "5", global = true)]
     duration: u64,
-
-    /// Max concurrent dispatches on the server (ignored with --server-addr)
-    #[arg(long, default_value = "64", global = true)]
-    server_max_concurrent: usize,
-
-    /// Enable ready-handler dispatch on the server. For a remote server, this
-    /// only records a user-declared mode and cannot configure the process.
-    #[arg(long, action = clap::ArgAction::Set, global = true)]
-    server_inline_ready_dispatch: Option<bool>,
 
     /// Connect to an existing remote server instead of spawning one locally.
     /// Format: host:port (e.g. 10.0.1.5:9876)
@@ -44,25 +39,16 @@ struct Args {
 }
 
 impl Args {
-    fn configured_inline_ready_dispatch(&self) -> bool {
-        self.server_inline_ready_dispatch.unwrap_or(false)
-    }
-
+    // Preserve the result schema for historical comparisons. A remote server's
+    // mode is unknown; locally built servers always use ready-inline dispatch.
     fn recorded_inline_ready_dispatch(&self) -> Option<bool> {
-        if self.server_addr.is_some() {
-            self.server_inline_ready_dispatch
-        } else {
-            Some(self.configured_inline_ready_dispatch())
-        }
+        self.server_addr.is_none().then_some(true)
     }
 
     fn dispatch_mode_source(&self) -> Option<DispatchModeSource> {
-        if self.server_addr.is_some() {
-            self.server_inline_ready_dispatch
-                .map(|_| DispatchModeSource::Declared)
-        } else {
-            Some(DispatchModeSource::Configured)
-        }
+        self.server_addr
+            .is_none()
+            .then_some(DispatchModeSource::Configured)
     }
 }
 
@@ -178,8 +164,7 @@ impl ServerHandle {
 /// Connect to an existing remote server or spawn a local one.
 async fn get_server(
     remote_addr: &Option<String>,
-    max_concurrent: usize,
-    inline_ready_dispatch: bool,
+
     tracing_level: &Option<String>,
 ) -> Result<ServerHandle, Box<dyn std::error::Error + Send + Sync>> {
     if let Some(addr_str) = remote_addr {
@@ -189,24 +174,15 @@ async fn get_server(
         eprintln!("[harness] using remote server at {addr}");
         return Ok(ServerHandle::Remote { addr });
     }
-    start_local_server(max_concurrent, inline_ready_dispatch, tracing_level).await
+    start_local_server(tracing_level).await
 }
 
 async fn start_local_server(
-    max_concurrent: usize,
-    inline_ready_dispatch: bool,
     tracing_level: &Option<String>,
 ) -> Result<ServerHandle, Box<dyn std::error::Error + Send + Sync>> {
     let bin = find_binary("rpc-smoke-server");
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.args([
-        "--port",
-        "0",
-        "--max-concurrent",
-        &max_concurrent.to_string(),
-        "--inline-ready-dispatch",
-        &inline_ready_dispatch.to_string(),
-    ]);
+    cmd.args(["--port", "0"]);
     if let Some(level) = tracing_level {
         cmd.args(["--tracing", level]);
     }
@@ -312,15 +288,7 @@ where
 {
     let remote = args.server_addr.is_some();
     let shared_server = if remote {
-        Some(
-            get_server(
-                &args.server_addr,
-                args.server_max_concurrent,
-                args.configured_inline_ready_dispatch(),
-                &args.tracing,
-            )
-            .await?,
-        )
+        Some(get_server(&args.server_addr, &args.tracing).await?)
     } else {
         None
     };
@@ -329,15 +297,7 @@ where
 
     for tier in 0..num_tiers {
         let mut local_server = if shared_server.is_none() {
-            Some(
-                get_server(
-                    &args.server_addr,
-                    args.server_max_concurrent,
-                    args.configured_inline_ready_dispatch(),
-                    &args.tracing,
-                )
-                .await?,
-            )
+            Some(get_server(&args.server_addr, &args.tracing).await?)
         } else {
             None
         };
@@ -432,13 +392,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args = Args::parse();
 
     // Build binaries in release mode for meaningful performance numbers
-    eprintln!("[harness] building binaries (release)...");
-    let status = tokio::process::Command::new("cargo")
-        .args(["build", "--release", "-p", "rpc-smoke"])
-        .status()
-        .await?;
-    if !status.success() {
-        return Err("cargo build failed".into());
+    if !args.skip_build {
+        eprintln!("[harness] building binaries (release)...");
+        let status = tokio::process::Command::new("cargo")
+            .args(["build", "--release", "-p", "rpc-smoke"])
+            .status()
+            .await?;
+        if !status.success() {
+            return Err("cargo build failed".into());
+        }
     }
 
     if let Some(ref pool) = args.pool {
@@ -451,13 +413,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             eprintln!(
                 "[harness] scenario: realistic (coordinator + {gateways} gateways + 4 executors + 4 db-shards + auth)"
             );
-            let mut server = get_server(
-                &args.server_addr,
-                args.server_max_concurrent,
-                args.configured_inline_ready_dispatch(),
-                &args.tracing,
-            )
-            .await?;
+            let mut server = get_server(&args.server_addr, &args.tracing).await?;
             let addr = server.addr();
 
             // Build list of (profile, connections_override) for all clients
@@ -561,13 +517,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             max_inflight,
         } => {
             eprintln!("[harness] scenario: single profile '{profile}'");
-            let mut server = get_server(
-                &args.server_addr,
-                args.server_max_concurrent,
-                args.configured_inline_ready_dispatch(),
-                &args.tracing,
-            )
-            .await?;
+            let mut server = get_server(&args.server_addr, &args.tracing).await?;
 
             let result = run_client(
                 server.addr(),

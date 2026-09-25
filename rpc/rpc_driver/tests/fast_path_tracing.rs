@@ -4,10 +4,6 @@
 //! Lives in its own test binary because it installs a global tracing
 //! subscriber, which must not race with other tests in the same process.
 //!
-//! Only compiles with `concurrent-dispatch`:
-//!   cargo test -p rpc_driver --features concurrent-dispatch --test fast_path_tracing
-
-#![cfg(feature = "concurrent-dispatch")]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -53,20 +49,16 @@ impl RpcHandler for MixedService {
 #[derive(Clone, Default)]
 struct DispatchCollector {
     ready: Arc<Mutex<Vec<bool>>>,
-    probed: Arc<Mutex<Vec<bool>>>,
 }
 
 struct DispatchVisitor<'a> {
     ready: &'a mut Option<bool>,
-    probed: &'a mut Option<bool>,
 }
 
 impl Visit for DispatchVisitor<'_> {
     fn record_bool(&mut self, field: &Field, value: bool) {
-        match field.name() {
-            "ready" => *self.ready = Some(value),
-            "probed" => *self.probed = Some(value),
-            _ => {}
+        if field.name() == "ready" {
+            *self.ready = Some(value);
         }
     }
     fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
@@ -79,16 +71,10 @@ impl<S: tracing::Subscriber> Layer<S> for DispatchCollector {
         values: &tracing::span::Record<'_>,
         _ctx: Context<'_, S>,
     ) {
-        let (mut ready, mut probed) = (None, None);
-        values.record(&mut DispatchVisitor {
-            ready: &mut ready,
-            probed: &mut probed,
-        });
+        let mut ready = None;
+        values.record(&mut DispatchVisitor { ready: &mut ready });
         if let Some(value) = ready {
             self.ready.lock().unwrap().push(value);
-        }
-        if let Some(value) = probed {
-            self.probed.lock().unwrap().push(value);
         }
     }
 }
@@ -108,7 +94,7 @@ async fn ready_handlers_take_the_inline_path() {
     let addr = listener.local_addr().unwrap();
     let mut services = ServiceMap::new();
     services.add_service(Box::new(MixedService));
-    let config = ConnectionConfig::new(None, services).with_inline_ready_dispatch(true);
+    let config = ConnectionConfig::new(None, services);
     RpcServer::new_with_config(listener, config).start().await;
 
     let client = connect_client_with_config(&addr, ConnectionConfig::default())
@@ -131,7 +117,6 @@ async fn ready_handlers_take_the_inline_path() {
     }
 
     let values = collector.ready.lock().unwrap().clone();
-    let probed = collector.probed.lock().unwrap().clone();
     let ready = values.iter().filter(|v| **v).count();
     let suspended = values.iter().filter(|v| !**v).count();
 
@@ -143,29 +128,4 @@ async fn ready_handlers_take_the_inline_path() {
         suspended, 5,
         "expected 5 handlers moved to a task, saw {suspended} (all: {values:?})"
     );
-    assert_eq!(probed, vec![true; 10]);
-
-    // With probing disabled, `probed=false` is recorded and `ready` remains
-    // unset rather than incorrectly classifying each call as suspended.
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let mut services = ServiceMap::new();
-    services.add_service(Box::new(MixedService));
-    let config = ConnectionConfig::new(None, services).with_inline_ready_dispatch(false);
-    RpcServer::new_with_config(listener, config).start().await;
-
-    let client = connect_client_with_config(&addr, ConnectionConfig::default())
-        .await
-        .unwrap();
-    for _ in 0..5 {
-        client
-            .send_call(ECHO_PROG, 0, call_with(b"unprobed"))
-            .await
-            .unwrap();
-    }
-
-    assert_eq!(collector.ready.lock().unwrap().len(), 10);
-    let probed = collector.probed.lock().unwrap().clone();
-    assert_eq!(probed.iter().filter(|value| **value).count(), 10);
-    assert_eq!(probed.iter().filter(|value| !**value).count(), 5);
 }

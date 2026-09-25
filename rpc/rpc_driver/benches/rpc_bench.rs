@@ -1,23 +1,9 @@
 //! rpc_driver benchmark suite.
 //!
-//! Measures serial and concurrent dispatch performance across multiple
-//! scenarios. Outputs human-readable stats to stdout.
+//! Measures the single automatic dispatch/write path across latency,
+//! throughput, bidirectional RPC, and handler fanout workloads.
 //!
-//! # Usage
-//!
-//! ```sh
-//! cargo bench -p rpc_driver --bench rpc_bench                                  # serial
-//! cargo bench -p rpc_driver --bench rpc_bench --features concurrent-dispatch   # concurrent
-//! ```
-//!
-//! Use `-p rpc_driver`. Omitting it selects the whole workspace, and `rpc-smoke`
-//! enables `concurrent-dispatch`, so cargo's feature unification silently turns
-//! the feature on — a "serial" run measures the concurrent path instead.
-//!
-//! All scenarios run in both modes except `bidirectional_rpc` and
-//! `handler_fanout`, which are `concurrent-dispatch`-only: their handlers call
-//! back to the peer via `peer()`, which deadlocks on the serial path (the
-//! connection cannot read the callback's REPLY while awaiting the handler).
+//! Run: `cargo bench -p rpc_driver --bench rpc_bench`.
 //!
 //! # Flags (after `--`)
 //!
@@ -64,6 +50,7 @@ struct Metadata {
     git_sha: String,
     timestamp: String,
     feature_flags: Vec<String>,
+    dispatch_policy: String,
     hostname: String,
     rpc_driver_version: String,
 }
@@ -164,13 +151,10 @@ impl RpcHandler for DelayEchoService {
 }
 
 /// Service that calls back to the peer inline (no spawn).
-#[cfg(feature = "concurrent-dispatch")]
 struct InlineCallbackService;
 
-#[cfg(feature = "concurrent-dispatch")]
 const CALLBACK_PROG: ProgVers = ProgVers::new(2, 1);
 
-#[cfg(feature = "concurrent-dispatch")]
 #[async_trait]
 impl RpcHandler for InlineCallbackService {
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
@@ -196,12 +180,10 @@ impl RpcHandler for InlineCallbackService {
 /// the peer connection, collects results, then returns.  Models the
 /// `schedulercoord_nominate` flow where the mempool calls executors in
 /// parallel before replying.
-#[cfg(feature = "concurrent-dispatch")]
 struct FanoutService {
     fanout: usize,
 }
 
-#[cfg(feature = "concurrent-dispatch")]
 #[async_trait]
 impl RpcHandler for FanoutService {
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
@@ -278,25 +260,21 @@ impl RpcHandler for ContentionService {
 // Setup helpers
 // ---------------------------------------------------------------------------
 
+// A separate server runtime is a benchmark topology, not a driver mode.
+static SERVER_RUNTIME: std::sync::OnceLock<tokio::runtime::Handle> = std::sync::OnceLock::new();
+
 async fn start_server(service: Box<dyn RpcHandler>) -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let mut services = ServiceMap::new();
-    services.add_service(service);
-    RpcServer::new(listener, services).start().await;
-    addr
+    start_server_multi(vec![service]).await
 }
 
-#[cfg(feature = "concurrent-dispatch")]
 async fn start_server_multi(services_list: Vec<Box<dyn RpcHandler>>) -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
     let mut services = ServiceMap::new();
     for svc in services_list {
         services.add_service(svc);
     }
-    RpcServer::new(listener, services).start().await;
-    addr
+    start_server_with_config(ConnectionConfig::new(None, services))
+        .await
+        .0
 }
 
 async fn start_server_with_config(
@@ -305,10 +283,16 @@ async fn start_server_with_config(
     SocketAddr,
     tokio::task::JoinHandle<Result<(), std::io::Error>>,
 ) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let server = RpcServer::new_with_config(listener, config).start().await;
-    (addr, server)
+    let start = async move {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = RpcServer::new_with_config(listener, config).start().await;
+        (addr, server)
+    };
+    match SERVER_RUNTIME.get() {
+        Some(runtime) => runtime.spawn(start).await.unwrap(),
+        None => start.await,
+    }
 }
 
 async fn run_closed_loop(
@@ -444,13 +428,10 @@ fn write_json(results: &BenchResult) {
     let dir = std::path::Path::new("target/bench");
     std::fs::create_dir_all(dir).unwrap();
 
-    let variant = if cfg!(feature = "concurrent-dispatch") {
-        "concurrent-dispatch"
-    } else {
-        "serial"
-    };
+    let variant = "automatic";
     let filename = format!("bench-{}-{}.json", results.metadata.git_sha, variant);
-    let path = dir.join(&filename);
+    let path = std::env::var_os("RPC_BENCH_OUTPUT")
+        .map_or_else(|| dir.join(&filename), std::path::PathBuf::from);
     let json = serde_json::to_string_pretty(results).unwrap();
     std::fs::write(&path, &json).unwrap();
     eprintln!("Results written to {}", path.display());
@@ -488,16 +469,13 @@ fn build_metadata() -> Metadata {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map_or_else(|| "unknown".to_string(), |s| s.trim().to_string());
 
-    let feature_flags = if cfg!(feature = "concurrent-dispatch") {
-        vec!["concurrent-dispatch".to_string()]
-    } else {
-        vec![]
-    };
+    let feature_flags = vec![];
 
     Metadata {
         git_sha,
         timestamp: unix_timestamp(),
         feature_flags,
+        dispatch_policy: "automatic".into(),
         hostname,
         rpc_driver_version: env!("CARGO_PKG_VERSION").to_string(),
     }
@@ -711,7 +689,6 @@ async fn scenario_concurrent_throughput(quick: bool) -> Vec<ScenarioResult> {
     results
 }
 
-#[cfg(feature = "concurrent-dispatch")]
 async fn scenario_bidirectional(quick: bool) -> Vec<ScenarioResult> {
     let addr = start_server(Box::new(InlineCallbackService)).await;
 
@@ -1010,7 +987,6 @@ async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
 /// Simulates hogd's nominate flow: client calls server, server handler fans
 /// out N sub-RPCs back to the client (like executor calls), collects results,
 /// then replies.  Requires bidirectional + concurrent dispatch.
-#[cfg(feature = "concurrent-dispatch")]
 async fn scenario_handler_fanout(quick: bool) -> Vec<ScenarioResult> {
     let fanout_levels: &[usize] = &[2, 5, 10];
     let payload = &[0u8; 64];
@@ -1090,7 +1066,6 @@ async fn scenario_handler_fanout(quick: bool) -> Vec<ScenarioResult> {
 }
 
 async fn measure_ready_dispatch(
-    inline_ready: bool,
     concurrency: usize,
     warmup: usize,
     iters: usize,
@@ -1098,10 +1073,7 @@ async fn measure_ready_dispatch(
     let mut services = ServiceMap::new();
     services.add_service(Box::new(ReadySubmitService));
     let config = ConnectionConfig::new(None, services);
-    #[cfg(feature = "concurrent-dispatch")]
-    let config = config.with_inline_ready_dispatch(inline_ready);
-    #[cfg(not(feature = "concurrent-dispatch"))]
-    let _ = inline_ready;
+
     let (addr, server) = start_server_with_config(config).await;
 
     let client = connect_client_with_config(&addr, ConnectionConfig::default())
@@ -1130,37 +1102,21 @@ async fn measure_ready_dispatch(
 
 /// Ready-handler throughput: the workload the inline fast path exists for.
 ///
-/// Every handler completes on its first poll, so with the fast path enabled no
-/// CALL should spawn a task or touch the `JoinSet`; it only holds a permit for
-/// the synchronous probe. Concurrent builds aggregate two runs per mode in
-/// ABBA order. Serial builds run once as a reference point.
+/// Every handler completes on its first poll, so no CALL should spawn a task.
+/// Aggregate two repetitions of the single dispatch path.
 async fn scenario_ready_dispatch(quick: bool) -> Vec<ScenarioResult> {
     let concurrency_levels: &[usize] = &[1, 10, 50];
     let (warmup, iters) = if quick { (100, 500) } else { (2_000, 100_000) };
-    let variants: &[(&str, bool)] = if cfg!(feature = "concurrent-dispatch") {
-        &[
-            ("fastpath", true),
-            ("spawn", false),
-            ("spawn", false),
-            ("fastpath", true),
-        ]
-    } else {
-        &[("serial", true)]
-    };
-    let output_order: &[&str] = if cfg!(feature = "concurrent-dispatch") {
-        &["fastpath", "spawn"]
-    } else {
-        &["serial"]
-    };
+    let variants = ["automatic", "automatic"];
+    let output_order = ["automatic"];
 
     let mut results = Vec::new();
     for &concurrency in concurrency_levels {
         let mut measurements: BTreeMap<&str, (Vec<Duration>, Duration, usize)> = BTreeMap::new();
         let mut variant_runs: BTreeMap<&str, usize> = BTreeMap::new();
 
-        for (position, &(variant, inline_ready)) in variants.iter().enumerate() {
-            let (mut samples, wall) =
-                measure_ready_dispatch(inline_ready, concurrency, warmup, iters).await;
+        for (position, &variant) in variants.iter().enumerate() {
+            let (mut samples, wall) = measure_ready_dispatch(concurrency, warmup, iters).await;
             let variant_run = variant_runs.entry(variant).or_default();
             *variant_run += 1;
 
@@ -1169,7 +1125,7 @@ async fn scenario_ready_dispatch(quick: bool) -> Vec<ScenarioResult> {
             params.insert("concurrency".into(), serde_json::json!(concurrency));
             params.insert("dispatch".into(), serde_json::json!(variant));
             params.insert("measurement".into(), serde_json::json!("run"));
-            params.insert("abba_position".into(), serde_json::json!(position + 1));
+            params.insert("run_position".into(), serde_json::json!(position + 1));
             params.insert("variant_run".into(), serde_json::json!(*variant_run));
             results.push(ScenarioResult {
                 name: format!("ready_dispatch/{variant}/{concurrency}/run{variant_run}"),
@@ -1187,7 +1143,7 @@ async fn scenario_ready_dispatch(quick: bool) -> Vec<ScenarioResult> {
             entry.2 += 1;
         }
 
-        for &variant in output_order {
+        for variant in output_order {
             let (mut samples, wall, runs) = measurements.remove(variant).unwrap();
             let mut params = BTreeMap::new();
             params.insert("payload_bytes".into(), serde_json::json!(64));
@@ -1269,8 +1225,35 @@ async fn scenario_handler_contention(quick: bool) -> Vec<ScenarioResult> {
 // Entry point
 // ---------------------------------------------------------------------------
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let workers: usize = std::env::var("TOKIO_WORKER_THREADS")
+        .unwrap_or_else(|_| "2".into())
+        .parse()
+        .unwrap();
+    let server_workers: usize = std::env::var("RPC_BENCH_SERVER_WORKERS")
+        .unwrap_or_else(|_| "0".into())
+        .parse()
+        .unwrap();
+    assert!(
+        workers > server_workers,
+        "server workers must be less than total workers"
+    );
+    let build = |count| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(count)
+            .enable_all()
+            .build()
+            .unwrap()
+    };
+    let server_runtime = (server_workers > 0).then(|| build(server_workers));
+    if let Some(runtime) = &server_runtime {
+        SERVER_RUNTIME.set(runtime.handle().clone()).unwrap();
+    }
+    let runtime = build(workers - server_workers);
+    runtime.block_on(run());
+}
+
+async fn run() {
     let cli = parse_args();
 
     // Install a tracing subscriber if requested. Writes to sink (no I/O)
@@ -1291,20 +1274,12 @@ async fn main() {
 
     if cli.gh_bench {
         eprintln!("=== rpc_driver benchmark (loopback TCP) ===");
-        if cfg!(feature = "concurrent-dispatch") {
-            eprintln!("    dispatch: concurrent (spawn default; ready_dispatch includes A/B)");
-        } else {
-            eprintln!("    dispatch: serial (inline await)");
-        }
+        eprintln!("    dispatch: ready inline; suspended handlers spawned");
         eprintln!("{tracing_label}");
         eprintln!();
     } else {
         println!("=== rpc_driver benchmark (loopback TCP) ===");
-        if cfg!(feature = "concurrent-dispatch") {
-            println!("    dispatch: concurrent (spawn default; ready_dispatch includes A/B)");
-        } else {
-            println!("    dispatch: serial (inline await)");
-        }
+        println!("    dispatch: ready inline; suspended handlers spawned");
         println!("{tracing_label}");
         println!();
     }
@@ -1335,7 +1310,6 @@ async fn main() {
         all_results.extend(results);
     }
 
-    #[cfg(feature = "concurrent-dispatch")]
     if should_run("bidirectional_rpc", &cli.scenario_filter) {
         let results = scenario_bidirectional(cli.quick).await;
         for r in &results {
@@ -1368,7 +1342,6 @@ async fn main() {
         all_results.extend(results);
     }
 
-    #[cfg(feature = "concurrent-dispatch")]
     if should_run("handler_fanout", &cli.scenario_filter) {
         let results = scenario_handler_fanout(cli.quick).await;
         for r in &results {
@@ -1385,6 +1358,12 @@ async fn main() {
         all_results.extend(results);
     }
 
+    assert!(
+        all_results
+            .iter()
+            .all(|row| !row.timed_out && row.samples > 0),
+        "benchmark failed or returned no samples"
+    );
     if cli.gh_bench {
         println!("{}", to_gh_bench_json(&all_results));
     }

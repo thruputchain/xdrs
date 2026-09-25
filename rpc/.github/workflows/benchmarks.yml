@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      full_evaluation:
+        description: Compare main and candidate across the full suite and runtime layouts
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -15,7 +20,7 @@ env:
 jobs:
   metrics:
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       # clean up .gitconfig from the previous run of webfactory/ssh-agent
       - name: Clean up .gitconfig
@@ -30,16 +35,22 @@ jobs:
             ${{ secrets.XDR_RPC_KEY }}
             ${{ secrets.METRICS_HISTORY_WRITE_KEY }}
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
       - name: Run hog schedule
+        env:
+          BRANCH_NAME: ${{ github.ref_name }}
+          FULL_EVALUATION: ${{ inputs.full_evaluation || false }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
-          BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
           echo "Branch name: $BRANCH_NAME"
           hog_sched \
             --i="${{ github.event.repository.name }}-${{ github.run_id }}" \
             --key=github_repo --value=${{ github.repository }} \
-            --key=git_branch --value=$BRANCH_NAME \
-            --key=git_commit --value=${{ github.sha }} \
+            --key=git_branch --value="$BRANCH_NAME" \
+            --key=git_commit --value="$SOURCE_SHA" \
             --key=cargo_registry_token --value=${{ secrets.GROUNDHOG_REGISTRY_TOKEN }} \
             --key=cargo_registry_global_credential_providers --value=${{ env.CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS }} \
-            --timeout-sec=3000 \
+            --key=full_evaluation --value="$FULL_EVALUATION" \
+            --timeout-sec=6600 \
             ./scripts/schedules/metrics.toml

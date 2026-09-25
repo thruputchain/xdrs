@@ -13,9 +13,6 @@ readme = "../README.md"
 keywords = ["xdr", "rpc"]
 categories = ["rpc"]
 
-[features]
-concurrent-dispatch = []
-
 [dependencies]
 rpc_api = { workspace = true }
 async-trait = "0.1.89"

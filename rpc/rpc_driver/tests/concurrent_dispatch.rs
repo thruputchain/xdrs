@@ -1,9 +1,4 @@
-//! Tests for the concurrent-dispatch feature.
-//!
-//! These tests only compile when `concurrent-dispatch` is enabled:
-//!   cargo test -p rpc_driver --features concurrent-dispatch
-
-#![cfg(feature = "concurrent-dispatch")]
+//! Tests for the single ready-inline / suspended-task dispatch path.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -117,8 +112,7 @@ impl RpcHandler for PanicBeforeAwaitService {
         match proc {
             0 => Ok(data.to_vec()),
             1 => panic!("intentional panic on first poll"),
-            // Suspends, so it needs a permit — used to prove the panicking
-            // call released the one it held.
+            // Suspends after earlier calls have panicked.
             2 => {
                 tokio::task::yield_now().await;
                 Ok(data.to_vec())
@@ -171,8 +165,139 @@ async fn start_server_with_config(config: ConnectionConfig) -> std::net::SocketA
 async fn start_inline_server(service: Box<dyn RpcHandler>) -> std::net::SocketAddr {
     let mut services = ServiceMap::new();
     services.add_service(service);
-    start_server_with_config(ConnectionConfig::new(None, services).with_inline_ready_dispatch(true))
+    start_server_with_config(ConnectionConfig::new(None, services)).await
+}
+
+/// Keep a callback pending until the test explicitly releases it.
+struct GatedEchoService {
+    entered: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Semaphore>,
+}
+
+#[async_trait]
+impl RpcHandler for GatedEchoService {
+    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        self.entered.notify_one();
+        self.release.acquire().await.unwrap().forget();
+        Ok(data.to_vec())
+    }
+
+    fn prog_vers(&self) -> ProgVers {
+        ECHO_PROG
+    }
+}
+
+#[tokio::test]
+async fn suspended_cap_sheds_without_blocking_ready_calls_or_callback_replies() {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(InlineCallbackService));
+        services.add_service(Box::new(ReadinessService {
+            entered: Arc::new(AtomicUsize::new(0)),
+        }));
+        let addr = start_server_with_config(
+            ConnectionConfig::new(None, services).with_max_suspended_handlers(Some(1)),
+        )
+        .await;
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(GatedEchoService {
+            entered: entered.clone(),
+            release: release.clone(),
+        }));
+        let client = connect_client_with_config(&addr, ConnectionConfig::new(None, services))
+            .await
+            .unwrap();
+
+        // Repeat to prove that finishing a suspended task releases its slot.
+        for _ in 0..3 {
+            let handle = client.handle().clone();
+            let call = tokio::spawn(async move {
+                handle
+                    .send_call(CALLBACK_PROG, 1, call_with(b"callback"))
+                    .await
+            });
+            entered.notified().await;
+            // The one admitted handler is awaiting a callback on this same
+            // connection. Excess Pending handlers must be shed, never parked.
+            for _ in 0..10 {
+                assert!(matches!(
+                    client.send_call(ECHO_PROG, 1, call_with(b"excess")).await,
+                    Err(RpcError::SystemError)
+                ));
+            }
+            assert_eq!(
+                client
+                    .send_call(ECHO_PROG, 0, call_with(b"ready"))
+                    .await
+                    .unwrap(),
+                b"ready"
+            );
+            release.add_permits(1);
+            assert_eq!(call.await.unwrap().unwrap(), b"callback");
+        }
+    })
+    .await
+    .expect("handler cap blocked bidirectional progress");
+}
+
+#[tokio::test]
+async fn zero_output_threshold_rejects_calls_with_replies_without_running_handlers() {
+    let entered = Arc::new(AtomicUsize::new(0));
+    let mut services = ServiceMap::new();
+    services.add_service(Box::new(ReadinessService {
+        entered: entered.clone(),
+    }));
+    let addr = start_server_with_config(
+        ConnectionConfig::new(None, services).with_output_admission_threshold_bytes(Some(0)),
+    )
+    .await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
         .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        for _ in 0..10 {
+            assert!(matches!(
+                client.send_call(ECHO_PROG, 0, CallBuf::new()).await,
+                Err(RpcError::SystemError)
+            ));
+            assert!(!client.handle().is_poisoned());
+        }
+        assert_eq!(entered.load(Ordering::SeqCst), 0);
+    })
+    .await
+    .expect("rejection replies must bypass the zero threshold");
+}
+
+#[tokio::test]
+async fn zero_suspended_cap_allows_ready_handlers_only() {
+    let mut services = ServiceMap::new();
+    services.add_service(Box::new(ReadinessService {
+        entered: Arc::new(AtomicUsize::new(0)),
+    }));
+    let addr = start_server_with_config(
+        ConnectionConfig::new(None, services).with_max_suspended_handlers(Some(0)),
+    )
+    .await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        assert!(matches!(
+            client.send_call(ECHO_PROG, 1, CallBuf::new()).await,
+            Err(RpcError::SystemError)
+        ));
+        assert_eq!(
+            client
+                .send_call(ECHO_PROG, 0, call_with(b"ready"))
+                .await
+                .unwrap(),
+            b"ready"
+        );
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -201,18 +326,12 @@ async fn test_bidirectional_rpc() {
     assert_eq!(result.unwrap().unwrap(), b"roundtrip");
 }
 
-/// Regression test: bidirectional RPC at exactly the concurrency limit.
-///
-/// With max_concurrent_dispatches=1 and a handler that calls peer().send_call()
-/// inline, the dispatch loop must still route REPLY messages even though the
-/// semaphore is fully acquired.
+/// Repeated callbacks must progress without any dispatch configuration.
 #[tokio::test]
-async fn test_bidirectional_at_concurrency_limit() {
-    // Server: InlineCallbackService (calls back to client's EchoService)
-    // with max_concurrent_dispatches=1 — the tightest possible limit.
+async fn test_repeated_bidirectional_calls() {
     let mut server_services = ServiceMap::new();
     server_services.add_service(Box::new(InlineCallbackService));
-    let config = ConnectionConfig::new(None, server_services).with_max_concurrent_dispatches(1);
+    let config = ConnectionConfig::new(None, server_services);
     let addr = start_server_with_config(config).await;
 
     let mut client_services = ServiceMap::new();
@@ -221,19 +340,13 @@ async fn test_bidirectional_at_concurrency_limit() {
     let client = connect_client_with_config(&addr, config).await.unwrap();
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // This would deadlock if REPLYs were gated by the concurrency limit:
-    // the handler is waiting for a REPLY, but the dispatch loop can't route
-    // it because the semaphore is fully acquired.
     let result = tokio::time::timeout(
         Duration::from_secs(2),
         client.send_call(CALLBACK_PROG, 1, call_with(b"limit-test")),
     )
     .await;
 
-    assert!(
-        result.is_ok(),
-        "bidirectional call at concurrency limit deadlocked"
-    );
+    assert!(result.is_ok(), "bidirectional call deadlocked");
     assert_eq!(result.unwrap().unwrap(), b"limit-test");
 
     // Repeat a few times to ensure stability.
@@ -250,19 +363,13 @@ async fn test_bidirectional_at_concurrency_limit() {
     }
 }
 
-/// Regression test: concurrent bidirectional RPCs at the concurrency limit.
-///
-/// Sends multiple overlapping bidirectional calls at max_concurrent_dispatches=2.
-/// While handlers are in-flight awaiting their REPLYs, additional CALLs arrive
-/// and wait for semaphore permits. The dispatch loop must still route REPLYs
-/// or the in-flight handlers deadlock.
+/// Overlapping callbacks must not block routing of other calls or replies.
 #[tokio::test]
-async fn test_concurrent_bidirectional_at_capacity() {
+async fn test_concurrent_bidirectional_calls() {
     let mut server_services = ServiceMap::new();
     server_services.add_service(Box::new(InlineCallbackService));
     server_services.add_service(Box::new(EchoService));
-    // max_concurrent=2: two handlers can be in-flight simultaneously.
-    let config = ConnectionConfig::new(None, server_services).with_max_concurrent_dispatches(2);
+    let config = ConnectionConfig::new(None, server_services);
     let addr = start_server_with_config(config).await;
 
     let mut client_services = ServiceMap::new();
@@ -271,11 +378,8 @@ async fn test_concurrent_bidirectional_at_capacity() {
     let client = connect_client_with_config(&addr, config).await.unwrap();
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    // Fire 4 concurrent bidirectional calls. With max_concurrent=2, at least
-    // 2 will acquire permits and dispatch simultaneously; the others wait
-    // for permits. Each handler calls peer().send_call() inline, so the
-    // dispatch loop MUST route REPLYs to avoid deadlock.
-    let n = 4;
+    // Exceed the old 64-handler limit without gating callback progress.
+    let n = 128;
     let mut handles = Vec::new();
     for i in 0..n {
         let client = client.handle().clone();
@@ -339,48 +443,6 @@ async fn test_concurrent_throughput() {
     );
 }
 
-#[tokio::test(start_paused = true)]
-async fn test_backpressure() {
-    let delay = Duration::from_millis(200);
-    let mut services = ServiceMap::new();
-    services.add_service(Box::new(SleepService { delay }));
-    let config = ConnectionConfig::new(None, services).with_max_concurrent_dispatches(2);
-    let addr = start_server_with_config(config).await;
-
-    let client = connect_client_with_config(&addr, ConnectionConfig::default())
-        .await
-        .unwrap();
-
-    let n = 6;
-    let start = tokio::time::Instant::now();
-    let mut handles = Vec::new();
-    for i in 0..n {
-        let client = client.handle().clone();
-        handles.push(tokio::spawn(async move {
-            client
-                .send_call(ECHO_PROG, 1, call_with(&[i as u8]))
-                .await
-                .unwrap()
-        }));
-    }
-    for h in handles {
-        h.await.unwrap();
-    }
-    let elapsed = start.elapsed();
-
-    // 6 requests, max_concurrent=2 → 3 batches × 200ms = ~600ms.
-    // Should be ≥500ms (backpressure working) and <900ms (not fully serial = 1200ms).
-    // (start_paused = true makes tokio::time::sleep deterministic.)
-    assert!(
-        elapsed >= Duration::from_millis(500),
-        "completed too fast ({elapsed:?}) — backpressure not working",
-    );
-    assert!(
-        elapsed < Duration::from_millis(900),
-        "took too long ({elapsed:?}) — dispatches may be fully serial",
-    );
-}
-
 #[tokio::test]
 async fn test_panic_recovery() {
     let addr = start_server(Box::new(PanickingService)).await;
@@ -407,62 +469,6 @@ async fn test_panic_recovery() {
         .send_call(ECHO_PROG, 0, call_with(b"still alive"))
         .await;
     assert_eq!(result.unwrap(), b"still alive");
-}
-
-/// Tests that the pending-tasks cap triggers load shedding.
-///
-/// With max_concurrent=1, the pending cap is 5 (1 * 5). We fill the server
-/// with slow handlers beyond the cap and verify that excess calls receive
-/// SystemError.
-#[tokio::test]
-async fn test_load_shedding() {
-    let delay = Duration::from_secs(10); // intentionally long — we don't wait for completion
-    let mut services = ServiceMap::new();
-    services.add_service(Box::new(SleepService { delay }));
-    // max_concurrent=1, so pending cap = 1 * 5 = 5.
-    // Total tasks before shedding = 5 (1 executing + 4 waiting for permit).
-    let config = ConnectionConfig::new(None, services).with_max_concurrent_dispatches(1);
-    let addr = start_server_with_config(config).await;
-
-    let client = connect_client_with_config(&addr, ConnectionConfig::default())
-        .await
-        .unwrap();
-
-    // Fire 8 concurrent calls. The first 5 are spawned (1 executes, 4 wait
-    // for permits), and the remaining 3 should be shed with SystemError.
-    let n = 8;
-    let mut handles = Vec::new();
-    for i in 0..n {
-        let client = client.handle().clone();
-        handles.push(tokio::spawn(async move {
-            tokio::time::timeout(
-                Duration::from_secs(2),
-                client.send_call(ECHO_PROG, 1, call_with(&[i])),
-            )
-            .await
-        }));
-    }
-
-    // Give the server time to receive and process all 8 calls.
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    let mut errors = 0;
-    let mut timeouts = 0;
-    let mut ok = 0;
-    for h in handles {
-        match h.await.unwrap() {
-            Err(_) => timeouts += 1, // timeout — call is queued/in-flight with 10s handler
-            Ok(Err(RpcError::SystemError)) => errors += 1, // load-shed
-            Ok(Err(_)) => errors += 1,
-            Ok(Ok(_)) => ok += 1,
-        }
-    }
-
-    // cap=5, sent=8, so at least 3 should be shed.
-    assert!(
-        errors >= 3,
-        "expected >=3 load-shed errors but got: ok={ok}, timeouts={timeouts}, errors={errors}"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -577,25 +583,18 @@ async fn test_panic_on_probe_poll_is_isolated() {
     assert_eq!(response.unwrap(), b"still alive");
 }
 
-/// A panic on the probe poll happens while the CALL holds a concurrency
-/// permit. If that permit leaked, a connection with `max_concurrent=1` would
-/// wedge: no suspending handler could ever acquire one again.
+/// Panicking handlers must not stall subsequent suspending handlers.
 #[tokio::test]
-async fn test_panic_on_probe_poll_releases_permit() {
+async fn test_panic_does_not_stall_later_suspended_handlers() {
     let mut services = ServiceMap::new();
     services.add_service(Box::new(PanicBeforeAwaitService));
-    // One permit total, so a single leak is fatal and observable.
-    let config = ConnectionConfig::new(None, services)
-        .with_max_concurrent_dispatches(1)
-        .with_inline_ready_dispatch(true);
+    let config = ConnectionConfig::new(None, services);
     let addr = start_server_with_config(config).await;
     let client = connect_client_with_config(&addr, ConnectionConfig::default())
         .await
         .unwrap();
 
-    // Panic three times — each would leak the connection's only permit.
-    // Timeouts matter here: a leaked permit starves the *next* call, so
-    // without them a regression hangs the test binary instead of failing it.
+    // Repeated panics must leave the reader usable.
     for i in 0..3 {
         let result = tokio::time::timeout(
             Duration::from_secs(2),
@@ -603,98 +602,19 @@ async fn test_panic_on_probe_poll_releases_permit() {
         )
         .await;
         let Ok(result) = result else {
-            panic!("panicking call {i} never completed — probe poll leaked a permit");
+            panic!("panicking call {i} never completed");
         };
         assert!(result.is_err(), "expected an error reply from the panic");
     }
 
-    // proc 2 suspends, so it must acquire a permit to finish.
+    // proc 2 suspends and must still finish.
     let result = tokio::time::timeout(
         Duration::from_secs(2),
-        client.send_call(ECHO_PROG, 2, call_with(b"needs-permit")),
+        client.send_call(ECHO_PROG, 2, call_with(b"after-panic")),
     )
     .await;
-    assert!(
-        result.is_ok(),
-        "suspending handler never got a permit — probe poll leaked one per panic"
-    );
-    assert_eq!(result.unwrap().unwrap(), b"needs-permit");
-}
-
-/// With the fast path disabled, every CALL takes the spawn path and results
-/// must be identical. Guards the A/B toggle used for measurement.
-#[tokio::test]
-async fn test_fast_path_disabled_matches() {
-    let entered = Arc::new(AtomicUsize::new(0));
-    let mut services = ServiceMap::new();
-    services.add_service(Box::new(ReadinessService {
-        entered: entered.clone(),
-    }));
-    let config = ConnectionConfig::new(None, services).with_inline_ready_dispatch(false);
-    let addr = start_server_with_config(config).await;
-    let client = connect_client_with_config(&addr, ConnectionConfig::default())
-        .await
-        .unwrap();
-
-    for i in 0..10u8 {
-        let payload = [i; 4];
-        assert_eq!(
-            client
-                .send_call(ECHO_PROG, 0, call_with(&payload))
-                .await
-                .unwrap(),
-            payload
-        );
-        assert_eq!(
-            client
-                .send_call(ECHO_PROG, 1, call_with(&payload))
-                .await
-                .unwrap(),
-            payload
-        );
-    }
-    assert_eq!(entered.load(Ordering::SeqCst), 20);
-}
-
-/// The fast path must not let handler work escape `max_concurrent_dispatches`.
-///
-/// A handler that starts a timer and then suspends does real work on its first
-/// poll. If the probe ran without a permit, all six sleeps would overlap and
-/// finish in one delay; the permit reserved before probing keeps them batched.
-#[tokio::test(start_paused = true)]
-async fn test_probe_poll_respects_concurrency_limit() {
-    let delay = Duration::from_millis(200);
-    let mut services = ServiceMap::new();
-    services.add_service(Box::new(SleepService { delay }));
-    let config = ConnectionConfig::new(None, services)
-        .with_max_concurrent_dispatches(2)
-        .with_inline_ready_dispatch(true);
-    let addr = start_server_with_config(config).await;
-    let client = connect_client_with_config(&addr, ConnectionConfig::default())
-        .await
-        .unwrap();
-
-    let start = tokio::time::Instant::now();
-    let mut handles = Vec::new();
-    for i in 0..6u8 {
-        let handle = client.handle().clone();
-        handles.push(tokio::spawn(async move {
-            handle
-                .send_call(ECHO_PROG, 1, call_with(&[i]))
-                .await
-                .unwrap()
-        }));
-    }
-    for h in handles {
-        h.await.unwrap();
-    }
-
-    // 6 calls at 2 concurrent = 3 batches of 200ms.
-    let elapsed = start.elapsed();
-    assert!(
-        elapsed >= Duration::from_millis(500),
-        "probe poll bypassed the concurrency limit ({elapsed:?} for 3 expected batches)"
-    );
+    assert!(result.is_ok(), "suspending handler stalled after a panic");
+    assert_eq!(result.unwrap().unwrap(), b"after-panic");
 }
 
 /// Tests that the server shuts down cleanly when the client disconnects
@@ -702,8 +622,7 @@ async fn test_probe_poll_respects_concurrency_limit() {
 ///
 /// Dropping the client while slow handlers are executing exercises the
 /// teardown path: the reader task sees EOF, the dispatch loop exits,
-/// and the JoinSet drops (cancelling in-flight tasks). PendingGuard
-/// must fire on cancellation to avoid leaking the pending counter.
+/// and the JoinSet drops, cancelling in-flight tasks.
 #[tokio::test(start_paused = true)]
 async fn test_client_disconnect_during_dispatch() {
     let delay = Duration::from_secs(10);

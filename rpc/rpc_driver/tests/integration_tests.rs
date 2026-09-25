@@ -283,15 +283,10 @@ mod tests {
         addr
     }
 
-    /// With almost no outbound allowance, the server sheds most pipelined
-    /// calls with SYSTEM_ERR instead of blocking: every call gets a prompt
-    /// answer, and the ones it did serve are correct.
+    /// Pipelined ready calls all complete without selecting a dispatch mode.
     #[tokio::test]
-    async fn pipelined_calls_get_prompt_answers_from_an_overloaded_server() {
-        let addr = start_sleepy_server(std::time::Duration::ZERO, |config| {
-            config.with_write_buffer_bytes(1)
-        })
-        .await;
+    async fn pipelined_calls_all_get_prompt_answers() {
+        let addr = start_sleepy_server(std::time::Duration::ZERO, |config| config).await;
         let client = Arc::new(connect_client(&addr).await.unwrap());
         let calls: Vec<_> = (0..8u8)
             .map(|i| {
@@ -307,18 +302,18 @@ mod tests {
         for (i, call) in calls.into_iter().enumerate() {
             match tokio::time::timeout(std::time::Duration::from_secs(5), call)
                 .await
-                .expect("pipelined call hung on an overloaded server")
+                .expect("pipelined call hung")
                 .unwrap()
             {
                 Ok(response) => {
                     assert_eq!(response.as_ref(), &[i as u8]);
                     served += 1;
                 }
-                Err(RpcError::SystemError) => {}
+                Err(RpcError::SystemError) => panic!("transport shed a pipelined call"),
                 Err(other) => panic!("unexpected error {other:?}"),
             }
         }
-        assert!(served >= 1);
+        assert_eq!(served, 8);
     }
 
     /// A framed CALL for prog 1 vers 1 with AUTH_NONE, as the driver frames it.
@@ -588,19 +583,20 @@ mod tests {
             .send_call(ProgVers::new(1, 1), 1, call_with(&large_data))
             .await;
 
-        // The record is larger than the connection's outbound ceiling (which
-        // is never below one maximum-size message), so the writer refuses it
-        // locally instead of shipping 16 MiB for the server to reject.
+        // The record exceeds the configured per-message limit and is
+        // rejected locally, independently of how much output is queued.
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), RpcError::SystemError);
         assert_eq!(client_handle.num_pending_requests(), 0);
 
-        // Refusing a call is not fatal: the connection still works.
-        let result = client_handle
-            .send_call(ProgVers::new(1, 1), 1, call_with(b"test"))
-            .await
-            .unwrap();
-        assert_eq!(result.as_ref(), b"test");
+        assert!(!client_handle.is_poisoned());
+        assert_eq!(
+            client_handle
+                .send_call(ProgVers::new(1, 1), 1, call_with(b"test"))
+                .await
+                .unwrap(),
+            b"test"
+        );
         assert_eq!(client_handle.num_pending_requests(), 0);
     }
 

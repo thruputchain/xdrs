@@ -1,5 +1,6 @@
 //! Fixed-worker end-to-end RPC measurement against a separate smoke server.
 mod profile;
+mod runtime;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -10,8 +11,10 @@ use tokio::sync::Barrier;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long)]
-    addr: std::net::SocketAddr,
+    #[arg(long, required = true, value_delimiter = ',')]
+    addr: Vec<std::net::SocketAddr>,
+    #[command(flatten)]
+    runtime: runtime::RuntimeArgs,
     #[arg(long, default_value_t = 1)]
     connections: usize,
     #[arg(long, default_value_t = 1)]
@@ -25,9 +28,17 @@ struct Args {
     payload_bytes: usize,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    let runtimes = args.runtime.build()?;
+    let handles: Vec<_> = runtimes.iter().map(|rt| rt.handle().clone()).collect();
+    runtimes[0].block_on(run(args, &handles))
+}
+
+async fn run(
+    args: Args,
+    handles: &[tokio::runtime::Handle],
+) -> Result<(), Box<dyn std::error::Error>> {
     if args.connections == 0 || args.concurrency == 0 || args.iterations == 0 {
         return Err("connections, concurrency, and iterations must be positive".into());
     }
@@ -35,8 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("payload-bytes must be between 5 and 1048576".into());
     }
     let mut connections: Vec<Arc<dyn RpcSender>> = Vec::new();
-    for _ in 0..args.connections {
-        connections.push(Arc::new(connect_client(&args.addr).await?));
+    for connection in 0..args.connections {
+        let addr = args.addr[connection % args.addr.len()];
+        let client = handles[connection % handles.len()]
+            .spawn(async move { connect_client(&addr).await })
+            .await??;
+        connections.push(Arc::new(client));
     }
     let ready = Arc::new(Barrier::new(args.concurrency + 1));
     let start = Arc::new(Barrier::new(args.concurrency + 1));
@@ -51,7 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let start = start.clone();
         let iterations = args.iterations;
         let warmup = args.warmup;
-        workers.push(tokio::spawn(async move {
+        let shard = (worker % connections.len()) % handles.len();
+        workers.push(handles[shard].spawn(async move {
             for _ in 0..warmup {
                 let mut call = sender.call_buf();
                 call.extend_from_slice(&payload);
@@ -94,6 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "{}",
         serde_json::json!({
+            "runtime_shards": handles.len(),
             "connections": args.connections, "concurrency": args.concurrency,
             "iterations_per_worker": args.iterations, "warmup_per_worker": args.warmup,
             "payload_bytes": args.payload_bytes, "completed": samples.len(), "errors": 0,

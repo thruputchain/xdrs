@@ -49,31 +49,25 @@
 //! # }
 //! ```
 //!
-//! ## Concurrent Dispatch
+//! ## Dispatch and automatic write batching
 //!
-//! By default, each connection processes one RPC at a time (serial dispatch).
-//! Enable the `concurrent-dispatch` feature to run handlers concurrently on
-//! a single connection:
+//! Each handler is polled inline. Ready handlers reply without spawning a
+//! task; suspended handlers move to a task while the reader keeps serving
+//! CALLs and REPLYs. There is one dispatch path, with no feature flags.
+//! Handler panics return [`RpcError::SystemError`]. CPU-heavy handlers should
+//! offload their work so their first poll does not block the connection.
 //!
-//! ```toml
-//! [dependencies]
-//! rpc_driver = { version = "0.12", features = ["concurrent-dispatch"] }
-//! ```
-//!
-//! With this feature:
-//! - An optional ready-first mode polls handlers once on the dispatch loop;
-//!   immediately-ready work replies without a handler task
-//! - Multiple handlers execute concurrently per connection (default limit: 64)
-//! - Handlers can call back to the peer inline without deadlocking
-//! - Handler panics are caught and returned as [`RpcError::SystemError`] —
-//!   the connection stays alive for subsequent requests
-//! - Load shedding engages when pending tasks exceed 5× the concurrency
-//!   limit — excess calls receive `SystemError`
-//!
-//! Tune the concurrency limit via [`ConnectionConfig::with_max_concurrent_dispatches`]
-//! and opt into the ready-first path via
-//! [`ConnectionConfig::with_inline_ready_dispatch`]. Work before a handler's
-//! first `.await` runs on the dispatch loop and should remain short.
+//! Calls flush immediately unless the reader is actively processing input;
+//! then they share its flush before waiting/yielding or at the record/byte thresholds.
+//! Unlike x23's direct caller resumption,
+//! Tokio schedules woken callers separately, so request coalescing matters.
+//! Replies accumulate until an outgoing flush, 64 records or 64 KiB, or
+//! the reader waits/yields. A flush includes preceding calls in wire order.
+//! Successful read-buffer refills do not split output batches.
+//! Replies produced while the reader is waiting flush immediately. Only a
+//! full socket needs a background writable-readiness task. Applications own
+//! admission control; the transport neither queues handlers behind permits
+//! nor rejects calls based on its output backlog.
 //!
 //! ## Bidirectional RPC
 //!
@@ -81,8 +75,7 @@
 //! [`RpcSender`]. This is stored in task-local context and set
 //! automatically by the dispatch loop.
 //!
-//! With the `concurrent-dispatch` feature enabled, handlers run
-//! concurrently and can call back to the peer inline:
+//! Handlers can call back to the peer inline:
 //!
 //! ```no_run
 //! # use rpc_driver::{ProgVers, RpcError, handler::RpcHandler};
@@ -93,31 +86,8 @@
 //! #   fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
 //!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
 //!         let peer = rpc_driver::peer();
-//!         // With concurrent-dispatch: works inline
 //!         let resp = peer.send_call(ProgVers::new(200, 1), 0, peer.call_buf()).await?;
 //!         Ok(resp.to_vec())
-//!     }
-//! # }
-//! ```
-//!
-//! Without the feature (default serial dispatch), calling back inline
-//! deadlocks. Spawn a separate task instead:
-//!
-//! ```no_run
-//! # use rpc_driver::{ProgVers, RpcError, handler::RpcHandler};
-//! # use async_trait::async_trait;
-//! # struct MyService;
-//! # #[async_trait]
-//! # impl RpcHandler for MyService {
-//! #   fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
-//!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-//!         let peer = rpc_driver::peer();
-//!         tokio::spawn(async move {
-//!             // The read loop can process the callback reply after this
-//!             // dispatch returns.
-//!             let _ = peer.send_call(ProgVers::new(200, 1), 0, peer.call_buf()).await;
-//!         });
-//!         Ok(vec![])
 //!     }
 //! # }
 //! ```
@@ -144,12 +114,11 @@
 //!   Lives for the connection's lifetime. Fields: `peer` (socket address), `role`
 //!   (`"server"` or `"client"`).
 //!
-//! - **`rpc_call`** (DEBUG) — created per CALL message. On a concurrent server,
-//!   wall duration runs from admission through response enqueue, so semaphore
-//!   queueing appears as idle time. On a serial server it covers dispatch and
-//!   response enqueue. On the client it measures round-trip time. Common fields:
-//!   `xid`, `prog`, `vers`, `proc`; concurrent inbound spans also record
-//!   `probed` and, when probed, `ready`.
+//! - **`rpc_call`** (DEBUG) — created per CALL message. On the server, wall
+//!   duration covers dispatch through response enqueue. On the client it
+//!   measures round-trip time. Common fields: `xid`, `prog`, `vers`, `proc`.
+//!   Inbound spans record `ready`: true for inline completion, false when
+//!   the handler suspends and moves to a task.
 //!
 //! ### Subscriber Setup
 //!
@@ -188,7 +157,7 @@
 //! ### Performance
 //!
 //! Instrumentation cost is workload- and subscriber-dependent. Use
-//! `cargo bench --bench rpc_bench --features concurrent-dispatch -- --tracing <level>`
+//! `cargo bench --bench rpc_bench -- --tracing <level>`
 //! to measure it on the target system.
 //!
 //! See `rpc-smoke/src/server.rs` for a complete reference example of
@@ -208,7 +177,7 @@ pub mod handler;
 pub use handler::*;
 
 mod config;
-pub use config::{ConnectionConfig, DEFAULT_WRITE_BUFFER_BYTES, DEFAULT_WRITE_BUFFER_LIMIT_BYTES};
+pub use config::ConnectionConfig;
 
 mod server;
 pub use server::RpcServer;

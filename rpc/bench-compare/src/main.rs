@@ -90,6 +90,9 @@ fn load_results(path: &str) -> BenchResult {
 }
 
 fn variant_label(r: &BenchResult) -> String {
+    if let Some(policy) = &r.metadata.dispatch_policy {
+        return policy.clone();
+    }
     if r.metadata
         .feature_flags
         .contains(&"concurrent-dispatch".to_string())

@@ -13,10 +13,9 @@ use async_trait::async_trait;
 /// For bidirectional RPC (calling back to the peer from within a handler),
 /// use `rpc_driver::peer()` to obtain the per-connection sender.
 ///
-/// With the driver's default serial dispatch, calling back to the peer
-/// inline will deadlock — spawn a separate task instead. With the driver's
-/// `concurrent-dispatch` feature enabled, inline callbacks work without
-/// deadlocking.
+/// The driver polls ready handlers inline and spawns handlers that suspend,
+/// keeping the reader available for callback replies. Inline callbacks work
+/// without special configuration.
 #[async_trait]
 pub trait RpcHandler: Send + Sync {
     /// Handle an incoming RPC call for the given procedure number.

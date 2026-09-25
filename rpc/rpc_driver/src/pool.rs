@@ -31,7 +31,6 @@ use tokio::time::Instant;
 
 #[cfg(test)]
 use crate::connect_client;
-use crate::connection::BufPool;
 use crate::{
     CallBuf, ConnectionConfig, ConnectionHandle, ProgVers, RpcError, RpcResponse, RpcSender,
     connect_client_with_config,
@@ -54,20 +53,15 @@ type ConnectOverride = Arc<dyn Fn() -> ConnectFuture + Send + Sync>;
 struct ConnectionFactory {
     addr: SocketAddr,
     config: ConnectionConfig,
-    /// Record-buffer pool every connection this factory opens shares, so
-    /// the pool's callers can draw call buffers from one place.
-    buf_pool: Arc<BufPool>,
     #[cfg(test)]
     connect_override: Option<ConnectOverride>,
 }
 
 impl ConnectionFactory {
     fn new(addr: SocketAddr, config: ConnectionConfig) -> Self {
-        let buf_pool = Arc::new(BufPool::new());
         Self {
             addr,
-            config: config.with_shared_buf_pool(buf_pool.clone()),
-            buf_pool,
+            config,
             #[cfg(test)]
             connect_override: None,
         }
@@ -97,7 +91,6 @@ impl ConnectionFactory {
         Self {
             addr,
             config: ConnectionConfig::default(),
-            buf_pool: Arc::new(BufPool::new()),
             connect_override: Some(connect_override),
         }
     }
@@ -151,7 +144,6 @@ impl Drop for FixedWorkerConnectionGuard {
 pub struct FixedSerialPool {
     inner: Arc<FixedSerialPoolInner>,
     size: usize,
-    buf_pool: Arc<BufPool>,
 }
 
 /// Action taken when an active fixed-pool request is canceled or its connection
@@ -399,7 +391,6 @@ impl FixedSerialPool {
             return Err(RpcError::InvalidPoolConfiguration);
         }
 
-        let buf_pool = connection_factory.buf_pool.clone();
         let queue_capacity = pool_size.saturating_mul(16).max(16);
         let queue_slots = Arc::new(Semaphore::new(queue_capacity));
         let (tx, rx) = mpsc::unbounded_channel::<PoolRequest>();
@@ -551,7 +542,6 @@ impl FixedSerialPool {
         Ok(Self {
             inner,
             size: pool_size,
-            buf_pool,
         })
     }
 
@@ -614,7 +604,7 @@ impl Drop for FixedSerialPool {
 #[async_trait]
 impl RpcSender for FixedSerialPool {
     fn call_buf(&self) -> CallBuf {
-        self.buf_pool.take_call_buf()
+        CallBuf::from_spare(crate::connection::take_buffer())
     }
 
     /// Send an RPC call through the pool.
@@ -1013,7 +1003,7 @@ impl Drop for DynamicPool {
 #[async_trait]
 impl RpcSender for DynamicPool {
     fn call_buf(&self) -> CallBuf {
-        self.connection_factory.buf_pool.take_call_buf()
+        CallBuf::from_spare(crate::connection::take_buffer())
     }
 
     /// Send an RPC call through the pool.
@@ -1080,7 +1070,6 @@ pub struct CpuSetPool {
     /// Maps logical CPU id → index into `connections`.
     cpu_map: Vec<usize>,
     closed: AtomicBool,
-    buf_pool: Arc<BufPool>,
 }
 
 impl std::fmt::Debug for CpuSetPool {
@@ -1229,7 +1218,6 @@ impl CpuSetPool {
             connections: StdMutex::new(pending.into_iter().map(|c| c.into_handle()).collect()),
             cpu_map,
             closed: AtomicBool::new(false),
-            buf_pool: connection_factory.buf_pool.clone(),
         })
     }
 
@@ -1306,7 +1294,7 @@ impl Drop for CpuSetPool {
 #[async_trait]
 impl RpcSender for CpuSetPool {
     fn call_buf(&self) -> CallBuf {
-        self.buf_pool.take_call_buf()
+        CallBuf::from_spare(crate::connection::take_buffer())
     }
 
     async fn send_call(
@@ -1531,12 +1519,8 @@ mod tests {
     /// channel and holds the reply until a permit is added to the returned
     /// semaphore.
     ///
-    /// Dispatch is serial per connection by default, so a test that holds
-    /// several calls open at once must start them one at a time, waiting
-    /// for the server to observe each before starting the next: that
-    /// guarantees the previous call is already counted as pending, so the
-    /// pool leases a fresh connection instead of queueing behind the held
-    /// one.
+    /// Tests can wait for the server to observe each call before starting
+    /// another, making the pool's pending-count-based routing deterministic.
     async fn start_holding_server() -> (
         SocketAddr,
         tokio::sync::mpsc::UnboundedReceiver<()>,
@@ -1879,10 +1863,7 @@ mod tests {
         .expect("replacement connection should retain the configured message limit");
 
         assert_eq!(result, Err(RpcError::SystemError));
-        assert_eq!(
-            &*calls.lock().unwrap(),
-            &[b"blocked".to_vec(), oversized_response]
-        );
+        assert_eq!(&*calls.lock().unwrap(), &[b"blocked".to_vec()]);
         blocked_release.notify_one();
     }
 
