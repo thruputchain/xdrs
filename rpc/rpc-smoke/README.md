@@ -31,7 +31,7 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 | `--connections` | profile default | Connection count (FixedSerialPool pool size, DynamicPool max) |
 | `--duration` | 5 | Test duration in seconds |
 | `--max-inflight` | 100 | Max concurrent in-flight RPCs |
-| `--pool` | fixed | Pool type: `fixed`, `dynamic`, or `cpu` |
+| `--pool` | fixed | Pool type: `fixed`, `dynamic`, `cpu`, or `multiplex` |
 | `--tracing` | (none) | Enable tracing subscriber at given level (info, debug) |
 
 The server always runs ready handlers inline, spawns suspended handlers, and
@@ -45,6 +45,7 @@ needed. Configure application load with the client's `--max-inflight` option.
 | `fixed` | 1 in-flight (serial) | FIFO via channel | x23 sync RPC (executor→DB) |
 | `dynamic` | Many in-flight | Min-pending load balance | x23 async RPC (coordinator→mempool) |
 | `cpu` | Many in-flight | LLC-affine (sched_getcpu) | x23 RpcMulticlient / PerCpuSet |
+| `multiplex` | Many in-flight | Least in flight, fixed set | x23 async RPC over N connections |
 
 ## Harness Options
 
@@ -52,7 +53,7 @@ needed. Configure application load with the client's `--max-inflight` option.
 |---|---|---|
 | `--duration` | 5 | Test duration per client (seconds) |
 | `--server-addr` | (spawn local) | Remote server address (host:port) |
-| `--pool` | (none = fixed) | Pool type for all clients: `fixed`, `dynamic`, or `cpu` |
+| `--pool` | (none = fixed) | Pool type for all clients: `fixed`, `dynamic`, `cpu`, or `multiplex` |
 | `--tracing` | (none) | Enable tracing subscriber on server and client (info, debug) |
 | `--json` | false | Emit machine-readable metrics, including dispatch mode and completion counts |
 

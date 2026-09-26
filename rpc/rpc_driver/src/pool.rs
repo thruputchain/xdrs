@@ -16,6 +16,12 @@
 //! - [`CpuSetPool`] — LLC-topology-aware pool. Creates one connection per
 //!   L3 cache group, routes by the caller's current CPU via `sched_getcpu`.
 //!   Models x23 `RpcMulticlient` / `PerCpuSet`.
+//!
+//! - [`MultiplexPool`] — Fixed-size pool of xid-multiplexed connections.
+//!   Every connection carries many in-flight calls; each call is sent from
+//!   the caller's own task on the least-loaded connection, with no worker
+//!   task, queue, or payload copy in between. Replaces connections the peer
+//!   closes. Models x23 async RPC over a handful of connections.
 
 use std::net::SocketAddr;
 use std::sync::{
@@ -1030,6 +1036,443 @@ impl RpcSender for DynamicPool {
         let conn = self.connection_for_request().await?;
         let result = conn.send_fire_and_forget(progvers, proc, call).await;
         self.touch_connection(&conn);
+        result
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MultiplexPool — fixed set of xid-multiplexed connections
+// ---------------------------------------------------------------------------
+
+/// One connection slot of a [`MultiplexPool`].
+struct MultiplexSlot {
+    handle: std::sync::RwLock<Arc<ConnectionHandle>>,
+    /// Calls this pool currently has in flight on the slot.
+    in_flight: std::sync::atomic::AtomicUsize,
+    /// Set while a replacement connection is being opened.
+    replacing: AtomicBool,
+}
+
+struct MultiplexInner {
+    slots: Vec<MultiplexSlot>,
+    /// Rotates the starting point of the least-loaded scan so idle
+    /// connections are used in turn rather than always the first.
+    cursor: std::sync::atomic::AtomicUsize,
+    connection_factory: ConnectionFactory,
+    closed: AtomicBool,
+    /// Wakes replacement tasks waiting on a connect or a backoff sleep when
+    /// the pool closes.
+    closed_notify: Notify,
+    replacements: StdMutex<Vec<JoinHandle<()>>>,
+}
+
+/// Fixed-size pool of xid-multiplexed connections.
+///
+/// The wire protocol matches replies to calls by xid, so one connection can
+/// carry any number of calls at once. This pool never serializes callers:
+/// each call picks the connection with the fewest calls in flight and sends
+/// on it directly from the caller's task. There is no worker task, request
+/// queue, completion channel, or payload copy between a caller and the
+/// socket, which is the shape of x23's asynchronous RPC client.
+///
+/// All connections are opened eagerly. When a peer closes one, calls in
+/// flight on it fail with [`RpcError::SystemError`], the pool opens a
+/// replacement in the background with backoff, and routing prefers the
+/// remaining healthy connections meanwhile: a call routed to a connection
+/// the peer has closed moves to a healthy one instead of failing. Only when
+/// every connection is down does a call fail. A caller that drops its call
+/// future leaves the connection usable: the reply for that xid is discarded
+/// when it arrives.
+///
+/// Use a small number of connections, one per core the peer serves with or
+/// so, to spread per-connection read-loop work; more only adds sockets.
+#[derive(Debug)]
+pub struct MultiplexPool {
+    inner: Arc<MultiplexInner>,
+}
+
+impl std::fmt::Debug for MultiplexInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MultiplexInner")
+            .field("addr", &self.connection_factory.addr)
+            .field("connections", &self.slots.len())
+            .field("closed", &self.closed.load(Ordering::SeqCst))
+            .finish()
+    }
+}
+
+impl MultiplexPool {
+    /// Open `connections` connections to `addr` with [`ConnectionConfig::default`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::InvalidPoolConfiguration`] when `connections` is
+    /// zero and [`RpcError::ConnectFailed`] when a connection cannot be opened.
+    pub async fn connect(addr: &SocketAddr, connections: usize) -> Result<Self, RpcError> {
+        Self::connect_with_config(addr, connections, ConnectionConfig::default()).await
+    }
+
+    /// Open `connections` connections to `addr` using `config`, which also
+    /// applies to replacement connections.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RpcError::InvalidPoolConfiguration`] when `connections` is
+    /// zero and [`RpcError::ConnectFailed`] when a connection cannot be opened.
+    pub async fn connect_with_config(
+        addr: &SocketAddr,
+        connections: usize,
+        config: ConnectionConfig,
+    ) -> Result<Self, RpcError> {
+        Self::connect_with_factory(connections, ConnectionFactory::new(*addr, config)).await
+    }
+
+    #[cfg(test)]
+    async fn connect_with<F, Fut>(
+        addr: &SocketAddr,
+        connections: usize,
+        connect: F,
+    ) -> Result<Self, RpcError>
+    where
+        F: FnMut() -> Fut + Send + 'static,
+        Fut: Future<Output = Result<crate::connection::ClientConnection, std::io::Error>>
+            + Send
+            + 'static,
+    {
+        Self::connect_with_factory(
+            connections,
+            ConnectionFactory::with_override(*addr, connect),
+        )
+        .await
+    }
+
+    async fn connect_with_factory(
+        connections: usize,
+        connection_factory: ConnectionFactory,
+    ) -> Result<Self, RpcError> {
+        if connections == 0 {
+            return Err(RpcError::InvalidPoolConfiguration);
+        }
+
+        // `pending` holds `ClientConnection`s, whose RAII drop poisons the
+        // partial connections if construction is canceled mid-loop.
+        let mut pending = Vec::with_capacity(connections);
+        for _ in 0..connections {
+            match connection_factory.connect().await {
+                Ok(client) => pending.push(client),
+                Err(e) => {
+                    close_all(pending).await;
+                    tracing::error!(
+                        addr = %connection_factory.addr,
+                        error = %e,
+                        pool_type = "multiplex",
+                        "pool connection failed"
+                    );
+                    return Err(RpcError::ConnectFailed);
+                }
+            }
+        }
+
+        let slots = pending
+            .into_iter()
+            .map(|client| MultiplexSlot {
+                handle: std::sync::RwLock::new(client.into_handle()),
+                in_flight: std::sync::atomic::AtomicUsize::new(0),
+                replacing: AtomicBool::new(false),
+            })
+            .collect();
+
+        Ok(Self {
+            inner: Arc::new(MultiplexInner {
+                slots,
+                cursor: std::sync::atomic::AtomicUsize::new(0),
+                connection_factory,
+                closed: AtomicBool::new(false),
+                closed_notify: Notify::new(),
+                replacements: StdMutex::new(Vec::new()),
+            }),
+        })
+    }
+
+    /// Returns the configured connection count.
+    pub fn size(&self) -> usize {
+        self.inner.slots.len()
+    }
+
+    /// Returns the number of calls in flight across all connections.
+    pub fn pending_count(&self) -> usize {
+        self.inner
+            .slots
+            .iter()
+            .map(|slot| slot.in_flight.load(Ordering::Relaxed))
+            .sum()
+    }
+
+    /// Shut down the pool and wait for its connections to stop.
+    ///
+    /// New calls fail with [`RpcError::PoolClosed`]. A replacement in
+    /// progress is stopped, and one that completes concurrently is closed
+    /// before this returns. Calling `shutdown` more than once is safe.
+    pub async fn shutdown(&self) {
+        let (replacements, connection_shutdowns) = self.inner.begin_shutdown();
+        finish_shutdowns(connection_shutdowns).await;
+        for join in replacements {
+            let _ = join.await;
+        }
+    }
+}
+
+impl MultiplexInner {
+    fn begin_shutdown(
+        &self,
+    ) -> (
+        Vec<JoinHandle<()>>,
+        Vec<crate::connection::ConnectionShutdown>,
+    ) {
+        if !begin_pool_shutdown(&self.closed) {
+            return (Vec::new(), Vec::new());
+        }
+        self.closed_notify.notify_waiters();
+        // Replacement tasks install only under the slot's write lock after
+        // re-checking `closed`, so every connection installed from here on
+        // is one this snapshot already covers, and a task that loses that
+        // race closes its own connection before it exits.
+        let connection_shutdowns = self
+            .slots
+            .iter()
+            .map(|slot| slot.handle.read().unwrap().begin_poison())
+            .collect();
+        let replacements = std::mem::take(&mut *self.replacements.lock().unwrap());
+        (replacements, connection_shutdowns)
+    }
+
+    /// Run `future` unless the pool closes first.
+    async fn until_closed<F: Future>(&self, future: F) -> Option<F::Output> {
+        let notified = self.closed_notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if self.closed.load(Ordering::SeqCst) {
+            return None;
+        }
+        tokio::select! {
+            biased;
+            _ = &mut notified => None,
+            output = future => Some(output),
+        }
+    }
+
+    /// Reserve a call on the slot with the fewest calls in flight, skipping
+    /// connections known to be down while a healthy one exists.
+    ///
+    /// The reservation is a compare-and-swap against the count the scan
+    /// observed, so concurrent callers that saw the same least-loaded slot
+    /// serialize on it: the loser rescans and lands on the next one. A slot
+    /// whose connection the peer closed is noticed here, handed to a
+    /// background replacement, and skipped like any other replacing slot.
+    fn lease(self: &Arc<Self>) -> Result<Lease<'_>, RpcError> {
+        let n = self.slots.len();
+        loop {
+            if self.closed.load(Ordering::SeqCst) {
+                return Err(RpcError::PoolClosed);
+            }
+            let start = self.cursor.fetch_add(1, Ordering::Relaxed) % n;
+            let mut best: Option<(usize, usize)> = None;
+            let mut fallback: Option<usize> = None;
+            for offset in 0..n {
+                let index = (start + offset) % n;
+                let slot = &self.slots[index];
+                if slot.replacing.load(Ordering::Acquire) {
+                    fallback.get_or_insert(index);
+                    continue;
+                }
+                let in_flight = slot.in_flight.load(Ordering::Relaxed);
+                if best.is_none_or(|(_, least)| in_flight < least) {
+                    best = Some((index, in_flight));
+                    if in_flight == 0 {
+                        break;
+                    }
+                }
+            }
+            let index = match best {
+                Some((index, observed)) => {
+                    if self.slots[index]
+                        .in_flight
+                        .compare_exchange(
+                            observed,
+                            observed + 1,
+                            Ordering::AcqRel,
+                            Ordering::Relaxed,
+                        )
+                        .is_err()
+                    {
+                        // Another caller took this slot first; rescan.
+                        continue;
+                    }
+                    index
+                }
+                None => {
+                    // Every connection is being replaced. Send on the first
+                    // one anyway so the call fails fast with SystemError
+                    // rather than waiting for a replacement.
+                    let index = fallback.expect("bug: pool has at least one slot");
+                    self.slots[index].in_flight.fetch_add(1, Ordering::Relaxed);
+                    index
+                }
+            };
+            let slot = &self.slots[index];
+            let handle = slot.handle.read().unwrap().clone();
+            let lease = Lease {
+                inner: self,
+                index,
+                handle,
+            };
+            if best.is_some() && lease.handle.is_poisoned() {
+                // The peer closed this connection while it was idle. Start
+                // its replacement and route this call elsewhere.
+                self.replace(index, &lease.handle);
+                drop(lease);
+                continue;
+            }
+            return Ok(lease);
+        }
+    }
+
+    /// Replace the connection in `slot` once, in the background, if `handle`
+    /// is still the one installed there.
+    fn replace(self: &Arc<Self>, index: usize, handle: &Arc<ConnectionHandle>) {
+        let slot = &self.slots[index];
+        if !Arc::ptr_eq(&*slot.handle.read().unwrap(), handle)
+            || slot
+                .replacing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return;
+        }
+        if self.closed.load(Ordering::SeqCst) {
+            slot.replacing.store(false, Ordering::Release);
+            return;
+        }
+        let inner = self.clone();
+        let old = handle.clone();
+        let task = tokio::spawn(async move {
+            old.begin_poison().finish().await;
+            let mut retry_delay = Duration::from_millis(100);
+            let mut first_failure = true;
+            loop {
+                let Some(result) = inner.until_closed(inner.connection_factory.connect()).await
+                else {
+                    return;
+                };
+                match result {
+                    Ok(connection) => {
+                        let slot = &inner.slots[index];
+                        let mut installed = slot.handle.write().unwrap();
+                        if inner.closed.load(Ordering::SeqCst) {
+                            // Shutdown already snapshotted this slot's old
+                            // handle; this connection is ours to close.
+                            drop(installed);
+                            connection.into_handle().poison().await;
+                            return;
+                        }
+                        let previous = std::mem::replace(&mut *installed, connection.into_handle());
+                        drop(installed);
+                        slot.replacing.store(false, Ordering::Release);
+                        drop(previous);
+                        return;
+                    }
+                    Err(error) => {
+                        if first_failure {
+                            tracing::warn!(
+                                addr = %inner.connection_factory.addr,
+                                %error,
+                                pool_type = "multiplex",
+                                "failed to replace pool connection"
+                            );
+                            first_failure = false;
+                        } else {
+                            tracing::debug!(
+                                addr = %inner.connection_factory.addr,
+                                %error,
+                                pool_type = "multiplex",
+                                "pool connection replacement still pending"
+                            );
+                        }
+                        if inner
+                            .until_closed(tokio::time::sleep(retry_delay))
+                            .await
+                            .is_none()
+                        {
+                            return;
+                        }
+                        retry_delay = retry_delay.saturating_mul(2).min(Duration::from_secs(5));
+                    }
+                }
+            }
+        });
+        let mut replacements = self.replacements.lock().unwrap();
+        replacements.retain(|join| !join.is_finished());
+        replacements.push(task);
+    }
+}
+
+/// A call's claim on one pool connection; releases the in-flight count on
+/// drop, including when the caller is canceled.
+struct Lease<'a> {
+    inner: &'a MultiplexInner,
+    index: usize,
+    handle: Arc<ConnectionHandle>,
+}
+
+impl Drop for Lease<'_> {
+    fn drop(&mut self) {
+        self.inner.slots[self.index]
+            .in_flight
+            .fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl Drop for MultiplexPool {
+    fn drop(&mut self) {
+        let _ = self.inner.begin_shutdown();
+    }
+}
+
+#[async_trait]
+impl RpcSender for MultiplexPool {
+    fn call_buf(&self) -> CallBuf {
+        CallBuf::from_spare(crate::connection::take_buffer())
+    }
+
+    /// Send an RPC call on the connection with the fewest calls in flight.
+    async fn send_call(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+    ) -> Result<RpcResponse, RpcError> {
+        let lease = self.inner.lease()?;
+        let result = lease.handle.send_call(progvers, proc, call).await;
+        if result.is_err() && lease.handle.is_poisoned() {
+            self.inner.replace(lease.index, &lease.handle);
+        }
+        result
+    }
+
+    async fn send_fire_and_forget(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+    ) -> Result<(), RpcError> {
+        let lease = self.inner.lease()?;
+        let result = lease
+            .handle
+            .send_fire_and_forget(progvers, proc, call)
+            .await;
+        if result.is_err() && lease.handle.is_poisoned() {
+            self.inner.replace(lease.index, &lease.handle);
+        }
         result
     }
 }
@@ -2970,5 +3413,355 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result, b"trait-call");
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_distributes_calls() {
+        let addr = start_echo_server().await;
+        let pool = MultiplexPool::connect(&addr, 3).await.unwrap();
+        assert_eq!(pool.size(), 3);
+
+        for i in 0..9u32 {
+            let data = format!("call-{i}");
+            let result = pool
+                .send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
+                .await
+                .unwrap();
+            assert_eq!(result, data.as_bytes());
+        }
+        assert_eq!(pool.pending_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_balances_by_in_flight() {
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let release = Arc::new(Semaphore::new(0));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(HoldingEchoService {
+            started: started_tx,
+            release: release.clone(),
+        }));
+        let config = ConnectionConfig::new(None, services);
+        RpcServer::new_with_config(listener, config).start().await;
+
+        let pool = Arc::new(MultiplexPool::connect(&addr, 2).await.unwrap());
+        let mut calls = Vec::new();
+        for _ in 0..4 {
+            let pool = pool.clone();
+            calls.push(tokio::spawn(async move {
+                pool.send_call(ProgVers::new(1, 1), 1, call_with(b"held"))
+                    .await
+            }));
+        }
+        // Every call is counted on some slot while it waits.
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while pool.pending_count() < 4 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let per_slot: Vec<usize> = pool
+            .inner
+            .slots
+            .iter()
+            .map(|slot| slot.in_flight.load(Ordering::Relaxed))
+            .collect();
+        assert_eq!(
+            per_slot,
+            vec![2, 2],
+            "calls should spread across connections"
+        );
+
+        // Release whichever calls the server has started so far, then all.
+        for _ in 0..4 {
+            tokio::time::timeout(Duration::from_secs(2), started_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            release.add_permits(1);
+        }
+        for call in calls {
+            assert_eq!(call.await.unwrap().unwrap(), b"held");
+        }
+        assert_eq!(pool.pending_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_replaces_connection_after_peer_disconnect() {
+        let (addr, initial_connection_dropped) = start_drop_then_echo_server().await;
+        let pool = MultiplexPool::connect(&addr, 1).await.unwrap();
+        initial_connection_dropped.notified().await;
+
+        let response = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                match pool
+                    .send_call(ProgVers::new(1, 1), 1, call_with(b"after-restart"))
+                    .await
+                {
+                    Ok(response) => break response,
+                    Err(RpcError::SystemError) => tokio::task::yield_now().await,
+                    Err(error) => panic!("unexpected error while replacing connection: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("multiplex pool should replace a peer-disconnected connection");
+        assert_eq!(response, b"after-restart");
+        assert!(!pool.inner.slots[0].replacing.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_canceled_call_keeps_connection() {
+        let (addr, blocked_started, blocked_release, calls) = start_cancellation_server().await;
+        let pool = Arc::new(MultiplexPool::connect(&addr, 1).await.unwrap());
+        let initial = pool.inner.slots[0].handle.read().unwrap().clone();
+
+        let blocked = {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                pool.send_call(ProgVers::new(1, 1), 1, call_with(b"blocked"))
+                    .await
+            })
+        };
+        blocked_started.notified().await;
+        blocked.abort();
+        assert!(blocked.await.unwrap_err().is_cancelled());
+        assert_eq!(pool.pending_count(), 0);
+
+        // Let the canceled call's handler finish; its late reply is
+        // discarded. The same connection keeps serving.
+        blocked_release.notify_one();
+        let result = pool
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"after-cancel"))
+            .await
+            .unwrap();
+        assert_eq!(result, b"after-cancel");
+        assert!(Arc::ptr_eq(
+            &initial,
+            &pool.inner.slots[0].handle.read().unwrap()
+        ));
+        assert_eq!(calls.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_zero_size_rejected() {
+        let addr = start_echo_server().await;
+        let result = MultiplexPool::connect(&addr, 0).await;
+        assert!(matches!(result, Err(RpcError::InvalidPoolConfiguration)));
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_connect_failure_closes_partial_connections() {
+        let (addr, closed_rx, release_tx, server) = start_eof_probe_server().await;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempt_counter = attempts.clone();
+        let result = MultiplexPool::connect_with(&addr, 2, move || {
+            let attempt = attempt_counter.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if attempt == 0 {
+                    connect_client(&addr).await
+                } else {
+                    Err(std::io::Error::other("second connection refused"))
+                }
+            }
+        })
+        .await;
+        assert!(matches!(result, Err(RpcError::ConnectFailed)));
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), closed_rx)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap(),
+            0,
+            "the connection opened before the failure should be closed"
+        );
+        release_tx.send(()).unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_shutdown_rejects_new_calls() {
+        let addr = start_echo_server().await;
+        let pool = MultiplexPool::connect(&addr, 2).await.unwrap();
+        pool.shutdown().await;
+        pool.shutdown().await;
+        assert_eq!(
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(b"closed"))
+                .await,
+            Err(RpcError::PoolClosed)
+        );
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_fire_and_forget_and_trait_object() {
+        let addr = start_echo_server().await;
+        let sender: Arc<dyn RpcSender> = Arc::new(MultiplexPool::connect(&addr, 2).await.unwrap());
+        sender
+            .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"faf-data"))
+            .await
+            .unwrap();
+        let result = sender
+            .send_call(ProgVers::new(1, 1), 1, call_with(b"after-faf"))
+            .await
+            .unwrap();
+        assert_eq!(result, b"after-faf");
+    }
+
+    /// Wait until `condition` holds, yielding between checks.
+    async fn wait_until(mut condition: impl FnMut() -> bool, what: &str) {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !condition() {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_routes_around_idle_peer_disconnect() {
+        let (addr, initial_connection_dropped) = start_drop_then_echo_server().await;
+        let pool = MultiplexPool::connect(&addr, 2).await.unwrap();
+        initial_connection_dropped.notified().await;
+        let poisoned = |slot: &MultiplexSlot| slot.handle.read().unwrap().is_poisoned();
+        wait_until(
+            || pool.inner.slots.iter().any(poisoned),
+            "the read loop to notice the closed connection",
+        )
+        .await;
+
+        // No call fails: the one routed to the dead connection moves to the
+        // healthy one and the dead one is replaced in the background.
+        for i in 0..8u32 {
+            let data = format!("idle-{i}");
+            let result = pool
+                .send_call(ProgVers::new(1, 1), 1, call_with(data.as_bytes()))
+                .await
+                .unwrap();
+            assert_eq!(result, data.as_bytes());
+        }
+        wait_until(
+            || {
+                pool.inner
+                    .slots
+                    .iter()
+                    .all(|slot| !slot.replacing.load(Ordering::Acquire) && !poisoned(slot))
+            },
+            "the replacement connection",
+        )
+        .await;
+        assert_eq!(pool.pending_count(), 0);
+        pool.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn multiplex_pool_balances_under_concurrent_callers() {
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let release = Arc::new(Semaphore::new(0));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut services = ServiceMap::new();
+        services.add_service(Box::new(HoldingEchoService {
+            started: started_tx,
+            release: release.clone(),
+        }));
+        let config = ConnectionConfig::new(None, services);
+        RpcServer::new_with_config(listener, config).start().await;
+
+        const CONNECTIONS: usize = 4;
+        const CALLS: usize = 64;
+        let pool = Arc::new(MultiplexPool::connect(&addr, CONNECTIONS).await.unwrap());
+        let go = Arc::new(tokio::sync::Barrier::new(CALLS));
+        let mut calls = Vec::new();
+        for _ in 0..CALLS {
+            let pool = pool.clone();
+            let go = go.clone();
+            calls.push(tokio::spawn(async move {
+                go.wait().await;
+                pool.send_call(ProgVers::new(1, 1), 1, call_with(b"held"))
+                    .await
+            }));
+        }
+        wait_until(
+            || pool.pending_count() == CALLS,
+            "every call to be in flight",
+        )
+        .await;
+        // Reservations are compare-and-swap against the observed count, so
+        // callers racing for the same least-loaded slot spread out exactly.
+        let per_slot: Vec<usize> = pool
+            .inner
+            .slots
+            .iter()
+            .map(|slot| slot.in_flight.load(Ordering::Relaxed))
+            .collect();
+        assert_eq!(per_slot, vec![CALLS / CONNECTIONS; CONNECTIONS]);
+
+        for _ in 0..CALLS {
+            tokio::time::timeout(Duration::from_secs(5), started_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            release.add_permits(1);
+        }
+        for call in calls {
+            assert_eq!(call.await.unwrap().unwrap(), b"held");
+        }
+        assert_eq!(pool.pending_count(), 0);
+        pool.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn multiplex_pool_shutdown_stops_pending_replacement() {
+        let (addr, initial_connection_dropped) = start_drop_then_echo_server().await;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempt_counter = attempts.clone();
+        // The first connect succeeds (and is then dropped by the peer);
+        // every replacement attempt fails, so the task sits in backoff.
+        let pool = MultiplexPool::connect_with(&addr, 1, move || {
+            let attempt = attempt_counter.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if attempt == 0 {
+                    connect_client(&addr).await
+                } else {
+                    Err(std::io::Error::other("replacement refused"))
+                }
+            }
+        })
+        .await
+        .unwrap();
+        initial_connection_dropped.notified().await;
+        wait_until(
+            || pool.inner.slots[0].handle.read().unwrap().is_poisoned(),
+            "the read loop to notice the closed connection",
+        )
+        .await;
+
+        // With no healthy connection the call fails fast and starts the
+        // replacement.
+        assert_eq!(
+            pool.send_call(ProgVers::new(1, 1), 1, call_with(b"down"))
+                .await,
+            Err(RpcError::SystemError)
+        );
+        wait_until(
+            || attempts.load(Ordering::SeqCst) >= 2,
+            "the replacement task to start retrying",
+        )
+        .await;
+
+        // Shutdown returns without waiting out the backoff and the task is
+        // gone with it.
+        tokio::time::timeout(Duration::from_secs(2), pool.shutdown())
+            .await
+            .expect("shutdown should not wait for the replacement backoff");
+        assert!(pool.inner.replacements.lock().unwrap().is_empty());
+        let attempts_after_shutdown = attempts.load(Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(attempts.load(Ordering::SeqCst), attempts_after_shutdown);
     }
 }

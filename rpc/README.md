@@ -8,7 +8,7 @@ An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [
 - XDR serialization via the `xdrs` crate
 - Service registration with program/version dispatching
 - **Automatic dispatch** — ready handlers finish inline; only suspended handlers spawn tasks
-- **Connection pools** — `FixedSerialPool` (serial per-conn), `DynamicPool` (min-pending), `CpuSetPool` (LLC-affine)
+- **Connection pools** — `MultiplexPool` (fixed set, many in flight per connection), `FixedSerialPool` (serial per-conn), `DynamicPool` (min-pending), `CpuSetPool` (LLC-affine)
 - **Bidirectional RPC** — handlers can call back to the peer via `peer()`
 - Panic isolation and connection poisoning for shutdown
 - **Structured tracing** — `tracing` spans and events for logging, OpenTelemetry, and e2e waterfalls

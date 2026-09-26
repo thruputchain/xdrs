@@ -186,7 +186,7 @@ mod client;
 pub use client::{connect_client, connect_client_with_config};
 
 pub mod pool;
-pub use pool::{CanceledCallPolicy, CpuSetPool, DynamicPool, FixedSerialPool};
+pub use pool::{CanceledCallPolicy, CpuSetPool, DynamicPool, FixedSerialPool, MultiplexPool};
 
 /// Low-level TCP record-stream primitives used by the driver.
 ///

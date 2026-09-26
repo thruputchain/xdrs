@@ -29,6 +29,10 @@ if [ "$FULL_EVALUATION" = "true" ]; then
   python3 scripts/evaluate_runtimes.py --output benchmark-results/evaluation
 fi
 
+if [ "$POOL_EVALUATION" = "true" ]; then
+  python3 scripts/evaluate_pools.py --output benchmark-results/pools
+fi
+
 echo 'commit metrics'
 python3 scripts/publish_metrics.py --report benchmark-results --branch "$GIT_BRANCH" \
   --commit "$GIT_COMMIT" --commit-time "$(git show -s --format=%ct HEAD)"
@@ -37,6 +41,7 @@ python3 scripts/publish_metrics.py --report benchmark-results --branch "$GIT_BRA
 
 [jobs.env]
 FULL_EVALUATION = "{{ .full_evaluation }}"
+POOL_EVALUATION = "{{ .pool_evaluation }}"
 GIT_COMMIT = "{{ .git_commit }}"
 GIT_BRANCH = "{{ .git_branch }}"
 CARGO_REGISTRIES_GROUNDHOG_TOKEN = "{{ .cargo_registry_token }}"

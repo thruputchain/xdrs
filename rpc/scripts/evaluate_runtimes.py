@@ -52,6 +52,16 @@ def build(root, target, baseline, log):
             'smoke': target / 'release/rpc-smoke', 'smoke_client': target / 'release/rpc-smoke-client'}
 
 
+def without_multiplex_pool(text):
+    """Drop the smoke client's MultiplexPool import and pool arm for a driver without it."""
+    import re
+    stripped = text.replace('FixedSerialPool, MultiplexPool, ProgVers', 'FixedSerialPool, ProgVers')
+    stripped, arms = re.subn(r'\n        "multiplex" => Arc::new\(\n(?:.*\n)*?        \),\n', '\n', stripped)
+    if 'MultiplexPool' in stripped or arms != 1:
+        raise RuntimeError('could not adapt rpc-smoke/src/client.rs for a baseline without MultiplexPool')
+    return stripped
+
+
 def e2e(binaries, workers, shards, case, quick, log):
     connections, concurrency, payload = case
     iterations, warmup = (100, 20) if quick else (5000, 1000)
@@ -100,8 +110,10 @@ def main():
     run(['git', 'fetch', '--depth=1', 'origin', BASELINE])
     run(['git', 'worktree', 'add', '--detach', str(baseline), BASELINE])
     try:
+        baseline_has_multiplex_pool = 'MultiplexPool' in (baseline / 'rpc_driver/src/pool.rs').read_text()
         # Identical benchmark source for both implementations. Only adapt the
-        # baseline's removed configuration API; do not alter driver sources.
+        # baseline's removed configuration API and absent pools; do not alter
+        # driver sources.
         for name in ['rpc_driver/benches/rpc_bench.rs', 'rpc-smoke/src/server.rs',
                      'rpc-smoke/src/bench_client.rs', 'rpc-smoke/src/runtime.rs',
                      'rpc-smoke/src/harness.rs', 'rpc-smoke/src/client.rs',
@@ -117,6 +129,10 @@ def main():
             elif name.endswith('server.rs'):
                 text = text.replace('ConnectionConfig::new(None, services);',
                                     'ConnectionConfig::new(None, services).with_inline_ready_dispatch(true);')
+            elif name == 'rpc-smoke/src/client.rs' and not baseline_has_multiplex_pool:
+                # The baseline predates MultiplexPool; the smoke client keeps the
+                # pools both revisions have, and no smoke case selects the other.
+                text = without_multiplex_pool(text)
             (baseline / name).write_text(text)
         with (output / 'build.log').open('w') as log:
             binaries = {

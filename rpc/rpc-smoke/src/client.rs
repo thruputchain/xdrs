@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use rpc_driver::{CpuSetPool, DynamicPool, FixedSerialPool, ProgVers, RpcSender};
+use rpc_driver::{CpuSetPool, DynamicPool, FixedSerialPool, MultiplexPool, ProgVers, RpcSender};
 use tokio::sync::Semaphore;
 
 use metrics::{ClientMetrics, ClientRunConfig, RpcCounts};
@@ -35,7 +35,8 @@ struct Args {
     #[arg(long, default_value = "100")]
     max_inflight: usize,
 
-    /// Pool type: "fixed" (default), "cpu" (LLC-aware), or "dynamic" (min-pending)
+    /// Pool type: "fixed" (default), "cpu" (LLC-aware), "dynamic"
+    /// (min-pending, lazy), or "multiplex" (fixed set, many in flight each)
     #[arg(long, default_value = "fixed")]
     pool: String,
 
@@ -113,8 +114,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )
                 })?,
         ),
+        "multiplex" => Arc::new(
+            MultiplexPool::connect(&addr, prof.connections)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "failed to connect {} multiplexed connections to {addr}: {e}",
+                        prof.connections
+                    )
+                })?,
+        ),
         other => {
-            return Err(format!("unknown pool type: {other} (use fixed, dynamic, or cpu)").into());
+            return Err(format!(
+                "unknown pool type: {other} (use fixed, dynamic, cpu, or multiplex)"
+            )
+            .into());
         }
     };
 

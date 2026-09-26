@@ -9,6 +9,10 @@ on:
         description: Compare main and candidate across the full suite and runtime layouts
         type: boolean
         default: false
+      pool_evaluation:
+        description: Compare the connection pools against each other on the candidate
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,6 +45,7 @@ jobs:
         env:
           BRANCH_NAME: ${{ github.ref_name }}
           FULL_EVALUATION: ${{ inputs.full_evaluation || false }}
+          POOL_EVALUATION: ${{ inputs.pool_evaluation || false }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
           echo "Branch name: $BRANCH_NAME"
@@ -52,5 +57,6 @@ jobs:
             --key=cargo_registry_token --value=${{ secrets.GROUNDHOG_REGISTRY_TOKEN }} \
             --key=cargo_registry_global_credential_providers --value=${{ env.CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS }} \
             --key=full_evaluation --value="$FULL_EVALUATION" \
+            --key=pool_evaluation --value="$POOL_EVALUATION" \
             --timeout-sec=6600 \
             ./scripts/schedules/metrics.toml
