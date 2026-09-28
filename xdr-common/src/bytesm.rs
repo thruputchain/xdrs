@@ -113,7 +113,7 @@ impl<const MAX: u32> core::str::FromStr for BytesM<MAX> {
 
 /// Decode a single ASCII hex digit (`0-9`, `a-f`, `A-F`) to its 0-15 value.
 #[cfg(feature = "alloc")]
-fn hex_digit(b: u8) -> core::result::Result<u8, Error> {
+pub(crate) fn hex_digit(b: u8) -> core::result::Result<u8, Error> {
     match b {
         b'0'..=b'9' => Ok(b - b'0'),
         b'a'..=b'f' => Ok(b - b'a' + 10),
