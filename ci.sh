@@ -38,6 +38,10 @@ cargo test -p xdr-common --features alloc
 cargo test -p xdr-common --features serde
 cargo test -p xdr-common --features schemars
 
+# Compile Serde support for a target with no standard library.
+rustup target add thumbv7em-none-eabi
+cargo check -p xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
+
 cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build -p xdr-common --no-default-features -Zbuild-std=core,alloc
 cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build -p xdr-common --features alloc -Zbuild-std=core,alloc
 

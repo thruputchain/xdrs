@@ -63,3 +63,7 @@ pub use bytesm::*;
 
 mod stringm;
 pub use stringm::*;
+
+#[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+pub mod serde_hex;
