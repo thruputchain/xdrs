@@ -33,29 +33,34 @@ jobs:
           rm -f /home/hogci/.gitconfig
       # add all relevant GitHub deploy keys to the workflow; hog_sched forwards
       # this agent to the cluster host, where hog_fwd maps each key to its repo.
-      - uses: webfactory/ssh-agent@v0.10.0
+      - uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
         with:
           ssh-private-key: |
             ${{ secrets.XDR_RPC_KEY }}
             ${{ secrets.METRICS_HISTORY_WRITE_KEY }}
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Run hog schedule
         env:
           BRANCH_NAME: ${{ github.ref_name }}
           FULL_EVALUATION: ${{ inputs.full_evaluation || false }}
           POOL_EVALUATION: ${{ inputs.pool_evaluation || false }}
           SOURCE_SHA: ${{ github.sha }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+          REGISTRY_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
         run: |
           echo "Branch name: $BRANCH_NAME"
           hog_sched \
-            --i="${{ github.event.repository.name }}-${{ github.run_id }}" \
-            --key=github_repo --value=${{ github.repository }} \
+            --i="${REPO_NAME}-${RUN_ID}" \
+            --key=github_repo --value="$REPOSITORY" \
             --key=git_branch --value="$BRANCH_NAME" \
             --key=git_commit --value="$SOURCE_SHA" \
-            --key=cargo_registry_token --value=${{ secrets.GROUNDHOG_REGISTRY_TOKEN }} \
-            --key=cargo_registry_global_credential_providers --value=${{ env.CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS }} \
+            --key=cargo_registry_token --value="$REGISTRY_TOKEN" \
+            --key=cargo_registry_global_credential_providers --value="$CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS" \
             --key=full_evaluation --value="$FULL_EVALUATION" \
             --key=pool_evaluation --value="$POOL_EVALUATION" \
             --timeout-sec=6600 \

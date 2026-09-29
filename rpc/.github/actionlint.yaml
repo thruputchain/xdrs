@@ -1,0 +1,8 @@
+# actionlint configuration
+#   https://github.com/rhysd/actionlint/blob/main/docs/config.md
+
+self-hosted-runner:
+  # actionlint only knows GitHub-hosted labels; custom ones must be declared.
+  # (`self-hosted` is built in.)
+  labels:
+    - hog1
