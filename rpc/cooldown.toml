@@ -1,0 +1,9 @@
+[cooldown]
+incompatible-publish-age = "deny"
+lockfile-baseline = "floor"
+
+[registry]
+global-min-publish-age = "15 days"
+
+[registries.groundhog]
+min-publish-age = "0"
