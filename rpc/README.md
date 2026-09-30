@@ -248,7 +248,8 @@ The script builds release binaries with the lockfile, then runs:
   reuse connections and finish warmup before a barrier starts measurement. No
   per-request task spawn occurs in the load generator. Each reply is checked.
   The matrix covers 64/4096-byte payloads, 1/32 in-flight calls, and 1/4 connections.
-  Concurrent server dispatch runs with the inline probe off/on/on/off (ABBA).
+  Each case runs four times in sequence on the driver's single dispatch path, and
+  every run records its position so drift across repeats is visible.
 
 `--threads 2` is the default Tokio worker count **per process**. Keep it and the
 host constant for comparisons. `--quick` only checks that measurements run; its
@@ -263,7 +264,7 @@ completion counts, dispatch mode, source SHA, CPU, Rust version, and worker coun
 `primitives.json`, `summary.md`, and diagnostic logs accompany it. Benchmarks do
 not execute in PR CI. Pushes to main after merges trigger the RPC Metrics
 workflow; a manual run is also available. It checks out the selected commit
-through `hog_sched` on an exclusively reserved host selected by `?`, runs the
+through `hog_sched` on a dedicated benchmark host, runs the
 component and separate-process matrix, and writes JSON to `groundhogchain/metrics_history` using hogd's
 `metrics/<name>/main/<commit-time>_<commit>` layout. The metric names are
 `xdr-rpc-e2e` and `xdr-rpc-components`. The workflow forwards repository deploy

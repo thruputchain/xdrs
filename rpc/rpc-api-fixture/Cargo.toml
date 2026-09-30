@@ -6,7 +6,7 @@ rust-version.workspace = true
 publish = false
 description = "Consumer fixture proving generated-style bindings need only rpc_api"
 license = "Apache-2.0"
-repository = "https://github.com/groundhogchain/rpc_rs"
+repository = "https://github.com/groundhogchain/xdr_rpc"
 
 # The lib target mimics x23c-generated protocol bindings and must depend on
 # rpc_api ONLY — adding rpc_driver (or anything transport-flavored) to
