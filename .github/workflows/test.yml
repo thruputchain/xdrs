@@ -21,13 +21,13 @@ jobs:
     # but depends on nothing from it, so the graph resolves unauthenticated.)
     permissions:
       contents: read
-    uses: groundhogchain/actions/.github/workflows/rust-dependency-policy.yml@af074672d3a6f3ddedcacd758224ea5a5cf2a8f3
+    uses: groundhogchain/actions/.github/workflows/rust-dependency-policy.yml@v1
 
   # Lint this repo's workflows
   workflow-lint:
     permissions:
       contents: read
-    uses: groundhogchain/actions/.github/workflows/workflow-lint.yml@af074672d3a6f3ddedcacd758224ea5a5cf2a8f3
+    uses: groundhogchain/actions/.github/workflows/workflow-lint.yml@v1
 
   stable:
     needs: dependency-policy # don't build anything until deps are known to be clean
@@ -45,11 +45,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Rust 1.96.0
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
-        with:
-          toolchain: 1.96.0
-          components: rustfmt,clippy
-          targets: thumbv7em-none-eabi
+        run: |
+          rustup toolchain install 1.96.0 --target thumbv7em-none-eabi --profile minimal --component rustfmt,clippy --no-self-update 
+          rustup default 1.96.0
       - name: Check format
         run: cargo fmt --check
       - name: Build workspace (no features)
@@ -102,10 +100,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up pinned nightly
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
-        with:
-          toolchain: nightly-2026-05-26
-          components: rust-src
+        run: |
+          rustup toolchain install nightly-2026-05-26 --profile minimal --component rust-src --no-self-update
+          rustup default nightly-2026-05-26
       - name: Build xdr-common with build-std
         run: |
           cargo +nightly-2026-05-26 build -p xdr-common --no-default-features -Zbuild-std=core,alloc
@@ -129,8 +126,8 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up current stable
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
       - name: Test workspace on current stable
         run: cargo +stable test --workspace --all-features

@@ -45,7 +45,7 @@ jobs:
         with:
           repository: groundhogchain/actions
           path: actions
-          ref: main
+          ref: v1
           persist-credentials: false
 
       - name: publish dry run

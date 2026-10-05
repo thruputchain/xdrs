@@ -2,7 +2,11 @@
 #   https://docs.zizmor.sh/configuration/
 
 rules:
-  # unpinned-uses: The default requires hash-pinning everywhere.
+  # Allow tag-pinning our own workflows
+  unpinned-uses:
+    config:
+      policies:
+        groundhogchain/*: ref-pin
 
   # Style: prefers '$/...' over './...' for same-repo actions. Cannot be
   # adopted yet -- actionlint 1.7.12 predates the syntax and rejects it.

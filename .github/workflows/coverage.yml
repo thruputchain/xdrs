@@ -17,10 +17,10 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
-        with:
-          toolchain: nightly-2026-05-26
-          components: llvm-tools-preview
+      - name: Set up Rust nightly-2026-05-26
+        run: |
+          rustup toolchain install nightly-2026-05-26 --profile minimal --component llvm-tools-preview --no-self-update
+          rustup default nightly-2026-05-26
       - name: Install cargo-llvm-cov
         run: cargo +nightly-2026-05-26 install cargo-llvm-cov --version 0.9.1 --locked
       - name: Measure library and generated code
