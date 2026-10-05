@@ -16,7 +16,7 @@ jobs:
   dependency-policy:
     permissions:
       contents: read
-    uses: groundhogchain/actions/.github/workflows/rust-dependency-policy.yml@af074672d3a6f3ddedcacd758224ea5a5cf2a8f3 # v0
+    uses: groundhogchain/actions/.github/workflows/rust-dependency-policy.yml@v1
     with:
       registry-name: groundhog
     secrets:
@@ -25,7 +25,7 @@ jobs:
   workflow-lint:
     permissions:
       contents: read
-    uses: groundhogchain/actions/.github/workflows/workflow-lint.yml@af074672d3a6f3ddedcacd758224ea5a5cf2a8f3 # v0
+    uses: groundhogchain/actions/.github/workflows/workflow-lint.yml@v1
     with:
       shellcheck-scripts: true
 
@@ -44,10 +44,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Rust 1.96.0
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
-        with:
-          toolchain: 1.96.0
-          components: rustfmt,clippy
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default 1.96.0
       # A consumer must never end up with two incompatible copies of the RPC
       # boundary crates in one build — that is exactly the type-identity
       # split this workspace exists to prevent (see "Versioning and
@@ -85,9 +84,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up current stable
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
-        with:
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
       - name: Test workspace on current stable
         run: cargo +stable test --workspace --all-features --locked
 
