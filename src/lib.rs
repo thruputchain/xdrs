@@ -42,6 +42,8 @@
 //!   - `BufWriter` types in [`cxs`] and [`txs`] modules
 //!     for growable buffers
 //!   - `encode()` functions that return owned `Vec<u8>`
+//!   - [`ChunkedBytes`], variable-length opaque data held as separate chunks
+//!     that encodes like one `BytesM` without first being copied together
 //!
 //!   **`xdr_common` owned types require `alloc`.** Without the `alloc` feature,
 //!   `BytesM<MAX>`, `StringM<MAX>`, and `VecM<T, MAX>` compile but their
@@ -91,6 +93,10 @@ pub mod encodes_as;
 pub mod read_xdr;
 pub mod write_xdr;
 
+// Opaque data written from separate chunks
+#[cfg(feature = "alloc")]
+pub mod chunked_bytes;
+
 // The abstract interface for serialization formats
 pub mod serialize;
 
@@ -104,6 +110,8 @@ pub(crate) mod mu;
 
 pub(crate) mod valid_u32;
 
+#[cfg(feature = "alloc")]
+pub use chunked_bytes::*;
 pub use discrim::*;
 pub use encodes_as::*;
 pub use read_xdr::*;

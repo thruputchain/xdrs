@@ -57,6 +57,16 @@ where
         self.put_opaque_variable(bytes)
     }
 
+    #[cfg(feature = "alloc")]
+    fn write_opaque_variable_chunks<B: AsRef<[u8]>>(&mut self, chunks: &[B]) -> WriteResult<()> {
+        let len = opaque_chunks_len(chunks).ok_or(WriteError::InvalidArrayLength)?;
+        self.write_u32(len)?;
+        for chunk in chunks {
+            self.put_bytes(chunk.as_ref())?;
+        }
+        self.put_bytes(&[0; 3][..opaque_padding_len(len as usize)])
+    }
+
     #[inline]
     fn write_bool(&mut self, v: bool) -> WriteResult<()> {
         self.write_i32(if v { 1 } else { 0 })
@@ -143,6 +153,21 @@ where
         debug_assert!(bytes.len() <= u32::MAX as usize);
         // SAFETY: forwarded caller contract.
         unsafe { self.put_opaque_variable(bytes) }
+    }
+
+    #[cfg(feature = "alloc")]
+    unsafe fn write_opaque_variable_chunks<B: AsRef<[u8]>>(&mut self, chunks: &[B]) {
+        let len: usize = chunks.iter().map(|chunk| chunk.as_ref().len()).sum();
+        debug_assert!(len <= u32::MAX as usize);
+        // SAFETY: the caller guarantees space for the encoded form: the
+        // length, the chunks and the padding written here.
+        unsafe {
+            self.write_u32(len as u32);
+            for chunk in chunks {
+                self.put_bytes(chunk.as_ref());
+            }
+            self.put_bytes(&[0; 3][..opaque_padding_len(len)]);
+        }
     }
 
     #[inline]
