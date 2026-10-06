@@ -46,30 +46,6 @@ pub trait WriterUnchecked<F> {
     /// `bytes.len()` must not exceed `u32::MAX`.
     unsafe fn write_opaque_variable(&mut self, bytes: &[u8]);
 
-    /// Writes a byte sequence of variable length that is held as consecutive
-    /// chunks.
-    ///
-    /// The encoding is that of [`write_opaque_variable`](Self::write_opaque_variable)
-    /// on the chunks' concatenation. This crate's formats write each chunk in
-    /// place. The default implementation copies the chunks into one buffer
-    /// first, so a writer defined elsewhere encodes correctly without
-    /// overriding it.
-    ///
-    /// # Safety
-    ///
-    /// The underlying buffer must have space for the encoded form, and the
-    /// chunks' total length must not exceed `u32::MAX`.
-    #[cfg(feature = "alloc")]
-    unsafe fn write_opaque_variable_chunks<B: AsRef<[u8]>>(&mut self, chunks: &[B])
-    where
-        Self: Sized,
-    {
-        let bytes = crate::serialize::writer::concat_chunks(chunks);
-        // SAFETY: forwarded caller contract; the concatenation has the
-        // chunks' total length.
-        unsafe { self.write_opaque_variable(&bytes) }
-    }
-
     /// Writes a signed 64-bit integer.
     ///
     /// # Safety

@@ -193,10 +193,10 @@ fn every_write_xdr_type_stands_in_for_itself() {
 
 // Chunk lengths that are not multiples of 4 exercise TXS padding: the
 // chunks must be written back to back with one pad at the end, not padded
-// one by one.
+// one by one, including when bytes carry across several short chunks.
 #[test]
 fn chunked_bytes_stand_in_for_bytesm() {
-    let cases: [&[&[u8]]; 8] = [
+    let cases: [&[&[u8]]; 11] = [
         &[],
         &[b""],
         &[b"a"],
@@ -205,6 +205,9 @@ fn chunked_bytes_stand_in_for_bytesm() {
         &[b"abcd", b"efgh"],
         &[b"abc", b"", b"de", b"f", b"ghij", b"k"],
         &[b"", b"lmnopqr", b""],
+        &[b"a", b"b", b"c", b"d", b"e"],
+        &[b"a", b"bcdefghijk", b"lm"],
+        &[b"abcdefg", b"hijkl", b"m", b"no"],
     ];
 
     for chunks in cases {
@@ -257,73 +260,4 @@ fn chunked_bytes_reject_more_than_max() {
         txs::encode(&BytesM::<4>(b"abcde".to_vec())),
         Err(WriteError::InvalidArrayLength)
     ));
-}
-
-// A format defined outside xdrs gets `write_opaque_variable_chunks` from
-// the trait's default, which writes the concatenation.
-#[test]
-fn chunked_bytes_use_the_default_for_other_writers() {
-    struct Plain;
-
-    #[derive(Default)]
-    struct Recorder(Vec<String>);
-
-    impl Writer<Plain> for Recorder {
-        fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
-            self.0.push(format!("fixed {bytes:?}"));
-            Ok(())
-        }
-        fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
-            self.0.push(format!("variable {bytes:?}"));
-            Ok(())
-        }
-        fn write_i64(&mut self, n: i64) -> WriteResult<()> {
-            self.0.push(format!("i64 {n}"));
-            Ok(())
-        }
-        fn write_i32(&mut self, n: i32) -> WriteResult<()> {
-            self.0.push(format!("i32 {n}"));
-            Ok(())
-        }
-        fn write_i16(&mut self, n: i16) -> WriteResult<()> {
-            self.0.push(format!("i16 {n}"));
-            Ok(())
-        }
-        fn write_u64(&mut self, n: u64) -> WriteResult<()> {
-            self.0.push(format!("u64 {n}"));
-            Ok(())
-        }
-        fn write_u32(&mut self, n: u32) -> WriteResult<()> {
-            self.0.push(format!("u32 {n}"));
-            Ok(())
-        }
-        fn write_u16(&mut self, n: u16) -> WriteResult<()> {
-            self.0.push(format!("u16 {n}"));
-            Ok(())
-        }
-        fn write_bool(&mut self, b: bool) -> WriteResult<()> {
-            self.0.push(format!("bool {b}"));
-            Ok(())
-        }
-        fn write_f32(&mut self, n: f32) -> WriteResult<()> {
-            self.0.push(format!("f32 {n}"));
-            Ok(())
-        }
-        fn write_f64(&mut self, n: f64) -> WriteResult<()> {
-            self.0.push(format!("f64 {n}"));
-            Ok(())
-        }
-    }
-
-    let mut chunked = Recorder::default();
-    ChunkedBytes::<&[u8]>(vec![b"ab", b"", b"c"])
-        .write_xdr::<Plain, _>(&mut chunked)
-        .unwrap();
-    let mut owned = Recorder::default();
-    BytesM::<{ u32::MAX }>(b"abc".to_vec())
-        .write_xdr::<Plain, _>(&mut owned)
-        .unwrap();
-
-    assert_eq!(chunked.0, owned.0);
-    assert_eq!(chunked.0, ["variable [97, 98, 99]"]);
 }

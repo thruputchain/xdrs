@@ -49,24 +49,6 @@ pub trait Writer<F> {
     /// Writes a byte sequence of variable length.
     fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()>;
 
-    /// Writes a byte sequence of variable length that is held as consecutive
-    /// chunks.
-    ///
-    /// The encoding is that of [`write_opaque_variable`](Self::write_opaque_variable)
-    /// on the chunks' concatenation. This crate's formats write each chunk in
-    /// place. The default implementation copies the chunks into one buffer
-    /// first, so a writer defined elsewhere encodes correctly without
-    /// overriding it.
-    #[cfg(feature = "alloc")]
-    fn write_opaque_variable_chunks<B: AsRef<[u8]>>(&mut self, chunks: &[B]) -> WriteResult<()>
-    where
-        Self: Sized,
-    {
-        // Reject an oversized total before copying anything.
-        opaque_chunks_len(chunks).ok_or(WriteError::InvalidArrayLength)?;
-        self.write_opaque_variable(&concat_chunks(chunks))
-    }
-
     /// Writes a signed 64-bit integer.
     fn write_i64(&mut self, n: i64) -> WriteResult<()>;
 
@@ -93,33 +75,4 @@ pub trait Writer<F> {
 
     /// Writes a 64-bit IEEE 754 floating-point value.
     fn write_f64(&mut self, n: f64) -> WriteResult<()>;
-}
-
-/// The total length of `chunks`, or `None` if it does not fit in an XDR
-/// length.
-#[cfg(feature = "alloc")]
-pub(crate) fn opaque_chunks_len<B: AsRef<[u8]>>(chunks: &[B]) -> Option<u32> {
-    chunks.iter().try_fold(0u32, |total, chunk| {
-        u32::try_from(chunk.as_ref().len())
-            .ok()
-            .and_then(|len| total.checked_add(len))
-    })
-}
-
-/// The number of zero bytes that pad `len` bytes of opaque data to a 4-byte
-/// boundary in TXS.
-#[cfg(feature = "alloc")]
-pub(crate) const fn opaque_padding_len(len: usize) -> usize {
-    (4 - len % 4) % 4
-}
-
-/// The chunks copied into one buffer, for writers without an in-place path.
-#[cfg(feature = "alloc")]
-pub(crate) fn concat_chunks<B: AsRef<[u8]>>(chunks: &[B]) -> alloc::vec::Vec<u8> {
-    let len = chunks.iter().map(|chunk| chunk.as_ref().len()).sum();
-    let mut bytes = alloc::vec::Vec::with_capacity(len);
-    for chunk in chunks {
-        bytes.extend_from_slice(chunk.as_ref());
-    }
-    bytes
 }
