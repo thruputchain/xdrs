@@ -62,6 +62,8 @@ pub trait Writer<F> {
     where
         Self: Sized,
     {
+        // Reject an oversized total before copying anything.
+        opaque_chunks_len(chunks).ok_or(WriteError::InvalidArrayLength)?;
         self.write_opaque_variable(&concat_chunks(chunks))
     }
 

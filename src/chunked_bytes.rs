@@ -46,10 +46,12 @@ impl<B: AsRef<[u8]>, const MAX: u32> ChunkedBytes<B, MAX> {
 
 impl<B: AsRef<[u8]>, const MAX: u32> WriteXDR for ChunkedBytes<B, MAX> {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
-        if self.len() > MAX as usize {
-            return Err(WriteError::InvalidArrayLength);
+        // Sum in `u32`: on a 32-bit target, repeated references to one
+        // large chunk could overflow a `usize` total.
+        match opaque_chunks_len(&self.0) {
+            Some(len) if len <= MAX => w.write_opaque_variable_chunks(&self.0),
+            _ => Err(WriteError::InvalidArrayLength),
         }
-        w.write_opaque_variable_chunks(&self.0)
     }
 
     unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
@@ -61,6 +63,14 @@ impl<B: AsRef<[u8]>, const MAX: u32> WriteXDR for ChunkedBytes<B, MAX> {
         // bound and that the writer has space for the encoded form.
         unsafe { w.write_opaque_variable_chunks(&self.0) }
     }
+}
+
+impl<B: AsRef<[u8]>, const MAX: u32> crate::cxs::ConstMaxSize for ChunkedBytes<B, MAX> {
+    const MAX_SIZE: Option<usize> = crate::cxs::const_writer::max_size_opaque_variable(MAX);
+}
+
+impl<B: AsRef<[u8]>, const MAX: u32> crate::txs::ConstMaxSize for ChunkedBytes<B, MAX> {
+    const MAX_SIZE: Option<usize> = crate::txs::const_writer::max_size_opaque_variable(MAX);
 }
 
 impl<B: AsRef<[u8]>, const MAX: u32> EncodesAs<Self> for ChunkedBytes<B, MAX> {}

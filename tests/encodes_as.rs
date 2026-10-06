@@ -196,10 +196,11 @@ fn every_write_xdr_type_stands_in_for_itself() {
 // one by one.
 #[test]
 fn chunked_bytes_stand_in_for_bytesm() {
-    let cases: [&[&[u8]]; 7] = [
+    let cases: [&[&[u8]]; 8] = [
         &[],
         &[b""],
         &[b"a"],
+        &[b"a", b"b"],
         &[b"ab", b"c"],
         &[b"abcd", b"efgh"],
         &[b"abc", b"", b"de", b"f", b"ghij", b"k"],
@@ -222,6 +223,20 @@ fn chunked_bytes_stand_in_for_bytesm() {
             &shared,
         );
     }
+}
+
+#[test]
+fn chunked_bytes_share_the_size_bound_of_bytesm() {
+    type Chunked = ChunkedBytes<Vec<u8>, 16>;
+
+    assert_eq!(
+        <Chunked as cxs::ConstMaxSize>::MAX_SIZE,
+        <BytesM<16> as cxs::ConstMaxSize>::MAX_SIZE
+    );
+    assert_eq!(
+        <Chunked as txs::ConstMaxSize>::MAX_SIZE,
+        <BytesM<16> as txs::ConstMaxSize>::MAX_SIZE
+    );
 }
 
 // Like `BytesM`, and unlike a slice standing in for `VecM`, the bound is
