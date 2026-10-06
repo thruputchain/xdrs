@@ -38,6 +38,26 @@ pub trait WriterUnchecked<F> {
     #[doc(hidden)]
     unsafe fn write_opaque_fixed(&mut self, bytes: &[u8]);
 
+    /// Writes `bytes` as the next piece of a fixed-length opaque, with no
+    /// padding. A sequence of these must be ended by
+    /// [`write_opaque_padding`](Self::write_opaque_padding).
+    ///
+    /// # Safety
+    ///
+    /// The underlying buffer must have space for `bytes`, and the total
+    /// length of the opaque must not exceed `u32::MAX`.
+    #[doc(hidden)]
+    unsafe fn write_opaque_unpadded(&mut self, bytes: &[u8]);
+
+    /// Writes the padding that ends a fixed-length opaque of `len` bytes
+    /// written with [`write_opaque_unpadded`](Self::write_opaque_unpadded).
+    ///
+    /// # Safety
+    ///
+    /// The underlying buffer must have space for the padding.
+    #[doc(hidden)]
+    unsafe fn write_opaque_padding(&mut self, len: usize);
+
     /// Writes a byte sequence of variable length.
     ///
     /// # Safety

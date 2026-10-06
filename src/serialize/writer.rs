@@ -46,6 +46,18 @@ pub trait Writer<F> {
     #[doc(hidden)]
     fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()>;
 
+    // Writes `bytes` as the next piece of a fixed-length opaque, with no
+    // padding. A sequence of these must be ended by `write_opaque_padding`
+    // with the pieces' total length, which callers must ensure is
+    // <= u32::MAX; not checked.
+    #[doc(hidden)]
+    fn write_opaque_unpadded(&mut self, bytes: &[u8]) -> WriteResult<()>;
+
+    // Writes the padding that ends a fixed-length opaque of `len` bytes
+    // written with `write_opaque_unpadded`.
+    #[doc(hidden)]
+    fn write_opaque_padding(&mut self, len: usize) -> WriteResult<()>;
+
     /// Writes a byte sequence of variable length.
     fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()>;
 

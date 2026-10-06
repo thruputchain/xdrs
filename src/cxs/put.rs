@@ -34,6 +34,17 @@ where
         self.put_bytes(bytes)
     }
 
+    #[inline]
+    fn write_opaque_unpadded(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        self.put_bytes(bytes)
+    }
+
+    // CXS does not pad opaques.
+    #[inline]
+    fn write_opaque_padding(&mut self, _len: usize) -> WriteResult<()> {
+        Ok(())
+    }
+
     // inline here slows down benchmarks
     fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
         if bytes.len() > u32::MAX as usize {
@@ -215,6 +226,16 @@ where
         // SAFETY: forwarded caller contract.
         unsafe { self.put_bytes(bytes) }
     }
+
+    #[inline]
+    unsafe fn write_opaque_unpadded(&mut self, bytes: &[u8]) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(bytes) }
+    }
+
+    // CXS does not pad opaques.
+    #[inline]
+    unsafe fn write_opaque_padding(&mut self, _len: usize) {}
 
     unsafe fn write_opaque_variable(&mut self, bytes: &[u8]) {
         debug_assert!(bytes.len() <= u32::MAX as usize);

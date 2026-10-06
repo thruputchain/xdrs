@@ -8,6 +8,10 @@
 //! - Trait [`EncodesAs`], for declaring that a type encodes to the same bytes
 //!   as some XDR type, so it can be passed where that type is expected.
 //!
+//! - Types [`ChunkedBytes`] and [`ChunkedVec`], which encode data held in
+//!   separate chunks like one `BytesM` or `VecM`, without first copying the
+//!   chunks together.
+//!
 //! - Traits [`Reader`] and [`Writer`], for converting between the
 //!   [XDR][RFC-4506] data model and some serialization format.
 //!
@@ -91,6 +95,9 @@ pub mod encodes_as;
 pub mod read_xdr;
 pub mod write_xdr;
 
+// Variable-length data written from separate chunks
+pub mod chunked;
+
 // The abstract interface for serialization formats
 pub mod serialize;
 
@@ -104,6 +111,7 @@ pub(crate) mod mu;
 
 pub(crate) mod valid_u32;
 
+pub use chunked::*;
 pub use discrim::*;
 pub use encodes_as::*;
 pub use read_xdr::*;

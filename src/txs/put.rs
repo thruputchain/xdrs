@@ -24,6 +24,15 @@ pub(crate) trait Put {
 
 pub struct TXS;
 
+/// The number of zero bytes that pad an opaque of `len` bytes to a 4-byte
+/// boundary.
+#[inline]
+fn padding_len(len: usize) -> usize {
+    (4 - len % 4) % 4
+}
+
+static PADDING: [u8; 3] = [0; 3];
+
 macro_rules! write_int {
     [ $($write:ident($nbytes:expr): $ty:ty),* $(,)? ] => {
 
@@ -46,6 +55,16 @@ where
     fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
         debug_assert!(bytes.len() <= u32::MAX as usize);
         self.put_opaque_fixed(bytes)
+    }
+
+    #[inline]
+    fn write_opaque_unpadded(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        self.put_bytes(bytes)
+    }
+
+    #[inline]
+    fn write_opaque_padding(&mut self, len: usize) -> WriteResult<()> {
+        self.put_bytes(&PADDING[..padding_len(len)])
     }
 
     #[inline]
@@ -136,6 +155,18 @@ where
         debug_assert!(bytes.len() <= u32::MAX as usize);
         // SAFETY: forwarded caller contract.
         unsafe { self.put_opaque_fixed(bytes) }
+    }
+
+    #[inline]
+    unsafe fn write_opaque_unpadded(&mut self, bytes: &[u8]) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(bytes) }
+    }
+
+    #[inline]
+    unsafe fn write_opaque_padding(&mut self, len: usize) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(&PADDING[..padding_len(len)]) }
     }
 
     #[inline]
