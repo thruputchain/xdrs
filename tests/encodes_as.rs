@@ -148,6 +148,8 @@ fn every_write_xdr_type_stands_in_for_itself() {
     is_self::<StringM<4>>();
     is_self::<VecM<u8, 4>>();
     is_self::<VecM<u32, 4>>();
+    is_self::<ChunkedBytes<Vec<Vec<u8>>, 4>>();
+    is_self::<ChunkedVec<Vec<Vec<u32>>, 4>>();
 
     is_self::<Option<u32>>();
     is_self::<Result<u32, bool>>();
@@ -193,7 +195,7 @@ fn every_write_xdr_type_stands_in_for_itself() {
 
 // Chunk lengths that are not multiples of 4 exercise TXS padding: the
 // chunks must be written back to back with one pad at the end, not padded
-// one by one, including when bytes carry across several short chunks.
+// one by one.
 #[test]
 fn chunked_bytes_stand_in_for_bytesm() {
     let cases: [&[&[u8]]; 11] = [
@@ -212,52 +214,89 @@ fn chunked_bytes_stand_in_for_bytesm() {
 
     for chunks in cases {
         let joined: Vec<u8> = chunks.concat();
-        let borrowed = ChunkedBytes::<&[u8], 16>(chunks.to_vec());
-        let owned = ChunkedBytes::<Vec<u8>, 16>(chunks.iter().map(|c| c.to_vec()).collect());
-        let shared = Arc::new(borrowed.clone());
+        let borrowed = ChunkedBytes::<_, 16>(chunks);
+        let owned = ChunkedBytes::<_, 16>(chunks.iter().map(|c| c.to_vec()).collect::<Vec<_>>());
+        let shared_chunks = ChunkedBytes::<_, 16>(
+            chunks
+                .iter()
+                .map(|&c| Arc::<[u8]>::from(c))
+                .collect::<Arc<[_]>>(),
+        );
+        let shared = Arc::new(borrowed);
 
-        assert_eq!(borrowed.len(), joined.len());
-        assert_eq!(borrowed.is_empty(), joined.is_empty());
+        assert_eq!(owned.len(), joined.len());
+        assert_eq!(owned.is_empty(), joined.is_empty());
         check_stands_in!(
             BytesM<16>,
             BytesM::<16>(joined.clone()),
             &borrowed,
             &owned,
+            &shared_chunks,
             &shared,
         );
     }
 }
 
 #[test]
-fn chunked_bytes_share_the_size_bound_of_bytesm() {
-    type Chunked = ChunkedBytes<Vec<u8>, 16>;
+fn chunked_vec_stands_in_for_vecm() {
+    let [one, two] = txs();
+    let cases: [Vec<Vec<Tx>>; 6] = [
+        vec![],
+        vec![vec![]],
+        vec![vec![one.clone()]],
+        vec![vec![one.clone(), two.clone()]],
+        vec![vec![one.clone()], vec![], vec![two.clone()]],
+        vec![
+            vec![two.clone(), one.clone()],
+            vec![one.clone(), two.clone()],
+        ],
+    ];
+
+    for chunks in cases {
+        let joined: Vec<Tx> = chunks.concat();
+        let owned = ChunkedVec::<_, 4>(chunks.clone());
+        let borrowed: Vec<&[Tx]> = chunks.iter().map(Vec::as_slice).collect();
+        let borrowed = ChunkedVec::<_, 4>(&borrowed[..]);
+        let shared_elements = ChunkedVec::<_, 4>(
+            chunks
+                .iter()
+                .map(|c| c.iter().cloned().map(Arc::new).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+        );
+        let shared = Arc::new(owned.clone());
+
+        assert_eq!(owned.len(), joined.len());
+        assert_eq!(owned.is_empty(), joined.is_empty());
+        check_stands_in!(
+            Batch,
+            Batch::try_from(joined.clone()).unwrap(),
+            &owned,
+            &borrowed,
+            &shared_elements,
+            &shared,
+        );
+    }
+}
+
+#[test]
+fn chunked_types_share_the_size_bound_of_their_wire_types() {
+    type Bytes = ChunkedBytes<Vec<Vec<u8>>, 16>;
+    type Elements = ChunkedVec<Vec<Vec<u32>>, 16>;
 
     assert_eq!(
-        <Chunked as cxs::ConstMaxSize>::MAX_SIZE,
+        <Bytes as cxs::ConstMaxSize>::MAX_SIZE,
         <BytesM<16> as cxs::ConstMaxSize>::MAX_SIZE
     );
     assert_eq!(
-        <Chunked as txs::ConstMaxSize>::MAX_SIZE,
+        <Bytes as txs::ConstMaxSize>::MAX_SIZE,
         <BytesM<16> as txs::ConstMaxSize>::MAX_SIZE
     );
-}
-
-// Like `BytesM`, and unlike a slice standing in for `VecM`, the bound is
-// enforced when writing.
-#[test]
-fn chunked_bytes_reject_more_than_max() {
-    let chunked = ChunkedBytes::<&[u8], 4>(vec![b"abc", b"de"]);
-
-    assert!(matches!(
-        txs::encode(&chunked),
-        Err(WriteError::InvalidArrayLength)
-    ));
-    assert!(matches!(
-        cxs::encode(&chunked),
-        Err(WriteError::InvalidArrayLength)
-    ));
-    assert!(matches!(
-        txs::encode(&BytesM::<4>(b"abcde".to_vec())),
-        Err(WriteError::InvalidArrayLength)
-    ));
+    assert_eq!(
+        <Elements as cxs::ConstMaxSize>::MAX_SIZE,
+        <VecM<u32, 16> as cxs::ConstMaxSize>::MAX_SIZE
+    );
+    assert_eq!(
+        <Elements as txs::ConstMaxSize>::MAX_SIZE,
+        <VecM<u32, 16> as txs::ConstMaxSize>::MAX_SIZE
+    );
 }
