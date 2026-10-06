@@ -44,6 +44,7 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
     attrs.check(input)?;
     let krate = attrs.crate_path();
     let impls = write_data(input, &attrs)?;
+    let encodes_as = encodes_as_self(input);
 
     Ok(quote! {
         const _: () = {
@@ -51,12 +52,25 @@ pub fn write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
                 pub use #krate::serialize::writer::{Writer, WriteResult};
                 pub use #krate::serialize::writer_unchecked::WriterUnchecked;
                 pub use #krate::discrim::XDRDiscriminant;
-                pub use #krate::WriteXDR;
+                pub use #krate::{EncodesAs, WriteXDR};
             }
 
             #impls
+            #encodes_as
         };
     })
+}
+
+// Every `WriteXDR` type stands in for itself. xdrs cannot provide this as a
+// blanket impl (it would overlap the pointer impls), so the derive emits it.
+fn encodes_as_self(input: &syn::DeriveInput) -> TokenStream {
+    let ty_ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    quote! {
+        impl #impl_generics __xdrs::EncodesAs<#ty_ident #ty_generics>
+            for #ty_ident #ty_generics #where_clause {}
+    }
 }
 
 fn write_data(input: &syn::DeriveInput, attrs: &InputAttrs) -> Result<TokenStream> {

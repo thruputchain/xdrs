@@ -5,6 +5,9 @@
 //! - Traits [`ReadXDR`] and [`WriteXDR`], for converting between Rust values
 //!   and the [XDR][RFC-4506] data model.
 //!
+//! - Trait [`EncodesAs`], for declaring that a type encodes to the same bytes
+//!   as some XDR type, so it can be passed where that type is expected.
+//!
 //! - Traits [`Reader`] and [`Writer`], for converting between the
 //!   [XDR][RFC-4506] data model and some serialization format.
 //!
@@ -84,6 +87,7 @@ extern crate alloc;
 
 // Traits for translating Rust values to and from the XDR data model
 pub mod discrim;
+pub mod encodes_as;
 pub mod read_xdr;
 pub mod write_xdr;
 
@@ -101,6 +105,7 @@ pub(crate) mod mu;
 pub(crate) mod valid_u32;
 
 pub use discrim::*;
+pub use encodes_as::*;
 pub use read_xdr::*;
 pub use write_xdr::*;
 

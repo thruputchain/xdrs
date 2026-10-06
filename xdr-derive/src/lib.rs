@@ -142,7 +142,9 @@ use proc_macro::TokenStream;
 /// Derives the `WriteXDR` trait for a struct or enum.
 ///
 /// This macro generates an implementation that serializes the type to XDR format.
-/// All field types must implement `WriteXDR`.
+/// All field types must implement `WriteXDR`. It also implements
+/// `EncodesAs<Self>`, so the type can be passed where an `EncodesAs` bound
+/// expects it.
 ///
 /// # Attributes
 ///

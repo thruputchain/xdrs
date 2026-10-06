@@ -21,6 +21,9 @@ use core::convert::Infallible;
 /// implements both automatically; manual implementors must provide both — the
 /// unchecked method must uphold the buffer-size and value-bound contract
 /// documented on [`write_xdr_unchecked`](Self::write_xdr_unchecked).
+/// Manual implementors should also add `impl EncodesAs<Self> for T {}`
+/// (which the derive emits), so the type can be passed where an
+/// [`EncodesAs`](crate::EncodesAs) bound expects it.
 ///
 /// # Example
 ///
@@ -568,6 +571,21 @@ const _: () = {
             let slice: &[T] = self.as_ref();
             // SAFETY: forwarded caller contract.
             unsafe { slice.write_xdr_unchecked(w) }
+        }
+    }
+
+    // `alloc::sync` exists only on targets with pointer-sized atomics.
+    #[cfg(target_has_atomic = "ptr")]
+    impl<T: WriteXDR + ?Sized> WriteXDR for alloc::sync::Arc<T> {
+        #[inline]
+        fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+            (**self).write_xdr(w)
+        }
+
+        #[inline]
+        unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
+            // SAFETY: forwarded caller contract.
+            unsafe { (**self).write_xdr_unchecked(w) }
         }
     }
 };
