@@ -267,8 +267,12 @@ workflow; a manual run is also available. It checks out the selected commit
 through `hog_sched` on a dedicated benchmark host, runs the
 component and separate-process matrix, and writes JSON to `groundhogchain/metrics_history` using hogd's
 `metrics/<name>/main/<commit-time>_<commit>` layout. The metric names are
-`xdr-rpc-e2e` and `xdr-rpc-components`. The workflow forwards repository deploy
-keys through the scheduler's SSH agent for checkout and metrics publication.
+`xdr-rpc-e2e` and `xdr-rpc-components`. Source checkout and baseline fetches use
+the job's read-only `GITHUB_TOKEN` in a temporary Git configuration on the worker.
+The worker removes that configuration when the job exits. Metrics publication
+uses `METRICS_HISTORY_WRITE_KEY`, a write-enabled deploy key for
+`groundhogchain/metrics_history`, forwarded through the scheduler's SSH agent.
+Configure that secret before running the workflow; no source deploy key is needed.
 Failed or partial runs are not published as successful measurements; diagnostics
 are printed in the workflow log. No timing threshold gates PRs.
 

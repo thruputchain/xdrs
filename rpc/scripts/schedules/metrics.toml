@@ -4,13 +4,37 @@ name = "xdr_rpc_metrics"
 name = "{{ .hog_schedule }}_metrics"
 script = '''
 
-set -ex
+# Keep credential cleanup local to this subshell. hog_sched's parent shell
+# retains its EXIT trap, which terminates remaining benchmark processes.
+(
+set -euo pipefail
 
 echo 'cloning xdr_rpc'
+# Keep source credentials out of tracing, stored remotes and shared host
+# configuration. Include hog_fwd's Git configuration for history writes.
+umask 077
+config_path="$(mktemp)"
+trap 'rm -f -- "$config_path"' EXIT
+for original_config in "${GIT_CONFIG_GLOBAL:-${XDG_CONFIG_HOME:-$HOME/.config}/git/config}" "$HOME/.gitconfig"; do
+  if [ -f "$original_config" ]; then
+    git config --file "$config_path" --add include.path "$original_config"
+  fi
+done
+export GIT_CONFIG_GLOBAL="$config_path"
+git_token="{{ .git_token }}"
+if [ -z "$git_token" ] || [ "$git_token" = '<no value>' ]; then
+  echo 'Missing read-only source token' >&2
+  exit 1
+fi
+git config --global \
+  "url.https://x-access-token:${git_token}@github.com/{{ .github_repo }}.git.insteadOf" \
+  "https://github.com/{{ .github_repo }}.git"
+unset git_token
 git init -q .
-git remote add origin git@github.com:{{ .github_repo }}.git
+git remote add origin https://github.com/{{ .github_repo }}.git
 git fetch --depth 1 origin {{ .git_commit }} --no-progress --quiet
 git checkout -q {{ .git_commit }}
+set -x
 
 echo 'setting up cargo'
 # hog_sched points HOME at the job directory. Use the host user's rustup and
@@ -37,6 +61,7 @@ echo 'commit metrics'
 python3 scripts/publish_metrics.py --report benchmark-results --branch "$GIT_BRANCH" \
   --commit "$GIT_COMMIT" --commit-time "$(git show -s --format=%ct HEAD)"
 
+)
 '''
 
 [jobs.env]
