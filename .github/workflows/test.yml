@@ -21,19 +21,15 @@ jobs:
     # but depends on nothing from it, so the graph resolves unauthenticated.)
     permissions:
       contents: read
-    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@21f8d7cd8b80908dca701ac9dc8efd89798da085
+    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@c003527eff402d35ff357854a591cbec2935c2c3
 
   # Lint this repo's workflows
   workflow-lint:
     permissions:
       contents: read
-    uses: thruputchain/actions/.github/workflows/workflow-lint.yml@21f8d7cd8b80908dca701ac9dc8efd89798da085
+    uses: thruputchain/actions/.github/workflows/workflow-lint.yml@c003527eff402d35ff357854a591cbec2935c2c3
     with:
       lint-app-id: ${{ vars.PROTOCOL_SYNCHRONIZER_APP_ID }}
-      # The publish workflows use composite actions from the private
-      # thruputchain/actions repo. Without the App token, zizmor can't read
-      # that repo and aborts, so run it only once the App is configured.
-      run-zizmor: ${{ vars.PROTOCOL_SYNCHRONIZER_APP_ID != '' }}
     secrets:
       lint-app-private-key: ${{ secrets.PROTOCOL_SYNCHRONIZER_SECRET_KEY }}
 

@@ -67,7 +67,7 @@ jobs:
           cargo hack --version
 
       - name: dry run
-        uses: thruputchain/actions/cargo-publish-dry-run@21f8d7cd8b80908dca701ac9dc8efd89798da085
+        uses: thruputchain/actions/cargo-publish-dry-run@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
@@ -76,7 +76,7 @@ jobs:
       - name: tag commit with version
         if: ${{ !inputs.dry-run }}
         id: publish-tag
-        uses: thruputchain/actions/cargo-version-tag@21f8d7cd8b80908dca701ac9dc8efd89798da085
+        uses: thruputchain/actions/cargo-version-tag@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
 
@@ -107,7 +107,7 @@ jobs:
 
       - name: publish
         if: ${{ !inputs.dry-run }}
-        uses: thruputchain/actions/cargo-publish@21f8d7cd8b80908dca701ac9dc8efd89798da085
+        uses: thruputchain/actions/cargo-publish@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
           git-tag: ${{ steps.publish-tag.outputs.tag }}
@@ -138,7 +138,7 @@ jobs:
 
       # HEAD is the freshly-tagged commit, so expected-tag validates cleanly.
       - name: publish docs
-        uses: thruputchain/actions/cargo-doc@21f8d7cd8b80908dca701ac9dc8efd89798da085
+        uses: thruputchain/actions/cargo-doc@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
           version: ${{ needs.publish.outputs.version }}

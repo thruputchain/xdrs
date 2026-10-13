@@ -40,7 +40,7 @@ jobs:
           persist-credentials: false
 
       - name: Build and publish docs
-        uses: thruputchain/actions/cargo-doc@21f8d7cd8b80908dca701ac9dc8efd89798da085
+        uses: thruputchain/actions/cargo-doc@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           version: ${{ inputs.version }}
           packages: ${{ inputs.packages }}
