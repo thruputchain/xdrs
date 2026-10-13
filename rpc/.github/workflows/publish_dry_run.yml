@@ -13,41 +13,49 @@ jobs:
   publish:
     permissions:
       contents: read
-    runs-on: hog1
+    runs-on: namespace-profile-hogd-linux-2604
+    env:
+      # cargo vendor in the dry-run action resolves against the private registry.
+      CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+      CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
 
     steps:
-      - name: Clean up .gitconfig
-        run: |
-            echo "Cleaning up .gitconfig"
-            rm -f /home/hogci/.gitconfig
-
-      - name: Setup SSH Agent
-        uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
-        with:
-          ssh-private-key: |
-            ${{ secrets.ACTION_KEY }}
-
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
 
-      - name: Configure git to use SSH
+      - name: Install rustup if needed
         run: |
-          git config --global url."git@github.com:".insteadOf "https://github.com/"
+          if ! command -v rustup >/dev/null 2>&1; then
+            CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+            curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused \
+              --location --silent --show-error --fail https://sh.rustup.rs \
+              | sh -s -- --default-toolchain none --profile minimal -y
+            echo "CARGO_HOME=$CARGO_HOME" >> "$GITHUB_ENV"
+            echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          fi
 
-      - name: Checkout actions repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          repository: groundhogchain/actions
-          path: actions
-          ref: v1
-          persist-credentials: false
+      - name: Set up Rust 1.96
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal --component clippy,rustfmt --no-self-update
+          rustup default 1.96.0
+
+      - name: Install cargo-hack
+        env:
+          CARGO_HACK_VERSION: '0.6.45'
+        run: |
+          source "$HOME/.cargo/env"
+          if [ "$(cargo hack --version 2>/dev/null | awk '{print $2}')" != "$CARGO_HACK_VERSION" ]; then
+            cargo install cargo-hack --version "=$CARGO_HACK_VERSION" --locked
+          fi
+          cargo hack --version
 
       # Explicit package list, in dependency order: the action packages each
       # listed crate into vendor/ before the next one resolves against it, so
       # rpc_api must precede rpc_driver. Keep in sync with publish.yml.
       - name: publish dry run
-        uses: ./actions/cargo-publish-dry-run
+        uses: thruputchain/actions/cargo-publish-dry-run@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           packages: rpc_api rpc_driver
+          registry-name: groundhog

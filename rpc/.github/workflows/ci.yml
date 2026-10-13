@@ -16,7 +16,7 @@ jobs:
   dependency-policy:
     permissions:
       contents: read
-    uses: groundhogchain/actions/.github/workflows/rust-dependency-policy.yml@v1
+    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@c003527eff402d35ff357854a591cbec2935c2c3
     with:
       registry-name: groundhog
     secrets:
@@ -25,9 +25,14 @@ jobs:
   workflow-lint:
     permissions:
       contents: read
-    uses: groundhogchain/actions/.github/workflows/workflow-lint.yml@v1
+    uses: thruputchain/actions/.github/workflows/workflow-lint.yml@c003527eff402d35ff357854a591cbec2935c2c3
     with:
       shellcheck-scripts: true
+      # App token so zizmor can read the private thruputchain/actions refs.
+      # Without it, workflow-lint skips those audits with a warning.
+      lint-app-id: ${{ vars.PROTOCOL_SYNCHRONIZER_APP_ID }}
+    secrets:
+      lint-app-private-key: ${{ secrets.PROTOCOL_SYNCHRONIZER_SECRET_KEY }}
 
   build-and-test:
     needs: dependency-policy # inspect dependencies before anything builds them
