@@ -6,3 +6,4 @@ self-hosted-runner:
   # declared.)
   labels:
     - hog1
+    - namespace-profile-hogd-linux-2604

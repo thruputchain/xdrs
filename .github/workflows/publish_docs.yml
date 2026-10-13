@@ -32,12 +32,6 @@ jobs:
       - name: Clean up .gitconfig
         run: rm -f /home/hogci/.gitconfig
 
-      - name: Setup SSH Agent
-        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
-        with:
-          ssh-private-key: |
-            ${{ secrets.XDRS_TO_ACTIONS_KEY }}
-
       - name: Checkout at tag
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -45,19 +39,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Configure git to use SSH
-        run: git config --global url."git@github.com:".insteadOf "https://github.com/"
-
-      - name: Checkout actions repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          repository: groundhogchain/actions
-          path: actions
-          ref: main
-          persist-credentials: false
-
       - name: Build and publish docs
-        uses: ./actions/cargo-doc
+        uses: thruputchain/actions/cargo-doc@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           version: ${{ inputs.version }}
           packages: ${{ inputs.packages }}
