@@ -48,10 +48,13 @@ jobs:
     timeout-minutes: 120
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-      # Shared by both runs: criterion keeps its baselines under the target
-      # directory, so the comparison needs the same one for both sides.
-      CARGO_TARGET_DIR: ${{ runner.temp }}/bench-target
-      BASE_TREE: ${{ runner.temp }}/bench-base
+      # Both live next to the checkout rather than in it, so they survive the
+      # checkout step's clean. The target dir is shared by both runs (criterion
+      # keeps its baselines there) and persists between runs on the
+      # self-hosted machine, so later runs rebuild less. (`runner.temp` is not
+      # available at job level.)
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../bench-target
+      BASE_TREE: ${{ github.workspace }}/../bench-base
       BENCH_FILTER: ${{ inputs.filter }}
 
     steps:
