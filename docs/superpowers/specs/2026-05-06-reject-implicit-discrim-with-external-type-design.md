@@ -1,7 +1,7 @@
 # Reject Implicit Discriminants with External Discriminant Type
 
 **Date**: 2026-05-06
-**Issue**: [#167 — External Discriminant Implicit Value Drift](https://github.com/groundhogchain/xdrs/issues/167)
+**Issue**: [#167 — External Discriminant Implicit Value Drift](https://github.com/thruputchain/xdrs/issues/167)
 **Severity**: High (codec correctness)
 
 ## Problem
