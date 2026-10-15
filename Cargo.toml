@@ -133,6 +133,10 @@ name = "const_writer_noalloc"
 required-features = ["derive"]
 
 [[test]]
+name = "noalloc_box"
+required-features = ["derive"]
+
+[[test]]
 name = "const_size_bounds"
 required-features = ["derive"]
 
