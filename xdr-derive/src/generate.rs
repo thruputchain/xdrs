@@ -423,7 +423,9 @@ fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<Tok
     let (impl_generics, _, _) = generics.split_for_impl();
 
     Ok(quote! {
-        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+        // SAFETY: the default in-place method writes the converted value.
+        #[allow(unsafe_code)]
+        unsafe impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let from_val: #from_type = __xdrs::read_xdr(r)?;
                 Ok(::core::convert::Into::into(from_val))
@@ -443,7 +445,10 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let read_in_place = read_struct_in_place(input, item)?;
 
     Ok(quote! {
-        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+        // SAFETY: the override initializes every field and guards partial reads;
+        // unit and packed structs use the slot-writing default.
+        #[allow(unsafe_code)]
+        unsafe impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 Ok(#ty_ident #read_fields)
             }
@@ -509,8 +514,11 @@ fn read_struct_in_place(input: &syn::DeriveInput, item: &syn::DataStruct) -> Res
         guards.push(guard);
     }
 
+    // Use a hint: forcing large nested structs to inline can slow the
+    // element-decoding loops. Small structs still benefit from inlining.
     Ok(quote! {
         #[allow(unsafe_code)]
+        #[cfg_attr(not(target_arch = "riscv32"), inline)]
         fn read_xdr_in_place<'__xdrs_s, R: __xdrs::Reader<'_r>>(
             r: &mut R,
             __xdrs_slot: &'__xdrs_s mut ::core::mem::MaybeUninit<Self>,
@@ -593,7 +601,9 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     };
 
     Ok(quote! {
-        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+        // SAFETY: the default in-place method writes the decoded enum value.
+        #[allow(unsafe_code)]
+        unsafe impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let d = r.read_i32()?;
 

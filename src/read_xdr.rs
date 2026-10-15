@@ -94,7 +94,7 @@ where
 /// # Derived impls and struct lifetimes
 ///
 /// `#[derive(ReadXDR)]` on a type `Foo<'a, 'b, ..>` emits an impl of the
-/// form `impl<'_r: 'a + 'b + .., 'a, 'b, ..> ReadXDR<'_r> for Foo<'a, 'b, ..>`.
+/// form `unsafe impl<'_r: 'a + 'b + .., 'a, 'b, ..> ReadXDR<'_r> for Foo<'a, 'b, ..>`.
 /// That is: **every lifetime parameter on the type must be `<=` the lifetime
 /// of the reader buffer**, regardless of whether that parameter is actually
 /// used to borrow from the buffer. In particular, a phantom lifetime such as
@@ -106,6 +106,37 @@ where
 /// marker), let the lifetime be inferred from the buffer rather than
 /// naming it explicitly, or implement `ReadXDR` by hand.
 ///
+/// Custom borrowed field types need the same bounds as the built-in borrows:
+/// implement `ReadXDR<'r>` for `Borrowed<'a>` whenever `'r: 'a`. An impl only
+/// for `ReadXDR<'a> for Borrowed<'a>` can work by value through lifetime
+/// coercion, but cannot fill a field whose type is fixed behind `&mut`.
+///
+/// ```rust
+/// use xdrs::{ReadXDR, ReadResult};
+/// use xdrs::serialize::reader::Reader;
+///
+/// struct Borrowed<'a>(&'a [u8]);
+///
+/// // SAFETY: the default in-place method writes the value returned here.
+/// unsafe impl<'r: 'a, 'a> ReadXDR<'r> for Borrowed<'a> {
+///     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+///         Ok(Self(r.read_opaque_variable(u32::MAX)?))
+///     }
+/// }
+/// ```
+///
+/// # Safety
+///
+/// On success, [`ReadXDR::read_xdr_in_place`] must fully initialize its
+/// destination with a valid `Self` and return a reference to that value in
+/// that same destination. Callers rely on this guarantee when assuming the
+/// storage is initialized and when dropping it, without a release-mode check.
+/// The provided default implementation satisfies this contract; implementations
+/// that only define `read_xdr` do not need any additional unsafe operations.
+///
+/// On an error or panic, callers will not drop the destination. An override
+/// is responsible for cleaning up any fields it initialized along the way.
+///
 /// # Example
 ///
 /// ```rust
@@ -115,7 +146,7 @@ where
 /// let _value: u32 = cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
-pub trait ReadXDR<'r>: Sized {
+pub unsafe trait ReadXDR<'r>: Sized {
     /// Reads an XDR value from the reader.
     ///
     /// This method should read the appropriate amount of data from the reader
@@ -134,8 +165,8 @@ pub trait ReadXDR<'r>: Sized {
     /// moves the result into `slot`. Overriding it pays off for large
     /// values, such as structs with big fixed-size arrays, that would
     /// otherwise be built in a stack frame and then copied. Callers should
-    /// go through [`read_xdr_in_place`], which checks that the returned
-    /// reference points into `slot`.
+    /// go through [`read_xdr_in_place`], which checks the returned pointer
+    /// when debug assertions are enabled.
     #[inline]
     fn read_xdr_in_place<'s, R: Reader<'r>>(
         r: &mut R,
@@ -155,9 +186,8 @@ pub trait ReadXDR<'r>: Sized {
 /// With debug assertions enabled, panics if `T`'s
 /// [`ReadXDR::read_xdr_in_place`] returns a reference that does not point
 /// into `slot`. This can only happen with an incorrect manual
-/// implementation. The check is a `debug_assert!` because it sits on the
-/// per-element path of arrays and vectors, where it measurably costs in
-/// release builds.
+/// unsafe implementation. This diagnostic is debug-only; release builds
+/// rely on the [`ReadXDR`] safety contract.
 #[inline]
 pub fn read_xdr_in_place<'r, 's, R, T>(r: &mut R, slot: &'s mut MU<T>) -> ReadResult<&'s mut T>
 where
@@ -201,8 +231,9 @@ pub mod in_place {
     ///
     /// `field` must be valid for writes, properly aligned, not aliased for
     /// the duration of the call, and must not hold a value that needs
-    /// dropping.
-    #[inline(always)]
+    /// dropping. It must remain valid and initialized until the returned
+    /// guard is dropped or forgotten; the guard owns the right to drop it.
+    #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
     pub unsafe fn read_field<'r, R, F>(r: &mut R, field: *mut F) -> ReadResult<FieldGuard<F>>
     where
         R: Reader<'r>,
@@ -223,7 +254,7 @@ pub mod in_place {
     /// # Safety
     ///
     /// Same as [`read_field`].
-    #[inline(always)]
+    #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
     pub unsafe fn write_field<F>(field: *mut F, value: F) -> FieldGuard<F> {
         // SAFETY: forwarded caller contract.
         unsafe { field.write(value) };
@@ -241,10 +272,12 @@ pub trait ReadXDROwned: for<'r> ReadXDR<'r> {}
 
 impl<T> ReadXDROwned for T where T: for<'r> ReadXDR<'r> {}
 
+// SAFETY: unless explicitly overriding read_xdr_in_place below, these impls
+// use the default, which writes the valid value returned by read_xdr.
 macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
-        impl<'r> ReadXDR<'r> for $int_ty {
+        unsafe impl<'r> ReadXDR<'r> for $int_ty {
             #[inline]
             fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<$int_ty> {
                 r.$read_method()
@@ -268,7 +301,8 @@ construct_int_impls! {
     read_f64 for f64,
 }
 
-impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
+// SAFETY: success initializes every element; the guard cleans up partial reads.
+unsafe impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
 where
     T: ReadXDR<'r>,
 {
@@ -325,7 +359,8 @@ where
 // `&'r _` and is shortened to `'a` here. This matters wherever the decoded
 // type is fixed by an invariant position (a generic parameter, a slot
 // behind `&mut`), where the shortening cannot happen at the use site.
-impl<'r: 'a, 'a> ReadXDR<'r> for &'a [u8] {
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r: 'a, 'a> ReadXDR<'r> for &'a [u8] {
     #[inline]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes: &'r [u8] = r.read_opaque_variable(u32::MAX)?;
@@ -333,7 +368,8 @@ impl<'r: 'a, 'a> ReadXDR<'r> for &'a [u8] {
     }
 }
 
-impl<'r: 'a, 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r: 'a, 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
     #[inline]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
@@ -350,7 +386,8 @@ impl<'r: 'a, 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
     }
 }
 
-impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
+// SAFETY: Reader initializes exactly N bytes on a successful fixed-byte read.
+unsafe impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
 
@@ -383,7 +420,8 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     }
 }
 
-impl<'r: 'a, 'a> ReadXDR<'r> for &'a str {
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r: 'a, 'a> ReadXDR<'r> for &'a str {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes: &'r [u8] = r.read_opaque_variable(u32::MAX)?;
         let s: &'r str = str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())?;
@@ -393,7 +431,8 @@ impl<'r: 'a, 'a> ReadXDR<'r> for &'a str {
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-impl<'r> ReadXDR<'r> for alloc::string::String {
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r> ReadXDR<'r> for alloc::string::String {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
         let s = str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())?;
@@ -401,66 +440,71 @@ impl<'r> ReadXDR<'r> for alloc::string::String {
     }
 }
 
-impl<'r> ReadXDR<'r> for () {
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r> ReadXDR<'r> for () {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         Ok(())
     }
 }
 
-impl<'r> ReadXDR<'r> for Infallible {
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r> ReadXDR<'r> for Infallible {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         unreachable!()
     }
 }
 
 macro_rules! read_tuple {
-    { $( $t:ident ),+ } => {
-
-        impl<'r, $($t),+> ReadXDR<'r> for ($($t),+)
+    { $( $index:tt : $t:ident ),+ $(,)? } => {
+        // SAFETY: the in-place method initializes every field before returning
+        // success, and guards drop completed fields on error or panic.
+        unsafe impl<'r, $($t),+> ReadXDR<'r> for ($($t,)+)
         where
             $( $t: ReadXDR<'r>, )+
         {
             fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-                Ok(($(
-                        { let v: $t = read_xdr(r)?; v }
-                        ),+))
+                Ok(($(read_xdr::<R, $t>(r)?,)+))
+            }
+
+            #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
+            fn read_xdr_in_place<'s, R: Reader<'r>>(
+                r: &mut R,
+                slot: &'s mut MU<Self>,
+            ) -> ReadResult<&'s mut Self> {
+                let base = slot.as_mut_ptr();
+                // SAFETY: tuple fields are aligned, disjoint, and in the
+                // caller's exclusively borrowed slot. If a read fails, Rust
+                // drops the guards already constructed in this tuple.
+                let guards = ($(unsafe {
+                    in_place::read_field(r, &raw mut (*base).$index)?
+                },)+);
+                core::mem::forget(guards);
+                // SAFETY: every tuple field was successfully initialized.
+                Ok(unsafe { slot.assume_init_mut() })
             }
         }
-
     };
 }
 
-read_tuple!(T1, T2);
-read_tuple!(T1, T2, T3);
-read_tuple!(T1, T2, T3, T4);
-read_tuple!(T1, T2, T3, T4, T5);
-read_tuple!(T1, T2, T3, T4, T5, T6);
-read_tuple!(T1, T2, T3, T4, T5, T6, T7);
-read_tuple!(T1, T2, T3, T4, T5, T6, T7, T8);
-read_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
-read_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
-read_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
-read_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
-read_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
-read_tuple!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
-read_tuple!(
-    T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15
-);
-read_tuple!(
-    T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16
-);
+read_tuple!(0: T1);
+read_tuple!(0: T1, 1: T2);
+read_tuple!(0: T1, 1: T2, 2: T3);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10, 10: T11);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10, 10: T11, 11: T12);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10, 10: T11, 11: T12, 12: T13);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10, 10: T11, 11: T12, 12: T13, 13: T14);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10, 10: T11, 11: T12, 12: T13, 13: T14, 14: T15);
+read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10, 10: T11, 11: T12, 12: T13, 13: T14, 14: T15, 15: T16);
 
-// impl for single-element tuples
-impl<'r, T> ReadXDR<'r> for (T,)
-where
-    T: ReadXDR<'r>,
-{
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        Ok((read_xdr(r)?,))
-    }
-}
-
-impl<'r, T> ReadXDR<'r> for Option<T>
+// SAFETY: both branches write a valid Option into the destination on success.
+unsafe impl<'r, T> ReadXDR<'r> for Option<T>
 where
     T: ReadXDR<'r>,
 {
@@ -472,15 +516,47 @@ where
             Ok(None)
         }
     }
+
+    #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
+    fn read_xdr_in_place<'s, R: Reader<'r>>(
+        r: &mut R,
+        slot: &'s mut MU<Self>,
+    ) -> ReadResult<&'s mut Self> {
+        if !r.read_bool()? {
+            return Ok(slot.write(None));
+        }
+
+        // Option's payload layout is not specified for arbitrary T. Decode
+        // into one payload temporary, then construct Some normally. This
+        // avoids the additional Result<Option<T>> temporary used by the
+        // default method, and lets None initialize only its discriminant.
+        let mut value = MU::<T>::uninit();
+        read_xdr_in_place(r, &mut value)?;
+        // SAFETY: read_xdr_in_place initialized the payload on success.
+        Ok(slot.write(Some(unsafe { value.assume_init() })))
+    }
 }
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
 {
+    #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+        // For at most two machine words, moving the value is cheap. Decode
+        // before allocating so scalar reads need not depend on the heap
+        // destination, and a failed read needs no allocation or deallocation.
+        // This size check is constant for each T and disappears at compile time.
+        if core::mem::size_of::<T>() <= 2 * core::mem::size_of::<usize>() {
+            let mut value = MU::<T>::uninit();
+            read_xdr_in_place(r, &mut value)?;
+            // SAFETY: read_xdr_in_place initialized the value on success.
+            return Ok(Self::new(unsafe { value.assume_init() }));
+        }
+
         let mut boxed = Self::new_uninit();
         read_xdr_in_place(r, &mut *boxed)?;
         // SAFETY: read_xdr_in_place returned Ok, so the value is initialized.
@@ -489,7 +565,8 @@ where
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
 {
@@ -498,7 +575,8 @@ where
     }
 }
 
-impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
 where
     T: ReadXDR<'r>,
     E: ReadXDR<'r>,
@@ -514,7 +592,8 @@ where
     }
 }
 
-impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         Ok(core::marker::PhantomData)
     }
@@ -561,7 +640,7 @@ where
 // Keep the reader local to the caller so its position updates and overflow
 // checks can be optimized across the element-decoding loop. The Vec/VecM
 // entry points must also inline for the same reason.
-#[inline(always)]
+#[cfg_attr(not(target_arch = "riscv32"), inline(always))]
 fn read_vec<'r, R, T>(r: &mut R, len: usize) -> ReadResult<alloc::vec::Vec<T>>
 where
     R: Reader<'r>,
@@ -585,7 +664,8 @@ where
 const _: () = {
     use alloc::vec::Vec;
 
-    impl<'r> ReadXDR<'r> for Vec<u8> {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r> ReadXDR<'r> for Vec<u8> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes: &[u8] = r.read_opaque_variable(u32::MAX)?;
             let vec = Vec::from(bytes); // copy the slice
@@ -593,11 +673,12 @@ const _: () = {
         }
     }
 
-    impl<'r, T> ReadXDR<'r> for Vec<T>
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, T> ReadXDR<'r> for Vec<T>
     where
         T: ReadXDR<'r>,
     {
-        #[inline(always)]
+        #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
             read_vec(r, len)
@@ -615,7 +696,8 @@ const _: () = {
 
     use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
 
-    impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes = r.read_opaque_variable(MAX)?;
             let vec = Vec::from(bytes);
@@ -623,7 +705,8 @@ const _: () = {
         }
     }
 
-    impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes = r.read_opaque_variable(MAX)?;
             let vec = Vec::from(bytes);
@@ -631,11 +714,12 @@ const _: () = {
         }
     }
 
-    impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
         T: ReadXDR<'r>,
     {
-        #[inline(always)]
+        #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
             if len > MAX as usize {
@@ -647,7 +731,8 @@ const _: () = {
     }
 
     // make VecM<u8> work like BytesM;
-    impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes = r.read_opaque_variable(MAX)?;
             let vec = Vec::from(bytes);
@@ -662,19 +747,22 @@ const _: () = {
     use crate::serialize::reader::Reader;
     use xdr_common::*;
 
-    impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }
     }
 
-    impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }
     }
 
-    impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
         T: ReadXDR<'r> + 'static,
     {
@@ -684,7 +772,8 @@ const _: () = {
     }
 
     // make VecM<u8> work like BytesM;
-    impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }

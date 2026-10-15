@@ -40,6 +40,16 @@ pub struct Big64K {
     pub data: [u64; 7680],
 }
 
+#[derive(xdrs::WriteXDR, xdrs::ReadXDR)]
+struct TupleField {
+    data: (u32, [u64; 8192]),
+}
+
+#[derive(xdrs::WriteXDR, xdrs::ReadXDR)]
+struct OptionField {
+    data: Option<[u64; 8192]>,
+}
+
 fn small() -> Small {
     Small { id: 7, amount: -3 }
 }
@@ -110,6 +120,10 @@ pub fn bench_in_place_pointers(c: &mut Criterion) {
     bench_pointers(c, "Mid256B", &mid());
     bench_pointers(c, "Big4K", &big4k());
     bench_pointers(c, "Big64K", &*big64k());
+    let data = core::array::from_fn(|i| i as u64);
+    bench_pointers(c, "Tuple64K", &TupleField { data: (7, data) });
+    bench_pointers(c, "OptionSome64K", &OptionField { data: Some(data) });
+    bench_pointers(c, "OptionNone64K", &OptionField { data: None });
 }
 
 pub fn bench_in_place_vecm(c: &mut Criterion) {

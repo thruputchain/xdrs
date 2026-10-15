@@ -49,7 +49,8 @@ fn vec_and_vecm_of_structs() {
 #[derive(Debug)]
 struct InPlaceOnly<const N: usize>([u8; N]);
 
-impl<'r, const N: usize> ReadXDR<'r> for InPlaceOnly<N> {
+// SAFETY: success writes a complete value into the supplied slot.
+unsafe impl<'r, const N: usize> ReadXDR<'r> for InPlaceOnly<N> {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
         panic!("vector elements must be decoded in place");
     }
@@ -114,6 +115,36 @@ fn tuple_struct() {
     let buf = txs::encode(&(5u32, [7u8, 8, 9], 11u64)).unwrap();
     let out: Box<Tuple> = txs::decode(&buf).unwrap();
     assert_eq!(*out, Tuple(5, [7, 8, 9], 11));
+}
+
+#[test]
+fn tuple_and_option_use_payload_in_place_method() {
+    macro_rules! check {
+        ($fmt:ident) => {{
+            let buf = xdrs::$fmt::encode(&(7u32, true, 9u32)).unwrap();
+            let out: Box<(InPlaceOnly<4>, Option<InPlaceOnly<4>>)> =
+                xdrs::$fmt::decode(&buf).unwrap();
+            assert_eq!(out.0.0, [7; 4]);
+            assert_eq!(out.1.as_ref().unwrap().0, [9; 4]);
+
+            let buf = xdrs::$fmt::encode(&false).unwrap();
+            let out: Box<Option<InPlaceOnly<4>>> = xdrs::$fmt::decode(&buf).unwrap();
+            assert!(out.is_none());
+
+            // A reference has a niche, unlike the array above. Neither path
+            // may assume an Option discriminant or payload offset.
+            for value in [None, Some("borrowed")] {
+                let buf = xdrs::$fmt::encode(&value).unwrap();
+                let out: Box<Option<&str>> = xdrs::$fmt::decode(&buf).unwrap();
+                assert_eq!(*out, value);
+                if let Some(text) = *out {
+                    assert!(buf.as_ptr_range().contains(&text.as_ptr()));
+                }
+            }
+        }};
+    }
+    check!(txs);
+    check!(cxs);
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -209,7 +240,8 @@ impl Drop for Tracked {
     }
 }
 
-impl<'r> ReadXDR<'r> for Tracked {
+// SAFETY: uses the default in-place method, which writes the returned value.
+unsafe impl<'r> ReadXDR<'r> for Tracked {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
         let v = r.read_u32()?;
         if v == 999 {
@@ -228,6 +260,32 @@ struct ThreeTracked {
     a: Tracked,
     b: [Tracked; 2],
     c: Tracked,
+}
+
+#[test]
+fn tuple_and_option_drop_partial_payload_on_error_and_panic() {
+    macro_rules! check {
+        ($fmt:ident) => {{
+            // Keep this larger than the small-Box path, so failure also
+            // exercises partial initialization of the heap allocation.
+            type Wrapped = Box<([u8; 64], Tracked, Option<(Tracked, Tracked)>)>;
+            for (last, expected_live) in [(3u32, 3), (999, 0), (998, 0)] {
+                LIVE.set(0);
+                let buf = xdrs::$fmt::encode(&([0u8; 64], 1u32, true, 2u32, last)).unwrap();
+                let result = std::panic::catch_unwind(|| xdrs::$fmt::decode::<Wrapped>(&buf));
+                match last {
+                    998 => assert!(result.is_err()),
+                    999 => assert!(result.as_ref().unwrap().is_err()),
+                    _ => assert!(result.as_ref().unwrap().is_ok()),
+                }
+                assert_eq!(LIVE.get(), expected_live);
+                drop(result);
+                assert_eq!(LIVE.get(), 0);
+            }
+        }};
+    }
+    check!(txs);
+    check!(cxs);
 }
 
 #[test]
@@ -300,7 +358,9 @@ fn failed_element_past_prealloc_cap_drops_earlier_elements() {
 struct Misplaced(#[allow(dead_code)] u8);
 
 #[cfg(debug_assertions)]
-impl<'r> ReadXDR<'r> for Misplaced {
+// Deliberately violates the contract to exercise the debug diagnostic before
+// any caller assumes initialization. This impl is absent in release builds.
+unsafe impl<'r> ReadXDR<'r> for Misplaced {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
         Ok(Misplaced(0))
     }

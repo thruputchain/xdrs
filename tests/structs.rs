@@ -273,7 +273,8 @@ fn ref_newtype() {
         }
     }
 
-    impl<'r> ReadXDR<'r> for &'r Buf {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r: 'a, 'a> ReadXDR<'r> for &'a Buf {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let arr: &[u8; 3] = read_xdr(r)?;
             let val = Self::from(arr);
