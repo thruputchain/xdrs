@@ -48,8 +48,17 @@
 //! call.extend_from_slice(&42u32.to_be_bytes());
 //! assert_eq!(call.payload(), &[0, 0, 0, 42]);
 //! ```
+//!
+//! ## Chunked messages
+//!
+//! A message too large for one record goes out as a run of records that
+//! may arrive in any order. [`ChunkPosition`] says where a record sits in
+//! its run, and a protocol crate implements [`ChunkRecord`] for each of its
+//! chunked records; `rpc_driver::ChunkRunAssembler` reassembles the runs on
+//! the server, so handlers push the records they receive as they are.
 
 mod call_buf;
+mod chunk;
 mod error;
 mod handler;
 mod prog_error;
@@ -57,6 +66,7 @@ mod response;
 mod sender;
 
 pub use call_buf::CallBuf;
+pub use chunk::{ChunkPosition, ChunkRecord};
 pub use error::RpcError;
 pub use handler::RpcHandler;
 pub use prog_error::ProgramError;

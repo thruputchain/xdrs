@@ -176,6 +176,9 @@ pub use context::{peer, try_peer};
 pub mod handler;
 pub use handler::*;
 
+pub mod chunk;
+pub use chunk::*;
+
 mod config;
 pub use config::ConnectionConfig;
 
