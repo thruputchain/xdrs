@@ -8,7 +8,7 @@
 #![cfg(not(feature = "alloc"))]
 
 use core::mem::MaybeUninit;
-use xdrs::{Box, ReadXDR, WriteXDR, cxs, txs};
+use xdrs::{Box, ConstWriteXDR, ReadXDR, WriteXDR, cxs, txs};
 
 #[derive(Debug, PartialEq, ReadXDR, WriteXDR, xdrs::ConstXDRSize)]
 #[repr(i32)]
@@ -56,3 +56,52 @@ const _: () = assert!(core::mem::size_of::<Box<[u8; 8]>>() == 8);
 // An inline `Box` keeps the pointee's size bound in no-`alloc` builds.
 const _: () = assert!(<Holder as xdrs::txs::ConstMaxSize>::MAX_SIZE.is_some());
 const _: () = assert!(<Holder as xdrs::cxs::ConstMaxSize>::MAX_SIZE.is_some());
+
+// `ConstWriteXDR` reaches a boxed field through `box_as_ref`, since `Deref`
+// is not const. `Box::new` is const in no-`alloc` builds, so the whole value
+// can be built and encoded at compile time.
+#[derive(Debug, Clone, Copy, PartialEq, ConstWriteXDR, WriteXDR)]
+struct Leaf {
+    a: u32,
+    b: [u8; 3],
+}
+
+#[derive(Debug, PartialEq, ConstWriteXDR, WriteXDR)]
+struct Boxed {
+    n: u32,
+    leaf: Box<Leaf>,
+    maybe: Option<Box<Leaf>>,
+    raw: Box<[u8; 4]>,
+}
+
+const BOXED: Boxed = Boxed {
+    n: 7,
+    leaf: Box::new(Leaf { a: 1, b: [2, 3, 4] }),
+    maybe: Some(Box::new(Leaf { a: 5, b: [6, 7, 8] })),
+    raw: Box::new([9, 10, 11, 12]),
+};
+
+const BOXED_TXS: [u8; BOXED.const_txs_size()] = {
+    let mut w = txs::ConstWriter::<{ BOXED.const_txs_size() }>::new();
+    BOXED.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+const BOXED_CXS: [u8; BOXED.const_cxs_size()] = {
+    let mut w = cxs::ConstWriter::<{ BOXED.const_cxs_size() }>::new();
+    BOXED.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn boxed_const_write_matches_runtime() {
+    let mut buf = [MaybeUninit::<u8>::uninit(); 64];
+    let n = txs::encode_into(&BOXED, &mut buf).unwrap();
+    // SAFETY: encode_into initialized the first `n` bytes.
+    assert_eq!(&BOXED_TXS[..], unsafe { buf[..n].assume_init_ref() });
+
+    let mut buf = [MaybeUninit::<u8>::uninit(); 64];
+    let n = cxs::encode_into(&BOXED, &mut buf).unwrap();
+    // SAFETY: encode_into initialized the first `n` bytes.
+    assert_eq!(&BOXED_CXS[..], unsafe { buf[..n].assume_init_ref() });
+}

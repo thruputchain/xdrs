@@ -113,6 +113,28 @@ impl<T: core::fmt::Display> core::fmt::Display for Box<T> {
     }
 }
 
+/// Borrows the value behind a [`Box`] in a `const` context.
+///
+/// `const fn` code cannot go through `Deref`, so the `ConstWriteXDR` derive
+/// uses this to reach a boxed field. With `alloc` it is the heap `Box`'s
+/// (const) deref; without `alloc` it borrows the inline value.
+#[cfg(feature = "alloc")]
+#[inline]
+pub const fn box_as_ref<T>(b: &Box<T>) -> &T {
+    b
+}
+
+/// Borrows the value behind a [`Box`] in a `const` context.
+///
+/// `const fn` code cannot go through `Deref`, so the `ConstWriteXDR` derive
+/// uses this to reach a boxed field. With `alloc` it is the heap `Box`'s
+/// (const) deref; without `alloc` it borrows the inline value.
+#[cfg(not(feature = "alloc"))]
+#[inline]
+pub const fn box_as_ref<T>(b: &Box<T>) -> &T {
+    &b.0
+}
+
 /// A contiguous growable array type.
 ///
 /// # Feature Variants
