@@ -298,3 +298,82 @@ fn vec_does_not_overconsume_from_wire() {
     assert_eq!(decoded.0, expected);
     assert_eq!(decoded.1, 99);
 }
+
+#[cfg(feature = "alloc")]
+#[test]
+fn arc_codec() {
+    use std::sync::Arc;
+
+    let val: Arc<u32> = Arc::new(7);
+    CXS::check_codec(&val, &hex!("07"));
+    TXS::check_codec(&val, &hex!("00000007"));
+
+    let val: Arc<Option<u32>> = Arc::new(Some(7));
+    TXS::check_codec(&val, &hex!("0000000100000007"));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn rc_decode() {
+    use std::rc::Rc;
+
+    let val: Rc<u32> = Rc::new(7);
+    CXS::check_decode(&val, &hex!("07"));
+    TXS::check_decode(&val, &hex!("00000007"));
+
+    let val: Rc<Vec<u32>> = Rc::new(vec![1, 2]);
+    TXS::check_decode(&val, &hex!("000000020000000100000002"));
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn shared_pointers_borrow_from_input() {
+    use std::{rc::Rc, sync::Arc};
+
+    let buf = hex!("00000002abcd0000");
+    let a: Arc<&[u8]> = xdrs::txs::decode(&buf).unwrap();
+    let r: Rc<&[u8]> = xdrs::txs::decode(&buf).unwrap();
+    assert_eq!(*a, &[0xab, 0xcd][..]);
+    assert_eq!(*r, &[0xab, 0xcd][..]);
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn shared_pointers_are_read_xdr_owned() {
+    use std::{rc::Rc, sync::Arc};
+
+    fn assert_owned<T: xdrs::ReadXDROwned>() {}
+    assert_owned::<Arc<u32>>();
+    assert_owned::<Rc<u32>>();
+    assert_owned::<Arc<Vec<Rc<u64>>>>();
+}
+
+#[cfg(feature = "alloc")]
+#[test]
+fn shared_pointers_in_struct() {
+    use std::{rc::Rc, sync::Arc};
+
+    #[derive(Debug, PartialEq, Eq, xdrs::ReadXDR, xdrs::WriteXDR)]
+    struct WithArc {
+        pub a: Arc<u32>,
+        pub b: Arc<Vec<u8>>,
+    }
+
+    let val = WithArc {
+        a: Arc::new(1),
+        b: Arc::new(vec![0xff]),
+    };
+    TXS::check_codec(&val, &hex!("0000000100000001ff000000"));
+
+    #[derive(Debug, PartialEq, Eq, xdrs::ReadXDR)]
+    struct WithRc {
+        pub a: Rc<u32>,
+        pub b: Rc<bool>,
+    }
+
+    let val = WithRc {
+        a: Rc::new(1),
+        b: Rc::new(true),
+    };
+    TXS::check_decode(&val, &hex!("0000000100000001"));
+}
