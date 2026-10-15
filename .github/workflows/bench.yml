@@ -82,6 +82,8 @@ jobs:
           # as the job runs, which covers the hog_sched job below.
           GIT_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          SCHEDULE_ID: ${{ github.event.repository.name }}-${{ github.run_id }}
         run: |
           set -o pipefail
           # hog_sched forwards the job's ssh-agent to the hog host. The clone
@@ -92,8 +94,8 @@ jobs:
           # The token must not reach the job log.
           set +x
           hog_sched \
-            --i="${{ github.event.repository.name }}-${{ github.run_id }}" \
-            --key=github_repo --value="${{ github.repository }}" \
+            --i="$SCHEDULE_ID" \
+            --key=github_repo --value="$REPO" \
             --key=git_token --value="$GIT_TOKEN" \
             --key=git_commit --value="$HEAD_SHA" \
             --key=base_commit --value="$BASE_SHA" \
