@@ -84,6 +84,11 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: |
           set -o pipefail
+          # hog_sched forwards the job's ssh-agent to the hog host. The clone
+          # there uses the HTTPS token rewrite, so the agent holds no keys; it
+          # only needs to exist.
+          eval "$(ssh-agent -s)" > /dev/null
+          trap 'ssh-agent -k > /dev/null' EXIT
           # The token must not reach the job log.
           set +x
           hog_sched \
