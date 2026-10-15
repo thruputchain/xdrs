@@ -262,3 +262,40 @@ pub fn check_enum_repr(input: &syn::DeriveInput) -> Result<()> {
     }
     Ok(())
 }
+
+/// Whether the type has `#[repr(packed)]` (in any form, such as
+/// `repr(C, packed(2))`). Fields of a packed type may be unaligned, so they
+/// cannot be decoded in place through references.
+pub fn is_repr_packed(input: &syn::DeriveInput) -> bool {
+    fn has_packed(tokens: proc_macro2::TokenStream) -> bool {
+        tokens.into_iter().any(|tt| match tt {
+            proc_macro2::TokenTree::Ident(i) => i == "packed",
+            proc_macro2::TokenTree::Group(g) => has_packed(g.stream()),
+            _ => false,
+        })
+    }
+
+    input.attrs.iter().any(|attr| {
+        attr.path().is_ident("repr") && has_packed(quote::ToTokens::to_token_stream(attr))
+    })
+}
+
+/// Whether a type mentions a lifetime anywhere (such as `&'a [u8]` or
+/// `Foo<'a>`).
+///
+/// In-place decoding names the field type exactly through a `*mut F`, which
+/// is invariant, so `F: ReadXDR<'_r>` must hold for the field's own
+/// lifetimes. Borrowed types only implement `ReadXDR` for the reader's
+/// lifetime and rely on covariance to shorten it, so such fields are decoded
+/// by value and then moved into place instead.
+pub fn type_has_lifetime(ty: &syn::Type) -> bool {
+    fn scan(tokens: proc_macro2::TokenStream) -> bool {
+        tokens.into_iter().any(|tt| match tt {
+            proc_macro2::TokenTree::Punct(p) => p.as_char() == '\'',
+            proc_macro2::TokenTree::Group(g) => scan(g.stream()),
+            _ => false,
+        })
+    }
+
+    scan(quote::ToTokens::to_token_stream(ty))
+}
