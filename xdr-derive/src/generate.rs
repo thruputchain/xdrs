@@ -394,7 +394,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
         const _: () = {
             mod __xdrs {
                 pub use #krate::discrim::XDRDiscriminant;
-                pub use #krate::read_xdr::{ReadXDR, read_xdr};
+                pub use #krate::read_xdr::{ReadXDR, in_place, read_xdr};
                 pub use #krate::serialize::reader::{Reader, ReadError, ReadResult};
             }
 
@@ -440,11 +440,92 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let (impl_generics, _, _) = generics.split_for_impl();
 
     let read_fields = read_fields(&item.fields)?;
+    let read_in_place = read_struct_in_place(input, item)?;
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 Ok(#ty_ident #read_fields)
+            }
+
+            #read_in_place
+        }
+    })
+}
+
+/// Generates `read_xdr_in_place` for a struct, decoding each field directly
+/// into its place in the destination instead of building the struct first.
+///
+/// Each field yields a drop guard; an error in a later field drops the
+/// earlier ones (guards drop in reverse order), and success forgets them all.
+/// Fields whose type names a lifetime are decoded by value and moved into
+/// place; see [`type_has_lifetime`].
+/// Returns nothing for unit structs, which have nothing to place, and for
+/// `#[repr(packed)]` structs, whose fields may be unaligned; both fall back
+/// to the trait's default.
+fn read_struct_in_place(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<TokenStream> {
+    if item.fields.is_empty() || is_repr_packed(input) {
+        return Ok(quote! {});
+    }
+
+    let mut reads = Vec::new();
+    let mut guards = Vec::new();
+
+    for (i, field) in item.fields.iter().enumerate() {
+        let attrs = FieldAttrs::from_field(field)?;
+        attrs.check(field)?;
+
+        let member = match field.ident.as_ref() {
+            Some(ident) => quote! { #ident },
+            None => {
+                let index = syn::Index::from(i);
+                quote! { #index }
+            }
+        };
+        let guard = quote::format_ident!("__xdrs_guard_{}", i);
+        let place = quote! { &raw mut (*__xdrs_base).#member };
+
+        let read = if let Some(from_type) = attrs.from_type.as_ref().or(attrs.via.as_ref()) {
+            quote! {
+                let #guard = {
+                    let from_value: #from_type = __xdrs::read_xdr(r)?;
+                    __xdrs::in_place::write_field(
+                        #place,
+                        ::core::convert::Into::into(from_value),
+                    )
+                };
+            }
+        } else if type_has_lifetime(&field.ty) {
+            quote! {
+                let #guard = __xdrs::in_place::write_field(#place, __xdrs::read_xdr(r)?);
+            }
+        } else {
+            quote! {
+                let #guard = __xdrs::in_place::read_field(r, #place)?;
+            }
+        };
+
+        reads.push(read);
+        guards.push(guard);
+    }
+
+    Ok(quote! {
+        #[allow(unsafe_code)]
+        fn read_xdr_in_place<'__xdrs_s, R: __xdrs::Reader<'_r>>(
+            r: &mut R,
+            __xdrs_slot: &'__xdrs_s mut ::core::mem::MaybeUninit<Self>,
+        ) -> __xdrs::ReadResult<&'__xdrs_s mut Self> {
+            let __xdrs_base: *mut Self = __xdrs_slot.as_mut_ptr();
+            // SAFETY: `__xdrs_base` points to the caller's slot, which is
+            // valid, aligned and exclusively borrowed for this call. The type
+            // is not packed, so every field place is aligned. Fields are
+            // written once each, in declaration order; on error the guards
+            // drop exactly the fields already written. Once every field is
+            // written the value is fully initialized.
+            unsafe {
+                #(#reads)*
+                #(::core::mem::forget(#guards);)*
+                Ok(&mut *__xdrs_base)
             }
         }
     })
