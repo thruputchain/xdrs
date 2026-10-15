@@ -67,16 +67,23 @@ cp -r head/benches base/benches
 export CARGO_TARGET_DIR="$PWD/bench-target"
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
 
+# The workflow only passes a filter when one was given; an unset template
+# value renders as '<no value>'.
+filter_args=()
+if [ -n "$BENCH_FILTER" ] && [ "$BENCH_FILTER" != '<no value>' ]; then
+  filter_args=("$BENCH_FILTER")
+fi
+
 echo "comparing {{ .git_commit }} against base {{ .base_commit }} on $(hostname)"
 
 echo 'bench baseline'
 (cd base && cargo bench --bench bench1 --all-features -- \\
-  --save-baseline base --noplot "$BENCH_FILTER") > base.log 2>&1 || (cat base.log && exit 1)
+  --save-baseline base --noplot "${filter_args[@]}") > base.log 2>&1 || (cat base.log && exit 1)
 
 echo 'bench head'
 set -o pipefail
 (cd head && cargo bench --bench bench1 --all-features -- \\
-  --baseline base --noplot "$BENCH_FILTER") 2>&1 | tee head.log
+  --baseline base --noplot "${filter_args[@]}") 2>&1 | tee head.log
 
 echo '=== BENCH SUMMARY ==='
 echo "head {{ .git_commit }} vs base {{ .base_commit }} on $(hostname)"

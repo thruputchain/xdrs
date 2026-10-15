@@ -91,16 +91,23 @@ jobs:
           # only needs to exist.
           eval "$(ssh-agent -s)" > /dev/null
           trap 'ssh-agent -k > /dev/null' EXIT
+          # hog_sched reads an empty --value as absent and takes the next
+          # argument instead, so only pass the filter when there is one; the
+          # schedule treats a missing value as no filter.
+          filter_args=()
+          if [ -n "$BENCH_FILTER" ]; then
+            filter_args=(--key=bench_filter --value="$BENCH_FILTER")
+          fi
           # The token must not reach the job log.
           set +x
           hog_sched \
             --i="$SCHEDULE_ID" \
+            --timeout-sec=5400 \
             --key=github_repo --value="$REPO" \
             --key=git_token --value="$GIT_TOKEN" \
             --key=git_commit --value="$HEAD_SHA" \
             --key=base_commit --value="$BASE_SHA" \
-            --key=bench_filter --value="$BENCH_FILTER" \
-            --timeout-sec=5400 \
+            "${filter_args[@]}" \
             ./scripts/schedules/bench.toml \
             | tee "$RUNNER_TEMP/bench.txt"
 
