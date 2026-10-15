@@ -123,6 +123,10 @@ name = "const_writer"
 required-features = ["alloc", "derive"]
 
 [[test]]
+name = "borrow_lifetime"
+required-features = ["alloc", "derive"]
+
+[[test]]
 name = "const_opaque_bounds"
 required-features = ["alloc", "derive"]
 

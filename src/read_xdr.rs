@@ -84,6 +84,13 @@ where
 /// The lifetime parameter `'r` represents the lifetime of data borrowed
 /// from the reader.
 ///
+/// Borrowed types implement this for every lifetime the reader outlives:
+/// `&'a [u8]`, `&'a [u8; N]` and `&'a str` are `ReadXDR<'r>` whenever
+/// `'r: 'a`, not only when `'a` is `'r` itself. So a decoded borrow can be
+/// placed somewhere whose type is already fixed to a shorter lifetime, such
+/// as a slot behind `&mut` or a generic parameter inferred from one, without
+/// relying on the use site to shorten it.
+///
 /// # Derived impls and struct lifetimes
 ///
 /// `#[derive(ReadXDR)]` on a type `Foo<'a, 'b, ..>` emits an impl of the
@@ -180,14 +187,20 @@ where
     }
 }
 
-impl<'r> ReadXDR<'r> for &'r [u8] {
+// Borrowed types are decodable for every lifetime the reader buffer
+// outlives, not only the reader's own: the borrow comes out of the reader as
+// `&'r _` and is shortened to `'a` here. This matters wherever the decoded
+// type is fixed by an invariant position (a generic parameter, a slot
+// behind `&mut`), where the shortening cannot happen at the use site.
+impl<'r: 'a, 'a> ReadXDR<'r> for &'a [u8] {
     #[inline]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        r.read_opaque_variable(u32::MAX)
+        let bytes: &'r [u8] = r.read_opaque_variable(u32::MAX)?;
+        Ok(bytes)
     }
 }
 
-impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
+impl<'r: 'a, 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
     #[inline]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
@@ -195,7 +208,7 @@ impl<'r, const N: usize> ReadXDR<'r> for &'r [u8; N] {
 
         // SAFETY: read_opaque_fixed returns a slice of exactly `len` bytes,
         // and len == N as u32, so the slice length matches the array size.
-        let bytes: &[u8; N] = unsafe {
+        let bytes: &'r [u8; N] = unsafe {
             r.read_opaque_fixed(len as usize)?
                 .try_into()
                 .unwrap_unchecked()
@@ -220,10 +233,11 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     }
 }
 
-impl<'r> ReadXDR<'r> for &'r str {
+impl<'r: 'a, 'a> ReadXDR<'r> for &'a str {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        let bytes = r.read_opaque_variable(u32::MAX)?;
-        str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())
+        let bytes: &'r [u8] = r.read_opaque_variable(u32::MAX)?;
+        let s: &'r str = str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())?;
+        Ok(s)
     }
 }
 
