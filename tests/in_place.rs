@@ -199,6 +199,29 @@ fn failed_vec_element_drops_earlier_elements() {
     assert_eq!(LIVE.get(), 0);
 }
 
+#[test]
+fn failed_element_past_prealloc_cap_drops_earlier_elements() {
+    // Elements beyond the preallocation cap grow the vector one at a time,
+    // a separate path from the preallocated prefix.
+    let cap = xdrs::MAX_PREALLOC_BYTES / core::mem::size_of::<Tracked>();
+    let len = cap + 3;
+
+    let mut ok: Vec<u32> = vec![0; len];
+    let buf = txs::encode(&ok).unwrap();
+    LIVE.set(0);
+    let v: VecM<Tracked, { u32::MAX }> = txs::decode(&buf).unwrap();
+    assert_eq!(LIVE.get(), len);
+    drop(v);
+    assert_eq!(LIVE.get(), 0);
+
+    *ok.last_mut().unwrap() = 999;
+    let buf = txs::encode(&ok).unwrap();
+    assert!(txs::decode::<Vec<Tracked>>(&buf).is_err());
+    assert_eq!(LIVE.get(), 0);
+    assert!(txs::decode::<VecM<Tracked, { u32::MAX }>>(&buf).is_err());
+    assert_eq!(LIVE.get(), 0);
+}
+
 // ---- incorrect implementations ----------------------------------------------
 
 /// Returns a reference to a leaked value instead of initializing the slot.
