@@ -63,8 +63,10 @@ git -C head worktree add ../base {{ .base_commit }}
 rm -rf base/benches
 cp -r head/benches base/benches
 
-# Shared by both runs: criterion keeps its baselines under the target dir.
-export CARGO_TARGET_DIR="$PWD/bench-target"
+# Keep compiled artifacts separate: Cargo can otherwise reuse the baseline
+# executable for the head checkout when both trees predate the first build.
+base_target_dir="$PWD/base-target"
+head_target_dir="$PWD/head-target"
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 # The workflow only passes a filter when one was given; an unset template
@@ -76,13 +78,22 @@ fi
 
 echo "comparing {{ .git_commit }} against base {{ .base_commit }} on $(hostname)"
 
+# Build both revisions before sampling, with compilation visible in the log.
+echo 'build baseline'
+(cd base && CARGO_TARGET_DIR="$base_target_dir" cargo bench --bench bench1 --all-features --no-run)
+echo 'build head'
+(cd head && CARGO_TARGET_DIR="$head_target_dir" cargo bench --bench bench1 --all-features --no-run)
+
 echo 'bench baseline'
-(cd base && cargo bench --bench bench1 --all-features -- \\
+(cd base && CARGO_TARGET_DIR="$base_target_dir" cargo bench --bench bench1 --all-features -- \\
   --save-baseline base --noplot "${filter_args[@]}") > base.log 2>&1 || (cat base.log && exit 1)
+
+# Transfer only Criterion's measurements, never Cargo's compiled artifacts.
+cp -a "$base_target_dir/criterion" "$head_target_dir/"
 
 echo 'bench head'
 set -o pipefail
-(cd head && cargo bench --bench bench1 --all-features -- \\
+(cd head && CARGO_TARGET_DIR="$head_target_dir" cargo bench --bench bench1 --all-features -- \\
   --baseline base --noplot "${filter_args[@]}") 2>&1 | tee head.log
 
 echo '=== BENCH SUMMARY ==='
@@ -111,3 +122,4 @@ BENCH_FILTER = "{{ .bench_filter }}"
 
 [jobs.host]
 bench_1 = "?"
+
