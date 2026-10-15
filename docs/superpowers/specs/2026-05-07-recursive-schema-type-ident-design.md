@@ -1,7 +1,7 @@
 # Recursive Schema Type Identity
 
 **Date**: 2026-05-07
-**Issue**: [#201 - Recursive Schema Generation Through Boxed Self References Can Stack Overflow](https://github.com/groundhogchain/xdrs/issues/201)
+**Issue**: [#201 - Recursive Schema Generation Through Boxed Self References Can Stack Overflow](https://github.com/thruputchain/xdrs/issues/201)
 **Severity**: Medium (schema-generation DoS / schema correctness)
 
 ## Problem
