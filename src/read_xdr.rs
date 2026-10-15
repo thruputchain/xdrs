@@ -145,10 +145,12 @@ pub trait ReadXDR<'r>: Sized {
 ///
 /// # Panics
 ///
-/// Panics if `T`'s [`ReadXDR::read_xdr_in_place`] returns a reference that
-/// does not point into `slot`. This can only happen with an incorrect
-/// manual implementation, and the check lets callers rely on `slot` being
-/// initialized without trusting that implementation.
+/// With debug assertions enabled, panics if `T`'s
+/// [`ReadXDR::read_xdr_in_place`] returns a reference that does not point
+/// into `slot`. This can only happen with an incorrect manual
+/// implementation. The check is a `debug_assert!` because it sits on the
+/// per-element path of arrays and vectors, where it measurably costs in
+/// release builds.
 #[inline]
 pub fn read_xdr_in_place<'r, 's, R, T>(r: &mut R, slot: &'s mut MU<T>) -> ReadResult<&'s mut T>
 where
@@ -157,7 +159,7 @@ where
 {
     let expected: *const T = slot.as_ptr();
     let out = T::read_xdr_in_place(r, slot)?;
-    assert!(
+    debug_assert!(
         core::ptr::eq(&*out, expected),
         "ReadXDR::read_xdr_in_place returned a reference outside its slot"
     );

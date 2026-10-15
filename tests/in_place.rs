@@ -219,9 +219,11 @@ fn failed_element_past_prealloc_cap_drops_earlier_elements() {
 // ---- incorrect implementations ----------------------------------------------
 
 /// Returns a reference to a leaked value instead of initializing the slot.
+#[cfg(debug_assertions)]
 #[derive(Debug)]
 struct Misplaced(#[allow(dead_code)] u8);
 
+#[cfg(debug_assertions)]
 impl<'r> ReadXDR<'r> for Misplaced {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
         Ok(Misplaced(0))
@@ -236,6 +238,7 @@ impl<'r> ReadXDR<'r> for Misplaced {
 }
 
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic(expected = "outside its slot")]
 fn misplaced_result_is_caught() {
     #[allow(dead_code)]
