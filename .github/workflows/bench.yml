@@ -128,8 +128,12 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # The job summary above is the result; the reports are a bonus, so an
+      # upload failure (such as an exhausted artifact storage quota) does not
+      # fail the job.
       - name: Upload criterion reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: criterion
