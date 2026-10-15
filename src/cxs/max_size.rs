@@ -83,11 +83,18 @@ impl<T: ?Sized> ConstMaxSize for &T {
 // Pointer cut: an owned heap `Box` is indirection — a cycle edge for
 // recursive types, even though it XDR-encodes transparently as its pointee.
 // Literal `None`, no bound on `T`, so the pointee's bound is never named (or
-// evaluated). In no-`alloc` builds `Box<T>` aliases `&T` and folds through
-// the reference impl above; this covers the `alloc` heap `Box`.
+// evaluated). In no-`alloc` builds `Box<T>` is an inline newtype around `T`
+// (see below) and takes `T`'s bound; this covers the `alloc` heap `Box`.
 #[cfg(feature = "alloc")]
 impl<T: ?Sized> ConstMaxSize for alloc::boxed::Box<T> {
     const MAX_SIZE: Option<usize> = None;
+}
+
+// No-`alloc` `Box<T>` holds `T` inline: not a pointer, so it takes `T`'s
+// bound rather than cutting the fold.
+#[cfg(not(feature = "alloc"))]
+impl<T: ConstMaxSize> ConstMaxSize for xdr_common::Box<T> {
+    const MAX_SIZE: Option<usize> = T::MAX_SIZE;
 }
 
 impl<T: ConstMaxSize> ConstMaxSize for Option<T> {
@@ -184,7 +191,8 @@ mod tests {
     const _: () = assert!(bound::<&'static [u32]>().is_none());
 
     // Owned heap `Box` is also a pointer cut (alloc only; no-alloc `Box`
-    // aliases `&T`, covered above). None propagates through an enclosing fold.
+    // holds `T` inline and is not a pointer). None propagates through an
+    // enclosing fold.
     #[cfg(feature = "alloc")]
     const _: () = assert!(bound::<alloc::boxed::Box<u32>>().is_none());
     #[cfg(feature = "alloc")]

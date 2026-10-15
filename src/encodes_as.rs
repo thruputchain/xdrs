@@ -62,6 +62,9 @@ impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for &U {}
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<X: ?Sized, U: EncodesAs<X>> EncodesAs<X> for alloc::boxed::Box<U> {}
 
+#[cfg(not(feature = "alloc"))]
+impl<X: ?Sized, U: EncodesAs<X>> EncodesAs<X> for xdr_common::Box<U> {}
+
 #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for alloc::sync::Arc<U> {}

@@ -40,7 +40,7 @@
 extern crate alloc;
 
 mod cfg;
-pub use cfg::{Box, Vec};
+pub use cfg::{Box, Vec, box_as_ref};
 
 mod error;
 pub use error::*;

@@ -148,6 +148,53 @@ fn derive_struct_txs() {
     assert_eq!(&FOO_TXS, txs_runtime_encode(&FOO).as_slice());
 }
 
+// -- Derive macro tests: boxed fields --
+
+// `Box<T>` encodes as its pointee; the derive borrows it through
+// `box_as_ref` because `Deref` is not usable in `const fn`. With `alloc`,
+// `Box::new` is not const, so the generated methods are exercised at runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct BoxedLeaf {
+    a: u32,
+    b: [u8; 3],
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
+struct Boxed {
+    n: u32,
+    leaf: Box<BoxedLeaf>,
+    maybe: Option<Box<BoxedLeaf>>,
+    raw: Box<[u8; 4]>,
+}
+
+#[test]
+fn derive_boxed_fields_match_runtime() {
+    let val = Boxed {
+        n: 7,
+        leaf: Box::new(BoxedLeaf { a: 1, b: [2, 3, 4] }),
+        maybe: Some(Box::new(BoxedLeaf { a: 5, b: [6, 7, 8] })),
+        raw: Box::new([9, 10, 11, 12]),
+    };
+
+    // `into_bytes` needs an exactly sized buffer, so pin the sizes.
+    const TXS_LEN: usize = 28;
+    const CXS_LEN: usize = 14;
+    let txs_expected = txs_runtime_encode(&val);
+    let cxs_expected = cxs_runtime_encode(&val);
+    assert_eq!(val.const_txs_size(), txs_expected.len());
+    assert_eq!(val.const_cxs_size(), cxs_expected.len());
+    assert_eq!(txs_expected.len(), TXS_LEN);
+    assert_eq!(cxs_expected.len(), CXS_LEN);
+
+    let mut w = xdrs::txs::ConstWriter::<TXS_LEN>::new();
+    val.const_write_txs(&mut w);
+    assert_eq!(&w.into_bytes()[..], txs_expected.as_slice());
+
+    let mut w = xdrs::cxs::ConstWriter::<CXS_LEN>::new();
+    val.const_write_cxs(&mut w);
+    assert_eq!(&w.into_bytes()[..], cxs_expected.as_slice());
+}
+
 // -- Derive macro tests: enums --
 
 #[derive(xdrs::ConstWriteXDR, xdrs::WriteXDR)]

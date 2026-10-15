@@ -45,6 +45,8 @@ pub fn const_write_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
         const _: () = {
             use #krate::cxs;
             use #krate::txs;
+            #[allow(unused_imports)]
+            use #krate::box_as_ref;
 
             #impls
         };
@@ -470,6 +472,15 @@ fn const_size_value_expr(
         return Ok(quote! { 0 #(+ #elem_sizes)* });
     }
 
+    // `Box<T>` encodes as its pointee. `Deref` is not const, so borrow the
+    // inner value through `box_as_ref`, which works for both the heap `Box`
+    // and the no-`alloc` inline newtype. The turbofish pins `T`: an unsized
+    // coercion at the use site (`&[u8; N]` to `&[u8]`) would otherwise make
+    // inference pick `T = [u8]`.
+    if let Some(inner) = box_inner(ty) {
+        return const_size_value_expr(quote! { box_as_ref::<#inner>(#expr_ref) }, inner, fmt);
+    }
+
     if let syn::Type::Reference(r) = ty {
         return const_size_value_expr(quote! { *#expr_ref }, &r.elem, fmt);
     }
@@ -628,6 +639,10 @@ fn const_write_value_expr(
             .map(|(i, elem)| const_write_value_expr(tuple_elem_ref(&expr_ref, i), elem, fmt))
             .collect::<Result<Vec<_>>>()?;
         return Ok(quote! { #(#elem_writes)* });
+    }
+
+    if let Some(inner) = box_inner(ty) {
+        return const_write_value_expr(quote! { box_as_ref::<#inner>(#expr_ref) }, inner, fmt);
     }
 
     if let syn::Type::Reference(r) = ty {
@@ -830,6 +845,25 @@ mod tests {
         assert!(toks.contains("slice.len()<=(5)asusize"));
         assert!(toks.contains("slice.len()<=(4)asusize"));
         assert!(toks.contains("slice.len()<=(8)asusize"));
+    }
+
+    #[test]
+    fn box_is_recognized() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct Boxed {
+                leaf: Box<Leaf>,
+                maybe: Option<Box<Leaf>>,
+                raw: Box<[u8; 4]>,
+            }
+        };
+
+        let toks = normalize_tokens(&const_write_xdr(&input).unwrap().to_string());
+        // Boxed fields are reached through the const accessor, not `Deref`.
+        assert!(toks.contains("(box_as_ref::<Leaf>(&self.leaf)).const_write_cxs(w)"));
+        assert!(toks.contains("(box_as_ref::<Leaf>(_inner)).const_write_txs(w)"));
+        // The pointee's own fast path still applies.
+        assert!(toks.contains("w.write_opaque_fixed(box_as_ref::<[u8;4]>(&self.raw))"));
+        assert!(toks.contains("usexdrs::box_as_ref") || toks.contains("use::xdrs::box_as_ref"));
     }
 
     #[test]
@@ -1236,6 +1270,10 @@ fn check_supported_const_shape(ty: &syn::Type) -> Result<()> {
         return check_supported_const_shape(inner);
     }
 
+    if let Some(inner) = box_inner(ty) {
+        return check_supported_const_shape(inner);
+    }
+
     if let Some((ok_ty, err_ty)) = result_inners(ty) {
         check_supported_const_shape(ok_ty)?;
         return check_supported_const_shape(err_ty);
@@ -1338,6 +1376,23 @@ fn max_len_guard(max: &Option<TokenStream>) -> TokenStream {
 
 fn option_inner(ty: &syn::Type) -> Option<&syn::Type> {
     let seg = path_segment(ty, "Option")?;
+    let args = angle_bracketed_args(seg)?;
+    let mut types = args.args.iter().filter_map(|arg| {
+        if let syn::GenericArgument::Type(ty) = arg {
+            Some(ty)
+        } else {
+            None
+        }
+    });
+    let inner = types.next()?;
+    if types.next().is_some() {
+        return None;
+    }
+    Some(inner)
+}
+
+fn box_inner(ty: &syn::Type) -> Option<&syn::Type> {
+    let seg = path_segment(ty, "Box")?;
     let args = angle_bracketed_args(seg)?;
     let mut types = args.args.iter().filter_map(|arg| {
         if let syn::GenericArgument::Type(ty) = arg {
