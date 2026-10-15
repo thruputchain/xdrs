@@ -531,10 +531,13 @@ where
 ///
 /// Capacity for up to [`MAX_PREALLOC_BYTES`] is reserved up front, since
 /// `len` comes from the wire and must not drive an unbounded allocation,
-/// and those elements are decoded straight into it. Anything past that is
-/// pushed the ordinary way, letting `Vec` grow as it normally does.
+/// and those elements are decoded straight into it. After that, grow the
+/// vector as needed and decode each batch into its spare capacity.
 #[cfg(feature = "alloc")]
-#[inline]
+// Keep the reader local to the caller so its position updates and overflow
+// checks can be optimized across the element-decoding loop. The Vec/VecM
+// entry points must also inline for the same reason.
+#[inline(always)]
 fn read_vec<'r, R, T>(r: &mut R, len: usize) -> ReadResult<alloc::vec::Vec<T>>
 where
     R: Reader<'r>,
@@ -544,8 +547,10 @@ where
     let mut vec = alloc::vec::Vec::with_capacity(cap);
     fill_spare(r, &mut vec, cap)?;
 
-    for _ in cap..len {
-        vec.push(read_xdr(r)?);
+    while vec.len() < len {
+        vec.reserve(1);
+        let count = (len - vec.len()).min(vec.capacity() - vec.len());
+        fill_spare(r, &mut vec, count)?;
     }
 
     Ok(vec)
@@ -568,6 +573,7 @@ const _: () = {
     where
         T: ReadXDR<'r>,
     {
+        #[inline(always)]
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
             read_vec(r, len)
@@ -605,6 +611,7 @@ const _: () = {
     where
         T: ReadXDR<'r>,
     {
+        #[inline(always)]
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
             if len > MAX as usize {

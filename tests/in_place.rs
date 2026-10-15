@@ -46,6 +46,52 @@ fn vec_and_vecm_of_structs() {
     assert_eq!(m.0, values);
 }
 
+#[derive(Debug)]
+struct InPlaceOnly<const N: usize>([u8; N]);
+
+impl<'r, const N: usize> ReadXDR<'r> for InPlaceOnly<N> {
+    fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
+        panic!("vector elements must be decoded in place");
+    }
+
+    fn read_xdr_in_place<'s, R: Reader<'r>>(
+        r: &mut R,
+        slot: &'s mut MaybeUninit<Self>,
+    ) -> Result<&'s mut Self, ReadError> {
+        Ok(slot.write(Self([r.read_u32()? as u8; N])))
+    }
+}
+
+fn check_in_place_vec<const N: usize>(len: usize) {
+    let values: Vec<u32> = (0..len).map(|i| (i % 256) as u32).collect();
+    macro_rules! check {
+        ($fmt:ident) => {{
+            let buf = xdrs::$fmt::encode(&values).unwrap();
+            let v: Vec<InPlaceOnly<N>> = xdrs::$fmt::decode(&buf).unwrap();
+            let m: VecM<InPlaceOnly<N>> = xdrs::$fmt::decode(&buf).unwrap();
+            for decoded in [v, m.0] {
+                assert_eq!(decoded.len(), len);
+                for (item, value) in decoded.iter().zip(&values) {
+                    assert!(item.0.iter().all(|byte| *byte == *value as u8));
+                }
+            }
+        }};
+    }
+    check!(txs);
+    check!(cxs);
+}
+
+#[test]
+fn vec_growth_keeps_decoding_in_place() {
+    check_in_place_vec::<4096>(0);
+    // Initial capacity 16, followed by several growth batches.
+    check_in_place_vec::<4096>(67);
+    // An element larger than the cap starts with no allocation.
+    check_in_place_vec::<{ xdrs::MAX_PREALLOC_BYTES + 1 }>(3);
+    // ZSTs have effectively unlimited capacity but still consume input.
+    check_in_place_vec::<0>(xdrs::MAX_PREALLOC_BYTES + 3);
+}
+
 #[test]
 fn derived_struct_in_place_initializes_slot() {
     let value = big();
@@ -148,6 +194,9 @@ impl<'r> ReadXDR<'r> for Tracked {
         if v == 999 {
             return Err(ReadError::bad_discriminator(999));
         }
+        if v == 998 {
+            panic!("tracked decode panic");
+        }
         LIVE.set(LIVE.get() + 1);
         Ok(Tracked(v))
     }
@@ -195,10 +244,9 @@ fn failed_vec_element_drops_earlier_elements() {
 
 #[test]
 fn failed_element_past_prealloc_cap_drops_earlier_elements() {
-    // Elements beyond the preallocation cap grow the vector one at a time,
-    // a separate path from the preallocated prefix.
+    // Reach a partially initialized batch after multiple vector growths.
     let cap = xdrs::MAX_PREALLOC_BYTES / core::mem::size_of::<Tracked>();
-    let len = cap + 3;
+    let len = cap * 2 + 3;
 
     let mut ok: Vec<u32> = vec![0; len];
     let buf = txs::encode(&ok).unwrap();
@@ -213,6 +261,13 @@ fn failed_element_past_prealloc_cap_drops_earlier_elements() {
     assert!(txs::decode::<Vec<Tracked>>(&buf).is_err());
     assert_eq!(LIVE.get(), 0);
     assert!(txs::decode::<VecM<Tracked, { u32::MAX }>>(&buf).is_err());
+    assert_eq!(LIVE.get(), 0);
+
+    *ok.last_mut().unwrap() = 998;
+    let buf = txs::encode(&ok).unwrap();
+    assert!(std::panic::catch_unwind(|| txs::decode::<Vec<Tracked>>(&buf)).is_err());
+    assert_eq!(LIVE.get(), 0);
+    assert!(std::panic::catch_unwind(|| txs::decode::<VecM<Tracked>>(&buf)).is_err());
     assert_eq!(LIVE.get(), 0);
 }
 
