@@ -458,8 +458,12 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
 ///
 /// Each field yields a drop guard; an error in a later field drops the
 /// earlier ones (guards drop in reverse order), and success forgets them all.
-/// Fields whose type names a lifetime are decoded by value and moved into
-/// place; see [`type_has_lifetime`].
+/// Fields decoded through `#[xdr(from = ..)]` or `via` are converted by
+/// value and then moved into place. Borrowed fields decode in place like any
+/// other, since borrowed types implement `ReadXDR<'_r>` for every lifetime
+/// the reader outlives and the impl already bounds `'_r` by each lifetime
+/// parameter of the type.
+///
 /// Returns nothing for unit structs, which have nothing to place, and for
 /// `#[repr(packed)]` structs, whose fields may be unaligned; both fall back
 /// to the trait's default.
@@ -494,10 +498,6 @@ fn read_struct_in_place(input: &syn::DeriveInput, item: &syn::DataStruct) -> Res
                         ::core::convert::Into::into(from_value),
                     )
                 };
-            }
-        } else if type_has_lifetime(&field.ty) {
-            quote! {
-                let #guard = __xdrs::in_place::write_field(#place, __xdrs::read_xdr(r)?);
             }
         } else {
             quote! {

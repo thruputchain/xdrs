@@ -147,6 +147,27 @@ fn via_field() {
     );
 }
 
+#[derive(Debug, PartialEq, Eq, xdrs::ReadXDR)]
+struct WithBorrows<'a> {
+    bytes: &'a [u8],
+    fixed: &'a [u8; 2],
+    text: &'a str,
+}
+
+#[test]
+fn borrowed_fields_decode_in_place() {
+    let buf = txs::encode(&(&b"xyz"[..], [b'a', b'b'], "hi")).unwrap();
+    let out: Box<WithBorrows> = txs::decode(&buf).unwrap();
+    assert_eq!(out.bytes, b"xyz");
+    assert_eq!(out.fixed, b"ab");
+    assert_eq!(out.text, "hi");
+    // Still zero-copy: the borrows point into the input.
+    let range = buf.as_ptr_range();
+    assert!(range.contains(&out.bytes.as_ptr()));
+    assert!(range.contains(&out.fixed.as_ptr()));
+    assert!(range.contains(&out.text.as_ptr()));
+}
+
 #[derive(Clone, Copy, xdrs::ReadXDR)]
 #[repr(C, packed)]
 struct Packed {
