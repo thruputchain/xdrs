@@ -1,8 +1,7 @@
 name: Benchmarks
 
-# Compares a branch's benchmarks against a base commit on the self-hosted
-# `hog1` machine, so the numbers come from real hardware rather than a
-# hosted VM.
+# Compares a branch's benchmarks against a base commit on a self-hosted
+# runner, so the numbers come from real hardware rather than a hosted VM.
 #
 # Two ways to run it:
 #   - add the `bench` label to a same-repo PR (pushing to a labeled PR runs
@@ -44,7 +43,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (contains(github.event.pull_request.labels.*.name, 'bench') &&
        github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: hog1
+    runs-on: self-hosted
     timeout-minutes: 120
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
