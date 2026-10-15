@@ -1,0 +1,93 @@
+name: Benchmarks
+
+# Compares a PR's benchmarks against its base branch. Add the `bench` label to
+# a PR to run it; pushing to a labeled PR runs it again.
+#
+# Both sides run in one job on the same machine, back to back, so the
+# comparison is not skewed by runner-to-runner hardware differences. The
+# baseline is built from the base commit's library with the PR's own
+# `benches/`, so benchmarks the PR adds are measured on both sides.
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    # Only for same-repo PRs: this runs PR code on a self-hosted runner.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'bench') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: namespace-profile-hogd-linux-2604
+    timeout-minutes: 90
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      CARGO_TARGET_DIR: ${{ github.workspace }}/../bench-target
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install rustup if needed
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+            curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused \
+              --location --silent --show-error --fail https://sh.rustup.rs \
+              | sh -s -- --default-toolchain none --profile minimal -y
+            echo "CARGO_HOME=$CARGO_HOME" >> "$GITHUB_ENV"
+            echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Set up Rust 1.96
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal --no-self-update
+          rustup default 1.96.0
+
+      - name: Prepare baseline tree
+        run: |
+          git worktree add ../bench-base "$BASE_SHA"
+          rm -rf ../bench-base/benches
+          cp -r benches ../bench-base/benches
+
+      - name: Bench baseline
+        working-directory: ../bench-base
+        run: cargo bench --bench bench1 --all-features -- --save-baseline base
+
+      - name: Bench PR head
+        run: |
+          set -o pipefail
+          cargo bench --bench bench1 --all-features -- --baseline base \
+            | tee "$RUNNER_TEMP/bench.txt"
+
+      - name: Summarize
+        if: always()
+        run: |
+          {
+            echo "## Benchmarks vs base (${BASE_SHA:0:7})"
+            echo
+            echo '```'
+            # Each benchmark's name, its time, and criterion's verdict.
+            grep -E '^[A-Za-z].*/|time:|change:|(improved|regressed|No change|within noise)' \
+              "$RUNNER_TEMP/bench.txt" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload criterion reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: criterion
+          path: ${{ env.CARGO_TARGET_DIR }}/criterion
+          if-no-files-found: ignore
