@@ -321,6 +321,33 @@ where
     }
 }
 
+// Shared pointers decode transparently as their pointee, mirroring `Box`.
+// `ReadXDROwned` follows from the blanket impl whenever `T: ReadXDROwned`.
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl<'r, T> ReadXDR<'r> for alloc::rc::Rc<T>
+where
+    T: ReadXDR<'r>,
+{
+    #[inline]
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+        Ok(Self::new(read_xdr(r)?))
+    }
+}
+
+// `alloc::sync` exists only on targets with pointer-sized atomics.
+#[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+impl<'r, T> ReadXDR<'r> for alloc::sync::Arc<T>
+where
+    T: ReadXDR<'r>,
+{
+    #[inline]
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+        Ok(Self::new(read_xdr(r)?))
+    }
+}
+
 impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
 where
     T: ReadXDR<'r>,
