@@ -316,7 +316,7 @@ where
         };
 
         for elt in guard.slice.iter_mut() {
-            read_xdr_in_place(r, elt)?;
+            elt.write(read_xdr(r)?);
             guard.initialized += 1;
         }
 

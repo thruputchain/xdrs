@@ -82,35 +82,33 @@ where
 {
     let mut group = c.benchmark_group(format!("InPlace/{name}"));
 
-    for (fmt, input) in [
-        ("cxs", cxs::encode(value).unwrap()),
-        ("txs", txs::encode(value).unwrap()),
-    ] {
-        let input: &[u8] = &input;
-        group.throughput(Throughput::Bytes(input.len() as u64));
+    // Give each format its own timed loop. Selecting a format inside iter
+    // adds dispatch work and changes how large return values are moved.
+    macro_rules! bench_format {
+        ($fmt:ident) => {{
+            let input = $fmt::encode(value).unwrap();
+            let input: &[u8] = &input;
+            group.throughput(Throughput::Bytes(input.len() as u64));
 
-        let id = BenchmarkId::new("value_decode", fmt);
-        group.bench_with_input(id, input, |b, input| {
-            b.iter(|| {
-                let out: T = match fmt {
-                    "cxs" => cxs::decode(black_box(input)).unwrap(),
-                    _ => txs::decode(black_box(input)).unwrap(),
-                };
-                black_box(&out);
-            })
-        });
+            let id = BenchmarkId::new("value_decode", stringify!($fmt));
+            group.bench_with_input(id, input, |b, input| {
+                b.iter(|| {
+                    let out: T = $fmt::decode(black_box(input)).unwrap();
+                    black_box(&out);
+                })
+            });
 
-        let id = BenchmarkId::new("Box_decode", fmt);
-        group.bench_with_input(id, input, |b, input| {
-            b.iter(|| {
-                let out: Box<T> = match fmt {
-                    "cxs" => cxs::decode(black_box(input)).unwrap(),
-                    _ => txs::decode(black_box(input)).unwrap(),
-                };
-                black_box(&out);
-            })
-        });
+            let id = BenchmarkId::new("Box_decode", stringify!($fmt));
+            group.bench_with_input(id, input, |b, input| {
+                b.iter(|| {
+                    let out: Box<T> = $fmt::decode(black_box(input)).unwrap();
+                    black_box(&out);
+                })
+            });
+        }};
     }
+    bench_format!(cxs);
+    bench_format!(txs);
 
     group.finish();
 }
@@ -130,40 +128,41 @@ pub fn bench_in_place_vecm(c: &mut Criterion) {
     let mut group = c.benchmark_group("InPlace/Vec");
     const LEN: usize = 1024;
 
+    macro_rules! bench_format {
+        ($fmt:ident, $ty:ty, $value:expr, $label:literal) => {{
+            let input = $fmt::encode($value).unwrap();
+            let input: &[u8] = &input;
+            group.throughput(Throughput::Bytes(input.len() as u64));
+
+            let id = BenchmarkId::new(
+                concat!($label, "_Vec_decode"),
+                format!("{}/len={LEN}", stringify!($fmt)),
+            );
+            group.bench_with_input(id, input, |b, input| {
+                b.iter(|| {
+                    let out: Vec<$ty> = $fmt::decode(black_box(input)).unwrap();
+                    black_box(&out);
+                })
+            });
+
+            let id = BenchmarkId::new(
+                concat!($label, "_VecM_decode"),
+                format!("{}/len={LEN}", stringify!($fmt)),
+            );
+            group.bench_with_input(id, input, |b, input| {
+                b.iter(|| {
+                    let out: VecM<$ty, { u32::MAX }> = $fmt::decode(black_box(input)).unwrap();
+                    black_box(&out);
+                })
+            });
+        }};
+    }
+
     macro_rules! bench_vec {
         ($ty:ty, $make:expr, $label:literal) => {{
             let value: VecM<$ty, { u32::MAX }> = VecM((0..LEN).map(|_| $make).collect());
-            for (fmt, input) in [
-                ("cxs", cxs::encode(&value).unwrap()),
-                ("txs", txs::encode(&value).unwrap()),
-            ] {
-                let input: &[u8] = &input;
-                group.throughput(Throughput::Bytes(input.len() as u64));
-
-                let id =
-                    BenchmarkId::new(concat!($label, "_Vec_decode"), format!("{fmt}/len={LEN}"));
-                group.bench_with_input(id, input, |b, input| {
-                    b.iter(|| {
-                        let out: Vec<$ty> = match fmt {
-                            "cxs" => cxs::decode(black_box(input)).unwrap(),
-                            _ => txs::decode(black_box(input)).unwrap(),
-                        };
-                        black_box(&out);
-                    })
-                });
-
-                let id =
-                    BenchmarkId::new(concat!($label, "_VecM_decode"), format!("{fmt}/len={LEN}"));
-                group.bench_with_input(id, input, |b, input| {
-                    b.iter(|| {
-                        let out: VecM<$ty, { u32::MAX }> = match fmt {
-                            "cxs" => cxs::decode(black_box(input)).unwrap(),
-                            _ => txs::decode(black_box(input)).unwrap(),
-                        };
-                        black_box(&out);
-                    })
-                });
-            }
+            bench_format!(cxs, $ty, &value, $label);
+            bench_format!(txs, $ty, &value, $label);
         }};
     }
 
