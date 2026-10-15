@@ -114,6 +114,112 @@ pub trait ReadXDR<'r>: Sized {
     /// This method should read the appropriate amount of data from the reader
     /// and construct a value of type `Self`.
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self>;
+
+    /// Reads an XDR value directly into `slot`, without first building it
+    /// on the stack.
+    ///
+    /// On success, `slot` is fully initialized and the returned reference
+    /// must point to it. On error, nothing in `slot` may be left that needs
+    /// dropping: an implementation that writes part of the value before
+    /// failing must drop what it wrote.
+    ///
+    /// The default implementation decodes with [`ReadXDR::read_xdr`] and
+    /// moves the result into `slot`. Overriding it pays off for large
+    /// values, such as structs with big fixed-size arrays, that would
+    /// otherwise be built in a stack frame and then copied. Callers should
+    /// go through [`read_xdr_in_place`], which checks that the returned
+    /// reference points into `slot`.
+    #[inline]
+    fn read_xdr_in_place<'s, R: Reader<'r>>(
+        r: &mut R,
+        slot: &'s mut MU<Self>,
+    ) -> ReadResult<&'s mut Self> {
+        Ok(slot.write(Self::read_xdr(r)?))
+    }
+}
+
+/// Reads an XDR value of type `T` from the reader `r` directly into `slot`.
+///
+/// On success, `slot` is initialized and the returned reference points to
+/// it. On error, `slot` is left uninitialized with nothing to drop.
+///
+/// # Panics
+///
+/// Panics if `T`'s [`ReadXDR::read_xdr_in_place`] returns a reference that
+/// does not point into `slot`. This can only happen with an incorrect
+/// manual implementation, and the check lets callers rely on `slot` being
+/// initialized without trusting that implementation.
+#[inline]
+pub fn read_xdr_in_place<'r, 's, R, T>(r: &mut R, slot: &'s mut MU<T>) -> ReadResult<&'s mut T>
+where
+    R: Reader<'r>,
+    T: ReadXDR<'r>,
+{
+    let expected: *const T = slot.as_ptr();
+    let out = T::read_xdr_in_place(r, slot)?;
+    assert!(
+        core::ptr::eq(&*out, expected),
+        "ReadXDR::read_xdr_in_place returned a reference outside its slot"
+    );
+    Ok(out)
+}
+
+/// Support code for `#[derive(ReadXDR)]`. Not public API.
+#[doc(hidden)]
+pub mod in_place {
+    use super::*;
+
+    /// Drops one already-decoded field if a later field fails to decode.
+    ///
+    /// Generated code creates one guard per field as it goes and forgets
+    /// them all once every field is written. Guards drop in reverse order on
+    /// an early return, which unwinds exactly the fields written so far.
+    pub struct FieldGuard<T>(*mut T);
+
+    impl<T> Drop for FieldGuard<T> {
+        #[inline]
+        fn drop(&mut self) {
+            // SAFETY: a guard is only created for a field that was fully
+            // initialized, and only dropped (rather than forgotten) when the
+            // enclosing value is abandoned, so the field is dropped once.
+            unsafe { core::ptr::drop_in_place(self.0) }
+        }
+    }
+
+    /// Decodes a field of type `F` into the field at `field`.
+    ///
+    /// # Safety
+    ///
+    /// `field` must be valid for writes, properly aligned, not aliased for
+    /// the duration of the call, and must not hold a value that needs
+    /// dropping.
+    #[inline(always)]
+    pub unsafe fn read_field<'r, R, F>(r: &mut R, field: *mut F) -> ReadResult<FieldGuard<F>>
+    where
+        R: Reader<'r>,
+        F: ReadXDR<'r>,
+    {
+        // SAFETY: `MaybeUninit<F>` has the same layout as `F`, and the
+        // caller guarantees `field` is valid, aligned and unaliased.
+        let slot = unsafe { &mut *field.cast::<MU<F>>() };
+        read_xdr_in_place(r, slot)?;
+        Ok(FieldGuard(field))
+    }
+
+    /// Moves an already-built value into the field at `field`.
+    ///
+    /// Used for fields decoded through `#[xdr(from = ..)]` or `via`, which
+    /// must be converted before they can be stored.
+    ///
+    /// # Safety
+    ///
+    /// Same as [`read_field`].
+    #[inline(always)]
+    pub unsafe fn write_field<F>(field: *mut F, value: F) -> FieldGuard<F> {
+        // SAFETY: forwarded caller contract.
+        unsafe { field.write(value) };
+        FieldGuard(field)
+    }
 }
 
 /// Types that can be constructed by reading XDR data
@@ -167,7 +273,7 @@ where
         };
 
         for elt in guard.slice.iter_mut() {
-            elt.write(read_xdr(r)?);
+            read_xdr_in_place(r, elt)?;
             guard.initialized += 1;
         }
 
@@ -177,6 +283,31 @@ where
         let arr = unsafe { mu::array_assume_init(arr) };
 
         Ok(arr)
+    }
+
+    fn read_xdr_in_place<'s, R: Reader<'r>>(
+        r: &mut R,
+        slot: &'s mut MU<Self>,
+    ) -> ReadResult<&'s mut Self> {
+        let () = ValidU32::<N>::OK;
+
+        // SAFETY: `MaybeUninit<[T; N]>` has the same layout as
+        // `[MaybeUninit<T>; N]`, and `slot` is borrowed for the whole call.
+        let elems = unsafe { &mut *slot.as_mut_ptr().cast::<[MU<T>; N]>() };
+        let mut guard = PartialInitGuard {
+            slice: elems,
+            initialized: 0,
+        };
+
+        for elt in guard.slice.iter_mut() {
+            read_xdr_in_place(r, elt)?;
+            guard.initialized += 1;
+        }
+
+        core::mem::forget(guard);
+
+        // SAFETY: all elements have been initialized
+        Ok(unsafe { slot.assume_init_mut() })
     }
 }
 
@@ -217,6 +348,23 @@ impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
         let arr = unsafe { mu::array_assume_init(arr) };
 
         Ok(arr)
+    }
+
+    fn read_xdr_in_place<'s, R: Reader<'r>>(
+        r: &mut R,
+        slot: &'s mut MU<Self>,
+    ) -> ReadResult<&'s mut Self> {
+        let () = ValidU32::<N>::OK;
+
+        // SAFETY: `MaybeUninit<[u8; N]>` has the same layout as
+        // `[MaybeUninit<u8>; N]`, and `slot` is borrowed for the whole call.
+        let bytes = unsafe { &mut *slot.as_mut_ptr().cast::<[MU<u8>; N]>() };
+
+        // Panic-safe: bytes has exactly N elements and len is N as u32.
+        r.read_opaque_fixed_into(bytes, N as u32)?;
+
+        // SAFETY: read_opaque_fixed_into initialized all N elements.
+        Ok(unsafe { slot.assume_init_mut() })
     }
 }
 
@@ -317,7 +465,10 @@ where
     T: ReadXDR<'r>,
 {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        Ok(Self::new(read_xdr(r)?))
+        let mut boxed = Self::new_uninit();
+        read_xdr_in_place(r, &mut *boxed)?;
+        // SAFETY: read_xdr_in_place returned Ok, so the value is initialized.
+        Ok(unsafe { boxed.assume_init() })
     }
 }
 
@@ -343,6 +494,24 @@ impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
     }
 }
 
+/// Decodes one element directly into the spare capacity at the end of `vec`.
+#[cfg(feature = "alloc")]
+#[inline]
+fn push_in_place<'r, R, T>(r: &mut R, vec: &mut alloc::vec::Vec<T>) -> ReadResult<()>
+where
+    R: Reader<'r>,
+    T: ReadXDR<'r>,
+{
+    vec.reserve(1);
+    // SAFETY: `reserve(1)` guarantees room for one more element, so the slot
+    // one past the end lies inside the allocation and holds no value.
+    let slot = unsafe { &mut *vec.as_mut_ptr().add(vec.len()).cast::<MU<T>>() };
+    read_xdr_in_place(r, slot)?;
+    // SAFETY: the element at index `len` was just initialized.
+    unsafe { vec.set_len(vec.len() + 1) };
+    Ok(())
+}
+
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 const _: () = {
@@ -366,7 +535,7 @@ const _: () = {
             let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
             let mut vec: Vec<T> = Vec::with_capacity(cap);
             for _ in 0..len {
-                vec.push(read_xdr(r)?);
+                push_in_place(r, &mut vec)?;
             }
 
             Ok(vec)
@@ -379,8 +548,8 @@ const _: () = {
 const _: () = {
     use xdr_common::*;
 
+    use crate::ReadXDR;
     use crate::serialize::reader::{ReadError, Reader};
-    use crate::{ReadXDR, read_xdr};
 
     use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
 
@@ -419,7 +588,7 @@ const _: () = {
             };
 
             for elt in guard.slice.iter_mut() {
-                elt.write(read_xdr(r)?);
+                read_xdr_in_place(r, elt)?;
                 guard.initialized += 1;
             }
 
@@ -429,7 +598,7 @@ const _: () = {
             unsafe { vec.set_len(cap) }
 
             for _ in cap..len {
-                vec.push(read_xdr(r)?);
+                push_in_place(r, &mut vec)?;
             }
 
             Ok(Self(vec))
