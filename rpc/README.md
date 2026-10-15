@@ -1,6 +1,6 @@
 # xdr_rpc
 
-An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [xdrs](https://github.com/groundhogchain/xdrs).
+An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [xdrs](https://github.com/thruputchain/xdrs).
 
 ## Features
 
