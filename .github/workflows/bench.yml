@@ -1,7 +1,13 @@
-name: Benchmarks
+name: Benchmarks (hog_sched)
 
-# Compares a branch's benchmarks against a base commit on a self-hosted
-# runner, so the numbers come from real hardware rather than a hosted VM.
+# Compares a branch's benchmarks against a base commit on the hog cluster, so
+# the numbers come from real hardware rather than a hosted VM.
+#
+# The job itself only drives `hog_sched`, which leases one hog host and runs
+# scripts/schedules/bench.toml there: build the base commit and the head
+# commit, bench them back to back on that machine, and print a per-benchmark
+# comparison. Going through hog_sched keeps this from colliding with the other
+# hog_sched jobs that share those hosts.
 #
 # Two ways to run it:
 #   - add the `bench` label to a same-repo PR (pushing to a labeled PR runs
@@ -9,10 +15,8 @@ name: Benchmarks
 #   - "Run workflow" on any branch, optionally naming the base ref and a
 #     criterion filter.
 #
-# Both sides run in one job on the same machine, back to back, so the
-# comparison is not skewed by machine-to-machine differences. The baseline is
-# built from the base commit's library with the head's own `benches/`, so
-# benchmarks the branch adds are measured on both sides.
+# The baseline is built from the base commit's library with the head's own
+# `benches/`, so benchmarks the branch adds are measured on both sides.
 
 on:
   workflow_dispatch:
@@ -38,7 +42,7 @@ concurrency:
 jobs:
   bench:
     # On PRs, only when labeled, and only for same-repo PRs: this runs branch
-    # code on a self-hosted runner.
+    # code on the hog cluster.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (contains(github.event.pull_request.labels.*.name, 'bench') &&
@@ -46,14 +50,6 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 120
     env:
-      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-      # Both live next to the checkout rather than in it, so they survive the
-      # checkout step's clean. The target dir is shared by both runs (criterion
-      # keeps its baselines there) and persists between runs on the
-      # self-hosted machine, so later runs rebuild less. (`runner.temp` is not
-      # available at job level.)
-      CARGO_TARGET_DIR: ${{ github.workspace }}/../bench-target
-      BASE_TREE: ${{ github.workspace }}/../bench-base
       BENCH_FILTER: ${{ inputs.filter }}
 
     steps:
@@ -65,11 +61,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Set up Rust 1.96.0
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
-        with:
-          toolchain: 1.96.0
 
       - name: Resolve base commit
         env:
@@ -85,61 +76,36 @@ jobs:
           echo "BASE_SHA=$base" >> "$GITHUB_ENV"
           echo "Comparing $(git rev-parse --short HEAD) against base $(git rev-parse --short "$base")"
 
-      - name: Prepare baseline tree
-        run: |
-          git worktree prune
-          rm -rf "$BASE_TREE"
-          git worktree add "$BASE_TREE" "$BASE_SHA"
-          rm -rf "$BASE_TREE/benches"
-          cp -r benches "$BASE_TREE/benches"
-
-      - name: Bench baseline
-        working-directory: ${{ env.BASE_TREE }}
-        run: |
-          cargo bench --bench bench1 --all-features -- \
-            --save-baseline base --noplot "$BENCH_FILTER"
-
-      - name: Bench head
+      - name: Run hog schedule
+        env:
+          # The job's own token: read access to this repository for as long
+          # as the job runs, which covers the hog_sched job below.
+          GIT_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
           set -o pipefail
-          cargo bench --bench bench1 --all-features -- \
-            --baseline base --noplot "$BENCH_FILTER" \
+          # The token must not reach the job log.
+          set +x
+          hog_sched \
+            --i="${{ github.event.repository.name }}-${{ github.run_id }}" \
+            --key=github_repo --value="${{ github.repository }}" \
+            --key=git_token --value="$GIT_TOKEN" \
+            --key=git_commit --value="$HEAD_SHA" \
+            --key=base_commit --value="$BASE_SHA" \
+            --key=bench_filter --value="$BENCH_FILTER" \
+            --timeout-sec=5400 \
+            ./scripts/schedules/bench.toml \
             | tee "$RUNNER_TEMP/bench.txt"
 
       - name: Summarize
         if: always()
         run: |
           {
-            echo "## Benchmarks: $(git rev-parse --short HEAD) vs base ${BASE_SHA:0:7} on $(hostname)"
+            echo "## Benchmarks: $(git rev-parse --short HEAD) vs base ${BASE_SHA:0:7}"
             echo
             echo '```'
-            # One line per benchmark: name, head time, change vs base, verdict.
-            awk '
-              /^[A-Za-z].*\// && !/^Benchmarking/ { name = $1; next }
-              /^ +time:/ && name != "" && !inchange { t = $0; sub(/^ +time: +/, "", t); next }
-              /change:/ { inchange = 1; next }
-              inchange && /time:/ { c = $0; sub(/^ +time: +/, "", c); next }
-              inchange && /(improved|regressed|No change|within noise)/ {
-                v = $0; sub(/^ +/, "", v)
-                printf "%-50s %-36s %-48s %s\n", name, t, c, v
-                name = ""; inchange = 0
-              }
-            ' "$RUNNER_TEMP/bench.txt" 2>/dev/null || true
+            # The schedule prints the comparison between these markers.
+            sed -n '/=== BENCH SUMMARY ===/,/=== END BENCH SUMMARY ===/p' \
+              "$RUNNER_TEMP/bench.txt" 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      # The job summary above is the result; the reports are a bonus, so an
-      # upload failure (such as an exhausted artifact storage quota) does not
-      # fail the job.
-      - name: Upload criterion reports
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: criterion
-          path: ${{ env.CARGO_TARGET_DIR }}/criterion
-          if-no-files-found: ignore
-
-      - name: Remove baseline tree
-        if: always()
-        run: git worktree remove --force "$BASE_TREE" || true
