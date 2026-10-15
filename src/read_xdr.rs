@@ -496,22 +496,59 @@ impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
     }
 }
 
-/// Decodes one element directly into the spare capacity at the end of `vec`.
+/// Decodes `count` elements directly into the spare capacity at the end of
+/// `vec`, which must already have room for them.
+///
+/// On error, the elements decoded so far in this call are dropped and `vec`
+/// keeps its previous length, so whatever it already held is dropped with
+/// it as usual.
 #[cfg(feature = "alloc")]
 #[inline]
-fn push_in_place<'r, R, T>(r: &mut R, vec: &mut alloc::vec::Vec<T>) -> ReadResult<()>
+fn fill_spare<'r, R, T>(r: &mut R, vec: &mut alloc::vec::Vec<T>, count: usize) -> ReadResult<()>
 where
     R: Reader<'r>,
     T: ReadXDR<'r>,
 {
-    vec.reserve(1);
-    // SAFETY: `reserve(1)` guarantees room for one more element, so the slot
-    // one past the end lies inside the allocation and holds no value.
-    let slot = unsafe { &mut *vec.as_mut_ptr().add(vec.len()).cast::<MU<T>>() };
-    read_xdr_in_place(r, slot)?;
-    // SAFETY: the element at index `len` was just initialized.
-    unsafe { vec.set_len(vec.len() + 1) };
+    let slice = &mut vec.spare_capacity_mut()[..count];
+    let mut guard = PartialInitGuard {
+        slice,
+        initialized: 0,
+    };
+
+    for elt in guard.slice.iter_mut() {
+        read_xdr_in_place(r, elt)?;
+        guard.initialized += 1;
+    }
+
+    core::mem::forget(guard);
+
+    // SAFETY: all `count` elements of the spare capacity were initialized.
+    unsafe { vec.set_len(vec.len() + count) };
     Ok(())
+}
+
+/// Decodes `len` elements into a new vector.
+///
+/// Capacity for up to [`MAX_PREALLOC_BYTES`] is reserved up front, since
+/// `len` comes from the wire and must not drive an unbounded allocation,
+/// and those elements are decoded straight into it. Anything past that is
+/// pushed the ordinary way, letting `Vec` grow as it normally does.
+#[cfg(feature = "alloc")]
+#[inline]
+fn read_vec<'r, R, T>(r: &mut R, len: usize) -> ReadResult<alloc::vec::Vec<T>>
+where
+    R: Reader<'r>,
+    T: ReadXDR<'r>,
+{
+    let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
+    let mut vec = alloc::vec::Vec::with_capacity(cap);
+    fill_spare(r, &mut vec, cap)?;
+
+    for _ in cap..len {
+        vec.push(read_xdr(r)?);
+    }
+
+    Ok(vec)
 }
 
 #[cfg(feature = "alloc")]
@@ -533,14 +570,7 @@ const _: () = {
     {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let len = r.read_u32()? as usize;
-
-            let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
-            let mut vec: Vec<T> = Vec::with_capacity(cap);
-            for _ in 0..len {
-                push_in_place(r, &mut vec)?;
-            }
-
-            Ok(vec)
+            read_vec(r, len)
         }
     }
 };
@@ -581,29 +611,7 @@ const _: () = {
                 return Err(ReadError::max_length_exceeded());
             }
 
-            let cap = len.min(MAX_PREALLOC_BYTES / core::mem::size_of::<T>().max(1));
-            let mut vec: Vec<T> = Vec::with_capacity(cap);
-            let slice = &mut vec.spare_capacity_mut()[..cap];
-            let mut guard = PartialInitGuard {
-                slice,
-                initialized: 0,
-            };
-
-            for elt in guard.slice.iter_mut() {
-                read_xdr_in_place(r, elt)?;
-                guard.initialized += 1;
-            }
-
-            core::mem::forget(guard);
-
-            // SAFETY: all elts up to `cap` have been initialized
-            unsafe { vec.set_len(cap) }
-
-            for _ in cap..len {
-                push_in_place(r, &mut vec)?;
-            }
-
-            Ok(Self(vec))
+            Ok(Self(read_vec(r, len)?))
         }
     }
 
