@@ -335,6 +335,8 @@ fn shared_pointers_borrow_from_input() {
     let r: Rc<&[u8]> = xdrs::txs::decode(&buf).unwrap();
     assert_eq!(*a, &[0xab, 0xcd][..]);
     assert_eq!(*r, &[0xab, 0xcd][..]);
+    assert_eq!(a.as_ptr(), buf[4..6].as_ptr());
+    assert_eq!(r.as_ptr(), buf[4..6].as_ptr());
 }
 
 #[cfg(feature = "alloc")]
