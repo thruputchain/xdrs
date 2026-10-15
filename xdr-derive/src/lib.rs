@@ -319,13 +319,16 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///   conversions require `Into::into()` which is not `const fn`.
 /// - Supports lifetime and const generics, but not type parameters
 /// - Field types may use recursive concrete shapes inline, including `Option<T>`,
-///   `Result<T, E>`, `&[T]`, `[T; N]`, `VecM<T, MAX>`, `BytesM<MAX>`,
+///   `Result<T, E>`, `&[T]`, `[T; N]`, `Box<T>`, `VecM<T, MAX>`, `BytesM<MAX>`,
 ///   `StringM<MAX>`, and tuples, as long as leaf types are concrete and
 ///   const-encodable
 /// - With the `alloc` feature, non-empty `VecM`/`BytesM`/`StringM` values
 ///   cannot be constructed in const contexts (const heap allocation is not
 ///   possible), so const encoding of non-empty values of these types is only
 ///   available in no-`alloc` builds, where they wrap `&'static [T]`
+/// - Likewise `Box<T>` values can only be constructed in const contexts in
+///   no-`alloc` builds, where `Box::new` is const and the value is inline;
+///   with `alloc` the generated methods still compile and run at runtime
 ///
 /// # Generated code hygiene
 ///
@@ -352,8 +355,8 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 ///
 /// # Standard library type recognition
 ///
-/// The macro recognizes `Option`, `Result`, `PhantomData`, `Infallible`, and
-/// the `xdr_common` container types `VecM`, `BytesM`, and `StringM` by their
+/// The macro recognizes `Option`, `Result`, `Box`, `PhantomData`, `Infallible`,
+/// and the `xdr_common` container types `VecM`, `BytesM`, and `StringM` by their
 /// **last path segment** (e.g. both `Option<T>` and `std::option::Option<T>`
 /// match). This is a syntactic check — type aliases are not resolved. A field
 /// declared as `type MyOpt = Option<Foo>; ..  my_field: MyOpt` will **not** be
