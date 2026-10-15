@@ -321,6 +321,16 @@ where
     }
 }
 
+#[cfg(not(feature = "alloc"))]
+impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
+where
+    T: ReadXDR<'r>,
+{
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+        Ok(Self::new(read_xdr(r)?))
+    }
+}
+
 impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
 where
     T: ReadXDR<'r>,

@@ -498,6 +498,18 @@ const _: () = {
     }
 };
 
+#[cfg(not(feature = "alloc"))]
+impl<T: WriteXDR> WriteXDR for xdr_common::Box<T> {
+    fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
+        (**self).write_xdr(w)
+    }
+
+    unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
+        // SAFETY: forwarded caller contract.
+        unsafe { (**self).write_xdr_unchecked(w) }
+    }
+}
+
 impl<T, E> WriteXDR for Result<T, E>
 where
     T: WriteXDR,
