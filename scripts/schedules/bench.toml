@@ -1,0 +1,125 @@
+# hog_sched schedule for the benchmark comparison workflow
+# (.github/workflows/bench.yml). It leases one hog host, builds the base commit
+# and the head commit there, and benches them back to back on the same machine.
+#
+# Template values, passed by the workflow as `--key=NAME --value=...`:
+#   github_repo   owner/name of the repository
+#   git_token     read token for it (the workflow's GITHUB_TOKEN)
+#   git_commit    head commit to measure
+#   base_commit   commit to compare against
+#   bench_filter  criterion benchmark filter, empty for all
+#
+# The job prints a per-benchmark comparison between `=== BENCH SUMMARY ===`
+# markers; the workflow copies that block into its job summary.
+
+name = "xdrs_bench"
+
+[[jobs]]
+name = "{{ .hog_schedule }}_{{ .hog_host }}"
+script = """
+
+set -x
+
+echo 'setting up cargo'
+# The job runs with a sandbox HOME; rustup and cargo live in the runner user's
+# real home.
+ln -sfn "$USER_HOME/.cargo" "$HOME/.cargo"
+ln -sfn "$USER_HOME/.rustup" "$HOME/.rustup"
+source "$HOME/.cargo/env"
+rustup toolchain install 1.96.0 --profile minimal --no-self-update
+cargo +1.96.0 --version
+
+echo 'cloning {{ .github_repo }}'
+# Keep credentials out of tracing and the repository's stored remote URL.
+set +x
+umask 077
+config_path="$(mktemp)"
+for original_config in "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" "$HOME/.gitconfig"; do
+  if [ -f "$original_config" ]; then
+    git config --file "$config_path" --add include.path "$original_config"
+  fi
+done
+export GIT_CONFIG_GLOBAL="$config_path"
+trap 'rm -f -- "$GIT_CONFIG_GLOBAL"' EXIT
+git_token="{{ .git_token }}"
+if [ -n "$git_token" ] && [ "$git_token" != '<no value>' ]; then
+  git config --global --add "url.https://x-access-token:${git_token}@github.com/{{ .github_repo }}.git.insteadOf" "git@github.com:{{ .github_repo }}.git"
+fi
+set -x
+git config --global advice.detachedHead false
+mkdir -p head
+cd head
+git init -q .
+git remote add origin git@github.com:{{ .github_repo }}.git
+git fetch --depth 1 origin {{ .git_commit }} --no-progress --quiet
+git fetch --depth 1 origin {{ .base_commit }} --no-progress --quiet
+git checkout -q {{ .git_commit }}
+cd ..
+
+echo 'preparing baseline tree'
+# The base commit's library with the head's benches, so benchmarks the head
+# adds are measured on both sides.
+git -C head worktree add ../base {{ .base_commit }}
+rm -rf base/benches
+cp -r head/benches base/benches
+
+# Keep compiled artifacts separate: Cargo can otherwise reuse the baseline
+# executable for the head checkout when both trees predate the first build.
+base_target_dir="$PWD/base-target"
+head_target_dir="$PWD/head-target"
+export CARGO_NET_GIT_FETCH_WITH_CLI=true
+
+# The workflow only passes a filter when one was given; an unset template
+# value renders as '<no value>'.
+filter_args=()
+if [ -n "$BENCH_FILTER" ] && [ "$BENCH_FILTER" != '<no value>' ]; then
+  filter_args=("$BENCH_FILTER")
+fi
+
+echo "comparing {{ .git_commit }} against base {{ .base_commit }} on $(hostname)"
+
+# Build both revisions before sampling, with compilation visible in the log.
+echo 'build baseline'
+(cd base && CARGO_TARGET_DIR="$base_target_dir" cargo bench --bench bench1 --all-features --no-run)
+echo 'build head'
+(cd head && CARGO_TARGET_DIR="$head_target_dir" cargo bench --bench bench1 --all-features --no-run)
+
+echo 'bench baseline'
+(cd base && CARGO_TARGET_DIR="$base_target_dir" cargo bench --bench bench1 --all-features -- \\
+  --save-baseline base --noplot "${filter_args[@]}") > base.log 2>&1 || (cat base.log && exit 1)
+
+# Transfer only Criterion's measurements, never Cargo's compiled artifacts.
+cp -a "$base_target_dir/criterion" "$head_target_dir/"
+
+echo 'bench head'
+set -o pipefail
+(cd head && CARGO_TARGET_DIR="$head_target_dir" cargo bench --bench bench1 --all-features -- \\
+  --baseline base --noplot "${filter_args[@]}") 2>&1 | tee head.log
+
+echo '=== BENCH SUMMARY ==='
+echo "head {{ .git_commit }} vs base {{ .base_commit }} on $(hostname)"
+# One line per benchmark: name, head time, change vs base, verdict.
+awk '
+  /^[A-Za-z].*\\// && !/^Benchmarking/ { name = $1; next }
+  /^ +time:/ && name != "" && !inchange { t = $0; sub(/^ +time: +/, "", t); next }
+  /change:/ { inchange = 1; next }
+  inchange && /time:/ { c = $0; sub(/^ +time: +/, "", c); next }
+  inchange && /(improved|regressed|No change|within noise)/ {
+    v = $0; sub(/^ +/, "", v)
+    printf "%-50s %-36s %-48s %s\\n", name, t, c, v
+    name = ""; inchange = 0
+  }
+' head.log
+echo '=== END BENCH SUMMARY ==='
+
+"""
+
+[jobs.env]
+GIT_REPO = "{{ .github_repo }}"
+GIT_COMMIT = "{{ .git_commit }}"
+BASE_COMMIT = "{{ .base_commit }}"
+BENCH_FILTER = "{{ .bench_filter }}"
+
+[jobs.host]
+bench_1 = "?"
+

@@ -221,6 +221,13 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///   parameters. For example, `#[xdr(from_type = "VecM<T, 8>")]` on a generic
 ///   `Wrapper<T>` will not automatically add `T: ReadXDR`; you must supply the
 ///   bound yourself.
+/// - **Borrowed fields need a general lifetime implementation.** A custom
+///   field type `Borrowed<'a>` must implement `ReadXDR<'r>` whenever `'r: 'a`,
+///   just like the built-in borrowed types. Implementing only
+///   `ReadXDR<'a> for Borrowed<'a>` does not suffice for in-place decoding:
+///   the field's type is fixed behind a mutable pointer, so the compiler
+///   cannot shorten the returned value's lifetime at the assignment site.
+///   Use `unsafe impl<'r: 'a, 'a> ReadXDR<'r> for Borrowed<'a>`.
 /// - **The lifetime name `'_r` is reserved.** The generated `ReadXDR` impl uses
 ///   `'_r` as its reader lifetime. A type deriving `ReadXDR` must not declare a
 ///   generic lifetime parameter with that same name; choose another name for

@@ -262,3 +262,35 @@ pub fn check_enum_repr(input: &syn::DeriveInput) -> Result<()> {
     }
     Ok(())
 }
+
+/// Whether the type has `#[repr(packed)]` in any form, such as
+/// `repr(C, packed(2))`. Fields of a packed type may be unaligned, so they
+/// cannot be decoded in place through references.
+///
+/// A `repr` whose arguments do not parse is reported as packed: that only
+/// costs the in-place fast path, whereas missing a real `packed` would be
+/// unsound.
+pub fn is_repr_packed(input: &syn::DeriveInput) -> bool {
+    let mut packed = false;
+    for attr in &input.attrs {
+        if !attr.path().is_ident("repr") {
+            continue;
+        }
+        let parsed = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("packed") {
+                packed = true;
+            }
+            // `packed(N)` and `align(N)` carry an integer argument.
+            if meta.input.peek(syn::token::Paren) {
+                let content;
+                syn::parenthesized!(content in meta.input);
+                content.parse::<syn::LitInt>()?;
+            }
+            Ok(())
+        });
+        if parsed.is_err() {
+            return true;
+        }
+    }
+    packed
+}

@@ -10,7 +10,8 @@ use xdrs::{ReadXDR, cxs};
 struct BoundedOpaque;
 
 #[cfg(not(feature = "permissive"))]
-impl<'r> ReadXDR<'r> for BoundedOpaque {
+// SAFETY: the default in-place method writes the value returned by read_xdr.
+unsafe impl<'r> ReadXDR<'r> for BoundedOpaque {
     fn read_xdr<R: Reader<'r>>(reader: &mut R) -> ReadResult<Self> {
         reader.read_opaque_variable(1)?;
         Ok(Self)

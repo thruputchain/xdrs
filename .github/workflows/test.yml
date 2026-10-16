@@ -50,7 +50,7 @@ jobs:
         with:
           toolchain: 1.96.0
           components: rustfmt,clippy
-          targets: thumbv7em-none-eabi
+          targets: thumbv7em-none-eabi,riscv32imac-unknown-none-elf
       - name: Check format
         run: cargo fmt --check
       - name: Build workspace (no features)
@@ -83,6 +83,8 @@ jobs:
           cargo test -p xdr-common --features schemars
       - name: Check xdr-common Serde without std
         run: cargo check -p xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
+      - name: Check RV32 without std
+        run: cargo check -p xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
       - name: Check clippy
         run: cargo clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
       - name: Test Documentation Examples

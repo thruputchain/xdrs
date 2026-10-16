@@ -119,6 +119,10 @@ name = "pointer"
 required-features = ["alloc", "derive", "detailed-errors"]
 
 [[test]]
+name = "in_place"
+required-features = ["alloc", "derive"]
+
+[[test]]
 name = "const_writer"
 required-features = ["alloc", "derive"]
 

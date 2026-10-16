@@ -92,3 +92,38 @@ fn derived_struct_into_shorter_lifetime_slot() {
     fill_struct(&mut BufReader::new(&buf), &mut slot);
     assert_eq!(slot.unwrap(), value);
 }
+
+#[derive(Debug, PartialEq, Eq)]
+struct CustomBorrowed<'a>(&'a [u8]);
+
+// SAFETY: the default in-place method writes the valid borrowed value.
+unsafe impl<'r: 'a, 'a> ReadXDR<'r> for CustomBorrowed<'a> {
+    fn read_xdr<R: Reader<'r>>(r: &mut R) -> xdrs::ReadResult<Self> {
+        Ok(Self(r.read_opaque_variable(u32::MAX)?))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ReadXDR)]
+struct WithCustomBorrow<'a> {
+    custom: CustomBorrowed<'a>,
+}
+
+fn fill_custom<'r: 'a, 'a>(
+    r: &mut BufReader<'r>,
+    slot: &mut core::mem::MaybeUninit<WithCustomBorrow<'a>>,
+) {
+    xdrs::read_xdr_in_place(r, slot).unwrap();
+}
+
+#[test]
+fn custom_borrowed_field_into_shorter_lifetime_slot() {
+    let buf = txs::encode(&b"abc"[..]).unwrap();
+    let mut slot = core::mem::MaybeUninit::uninit();
+    fill_custom(&mut BufReader::new(&buf), &mut slot);
+    // SAFETY: fill_custom returned after successfully initializing the slot.
+    let value = unsafe { slot.assume_init() };
+    assert_eq!(value.custom.0, b"abc");
+    assert_eq!(value.custom.0.as_ptr(), buf[4..].as_ptr());
+    let boxed: Box<WithCustomBorrow> = txs::decode(&buf).unwrap();
+    assert_eq!(*boxed, value);
+}

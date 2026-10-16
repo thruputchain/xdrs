@@ -1,3 +1,4 @@
+mod in_place;
 mod uninit_buf;
 use uninit_buf::*;
 
@@ -136,7 +137,9 @@ criterion_group!(
     benches,
     bench_codec,
     bench_large_vecm_decode,
-    bench_vecm_struct_decode
+    bench_vecm_struct_decode,
+    in_place::bench_in_place_pointers,
+    in_place::bench_in_place_vecm
 );
 criterion_main!(benches);
 

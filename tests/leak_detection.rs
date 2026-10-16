@@ -51,7 +51,8 @@ mod active_counter {
         }
     }
 
-    impl<'r> ReadXDR<'r> for LeakDetector {
+    // SAFETY: the default in-place method writes the value returned by read_xdr.
+    unsafe impl<'r> ReadXDR<'r> for LeakDetector {
         fn read_xdr<R: reader::Reader<'r>>(r: &mut R) -> Result<Self, reader::ReadError> {
             let id = r.read_u32()? as usize;
 
