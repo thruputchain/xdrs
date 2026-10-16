@@ -449,6 +449,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
         // unit and packed structs use the slot-writing default.
         #[allow(unsafe_code)]
         unsafe impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+            #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 Ok(#ty_ident #read_fields)
             }

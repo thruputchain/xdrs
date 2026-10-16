@@ -23,6 +23,8 @@ use core::mem::MaybeUninit as MU;
 /// let value: u32 = txs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
+// Expose the reader's initial position and aggregate return value to callers.
+#[cfg_attr(not(target_arch = "riscv32"), inline(always))]
 pub fn decode<'r, 'a: 'r, T>(buf: &'a [u8]) -> ReadResult<T>
 where
     T: ReadXDR<'r>,
