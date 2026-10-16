@@ -394,7 +394,7 @@ pub fn read_xdr(input: &syn::DeriveInput) -> Result<TokenStream> {
         const _: () = {
             mod __xdrs {
                 pub use #krate::discrim::XDRDiscriminant;
-                pub use #krate::read_xdr::{ReadXDR, in_place, read_xdr};
+                pub use #krate::read_xdr::{Init, ReadXDR, Slot, in_place, read_xdr};
                 pub use #krate::serialize::reader::{Reader, ReadError, ReadResult};
             }
 
@@ -423,9 +423,7 @@ fn read_from_type(input: &syn::DeriveInput, from_type: &syn::Type) -> Result<Tok
     let (impl_generics, _, _) = generics.split_for_impl();
 
     Ok(quote! {
-        // SAFETY: the default in-place method writes the converted value.
-        #[allow(unsafe_code)]
-        unsafe impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let from_val: #from_type = __xdrs::read_xdr(r)?;
                 Ok(::core::convert::Into::into(from_val))
@@ -445,10 +443,7 @@ fn read_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let read_in_place = read_struct_in_place(input, item)?;
 
     Ok(quote! {
-        // SAFETY: the override initializes every field and guards partial reads;
-        // unit and packed structs use the slot-writing default.
-        #[allow(unsafe_code)]
-        unsafe impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 Ok(#ty_ident #read_fields)
@@ -522,8 +517,8 @@ fn read_struct_in_place(input: &syn::DeriveInput, item: &syn::DataStruct) -> Res
         #[cfg_attr(not(target_arch = "riscv32"), inline)]
         fn read_xdr_in_place<'__xdrs_s, R: __xdrs::Reader<'_r>>(
             r: &mut R,
-            __xdrs_slot: &'__xdrs_s mut ::core::mem::MaybeUninit<Self>,
-        ) -> __xdrs::ReadResult<&'__xdrs_s mut Self> {
+            mut __xdrs_slot: __xdrs::Slot<'__xdrs_s, Self>,
+        ) -> __xdrs::ReadResult<__xdrs::Init<'__xdrs_s, Self>> {
             let __xdrs_base: *mut Self = __xdrs_slot.as_mut_ptr();
             // SAFETY: `__xdrs_base` points to the caller's slot, which is
             // valid, aligned and exclusively borrowed for this call. The type
@@ -534,7 +529,7 @@ fn read_struct_in_place(input: &syn::DeriveInput, item: &syn::DataStruct) -> Res
             unsafe {
                 #(#reads)*
                 #(::core::mem::forget(#guards);)*
-                Ok(&mut *__xdrs_base)
+                Ok(__xdrs_slot.assume_init())
             }
         }
     })
@@ -602,9 +597,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     };
 
     Ok(quote! {
-        // SAFETY: the default in-place method writes the decoded enum value.
-        #[allow(unsafe_code)]
-        unsafe impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
+        impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
                 let d = r.read_i32()?;
 

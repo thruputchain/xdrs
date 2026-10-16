@@ -10,8 +10,7 @@ use crate::write_xdr::WriteXDR;
 use heapless::String;
 use heapless::Vec;
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, const N: usize> ReadXDR<'r> for Vec<u8, N> {
+impl<'r, const N: usize> ReadXDR<'r> for Vec<u8, N> {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
 
@@ -41,8 +40,7 @@ impl<const N: usize> WriteXDR for Vec<u8, N> {
     }
 }
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, T, const N: usize> ReadXDR<'r> for Vec<T, N>
+impl<'r, T, const N: usize> ReadXDR<'r> for Vec<T, N>
 where
     T: ReadXDR<'r>,
 {
@@ -92,8 +90,7 @@ where
     }
 }
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, const N: usize> ReadXDR<'r> for String<N> {
+impl<'r, const N: usize> ReadXDR<'r> for String<N> {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
 

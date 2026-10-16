@@ -94,7 +94,7 @@ where
 /// # Derived impls and struct lifetimes
 ///
 /// `#[derive(ReadXDR)]` on a type `Foo<'a, 'b, ..>` emits an impl of the
-/// form `unsafe impl<'_r: 'a + 'b + .., 'a, 'b, ..> ReadXDR<'_r> for Foo<'a, 'b, ..>`.
+/// form `impl<'_r: 'a + 'b + .., 'a, 'b, ..> ReadXDR<'_r> for Foo<'a, 'b, ..>`.
 /// That is: **every lifetime parameter on the type must be `<=` the lifetime
 /// of the reader buffer**, regardless of whether that parameter is actually
 /// used to borrow from the buffer. In particular, a phantom lifetime such as
@@ -117,25 +117,53 @@ where
 ///
 /// struct Borrowed<'a>(&'a [u8]);
 ///
-/// // SAFETY: the default in-place method writes the value returned here.
-/// unsafe impl<'r: 'a, 'a> ReadXDR<'r> for Borrowed<'a> {
+/// impl<'r: 'a, 'a> ReadXDR<'r> for Borrowed<'a> {
 ///     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
 ///         Ok(Self(r.read_opaque_variable(u32::MAX)?))
 ///     }
 /// }
 /// ```
 ///
-/// # Safety
+/// # In-place decoding
 ///
-/// On success, [`ReadXDR::read_xdr_in_place`] must fully initialize its
-/// destination with a valid `Self` and return a reference to that value in
-/// that same destination. Callers rely on this guarantee when assuming the
-/// storage is initialized and when dropping it, without a release-mode check.
-/// The provided default implementation satisfies this contract; implementations
-/// that only define `read_xdr` do not need any additional unsafe operations.
+/// [`ReadXDR::read_xdr_in_place`] decodes straight into a destination that
+/// the decoder hands over as a [`Slot`], and returns an [`Init`] proving
+/// that the slot was filled. The trait is safe to implement because an
+/// `Init` can only be produced from the slot it refers to: safely through
+/// [`Slot::write`], or through [`Slot::assume_init`] once the implementation
+/// has initialized the value itself. A decoder such as `Box`,
+/// `Vec` or a derived struct relies on that proof to treat the destination
+/// as initialized and, later, to drop it.
 ///
-/// On an error or panic, callers will not drop the destination. An override
-/// is responsible for cleaning up any fields it initialized along the way.
+/// Most types keep the default, which decodes with [`ReadXDR::read_xdr`] and
+/// writes the result into the slot. An override only has to make sure that
+/// on an error or panic nothing is left in the slot that needs dropping:
+/// callers never drop a destination they did not get an `Init` for, so an
+/// override that initializes part of the value before failing must drop
+/// what it wrote.
+///
+/// A safe override cannot return a value that lives somewhere else:
+///
+/// ```rust,compile_fail
+/// use xdrs::{Init, ReadXDR, ReadResult, Slot};
+/// use xdrs::serialize::reader::Reader;
+///
+/// struct Elsewhere(u32);
+///
+/// impl<'r> ReadXDR<'r> for Elsewhere {
+///     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+///         Ok(Self(r.read_u32()?))
+///     }
+///
+///     fn read_xdr_in_place<'s, R: Reader<'r>>(
+///         r: &mut R,
+///         slot: Slot<'s, Self>,
+///     ) -> ReadResult<Init<'s, Self>> {
+///         // error: expected `Init<'s, Elsewhere>`, found `&mut Elsewhere`
+///         Ok(Box::leak(Box::new(Self::read_xdr(r)?)))
+///     }
+/// }
+/// ```
 ///
 /// # Example
 ///
@@ -146,7 +174,7 @@ where
 /// let _value: u32 = cxs::decode(&data)?;
 /// # Ok::<(), xdrs::ReadError>(())
 /// ```
-pub unsafe trait ReadXDR<'r>: Sized {
+pub trait ReadXDR<'r>: Sized {
     /// Reads an XDR value from the reader.
     ///
     /// This method should read the appropriate amount of data from the reader
@@ -156,23 +184,114 @@ pub unsafe trait ReadXDR<'r>: Sized {
     /// Reads an XDR value directly into `slot`, without first building it
     /// on the stack.
     ///
-    /// On success, `slot` is fully initialized and the returned reference
-    /// must point to it. On error, nothing in `slot` may be left that needs
-    /// dropping: an implementation that writes part of the value before
-    /// failing must drop what it wrote.
+    /// The returned [`Init`] proves that `slot` holds a valid `Self`; it
+    /// comes from [`Slot::write`], or from [`Slot::assume_init`] after the
+    /// implementation initialized the value through [`Slot::as_mut_ptr`].
+    /// On error, nothing in `slot` may be left that needs dropping: an
+    /// implementation that writes part of the value before failing must
+    /// drop what it wrote.
     ///
     /// The default implementation decodes with [`ReadXDR::read_xdr`] and
     /// moves the result into `slot`. Overriding it pays off for large
     /// values, such as structs with big fixed-size arrays, that would
-    /// otherwise be built in a stack frame and then copied. Callers should
-    /// go through [`read_xdr_in_place`], which checks the returned pointer
-    /// when debug assertions are enabled.
+    /// otherwise be built in a stack frame and then copied. Callers with a
+    /// `MaybeUninit` destination go through [`read_xdr_in_place`].
     #[inline]
     fn read_xdr_in_place<'s, R: Reader<'r>>(
         r: &mut R,
-        slot: &'s mut MU<Self>,
-    ) -> ReadResult<&'s mut Self> {
+        slot: Slot<'s, Self>,
+    ) -> ReadResult<Init<'s, Self>> {
         Ok(slot.write(Self::read_xdr(r)?))
+    }
+}
+
+/// The destination of an in-place decode: uninitialized storage for a `T`,
+/// borrowed for `'s`.
+///
+/// The decoder creates one for each call to [`ReadXDR::read_xdr_in_place`];
+/// there is no safe way to make one. Writing a value with [`Slot::write`]
+/// consumes the slot and yields the [`Init`] the method returns, so a safe
+/// implementation can only fulfil its contract by filling this very slot.
+/// Implementations that initialize the value piecewise write through
+/// [`Slot::as_mut_ptr`] and then call [`Slot::assume_init`].
+#[repr(transparent)]
+pub struct Slot<'s, T> {
+    slot: &'s mut MU<T>,
+}
+
+impl<'s, T> Slot<'s, T> {
+    /// Creates a slot for the storage behind `ptr`.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be valid for writes, properly aligned, not aliased for
+    /// `'s`, and must not hold a value that needs dropping. The slot stands
+    /// for that storage alone: an [`Init`] obtained from it proves only that
+    /// `*ptr` is initialized, and must not be returned from
+    /// [`ReadXDR::read_xdr_in_place`] in place of the slot that call was
+    /// given.
+    #[inline]
+    pub unsafe fn from_raw(ptr: *mut T) -> Self {
+        // SAFETY: the caller guarantees `ptr` is valid, aligned, and
+        // unaliased for `'s`; `MaybeUninit<T>` has the same layout as `T`.
+        Self {
+            slot: unsafe { &mut *ptr.cast::<MU<T>>() },
+        }
+    }
+
+    /// Writes `value` into the slot.
+    #[inline]
+    pub fn write(self, value: T) -> Init<'s, T> {
+        Init {
+            value: self.slot.write(value),
+        }
+    }
+
+    /// A pointer to the storage, for initializing the value piecewise.
+    ///
+    /// Writing through it is sound; reading or dropping is not until the
+    /// value is initialized.
+    #[inline]
+    pub fn as_mut_ptr(&mut self) -> *mut T {
+        self.slot.as_mut_ptr()
+    }
+
+    /// The storage as `MaybeUninit`.
+    #[inline]
+    pub fn as_uninit_mut(&mut self) -> &mut MU<T> {
+        self.slot
+    }
+
+    /// Declares the slot initialized.
+    ///
+    /// # Safety
+    ///
+    /// The storage must hold a valid `T`, written through
+    /// [`Slot::as_mut_ptr`] or [`Slot::as_uninit_mut`].
+    #[inline]
+    pub unsafe fn assume_init(self) -> Init<'s, T> {
+        // SAFETY: the caller guarantees the storage is initialized.
+        Init {
+            value: unsafe { self.slot.assume_init_mut() },
+        }
+    }
+}
+
+/// Proof that a [`Slot`] was initialized: a reference to the decoded value
+/// in its destination.
+///
+/// Only [`Slot::write`] and [`Slot::assume_init`] produce one, so holding
+/// an `Init<'s, T>` means the slot it came from holds a valid `T`.
+#[repr(transparent)]
+pub struct Init<'s, T> {
+    value: &'s mut T,
+}
+
+impl<'s, T> Init<'s, T> {
+    /// The decoded value, in its destination.
+    #[inline]
+    pub fn into_mut(self) -> &'s mut T {
+        self.value
     }
 }
 
@@ -180,27 +299,13 @@ pub unsafe trait ReadXDR<'r>: Sized {
 ///
 /// On success, `slot` is initialized and the returned reference points to
 /// it. On error, `slot` is left uninitialized with nothing to drop.
-///
-/// # Panics
-///
-/// With debug assertions enabled, panics if `T`'s
-/// [`ReadXDR::read_xdr_in_place`] returns a reference that does not point
-/// into `slot`. This can only happen with an incorrect manual
-/// unsafe implementation. This diagnostic is debug-only; release builds
-/// rely on the [`ReadXDR`] safety contract.
 #[inline]
 pub fn read_xdr_in_place<'r, 's, R, T>(r: &mut R, slot: &'s mut MU<T>) -> ReadResult<&'s mut T>
 where
     R: Reader<'r>,
     T: ReadXDR<'r>,
 {
-    let expected: *const T = slot.as_ptr();
-    let out = T::read_xdr_in_place(r, slot)?;
-    debug_assert!(
-        core::ptr::eq(&*out, expected),
-        "ReadXDR::read_xdr_in_place returned a reference outside its slot"
-    );
-    Ok(out)
+    Ok(T::read_xdr_in_place(r, Slot { slot })?.into_mut())
 }
 
 /// Support code for `#[derive(ReadXDR)]`. Not public API.
@@ -239,10 +344,11 @@ pub mod in_place {
         R: Reader<'r>,
         F: ReadXDR<'r>,
     {
-        // SAFETY: `MaybeUninit<F>` has the same layout as `F`, and the
-        // caller guarantees `field` is valid, aligned and unaliased.
-        let slot = unsafe { &mut *field.cast::<MU<F>>() };
-        read_xdr_in_place(r, slot)?;
+        // SAFETY: the caller guarantees `field` is valid, aligned and
+        // unaliased, and the `Init` is consumed here, as proof for this
+        // field only.
+        let slot = unsafe { Slot::from_raw(field) };
+        F::read_xdr_in_place(r, slot)?;
         Ok(FieldGuard(field))
     }
 
@@ -272,12 +378,10 @@ pub trait ReadXDROwned: for<'r> ReadXDR<'r> {}
 
 impl<T> ReadXDROwned for T where T: for<'r> ReadXDR<'r> {}
 
-// SAFETY: unless explicitly overriding read_xdr_in_place below, these impls
-// use the default, which writes the valid value returned by read_xdr.
 macro_rules! construct_int_impls {
     { $( $read_method:ident for $int_ty:ty ),* $(,)? } => { $(
 
-        unsafe impl<'r> ReadXDR<'r> for $int_ty {
+        impl<'r> ReadXDR<'r> for $int_ty {
             #[inline]
             fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<$int_ty> {
                 r.$read_method()
@@ -301,8 +405,7 @@ construct_int_impls! {
     read_f64 for f64,
 }
 
-// SAFETY: success initializes every element; the guard cleans up partial reads.
-unsafe impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
+impl<'r, T, const N: usize> ReadXDR<'r> for [T; N]
 where
     T: ReadXDR<'r>,
 {
@@ -330,12 +433,12 @@ where
 
     fn read_xdr_in_place<'s, R: Reader<'r>>(
         r: &mut R,
-        slot: &'s mut MU<Self>,
-    ) -> ReadResult<&'s mut Self> {
+        mut slot: Slot<'s, Self>,
+    ) -> ReadResult<Init<'s, Self>> {
         let () = ValidU32::<N>::OK;
 
-        // SAFETY: `MaybeUninit<[T; N]>` has the same layout as
-        // `[MaybeUninit<T>; N]`, and `slot` is borrowed for the whole call.
+        // SAFETY: `[T; N]` has the same layout as `[MaybeUninit<T>; N]`,
+        // and `slot` is borrowed for the whole call.
         let elems = unsafe { &mut *slot.as_mut_ptr().cast::<[MU<T>; N]>() };
         let mut guard = PartialInitGuard {
             slice: elems,
@@ -350,7 +453,7 @@ where
         core::mem::forget(guard);
 
         // SAFETY: all elements have been initialized
-        Ok(unsafe { slot.assume_init_mut() })
+        Ok(unsafe { slot.assume_init() })
     }
 }
 
@@ -359,8 +462,7 @@ where
 // `&'r _` and is shortened to `'a` here. This matters wherever the decoded
 // type is fixed by an invariant position (a generic parameter, a slot
 // behind `&mut`), where the shortening cannot happen at the use site.
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r: 'a, 'a> ReadXDR<'r> for &'a [u8] {
+impl<'r: 'a, 'a> ReadXDR<'r> for &'a [u8] {
     #[inline]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes: &'r [u8] = r.read_opaque_variable(u32::MAX)?;
@@ -368,8 +470,7 @@ unsafe impl<'r: 'a, 'a> ReadXDR<'r> for &'a [u8] {
     }
 }
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r: 'a, 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
+impl<'r: 'a, 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
     #[inline]
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
@@ -386,8 +487,7 @@ unsafe impl<'r: 'a, 'a, const N: usize> ReadXDR<'r> for &'a [u8; N] {
     }
 }
 
-// SAFETY: Reader initializes exactly N bytes on a successful fixed-byte read.
-unsafe impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
+impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let () = ValidU32::<N>::OK;
 
@@ -404,11 +504,11 @@ unsafe impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
 
     fn read_xdr_in_place<'s, R: Reader<'r>>(
         r: &mut R,
-        slot: &'s mut MU<Self>,
-    ) -> ReadResult<&'s mut Self> {
+        mut slot: Slot<'s, Self>,
+    ) -> ReadResult<Init<'s, Self>> {
         let () = ValidU32::<N>::OK;
 
-        // SAFETY: `MaybeUninit<[u8; N]>` has the same layout as
+        // SAFETY: `[u8; N]` has the same layout as
         // `[MaybeUninit<u8>; N]`, and `slot` is borrowed for the whole call.
         let bytes = unsafe { &mut *slot.as_mut_ptr().cast::<[MU<u8>; N]>() };
 
@@ -416,12 +516,11 @@ unsafe impl<'r, const N: usize> ReadXDR<'r> for [u8; N] {
         r.read_opaque_fixed_into(bytes, N as u32)?;
 
         // SAFETY: read_opaque_fixed_into initialized all N elements.
-        Ok(unsafe { slot.assume_init_mut() })
+        Ok(unsafe { slot.assume_init() })
     }
 }
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r: 'a, 'a> ReadXDR<'r> for &'a str {
+impl<'r: 'a, 'a> ReadXDR<'r> for &'a str {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes: &'r [u8] = r.read_opaque_variable(u32::MAX)?;
         let s: &'r str = str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())?;
@@ -431,8 +530,7 @@ unsafe impl<'r: 'a, 'a> ReadXDR<'r> for &'a str {
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r> ReadXDR<'r> for alloc::string::String {
+impl<'r> ReadXDR<'r> for alloc::string::String {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
         let bytes = r.read_opaque_variable(u32::MAX)?;
         let s = str::from_utf8(bytes).map_err(|_| ReadError::bad_utf8())?;
@@ -440,15 +538,13 @@ unsafe impl<'r> ReadXDR<'r> for alloc::string::String {
     }
 }
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r> ReadXDR<'r> for () {
+impl<'r> ReadXDR<'r> for () {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         Ok(())
     }
 }
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r> ReadXDR<'r> for Infallible {
+impl<'r> ReadXDR<'r> for Infallible {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         unreachable!()
     }
@@ -456,9 +552,7 @@ unsafe impl<'r> ReadXDR<'r> for Infallible {
 
 macro_rules! read_tuple {
     { $( $index:tt : $t:ident ),+ $(,)? } => {
-        // SAFETY: the in-place method initializes every field before returning
-        // success, and guards drop completed fields on error or panic.
-        unsafe impl<'r, $($t),+> ReadXDR<'r> for ($($t,)+)
+        impl<'r, $($t),+> ReadXDR<'r> for ($($t,)+)
         where
             $( $t: ReadXDR<'r>, )+
         {
@@ -469,8 +563,8 @@ macro_rules! read_tuple {
             #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
             fn read_xdr_in_place<'s, R: Reader<'r>>(
                 r: &mut R,
-                slot: &'s mut MU<Self>,
-            ) -> ReadResult<&'s mut Self> {
+                mut slot: Slot<'s, Self>,
+            ) -> ReadResult<Init<'s, Self>> {
                 let base = slot.as_mut_ptr();
                 // SAFETY: tuple fields are aligned, disjoint, and in the
                 // caller's exclusively borrowed slot. If a read fails, Rust
@@ -480,7 +574,7 @@ macro_rules! read_tuple {
                 },)+);
                 core::mem::forget(guards);
                 // SAFETY: every tuple field was successfully initialized.
-                Ok(unsafe { slot.assume_init_mut() })
+                Ok(unsafe { slot.assume_init() })
             }
         }
     };
@@ -503,8 +597,7 @@ read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T1
 read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10, 10: T11, 11: T12, 12: T13, 13: T14, 14: T15);
 read_tuple!(0: T1, 1: T2, 2: T3, 3: T4, 4: T5, 5: T6, 6: T7, 7: T8, 8: T9, 9: T10, 10: T11, 11: T12, 12: T13, 13: T14, 14: T15, 15: T16);
 
-// SAFETY: both branches write a valid Option into the destination on success.
-unsafe impl<'r, T> ReadXDR<'r> for Option<T>
+impl<'r, T> ReadXDR<'r> for Option<T>
 where
     T: ReadXDR<'r>,
 {
@@ -520,8 +613,8 @@ where
     #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
     fn read_xdr_in_place<'s, R: Reader<'r>>(
         r: &mut R,
-        slot: &'s mut MU<Self>,
-    ) -> ReadResult<&'s mut Self> {
+        slot: Slot<'s, Self>,
+    ) -> ReadResult<Init<'s, Self>> {
         if !r.read_bool()? {
             return Ok(slot.write(None));
         }
@@ -539,8 +632,7 @@ where
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
+impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
 {
@@ -565,8 +657,7 @@ where
 }
 
 #[cfg(not(feature = "alloc"))]
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
+impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
 {
@@ -583,8 +674,7 @@ where
 #[cfg(feature = "alloc")]
 macro_rules! impl_read_xdr_shared_pointer {
     ($ptr:ident) => {
-        // SAFETY: the default in-place method writes the value returned by read_xdr.
-        unsafe impl<'r, T> ReadXDR<'r> for $ptr<T>
+        impl<'r, T> ReadXDR<'r> for $ptr<T>
         where
             T: ReadXDR<'r>,
         {
@@ -633,8 +723,7 @@ const _: () = {
     impl_read_xdr_shared_pointer!(Arc);
 };
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
+impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
 where
     T: ReadXDR<'r>,
     E: ReadXDR<'r>,
@@ -650,8 +739,7 @@ where
     }
 }
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
+impl<'r, T> ReadXDR<'r> for core::marker::PhantomData<T> {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
         Ok(core::marker::PhantomData)
     }
@@ -722,8 +810,7 @@ where
 const _: () = {
     use alloc::vec::Vec;
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r> ReadXDR<'r> for Vec<u8> {
+    impl<'r> ReadXDR<'r> for Vec<u8> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes: &[u8] = r.read_opaque_variable(u32::MAX)?;
             let vec = Vec::from(bytes); // copy the slice
@@ -731,8 +818,7 @@ const _: () = {
         }
     }
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, T> ReadXDR<'r> for Vec<T>
+    impl<'r, T> ReadXDR<'r> for Vec<T>
     where
         T: ReadXDR<'r>,
     {
@@ -754,8 +840,7 @@ const _: () = {
 
     use alloc::vec::Vec; // can use noalloc machinery in common_types to avoid this
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
+    impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes = r.read_opaque_variable(MAX)?;
             let vec = Vec::from(bytes);
@@ -763,8 +848,7 @@ const _: () = {
         }
     }
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
+    impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes = r.read_opaque_variable(MAX)?;
             let vec = Vec::from(bytes);
@@ -772,8 +856,7 @@ const _: () = {
         }
     }
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
+    impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
         T: ReadXDR<'r>,
     {
@@ -789,8 +872,7 @@ const _: () = {
     }
 
     // make VecM<u8> work like BytesM;
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
+    impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let bytes = r.read_opaque_variable(MAX)?;
             let vec = Vec::from(bytes);
@@ -805,22 +887,19 @@ const _: () = {
     use crate::serialize::reader::Reader;
     use xdr_common::*;
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
+    impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }
     }
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
+    impl<'r, const MAX: u32> ReadXDR<'r> for StringM<MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }
     }
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
+    impl<'r, const MAX: u32, T> ReadXDR<'r> for VecM<T, MAX>
     where
         T: ReadXDR<'r> + 'static,
     {
@@ -830,8 +909,7 @@ const _: () = {
     }
 
     // make VecM<u8> work like BytesM;
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
+    impl<'r, const MAX: u32> ReadXDR<'r> for VecM<u8, MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
             unimplemented!()
         }

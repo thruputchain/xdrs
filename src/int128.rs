@@ -5,8 +5,7 @@ const _: () = {
     use crate::read_xdr::*;
     use crate::serialize::reader::*;
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r> ReadXDR<'r> for i128 {
+    impl<'r> ReadXDR<'r> for i128 {
         #[inline]
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let highbits: i64 = read_xdr(r)?;
@@ -17,8 +16,7 @@ const _: () = {
         }
     }
 
-    // SAFETY: the default in-place method writes the value returned by read_xdr.
-    unsafe impl<'r> ReadXDR<'r> for u128 {
+    impl<'r> ReadXDR<'r> for u128 {
         #[inline]
         fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
             let highbits: u64 = read_xdr(r)?;

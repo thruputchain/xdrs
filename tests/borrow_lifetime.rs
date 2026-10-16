@@ -96,8 +96,7 @@ fn derived_struct_into_shorter_lifetime_slot() {
 #[derive(Debug, PartialEq, Eq)]
 struct CustomBorrowed<'a>(&'a [u8]);
 
-// SAFETY: the default in-place method writes the valid borrowed value.
-unsafe impl<'r: 'a, 'a> ReadXDR<'r> for CustomBorrowed<'a> {
+impl<'r: 'a, 'a> ReadXDR<'r> for CustomBorrowed<'a> {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> xdrs::ReadResult<Self> {
         Ok(Self(r.read_opaque_variable(u32::MAX)?))
     }
