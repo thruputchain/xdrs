@@ -600,10 +600,14 @@ macro_rules! impl_read_xdr_shared_pointer {
                     return Ok(Self::new(unsafe { value.assume_init() }));
                 }
 
-                let mut shared = Self::new_uninit();
-                // A fresh allocation has exactly one strong and no weak
-                // references, so `get_mut` always succeeds.
-                let slot = $ptr::get_mut(&mut shared).expect("fresh allocation is unshared");
+                let shared = Self::new_uninit();
+                // SAFETY: `shared` was just allocated and no other strong or
+                // weak pointer to it exists, so the slot cannot be aliased
+                // and writing through its pointer is sound. This is what
+                // `get_mut_unchecked` does, which is not stable yet; `get_mut`
+                // would add a uniqueness check (atomic for `Arc`) that is
+                // known to pass.
+                let slot = unsafe { &mut *$ptr::as_ptr(&shared).cast_mut() };
                 read_xdr_in_place(r, slot)?;
                 // SAFETY: read_xdr_in_place returned Ok, so the value is
                 // initialized. On error, dropping `shared` frees the
