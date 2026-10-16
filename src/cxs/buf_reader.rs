@@ -44,22 +44,16 @@ impl<'a> BufReader<'a> {
 
     #[inline]
     fn get_input(&mut self, requested: u32) -> ReadResult<&'a [u8]> {
-        let Some(extent) = self
-            .pos
-            .checked_add(requested as usize)
-            .filter(|&e| e <= self.data.len())
-        else {
-            // SAFETY: the cast is lossless in both cases that reach this branch:
-            // - Non-overflow: pos + requested > data.len() implies
-            //   data.len() - pos < requested <= u32::MAX.
-            // - checked_add overflow (32-bit only): pos <= data.len() <= isize::MAX,
-            //   so data.len() - pos <= isize::MAX < u32::MAX.
-            let remaining: usize = self.data.len() - self.pos;
-            return Err(ReadError::source_empty(requested as usize, remaining));
-        };
+        let requested = requested as usize;
+        let remaining = self.data.len() - self.pos;
+        if requested > remaining {
+            return Err(ReadError::source_empty(requested, remaining));
+        }
+        // The cursor is always within data. A request that fits in the
+        // remaining input also makes this addition safe from overflow.
+        let extent = self.pos + requested;
 
-        // SAFETY: we just verified extent <= self.data.len() and
-        // self.pos <= extent (since requested >= 0)
+        // SAFETY: requested <= remaining implies pos <= extent <= data.len().
         let buf = unsafe { self.data.get_unchecked(self.pos..extent) };
 
         self.pos = extent;
