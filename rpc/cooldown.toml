@@ -5,5 +5,5 @@ lockfile-baseline = "floor"
 [registry]
 global-min-publish-age = "15 days"
 
-[registries.groundhog]
+[registries.thruput]
 min-publish-age = "0"

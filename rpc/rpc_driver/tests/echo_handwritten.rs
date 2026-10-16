@@ -85,6 +85,19 @@ impl std::fmt::Debug for TestProgram_TestVersion_Client {
     }
 }
 
+/// What a generated client emits for its argument tuple: serialize straight
+/// into the record buffer with the client's own `xdrs`, since `rpc_api`
+/// carries no serializer.
+fn encode_args<T: xdrs::WriteXDR>(call: &mut CallBuf, args: &T) -> Result<(), RpcError> {
+    call.append_with(|buf| {
+        let mut writer = xdrs::txs::buf_writer::BufWriter::from(std::mem::take(buf));
+        let result = xdrs::write_xdr(args, &mut writer);
+        *buf = writer.into();
+        result
+    })
+    .map_err(|_| RpcError::GarbageArguments)
+}
+
 impl TestProgram_TestVersion_Client {
     pub fn new(handle: Arc<dyn RpcSender>) -> Self {
         Self { handle }
@@ -96,20 +109,19 @@ impl TestProgram_TestVersion_Client {
 
     pub async fn null(&self) -> Result<(), RpcError> {
         let mut call = self.handle.call_buf();
-        call.encode(&()).map_err(|_| RpcError::GarbageArguments)?;
+        encode_args(&mut call, &())?;
         let buf = self.handle.send_call(Self::prog_vers(), 0, call).await?;
         xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
     pub async fn takes_int(&self, i: i32) -> Result<i32, RpcError> {
         let mut call = self.handle.call_buf();
-        call.encode(&(i,)).map_err(|_| RpcError::GarbageArguments)?;
+        encode_args(&mut call, &(i,))?;
         let buf = self.handle.send_call(Self::prog_vers(), 1, call).await?;
         xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }
     pub async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, RpcError> {
         let mut call = self.handle.call_buf();
-        call.encode(&(i1, i2))
-            .map_err(|_| RpcError::GarbageArguments)?;
+        encode_args(&mut call, &(i1, i2))?;
         let buf = self.handle.send_call(Self::prog_vers(), 2, call).await?;
         xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
     }

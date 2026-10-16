@@ -69,7 +69,7 @@ FULL_EVALUATION = "{{ .full_evaluation }}"
 POOL_EVALUATION = "{{ .pool_evaluation }}"
 GIT_COMMIT = "{{ .git_commit }}"
 GIT_BRANCH = "{{ .git_branch }}"
-CARGO_REGISTRIES_GROUNDHOG_TOKEN = "{{ .cargo_registry_token }}"
+CARGO_REGISTRIES_THRUPUT_TOKEN = "{{ .cargo_registry_token }}"
 CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS = "{{ .cargo_registry_global_credential_providers }}"
 CARGO_NET_GIT_FETCH_WITH_CLI = "true"
 

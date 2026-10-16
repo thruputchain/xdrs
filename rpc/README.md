@@ -239,10 +239,16 @@ crates to republish. It versions independently of the workspace:
 - **`rpc_api` changes should be additive** — new `#[non_exhaustive]`
   `RpcError` variants, new trait methods with default implementations —
   and bump the patch version. A breaking change bumps the minor version
-  (0.2.0 changed `RpcSender` to take a `CallBuf`) and forces a coordinated
+  (0.2.0 changed `RpcSender` to take a `CallBuf`; 0.3.0 replaced
+  `CallBuf::encode` with `CallBuf::append_with`) and forces a coordinated
   republish of every generated protocol crate; treat it as a last resort.
   The driver's error encoder maps variants it doesn't know to SYSTEM_ERR,
   so a newer `rpc_api` never changes an older driver's wire behavior.
+- **`rpc_api` has no serializer dependency.** Generated clients encode
+  their arguments through `CallBuf::append_with` with the `xdrs` they were
+  generated against, so an `xdrs` release never forces an `rpc_api`
+  release, and never splits the dependency tree between `rpc_api`'s `xdrs`
+  and a protocol crate's. Only `rpc_driver` depends on `xdrs`.
 - **`rpc_driver` keeps the workspace version** and its own cadence,
   depending on the current `rpc_api` minor and re-exporting it at the
   historical paths (the 0.10.2 split was a source-compatible patch).

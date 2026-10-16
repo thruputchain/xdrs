@@ -60,7 +60,7 @@ jobs:
     runs-on: namespace-profile-hogd-linux-2604
     env:
       # cargo vendor in the dry-run action resolves against the private registry.
-      CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+      CARGO_REGISTRIES_THRUPUT_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
 
     steps:
@@ -105,7 +105,7 @@ jobs:
         uses: thruputchain/actions/cargo-publish-dry-run@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
-          registry-name: groundhog
+          registry-name: thruput
 
       # Everything the tag and publish steps would reject, checked first and
       # without side effects, so a failure here pushes no tag:
@@ -147,7 +147,7 @@ jobs:
             esac
           }
           registry_has() {
-            # Whether the groundhog registry index lists $1@$2. 404/410/451
+            # Whether the thruput registry index lists $1@$2. 404/410/451
             # mean the crate has no published versions at all.
             local index_url
             index_url=$(sed -n 's/.*"sparse+\([^"]*\)".*/\1/p' .cargo/config.toml | head -n 1)
@@ -227,7 +227,7 @@ jobs:
           tag-prefix: 'rpc_api-v'
           github-token: ${{ github.token }}
           on-existing-tag: 'skip-if-published'
-          registry-name: groundhog
+          registry-name: thruput
           registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
 
       # Unlike the dry run, the publish steps resolve deps against the live
@@ -240,7 +240,7 @@ jobs:
           packages: ${{ env.API_PACKAGES }}
           git-tag: ${{ steps.tag-rpc-api.outputs.tag }}
           tag-prefix: 'rpc_api-v'
-          registry-name: groundhog
+          registry-name: thruput
           registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
 
       - name: Publish rpc_driver
@@ -249,5 +249,5 @@ jobs:
         with:
           packages: ${{ env.PRIMARY_PACKAGES }}
           git-tag: ${{ steps.publish-tag.outputs.tag }}
-          registry-name: groundhog
+          registry-name: thruput
           registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}

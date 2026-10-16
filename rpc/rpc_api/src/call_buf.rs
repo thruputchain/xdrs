@@ -7,9 +7,9 @@ use std::fmt;
 ///
 /// Encoding arguments straight into a `CallBuf` lets the driver frame the
 /// call in place: it fills the reserved prefix and hands the buffer to the
-/// socket without copying or shifting the payload. Only the payload is
-/// reachable through this type, so nothing a caller can do touches the
-/// prefix. [`encode`](Self::encode) serializes XDR values into the payload.
+/// socket without copying or shifting the payload. Callers read only the
+/// payload; [`append_with`](Self::append_with) hands a serializer the
+/// record buffer to extend in place, with the prefix kept reserved.
 pub struct CallBuf {
     /// `buf[..PREFIX_LEN]` is reserved; `buf[PREFIX_LEN..]` is the payload.
     buf: Vec<u8>,
@@ -54,17 +54,24 @@ impl CallBuf {
         self.buf
     }
 
-    /// Serialize `value` as XDR onto the end of the payload.
+    /// Append to the payload through the record buffer itself.
     ///
-    /// Generated clients encode their argument tuple this way, so the driver
-    /// can send the buffer without copying it.
-    pub fn encode<T>(&mut self, value: &T) -> xdrs::WriteResult<()>
-    where
-        T: xdrs::WriteXDR,
-    {
-        let mut writer = xdrs::txs::buf_writer::BufWriter::from(std::mem::take(&mut self.buf));
-        let result = xdrs::write_xdr(value, &mut writer);
-        self.buf = writer.into();
+    /// `f` receives the whole record `Vec<u8>`, the reserved prefix followed
+    /// by the payload so far, appends to it, and its return value is passed
+    /// back. Generated protocol clients serialize their argument tuple this
+    /// way, straight into the buffer with the XDR serializer they were
+    /// generated against, so the driver sends the record without copying it
+    /// and this crate carries no serializer dependency of its own.
+    ///
+    /// `f` must only append. The buffer is kept at least
+    /// [`PREFIX_LEN`](Self::PREFIX_LEN) long afterwards, so an `f` that
+    /// shortens it cannot unreserve the prefix; the driver overwrites the
+    /// prefix bytes when it frames the call, so their contents never matter.
+    pub fn append_with<R>(&mut self, f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
+        let result = f(&mut self.buf);
+        if self.buf.len() < Self::PREFIX_LEN {
+            self.buf.resize(Self::PREFIX_LEN, 0);
+        }
         result
     }
 
@@ -116,18 +123,22 @@ mod tests {
     }
 
     #[test]
-    fn encode_appends_xdr_after_prefix() {
+    fn append_with_appends_after_prefix_and_returns_value() {
         let mut buf = call_with(b"pre");
-        buf.encode(&7u32).unwrap();
-        buf.encode(&(1u16, true)).unwrap();
-        assert_eq!(
-            buf.payload(),
-            [
-                b"pre".as_slice(),
-                &xdrs::txs::encode(&(7u32, (1u16, true))).unwrap()
-            ]
-            .concat()
-        );
+        let len = buf.append_with(|vec| {
+            vec.extend_from_slice(b"fix");
+            vec.len()
+        });
+        assert_eq!(len, CallBuf::PREFIX_LEN + 6);
+        assert_eq!(buf.payload(), b"prefix");
+    }
+
+    #[test]
+    fn append_with_keeps_prefix_reserved() {
+        let mut buf = call_with(b"abc");
+        buf.append_with(Vec::clear);
+        assert!(buf.payload().is_empty());
+        assert_eq!(buf.into_vec().len(), CallBuf::PREFIX_LEN);
     }
 
     #[test]

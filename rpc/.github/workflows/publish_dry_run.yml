@@ -16,7 +16,7 @@ jobs:
     runs-on: namespace-profile-hogd-linux-2604
     env:
       # cargo vendor in the dry-run action resolves against the private registry.
-      CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+      CARGO_REGISTRIES_THRUPUT_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
 
     steps:
@@ -58,4 +58,4 @@ jobs:
         uses: thruputchain/actions/cargo-publish-dry-run@c003527eff402d35ff357854a591cbec2935c2c3
         with:
           packages: rpc_api rpc_driver
-          registry-name: groundhog
+          registry-name: thruput

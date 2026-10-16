@@ -23,8 +23,10 @@
 //! ## Stability
 //!
 //! This crate is intentionally tiny, and its dependencies are limited to
-//! `async-trait`, `thiserror`, and the `xdrs` serializer generated bindings
-//! already use. Changes must be additive wherever
+//! `async-trait` and `thiserror`. XDR serialization is the generated
+//! bindings' business: they encode through [`CallBuf::append_with`] with
+//! the `xdrs` they were generated against, so an `xdrs` release never
+//! forces a release here. Changes must be additive wherever
 //! possible: new [`RpcError`] variants are non-breaking thanks to
 //! `#[non_exhaustive]`, and a new trait method ships with a default
 //! implementation when a correct one exists for every sender. A breaking
@@ -38,8 +40,9 @@
 //! The buffer keeps the wire prefix reserved ahead of the payload so the
 //! driver frames the call in place, and driver senders recycle spent record
 //! buffers through `call_buf`, so a steady stream of calls allocates
-//! nothing. [`CallBuf::encode`] serializes XDR values into it directly;
-//! generated protocol clients use that path.
+//! nothing. [`CallBuf::append_with`] hands the record buffer to a closure
+//! that serializes into it in place; generated protocol clients encode
+//! their argument tuple that way.
 //!
 //! ```
 //! use rpc_api::CallBuf;
