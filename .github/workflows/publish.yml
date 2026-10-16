@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       dry-run:
-        description: 'Run publish checks only; skip tagging, publishing and docs'
+        description: 'Run publish checks only; skip tagging and publishing'
         type: boolean
         default: false
 
@@ -28,9 +28,6 @@ jobs:
       # Plain Cargo calls in the dry-run action need registry authentication too.
       CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.CARGO_PUBLISH_TOKEN }}
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
-    outputs:
-      tag: ${{ steps.publish-tag.outputs.tag }}
-      version: ${{ steps.publish-tag.outputs.version }}
 
     steps:
       - name: Checkout
@@ -113,37 +110,4 @@ jobs:
           git-tag: ${{ steps.publish-tag.outputs.tag }}
           registry-name: groundhog
           registry-token: ${{ secrets.CARGO_PUBLISH_TOKEN }}
-
-  # Build and upload rustdoc to groundhog.dev/docs, after the crates publish.
-  # The cargo-doc action writes into the docs site on the self-hosted runner's
-  # filesystem, so this job stays on hog1.
-  docs:
-    needs: publish
-    if: ${{ !inputs.dry-run }}
-    permissions:
-      contents: read
-    runs-on: hog1
-
-    steps:
-      - name: Clean up .gitconfig
-        run: |
-          echo "Cleaning up .gitconfig"
-          rm -f /home/hogci/.gitconfig
-
-      - name: Checkout release tag
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          ref: refs/tags/${{ needs.publish.outputs.tag }}
-          persist-credentials: false
-
-      # HEAD is the freshly-tagged commit, so expected-tag validates cleanly.
-      - name: publish docs
-        uses: thruputchain/actions/cargo-doc@c003527eff402d35ff357854a591cbec2935c2c3
-        with:
-          packages: ${{ env.PUBLISH_PACKAGES }}
-          version: ${{ needs.publish.outputs.version }}
-          registry-name: groundhog
-          registry-token: ${{ secrets.CARGO_PUBLISH_TOKEN }}
-          toolchain: nightly-2026-05-26
-          force: 'true'
-          expected-tag: ${{ needs.publish.outputs.tag }}
+          publish-delay-seconds: '10'
