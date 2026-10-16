@@ -227,7 +227,7 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 ///   `ReadXDR<'a> for Borrowed<'a>` does not suffice for in-place decoding:
 ///   the field's type is fixed behind a mutable pointer, so the compiler
 ///   cannot shorten the returned value's lifetime at the assignment site.
-///   Use `unsafe impl<'r: 'a, 'a> ReadXDR<'r> for Borrowed<'a>`.
+///   Use `impl<'r: 'a, 'a> ReadXDR<'r> for Borrowed<'a>`.
 /// - **The lifetime name `'_r` is reserved.** The generated `ReadXDR` impl uses
 ///   `'_r` as its reader lifetime. A type deriving `ReadXDR` must not declare a
 ///   generic lifetime parameter with that same name; choose another name for

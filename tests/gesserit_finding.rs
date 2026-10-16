@@ -34,8 +34,7 @@ impl Drop for LeakDetector {
     }
 }
 
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r> ReadXDR<'r> for LeakDetector {
+impl<'r> ReadXDR<'r> for LeakDetector {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
         Ok(Self::new(r.read_u32()?))
     }

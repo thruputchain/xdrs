@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use xdrs::serialize::reader::{ReadError, Reader};
-use xdrs::{ReadXDR, VecM, read_xdr_in_place, txs};
+use xdrs::{Init, ReadXDR, Slot, VecM, read_xdr_in_place, txs};
 
 #[derive(Debug, Clone, PartialEq, Eq, xdrs::ReadXDR, xdrs::WriteXDR)]
 struct Big {
@@ -55,16 +55,15 @@ fn vec_and_vecm_of_structs() {
 #[derive(Debug)]
 struct InPlaceOnly<const N: usize>([u8; N]);
 
-// SAFETY: success writes a complete value into the supplied slot.
-unsafe impl<'r, const N: usize> ReadXDR<'r> for InPlaceOnly<N> {
+impl<'r, const N: usize> ReadXDR<'r> for InPlaceOnly<N> {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
         panic!("vector elements must be decoded in place");
     }
 
     fn read_xdr_in_place<'s, R: Reader<'r>>(
         r: &mut R,
-        slot: &'s mut MaybeUninit<Self>,
-    ) -> Result<&'s mut Self, ReadError> {
+        slot: Slot<'s, Self>,
+    ) -> Result<Init<'s, Self>, ReadError> {
         Ok(slot.write(Self([r.read_u32()? as u8; N])))
     }
 }
@@ -268,8 +267,7 @@ impl Drop for Tracked {
     }
 }
 
-// SAFETY: uses the default in-place method, which writes the returned value.
-unsafe impl<'r> ReadXDR<'r> for Tracked {
+impl<'r> ReadXDR<'r> for Tracked {
     fn read_xdr<R: Reader<'r>>(r: &mut R) -> Result<Self, ReadError> {
         let v = r.read_u32()?;
         if v == 999 {
@@ -382,40 +380,56 @@ fn failed_element_past_prealloc_cap_drops_earlier_elements() {
     assert_eq!(LIVE.get(), 0);
 }
 
-// ---- incorrect implementations ----------------------------------------------
+// ---- piecewise initialization -----------------------------------------------
 
-/// Returns a reference to a leaked value instead of initializing the slot.
-#[cfg(debug_assertions)]
-#[derive(Debug)]
-struct Misplaced(#[allow(dead_code)] u8);
+/// Fills its storage through the slot's raw pointer, then declares it
+/// initialized, the way derived structs do.
+#[derive(Debug, PartialEq, Eq)]
+struct Piecewise {
+    a: u32,
+    b: [u8; 4],
+}
 
-#[cfg(debug_assertions)]
-// Deliberately violates the contract to exercise the debug diagnostic before
-// any caller assumes initialization. This impl is absent in release builds.
-unsafe impl<'r> ReadXDR<'r> for Misplaced {
+impl<'r> ReadXDR<'r> for Piecewise {
     fn read_xdr<R: Reader<'r>>(_r: &mut R) -> Result<Self, ReadError> {
-        Ok(Misplaced(0))
+        panic!("must be decoded in place");
     }
 
     fn read_xdr_in_place<'s, R: Reader<'r>>(
-        _r: &mut R,
-        _slot: &'s mut MaybeUninit<Self>,
-    ) -> Result<&'s mut Self, ReadError> {
-        Ok(Box::leak(Box::new(Misplaced(0))))
+        r: &mut R,
+        mut slot: Slot<'s, Self>,
+    ) -> Result<Init<'s, Self>, ReadError> {
+        let base = slot.as_mut_ptr();
+        // SAFETY: `base` is valid, aligned and exclusive for the call; both
+        // fields are `Copy`, so a failure between them leaves nothing to drop.
+        unsafe {
+            (&raw mut (*base).a).write(r.read_u32()?);
+            read_xdr_in_place(r, &mut *(&raw mut (*base).b).cast::<MaybeUninit<[u8; 4]>>())?;
+            Ok(slot.assume_init())
+        }
     }
 }
 
 #[test]
-#[cfg(debug_assertions)]
-#[should_panic(expected = "outside its slot")]
-fn misplaced_result_is_caught() {
-    #[allow(dead_code)]
-    #[derive(Debug, xdrs::ReadXDR)]
-    struct Holder {
-        a: u64,
-        m: Misplaced,
-    }
+fn piecewise_override_initializes_slot() {
+    let buf = txs::encode(&(7u32, [1u8, 2, 3, 4])).unwrap();
+    let mut slot = MaybeUninit::<Piecewise>::uninit();
+    let mut reader = txs::buf_reader::BufReader::new(&buf);
+    let out = read_xdr_in_place(&mut reader, &mut slot).unwrap();
+    assert_eq!(
+        *out,
+        Piecewise {
+            a: 7,
+            b: [1, 2, 3, 4]
+        }
+    );
 
-    let buf = txs::encode(&0u64).unwrap();
-    let _ = txs::decode::<Box<Holder>>(&buf);
+    let boxed: Box<Piecewise> = txs::decode(&buf).unwrap();
+    assert_eq!(
+        *boxed,
+        Piecewise {
+            a: 7,
+            b: [1, 2, 3, 4]
+        }
+    );
 }
