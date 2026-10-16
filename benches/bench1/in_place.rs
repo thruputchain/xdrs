@@ -1,12 +1,13 @@
 //! Decoding into heap-allocated destinations.
 //!
 //! These measure the cost of building a value and then moving it into its
-//! final allocation (`Box`, or a `Vec`/`VecM` slot), across a range of value
+//! final allocation (`Box`, `Arc`, or a `Vec`/`VecM` slot), across a range of value
 //! sizes, next to a plain by-value decode of the same input. Small values
 //! should be unaffected by how they are placed; large ones expose the extra
 //! stack frame and memcpy.
 
 use std::hint::black_box;
+use std::sync::Arc;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
 
@@ -75,7 +76,8 @@ fn big64k() -> Box<Big64K> {
     })
 }
 
-/// Benchmarks decoding `T` by value and into a `Box` with both formats.
+/// Benchmarks decoding `T` by value, into a `Box` and into an `Arc` with
+/// both formats.
 fn bench_pointers<T>(c: &mut Criterion, name: &str, value: &T)
 where
     T: WriteXDR + ReadXDROwned,
@@ -102,6 +104,14 @@ where
             group.bench_with_input(id, input, |b, input| {
                 b.iter(|| {
                     let out: Box<T> = $fmt::decode(black_box(input)).unwrap();
+                    black_box(&out);
+                })
+            });
+
+            let id = BenchmarkId::new("Arc_decode", stringify!($fmt));
+            group.bench_with_input(id, input, |b, input| {
+                b.iter(|| {
+                    let out: Arc<T> = $fmt::decode(black_box(input)).unwrap();
                     black_box(&out);
                 })
             });
