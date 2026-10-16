@@ -575,34 +575,59 @@ where
     }
 }
 
-// Shared pointers decode transparently as their pointee, mirroring `Box`.
-// `ReadXDROwned` follows from the blanket impl whenever `T: ReadXDROwned`.
+/// Implements `ReadXDR` for a shared pointer (`Rc` or `Arc`) whose pointee
+/// is decoded the same way `Box<T>` is: small values are decoded on the
+/// stack and moved into a fresh allocation, larger ones are decoded straight
+/// into it. `ReadXDROwned` follows from the blanket impl whenever
+/// `T: ReadXDROwned`.
+#[cfg(feature = "alloc")]
+macro_rules! impl_read_xdr_shared_pointer {
+    ($ptr:ident) => {
+        // SAFETY: the default in-place method writes the value returned by read_xdr.
+        unsafe impl<'r, T> ReadXDR<'r> for $ptr<T>
+        where
+            T: ReadXDR<'r>,
+        {
+            #[cfg_attr(not(target_arch = "riscv32"), inline(always))]
+            fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
+                // Same size threshold as `Box<T>`: for at most two machine
+                // words, moving the value is cheap, and decoding before
+                // allocating means a failed read needs no allocation.
+                if core::mem::size_of::<T>() <= 2 * core::mem::size_of::<usize>() {
+                    let mut value = MU::<T>::uninit();
+                    read_xdr_in_place(r, &mut value)?;
+                    // SAFETY: read_xdr_in_place initialized the value on success.
+                    return Ok(Self::new(unsafe { value.assume_init() }));
+                }
+
+                let mut shared = Self::new_uninit();
+                // A fresh allocation has exactly one strong and no weak
+                // references, so `get_mut` always succeeds.
+                let slot = $ptr::get_mut(&mut shared).expect("fresh allocation is unshared");
+                read_xdr_in_place(r, slot)?;
+                // SAFETY: read_xdr_in_place returned Ok, so the value is
+                // initialized. On error, dropping `shared` frees the
+                // allocation without dropping the uninitialized `T`.
+                Ok(unsafe { shared.assume_init() })
+            }
+        }
+    };
+}
+
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, T> ReadXDR<'r> for alloc::rc::Rc<T>
-where
-    T: ReadXDR<'r>,
-{
-    #[inline]
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        Ok(Self::new(read_xdr(r)?))
-    }
-}
+const _: () = {
+    use alloc::rc::Rc;
+    impl_read_xdr_shared_pointer!(Rc);
+};
 
 // `alloc::sync` exists only on targets with pointer-sized atomics.
 #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-// SAFETY: the default in-place method writes the value returned by read_xdr.
-unsafe impl<'r, T> ReadXDR<'r> for alloc::sync::Arc<T>
-where
-    T: ReadXDR<'r>,
-{
-    #[inline]
-    fn read_xdr<R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        Ok(Self::new(read_xdr(r)?))
-    }
-}
+const _: () = {
+    use alloc::sync::Arc;
+    impl_read_xdr_shared_pointer!(Arc);
+};
 
 // SAFETY: the default in-place method writes the value returned by read_xdr.
 unsafe impl<'r, T, E> ReadXDR<'r> for core::result::Result<T, E>
