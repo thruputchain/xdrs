@@ -94,6 +94,14 @@
 //!
 //! [`try_peer()`] returns `Option` and is safe to call outside a handler.
 //!
+//! ## Testing without TCP
+//!
+//! [`loopback::LoopbackLink`] connects two [`ServiceMap`]s directly and
+//! hands back each end's [`RpcSender`] to the other, with optional one-way
+//! latency on tokio time, so unit tests of code that holds an
+//! `Arc<dyn RpcSender>` run against real handlers with no socket and, under
+//! a paused clock, no waiting.
+//!
 //! ## Tracing
 //!
 //! All diagnostic output uses the [`tracing`](https://docs.rs/tracing) crate.
@@ -190,6 +198,8 @@ pub use client::{connect_client, connect_client_with_config};
 
 pub mod pool;
 pub use pool::{CanceledCallPolicy, CpuSetPool, DynamicPool, FixedSerialPool, MultiplexPool};
+
+pub mod loopback;
 
 /// Low-level TCP record-stream primitives used by the driver.
 ///

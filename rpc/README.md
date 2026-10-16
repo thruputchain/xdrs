@@ -131,6 +131,46 @@ oversized outgoing CALLs before transmission. `rpc_api` and the wire format are 
 `FixedSerialPool` still explicitly serializes client calls per connection;
 use a direct connection, `DynamicPool`, or `CpuSetPool` for multiplexed calls.
 
+## Testing without TCP
+
+`rpc_driver::loopback::LoopbackLink` connects two `ServiceMap`s directly,
+each the services one end exposes to the other, and hands back each end's
+`RpcSender` to the other: no socket, no framing, no xid, no reader task.
+It is for unit tests of code that holds an `Arc<dyn RpcSender>`, such as
+generated protocol clients, against real handlers.
+
+```rust
+use rpc_driver::loopback::LoopbackLink;
+
+// A client that serves nothing, linked to the server's services.
+let link = LoopbackLink::connect(ServiceMap::new(), server_services)
+    .with_latency(Duration::from_millis(5)); // one-way, on tokio time
+let (client, _server) = link.senders();
+let client = MyService::new(Arc::new(client));
+// ...
+link.poison(); // in-flight and later calls fail with SystemError
+```
+
+- Latency is applied with `tokio::time::sleep`, once before the handler
+  runs and once before the reply returns, so a test started with
+  `#[tokio::test(start_paused = true)]` pays no wall-clock time for it and
+  can assert on elapsed virtual time. `set_latency` changes it while the
+  link is up. `send_fire_and_forget` returns as soon as the call is queued
+  and runs the handler one leg later on its own task.
+- Handler errors arrive as they would over the wire: wire-level statuses
+  pass through, driver-local errors such as `PoolClosed` become
+  `SystemError`, and a handler panic becomes `SystemError` without taking
+  the link down.
+- `peer()` inside a handler is the sender back to the calling end, so an
+  end given an empty `ServiceMap` answers callbacks like a client with the
+  default `ConnectionConfig`.
+- Senders and link clones share one link. `poison()` wakes calls parked on
+  it from either end and refuses new ones, like a closed connection; a call
+  in flight is dropped where it is, handler included.
+
+The message-size limit, output admission, the suspended-handler cap, and
+the pools are not modeled. Use a loopback TCP connection for those.
+
 ## Tracing
 
 All diagnostic output uses the [`tracing`](https://docs.rs/tracing) crate. No

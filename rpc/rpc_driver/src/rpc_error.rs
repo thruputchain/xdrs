@@ -145,6 +145,25 @@ fn to_rpc_msg(err: &RpcError, xid: u32) -> rpc_msg::rpc_msg {
     }
 }
 
+/// The error a caller receives when a handler fails with `err`.
+///
+/// Wire-level statuses survive the round trip; everything else encodes as
+/// SYSTEM_ERR (see [`to_error_record`]) and so arrives as
+/// [`RpcError::SystemError`].
+#[allow(unreachable_pub)]
+pub fn as_received(err: RpcError) -> RpcError {
+    match err {
+        RpcError::InvalidProcedure
+        | RpcError::ProgUnavail
+        | RpcError::InvalidVersion { .. }
+        | RpcError::RpcMismatch
+        | RpcError::GarbageArguments
+        | RpcError::SystemError
+        | RpcError::AuthenticationError => err,
+        _ => RpcError::SystemError,
+    }
+}
+
 /// Encode an [`RpcError`] as a complete framed error record for the given xid.
 #[allow(unreachable_pub)]
 pub fn to_error_record(err: &RpcError, xid: u32) -> Vec<u8> {

@@ -170,7 +170,7 @@ pub(crate) fn spawn_client_read_task(
     }
 }
 
-mod dispatch {
+pub(crate) mod dispatch {
     use super::*;
     use crate::tcp_connection::TryRecord;
     use std::future::Future;
@@ -187,7 +187,8 @@ mod dispatch {
     /// `AssertUnwindSafe` is applied internally so the connection machinery
     /// can recover from a handler panic. Handlers remain responsible for the
     /// consistency of their own state if they panic while mutating it.
-    struct CatchUnwind<F>(F);
+    #[allow(unreachable_pub)]
+    pub struct CatchUnwind<F>(pub F);
 
     impl<F: std::future::Future> std::future::Future for CatchUnwind<F> {
         type Output = Result<F::Output, Box<dyn std::any::Any + Send>>;
