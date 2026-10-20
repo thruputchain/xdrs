@@ -39,9 +39,11 @@ pub fn try_peer() -> Option<Arc<dyn RpcSender>> {
 /// This is used by the framework's dispatch loop — you should not need to call
 /// this directly unless you are writing custom dispatch infrastructure.
 #[allow(unreachable_pub)]
-pub async fn with_peer<F, R>(sender: Arc<dyn RpcSender>, f: F) -> R
+pub fn with_peer<F, R>(sender: Arc<dyn RpcSender>, f: F) -> impl std::future::Future<Output = R>
 where
     F: std::future::Future<Output = R>,
 {
-    RPC_PEER.scope(sender, f).await
+    // Construct the scope eagerly so even a future dropped before its first
+    // poll drops `f` with its peer installed.
+    RPC_PEER.scope(sender, f)
 }

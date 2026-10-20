@@ -609,9 +609,35 @@ impl std::fmt::Debug for CallbackSlot {
     }
 }
 
+/// Hashes xids with one multiply. Every call looks its xid up several
+/// times, and the default SipHash costs more than the rest of the lookup.
+/// SipHash's collision resistance is not needed here: every key is
+/// inserted from this connection's own xid counter, and xids a peer sends
+/// are only looked up, so a peer cannot fill the map with colliding keys.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct XidHash(u64);
+
+impl std::hash::Hasher for XidHash {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0 ^ u64::from(b)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+    }
+    fn write_u32(&mut self, xid: u32) {
+        // Fibonacci hashing spreads sequential xids across the high bits
+        // hashbrown uses for its control bytes.
+        self.0 = u64::from(xid).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+}
+
+pub(crate) type XidMap<V> = HashMap<u32, V, std::hash::BuildHasherDefault<XidHash>>;
+
 #[derive(Debug)]
 pub(crate) struct ConnectionState {
-    pub(crate) pending_requests: HashMap<u32, CallbackSlot>,
+    pub(crate) pending_requests: XidMap<CallbackSlot>,
     last_xid: u32,
     poisoned: bool,
 }
@@ -619,7 +645,7 @@ pub(crate) struct ConnectionState {
 impl ConnectionState {
     pub(crate) fn new() -> Self {
         Self {
-            pending_requests: HashMap::new(),
+            pending_requests: XidMap::default(),
             last_xid: 0,
             poisoned: false,
         }

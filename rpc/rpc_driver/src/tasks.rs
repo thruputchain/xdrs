@@ -100,6 +100,20 @@ fn route_reply(
     }
 }
 
+/// Route an accepted SUCCESS reply whose payload is all of `record`.
+#[inline]
+fn route_success(client_cbs: &ConnectionHandle, xid: u32, record: Vec<u8>) {
+    use crate::connection::ReplyResult;
+    let was_fire_and_forget = client_cbs
+        .connection_state
+        .lock()
+        .unwrap()
+        .handle_reply(xid, ReplyResult::Ok(record, 0));
+    if was_fire_and_forget {
+        client_cbs.decrement_pending();
+    }
+}
+
 /// Send a dispatch result (success or error) back to the client. Never
 /// waits; an error means the connection has failed.
 #[inline]
@@ -119,6 +133,76 @@ fn copy_record(bytes: &[u8]) -> Vec<u8> {
     let mut buf = crate::connection::take_buffer();
     buf.extend_from_slice(bytes);
     buf
+}
+
+/// The CALL header fields dispatch needs.
+struct CallHeader {
+    xid: u32,
+    rpcvers: u32,
+    prog: u32,
+    vers: u32,
+    proc: u32,
+}
+
+/// The headers nearly every record carries, read without the general decoder.
+enum FastHeader {
+    /// A CALL with `AUTH_NONE` credentials and verifier.
+    Call(CallHeader),
+    /// A REPLY accepted with SUCCESS and an `AUTH_NONE` verifier.
+    Success { xid: u32 },
+}
+
+/// Recognize the common fixed-layout headers by their words; anything else
+/// returns `None` for [`parse_header`] to decode. The payload starts at the
+/// returned offset.
+#[inline]
+fn fast_header(record: &[u8]) -> Option<(FastHeader, usize)> {
+    const CALL_WORDS: usize = 10;
+    const REPLY_WORDS: usize = 6;
+    let words = |n: usize| -> Option<[u32; CALL_WORDS]> {
+        let bytes = record.get(..4 * n)?;
+        let mut words = [0u32; CALL_WORDS];
+        for (word, chunk) in words.iter_mut().zip(bytes.chunks_exact(4)) {
+            *word = u32::from_be_bytes(chunk.try_into().unwrap());
+        }
+        Some(words)
+    };
+    let none = rpc_msg::auth_flavor::AUTH_NONE.0 as u32;
+    match u32::from_be_bytes(record.get(4..8)?.try_into().unwrap()) {
+        t if t == rpc_msg::msg_type::CALL.0 as u32 => {
+            let [
+                xid,
+                _,
+                rpcvers,
+                prog,
+                vers,
+                proc,
+                cred,
+                cred_len,
+                verf,
+                verf_len,
+            ] = words(CALL_WORDS)?;
+            (cred == none && cred_len == 0 && verf == none && verf_len == 0).then_some((
+                FastHeader::Call(CallHeader {
+                    xid,
+                    rpcvers,
+                    prog,
+                    vers,
+                    proc,
+                }),
+                4 * CALL_WORDS,
+            ))
+        }
+        t if t == rpc_msg::msg_type::REPLY.0 as u32 => {
+            let [xid, _, stat, verf, verf_len, accept, ..] = words(REPLY_WORDS)?;
+            (stat == rpc_msg::reply_stat::MSG_ACCEPTED.0 as u32
+                && verf == none
+                && verf_len == 0
+                && accept == rpc_msg::accept_stat::SUCCESS.0 as u32)
+                .then_some((FastHeader::Success { xid }, 4 * REPLY_WORDS))
+        }
+        _ => None,
+    }
 }
 
 /// Decode the RPC header at the front of `record`. The payload starts at the
@@ -218,10 +302,11 @@ pub(crate) mod dispatch {
     type HandlerResult = Result<Vec<u8>, ReadTaskError>;
     type Panic = Box<dyn std::any::Any + Send>;
 
-    /// Build the `'static` handler future for one CALL.
+    /// Build the `'static` handler future for one CALL. It runs in the peer
+    /// scope of whoever polls it: the read loop's, or its own task's once it
+    /// suspends.
     fn handler_future(
         service_map: &Arc<ServiceMap>,
-        client_cbs: &Arc<ConnectionHandle>,
         record: Vec<u8>,
         xid: u32,
         vers: ProgVers,
@@ -229,8 +314,7 @@ pub(crate) mod dispatch {
         proc: u32,
     ) -> HandlerFuture {
         let svc = service_map.clone();
-        let sender: Arc<dyn RpcSender> = client_cbs.clone();
-        Box::pin(CatchUnwind(with_peer(sender, async move {
+        Box::pin(CatchUnwind(async move {
             let result = svc.dispatch(rpcvers, vers, proc, &record).await;
             // The handler no longer borrows its input. Reuse that allocation
             // for the wire reply instead of discarding it and taking another
@@ -239,7 +323,7 @@ pub(crate) mod dispatch {
                 Ok(response) => prepare_success_response(record, xid, &response),
                 Err(e) => Ok(crate::rpc_error::to_error_record(&e, xid)),
             }
-        })))
+        }))
     }
 
     fn discard_panic_payload(panic: Panic, xid: u32, context: &'static str) {
@@ -277,6 +361,61 @@ pub(crate) mod dispatch {
         }
     }
 
+    // -- Suspended handlers --------------------------------------------------
+
+    /// A read loop's suspended handler tasks: counted for the admission
+    /// cap and cancelled together when the loop ends, without a `JoinSet`'s
+    /// per-task node or per-record reaping.
+    #[derive(Default)]
+    struct Suspended {
+        running: std::sync::atomic::AtomicUsize,
+        closed: std::sync::atomic::AtomicBool,
+        cancel: tokio::sync::Notify,
+    }
+
+    impl Suspended {
+        /// Run `work` until it finishes or the read loop ends.
+        async fn until_closed(&self, work: impl Future<Output = ()>) {
+            let cancelled = self.cancel.notified();
+            tokio::pin!(cancelled);
+            // Register before checking the flag so a close in between is seen.
+            cancelled.as_mut().enable();
+            if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+                return;
+            }
+            tokio::select! {
+                biased;
+                () = cancelled => {}
+                () = work => {}
+            }
+        }
+    }
+
+    /// Cancels a read loop's suspended handlers when the loop returns or is
+    /// dropped.
+    struct CancelOnExit(Arc<Suspended>);
+
+    impl Drop for CancelOnExit {
+        fn drop(&mut self) {
+            self.0
+                .closed
+                .store(true, std::sync::atomic::Ordering::Release);
+            self.0.cancel.notify_waiters();
+        }
+    }
+
+    /// Counts one suspended handler task until the task is gone, whether it
+    /// finished, was cancelled, or was dropped before its first poll.
+    struct Running(Arc<Suspended>);
+
+    impl Drop for Running {
+        fn drop(&mut self) {
+            self.0
+                .running
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     // -- Read loop -----------------------------------------------------------
 
     /// Ready handlers complete inline; only suspended handlers become tasks.
@@ -287,7 +426,19 @@ pub(crate) mod dispatch {
         client_cbs: &Arc<ConnectionHandle>,
         read_half: &mut ReadHalf,
     ) -> Result<(), ReadTaskError> {
-        let mut tasks = tokio::task::JoinSet::new();
+        // One peer scope for the whole loop: calls that complete inline need
+        // no per-call scope or sender clone.
+        let sender: Arc<dyn RpcSender> = client_cbs.clone();
+        with_peer(sender, serve_inner(service_map, client_cbs, read_half)).await
+    }
+
+    async fn serve_inner(
+        service_map: &Arc<ServiceMap>,
+        client_cbs: &Arc<ConnectionHandle>,
+        read_half: &mut ReadHalf,
+    ) -> Result<(), ReadTaskError> {
+        let suspended = Arc::new(Suspended::default());
+        let _cancel_on_exit = CancelOnExit(suspended.clone());
         // Fast-path hit rate, reported once on exit. Loop-local: this task is
         // the only writer.
         let (mut ready_calls, mut suspended_calls) = (0u64, 0u64);
@@ -296,9 +447,6 @@ pub(crate) mod dispatch {
         let mut since_yield = 0usize;
 
         let result = loop {
-            // Reap completed tasks to free memory in the JoinSet.
-            while tasks.try_join_next().is_some() {}
-
             if since_yield >= YIELD_EVERY {
                 since_yield = 0;
                 yield_mid_burst(writer).await;
@@ -324,25 +472,39 @@ pub(crate) mod dispatch {
                 Err(e) => break Err(ReadTaskError::ReadError(e)),
             };
 
-            let (msg, payload_offset) = match parse_header(record) {
-                Ok(parsed) => parsed,
-                Err(e) => break Err(e),
-            };
-
-            let cbody = match msg.body {
-                rpc_msg::rpc_msg_body::REPLY { rbody } => {
-                    route_reply(
-                        client_cbs,
-                        msg.xid,
-                        rbody,
-                        copy_record(&record[payload_offset..]),
-                        0,
-                    );
+            let (call, payload_offset) = match fast_header(record) {
+                Some((FastHeader::Success { xid }, offset)) => {
+                    route_success(client_cbs, xid, copy_record(&record[offset..]));
                     continue;
                 }
-                rpc_msg::rpc_msg_body::CALL { cbody } => cbody,
+                Some((FastHeader::Call(call), offset)) => (call, offset),
+                None => match parse_header(record) {
+                    Ok((msg, offset)) => match msg.body {
+                        rpc_msg::rpc_msg_body::REPLY { rbody } => {
+                            route_reply(
+                                client_cbs,
+                                msg.xid,
+                                rbody,
+                                copy_record(&record[offset..]),
+                                0,
+                            );
+                            continue;
+                        }
+                        rpc_msg::rpc_msg_body::CALL { cbody } => (
+                            CallHeader {
+                                xid: msg.xid,
+                                rpcvers: cbody.rpcvers,
+                                prog: cbody.prog,
+                                vers: cbody.vers,
+                                proc: cbody.proc,
+                            },
+                            offset,
+                        ),
+                    },
+                    Err(e) => break Err(e),
+                },
             };
-            let xid = msg.xid;
+            let xid = call.xid;
 
             // Refuse new work before invoking its handler. Both successful and
             // error replies always bypass this threshold; never block routing
@@ -360,8 +522,8 @@ pub(crate) mod dispatch {
                 continue;
             }
 
-            let vers = ProgVers::new(cbody.prog, cbody.vers);
-            let proc = cbody.proc;
+            let vers = ProgVers::new(call.prog, call.vers);
+            let proc = call.proc;
 
             // Preserve the connection span when a suspended handler is spawned.
             let span = tracing::debug_span!(
@@ -378,11 +540,10 @@ pub(crate) mod dispatch {
             // read buffer if it suspends.
             let mut handler = handler_future(
                 service_map,
-                client_cbs,
                 copy_record(&record[payload_offset..]),
                 xid,
                 vers,
-                cbody.rpcvers,
+                call.rpcvers,
                 proc,
             );
 
@@ -430,38 +591,37 @@ pub(crate) mod dispatch {
             span.record("ready", false);
 
             if let Some(limit) = client_cbs.max_suspended_handlers
-                && tasks.len() >= limit
+                && suspended.running.load(std::sync::atomic::Ordering::Relaxed) >= limit
             {
-                // Tasks may have finished during the reader's fairness yield
-                // or the inline probe. Reap them before refusing this handler.
-                while tasks.try_join_next().is_some() {}
-                if tasks.len() >= limit {
-                    drop_handler(handler, xid);
-                    if let Err(e) = send_response(
-                        client_cbs,
-                        Ok(crate::rpc_error::to_error_record(
-                            &crate::RpcError::SystemError,
-                            xid,
-                        )),
-                    ) {
-                        break Err(e);
-                    }
-                    continue;
+                drop_handler(handler, xid);
+                if let Err(e) = send_response(
+                    client_cbs,
+                    Ok(crate::rpc_error::to_error_record(
+                        &crate::RpcError::SystemError,
+                        xid,
+                    )),
+                ) {
+                    break Err(e);
                 }
+                continue;
             }
 
             let cbs = client_cbs.clone();
-            tasks.spawn(async move {
-                async {
-                    let result = handler_outcome(handler.await, xid);
-                    if let Err(e) = send_response(&cbs, result) {
-                        tracing::error!(xid, error = %e, "response write failed");
-                        let _shutdown = cbs.begin_poison();
-                    }
+            // A suspended handler leaves the read loop's scope, so its task
+            // installs the peer itself.
+            let sender: Arc<dyn RpcSender> = client_cbs.clone();
+            let work = with_peer(sender, async move {
+                let result = handler_outcome(handler.await, xid);
+                if let Err(e) = send_response(&cbs, result) {
+                    tracing::error!(xid, error = %e, "response write failed");
+                    let _shutdown = cbs.begin_poison();
                 }
-                .instrument(span)
-                .await;
             });
+            suspended
+                .running
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let running = Running(suspended.clone());
+            tokio::spawn(async move { running.0.until_closed(work).await }.instrument(span));
         };
 
         tracing::debug!(ready_calls, suspended_calls, "read loop exiting");
@@ -470,8 +630,8 @@ pub(crate) mod dispatch {
 }
 
 /// Runs the concurrent read-dispatch loop. Returns only on error or
-/// connection close. Dropping the loop cancels any still-running handler
-/// tasks with its `JoinSet`.
+/// connection close. Ending or dropping the loop cancels any still-running
+/// handler tasks.
 pub async fn launch_read_task(
     service_map: Arc<ServiceMap>,
     client_cbs: Arc<ConnectionHandle>,
@@ -548,6 +708,55 @@ mod tests {
             },
         };
         crate::connection::frame_rpc_record(Vec::new(), &header, payload).unwrap()
+    }
+
+    #[test]
+    fn fast_header_agrees_with_the_decoder_or_defers_to_it() {
+        // AUTH_NONE CALL.
+        let call = test_call_record(7, 3, b"args");
+        let (decoded, offset) = parse_header(&call[4..]).unwrap();
+        let Some((FastHeader::Call(fast), fast_offset)) = fast_header(&call[4..]) else {
+            panic!("AUTH_NONE call should take the fast path");
+        };
+        let rpc_msg::rpc_msg_body::CALL { cbody } = decoded.body else {
+            panic!("decoded a reply");
+        };
+        assert_eq!(
+            (
+                fast.xid,
+                fast.rpcvers,
+                fast.prog,
+                fast.vers,
+                fast.proc,
+                fast_offset
+            ),
+            (
+                decoded.xid,
+                cbody.rpcvers,
+                cbody.prog,
+                cbody.vers,
+                cbody.proc,
+                offset
+            )
+        );
+        assert_eq!(&call[4 + fast_offset..], b"args");
+
+        // Accepted SUCCESS REPLY.
+        let reply = prepare_success_response(Vec::new(), 9, b"results").unwrap();
+        let (decoded, offset) = parse_header(&reply[4..]).unwrap();
+        let Some((FastHeader::Success { xid }, fast_offset)) = fast_header(&reply[4..]) else {
+            panic!("SUCCESS reply should take the fast path");
+        };
+        assert_eq!((xid, fast_offset), (decoded.xid, offset));
+        assert_eq!(&reply[4 + fast_offset..], b"results");
+
+        // Error replies and non-AUTH_NONE credentials take the decoder.
+        let error = crate::rpc_error::to_error_record(&crate::RpcError::InvalidProcedure, 5);
+        assert!(fast_header(&error[4..]).is_none());
+        let mut sys_cred = call.clone();
+        sys_cred[4 + 24..4 + 28].copy_from_slice(&1u32.to_be_bytes());
+        assert!(fast_header(&sys_cred[4..]).is_none());
+        assert!(fast_header(&call[4..20]).is_none());
     }
 
     #[tokio::test]
@@ -777,6 +986,61 @@ mod tests {
         })
         .await
         .expect("reader yield failed to release the handler slot");
+    }
+
+    #[tokio::test]
+    async fn ending_the_read_loop_cancels_suspended_handlers() {
+        use tokio::io::AsyncWriteExt;
+
+        struct DropFlag(Option<tokio::sync::oneshot::Sender<()>>);
+        impl Drop for DropFlag {
+            fn drop(&mut self) {
+                let _ = self.0.take().unwrap().send(());
+            }
+        }
+
+        struct StuckService(std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>);
+        #[async_trait::async_trait]
+        impl crate::handler::RpcHandler for StuckService {
+            async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, crate::RpcError> {
+                let _flag = DropFlag(self.0.lock().unwrap().take());
+                std::future::pending().await
+            }
+            fn prog_vers(&self) -> ProgVers {
+                ProgVers::new(1, 1)
+            }
+        }
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+            let config = crate::ConnectionConfig::default();
+            let (client, mut read_half, peer) =
+                ConnectionHandle::new_stalled_for_test(&config).await;
+            let client = Arc::new(client);
+            client.writer.unstall_for_test();
+            let (_peer_read, mut peer_write) = peer.into_split();
+            let mut services = ServiceMap::new();
+            services.add_service(Box::new(StuckService(std::sync::Mutex::new(Some(
+                dropped_tx,
+            )))));
+            let services = Arc::new(services);
+
+            peer_write
+                .write_all(&test_call_record(1, 0, &[]))
+                .await
+                .unwrap();
+            let serve =
+                tokio::spawn(
+                    async move { dispatch::serve(&services, &client, &mut read_half).await },
+                );
+            // Give the handler time to suspend into its own task.
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            peer_write.shutdown().await.unwrap();
+            assert!(serve.await.unwrap().is_err());
+            dropped_rx.await.unwrap();
+        })
+        .await
+        .expect("a suspended handler outlived its read loop");
     }
 
     #[test]
