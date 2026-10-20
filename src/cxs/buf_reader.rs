@@ -47,6 +47,11 @@ impl<'a> BufReader<'a> {
         let requested = requested as usize;
         let remaining = self.data.len() - self.pos;
         if requested > remaining {
+            // Without the hint, LLVM duplicates the error return into every
+            // fixed-width arm of read_unsigned/read_signed: +36 B of RV32
+            // .text per contract. Native codegen is left unchanged.
+            #[cfg(all(target_arch = "riscv32", target_os = "none"))]
+            core::hint::cold_path();
             return Err(ReadError::source_empty(requested, remaining));
         }
         // The cursor is always within data. A request that fits in the
