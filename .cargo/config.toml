@@ -1,5 +1,5 @@
 [registries]
-groundhog = { index = "sparse+https://crates.thruput.network/api/v1/crates/" }
+thruput = { index = "sparse+https://crates.thruput.network/api/v1/crates/" }
 
 [source]
-groundhog = { registry = "sparse+https://crates.thruput.network/api/v1/crates/" }
+thruput = { registry = "sparse+https://crates.thruput.network/api/v1/crates/" }
