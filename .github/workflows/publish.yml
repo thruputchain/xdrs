@@ -26,7 +26,7 @@ jobs:
     runs-on: namespace-profile-hogd-linux-2604
     env:
       # Plain Cargo calls in the dry-run action need registry authentication too.
-      CARGO_REGISTRIES_GROUNDHOG_TOKEN: ${{ secrets.CARGO_PUBLISH_TOKEN }}
+      CARGO_REGISTRIES_THRUPUT_TOKEN: ${{ secrets.CARGO_PUBLISH_TOKEN }}
       CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
 
     steps:
@@ -68,7 +68,7 @@ jobs:
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
-          registry-name: groundhog
+          registry-name: thruput
 
       - name: tag commit with version
         if: ${{ !inputs.dry-run }}
@@ -108,6 +108,6 @@ jobs:
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
           git-tag: ${{ steps.publish-tag.outputs.tag }}
-          registry-name: groundhog
+          registry-name: thruput
           registry-token: ${{ secrets.CARGO_PUBLISH_TOKEN }}
           publish-delay-seconds: '10'
