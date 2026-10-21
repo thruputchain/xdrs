@@ -279,14 +279,14 @@ cargo doc --open
 
 ## License
 
-See [LICENSE](LICENSE).
+See [LICENSE](../LICENSE).
 
 
 ## Reproducible performance runs
 
 ```sh
-python3 scripts/benchmark.py --output target/bench-report
-python3 scripts/benchmark.py --quick --output target/bench-smoke
+python3 rpc/scripts/benchmark.py --output target/bench-report
+python3 rpc/scripts/benchmark.py --quick --output target/bench-smoke
 ```
 
 The script builds release binaries with the lockfile, then runs:
@@ -337,8 +337,8 @@ repetitions that rotate the baseline, the candidate, and a candidate control
 that reruns the exact candidate executables, so the control's A/A change shows
 run-to-run noise. It records executable hashes and host
 metadata under `xdr-rpc-runtime-evaluation`. Run it locally with
-`python3 scripts/evaluate_runtimes.py --output target/runtime-evaluation`, then
-summarize the raw report with `python3 scripts/summarize_runtimes.py
+`python3 rpc/scripts/evaluate_runtimes.py --output target/runtime-evaluation`, then
+summarize the raw report with `python3 rpc/scripts/summarize_runtimes.py
 target/runtime-evaluation/evaluation.json`. The smoke README describes the runtime
 partitioning controls; these belong to the benchmark programs, not the driver.
 

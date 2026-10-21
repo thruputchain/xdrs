@@ -219,7 +219,7 @@ it isolates server-side scaling by throwing independent client processes at it.
 
 ### Full runtime evaluation
 
-`python3 scripts/evaluate_runtimes.py --output benchmark-results/evaluation`
+`python3 rpc/scripts/evaluate_runtimes.py --output benchmark-results/evaluation`
 (from the repository root) builds the baseline (where the checkout forked from
 `main`, or `--baseline <rev>`) and the current checkout in separate Cargo target
 directories. It runs identical benchmark sources against both drivers; each
@@ -250,4 +250,4 @@ and dynamic/CPU-affinity pool workloads at 2 and 8 workers per process. Use
 `--smoke-only` to collect these as a supplementary run. `--skip-build` on the
 smoke harness uses the exact prebuilt sibling executables whose hashes were
 recorded, avoiding any rebuild during measurement. Summarize reports with
-`python3 scripts/summarize_runtimes.py path/to/evaluation.json`.
+`python3 rpc/scripts/summarize_runtimes.py path/to/evaluation.json`.
