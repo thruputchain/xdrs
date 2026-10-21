@@ -5,5 +5,4 @@ self-hosted-runner:
   # (actionlint only knows GitHub-hosted labels, so each custom label must be
   # declared.)
   labels:
-    - hog1
     - namespace-profile-hogd-linux-2604

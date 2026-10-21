@@ -314,19 +314,17 @@ fixed request rate, and its tail latency must not be presented as such.
 `e2e.json` retains all runs, throughput, p50/p95/p99, payload/concurrency,
 completion counts, dispatch mode, source SHA, CPU, Rust version, and worker count.
 `primitives.json`, `summary.md`, and diagnostic logs accompany it. Benchmarks do
-not execute in PR CI. Pushes to main after merges trigger the RPC Metrics
-workflow; a manual run is also available. It checks out the selected commit
-through `hog_sched` on a dedicated benchmark host, runs the
-component and separate-process matrix, and writes JSON to `groundhogchain/metrics_history` using hogd's
-`metrics/<name>/main/<commit-time>_<commit>` layout. The metric names are
-`xdr-rpc-e2e` and `xdr-rpc-components`. Source checkout and baseline fetches use
-the job's read-only `GITHUB_TOKEN` in a temporary Git configuration on the worker.
-The worker removes that configuration when the job exits. Metrics publication
-uses `METRICS_HISTORY_WRITE_KEY`, a write-enabled deploy key for
-`groundhogchain/metrics_history`, forwarded through the scheduler's SSH agent.
-Configure that secret before running the workflow; no source deploy key is needed.
-Failed or partial runs are not published as successful measurements; diagnostics
-are printed in the workflow log. No timing threshold gates PRs.
+not execute in this repository's CI. The cluster workflows live in the private
+`thruputchain/benchmarks` repository, so no workflow here can reach the hog
+cluster's runners: it polls `main` and runs the RPC metrics for each new head,
+and maintainers can dispatch a run for any commit on an xdrs branch. See that
+repository's README for how to request a run. It checks out the selected commit
+through `hog_sched` on a dedicated benchmark host, runs these scripts' component
+and separate-process matrix, and writes JSON to `groundhogchain/metrics_history`
+using hogd's `metrics/<name>/main/<commit-time>_<commit>` layout. The metric
+names are `xdr-rpc-e2e` and `xdr-rpc-components`. Failed or partial runs are not
+published as successful measurements; diagnostics are printed in the workflow
+log. No timing threshold gates PRs.
 
 The manual workflow's `full_evaluation` input additionally compares a baseline
 and the candidate with identical harnesses and isolated build directories. The
