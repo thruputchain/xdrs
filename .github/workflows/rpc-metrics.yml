@@ -17,10 +17,6 @@ on:
 permissions:
   contents: read
 
-env:
-  CARGO_REGISTRIES_THRUPUT_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
-  CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
-
 jobs:
   metrics:
     runs-on: self-hosted
@@ -53,18 +49,15 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           REPOSITORY: ${{ github.repository }}
           SOURCE_GIT_TOKEN: ${{ github.token }}
-          REGISTRY_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
         run: |
           echo "Branch name: $BRANCH_NAME"
           hog_sched \
-            --i="${REPO_NAME}-${RUN_ID}" \
+            --i="${REPO_NAME}-rpc-${RUN_ID}" \
             --key=github_repo --value="$REPOSITORY" \
             --key=git_token --value="$SOURCE_GIT_TOKEN" \
             --key=git_branch --value="$BRANCH_NAME" \
             --key=git_commit --value="$SOURCE_SHA" \
-            --key=cargo_registry_token --value="$REGISTRY_TOKEN" \
-            --key=cargo_registry_global_credential_providers --value="$CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS" \
             --key=full_evaluation --value="$FULL_EVALUATION" \
             --key=pool_evaluation --value="$POOL_EVALUATION" \
             --timeout-sec=6600 \
-            ./scripts/schedules/metrics.toml
+            ./rpc/scripts/schedules/metrics.toml

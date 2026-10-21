@@ -3,13 +3,18 @@ members = [
     "xdr-common",
     "xdr-derive",
     "xdr-repr",
+    "rpc/rpc_api",
+    "rpc/rpc_driver",
+    "rpc/bench-compare",
+    "rpc/rpc-smoke",
+    "rpc/rpc-api-fixture",
 ]
 exclude = [
     "wasm-size-test",
 ]
 
 [workspace.package]
-version = "0.12.0"
+version = "0.16.0"
 edition = "2024"
 rust-version = "1.96"
 authors = ["Groundhog Team"]
@@ -26,15 +31,51 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.12.0", registry = "thruput" }
-xdr-repr = { path = "xdr-repr", version = "=0.12.0", registry = "thruput" }
-xdr-common = { path = "xdr-common", version = "=0.12.0", registry = "thruput" }
+xdr-derive = { path = "xdr-derive", version = "=0.16.0", registry = "thruput" }
+xdr-repr = { path = "xdr-repr", version = "=0.16.0", registry = "thruput" }
+xdr-common = { path = "xdr-common", version = "=0.16.0", registry = "thruput" }
+xdrs = { path = ".", version = "0.16.0", registry = "thruput" }
+rpc_driver = { path = "rpc/rpc_driver", version = "0.16.0", registry = "thruput" }
+# rpc_api versions independently of the workspace (it is the stable API
+# boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
+rpc_api = { path = "rpc/rpc_api", version = "0.3.1", registry = "thruput" }
 
 pretty_assertions = "1.4.1"
 heapless = "0.9.3"
 
+# Workspace lints are the RPC crates' policy (rpc/*). The xdrs crates set
+# their own `[lints]` tables and don't inherit these.
 [workspace.lints.rust]
-unsafe_code = "allow"
+# Safety
+unsafe_op_in_unsafe_fn = "warn"
+
+# Quality
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+elided_lifetimes_in_paths = "warn"
+
+[workspace.lints.clippy]
+# Correctness & clarity (pedantic subset — useful without being noisy)
+cloned_instead_of_copied = "warn"
+explicit_iter_loop = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+map_unwrap_or = "warn"
+needless_pass_by_value = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+unnested_or_patterns = "warn"
+
+# Performance
+trivially_copy_pass_by_ref = "warn"
+unnecessary_wraps = "warn"
+
+# Nursery (stable enough to be useful)
+redundant_pub_crate = "warn"
+
+# Suppress noise from generated code (rpc_msg.rs)
+upper_case_acronyms = "allow"
+match_single_binding = "allow"
 
 [package]
 name = "xdrs"
@@ -54,6 +95,8 @@ categories.workspace = true
 exclude = [
     "rust-toolchain.toml",
     "ci.sh",
+    "cooldown.toml",
+    "rpc/",
 ]
 
 [dependencies]
@@ -86,8 +129,8 @@ heapless = ["dep:heapless", "xdr-repr?/heapless"] # serialization and schema sup
 # Enable optional features of related dependencies
 ns = ["repr", "xdr-repr/ns"]
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
 
 [package.metadata.docs.rs]
 all-features = true

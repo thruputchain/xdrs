@@ -87,6 +87,25 @@ jobs:
         run: cargo check -p xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
       - name: Check clippy
         run: cargo clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
+      - name: Check clippy (RPC crates)
+        run: >-
+          cargo clippy --all-targets --locked
+          -p rpc_api -p rpc_driver -p rpc-smoke -p rpc-api-fixture -p bench-compare
+          -- -D warnings
+      # A consumer must never end up with two incompatible copies of the RPC
+      # boundary crates in one build — that is exactly the type-identity
+      # split rpc_api exists to prevent (see "Versioning and releases" in
+      # rpc/README.md).
+      - name: Check for duplicate RPC boundary crates
+        run: |
+          DUPES=$(cargo tree --workspace --duplicates --edges normal --locked | grep -E '^(rpc_api|rpc_driver|xdrs) v' || true)
+          if [ -n "$DUPES" ]; then
+            echo "::error::Duplicate RPC boundary crates in the dependency graph:"
+            echo "$DUPES"
+            cargo tree --workspace --duplicates --edges normal --locked
+            exit 1
+          fi
+          echo "OK: no duplicate rpc_api/rpc_driver/xdrs in the graph"
       - name: Test Documentation Examples
         run: |
           cargo test --doc -p xdr-repr --features "ns,int128"

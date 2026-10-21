@@ -4,15 +4,15 @@ name = "rpc_api"
 # boundary shared by rpc_driver and generated protocol bindings, and it
 # releases only when the boundary itself changes. See "Versioning and
 # releases" in the README.
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 rust-version.workspace = true
 authors = ["Groundhog Team"]
 license = "Apache-2.0"
 publish = ["thruput"]
 description = "Stable API boundary for the Groundhog ONC-RPC stack: sender/handler traits and shared response/error types."
-repository = "https://github.com/thruputchain/xdr_rpc"
-homepage = "https://github.com/thruputchain/xdr_rpc"
+repository = "https://github.com/thruputchain/xdrs"
+homepage = "https://github.com/thruputchain/xdrs"
 readme = "../README.md"
 keywords = ["xdr", "rpc"]
 categories = ["rpc"]

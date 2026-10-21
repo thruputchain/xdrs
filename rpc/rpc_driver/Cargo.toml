@@ -7,8 +7,8 @@ authors = ["Groundhog Team"]
 license = "Apache-2.0"
 publish = ["thruput"]
 description = "Async ONC-RPC (RFC 5531) client/server library built on tokio."
-repository = "https://github.com/thruputchain/xdr_rpc"
-homepage = "https://github.com/thruputchain/xdr_rpc"
+repository = "https://github.com/thruputchain/xdrs"
+homepage = "https://github.com/thruputchain/xdrs"
 readme = "../README.md"
 keywords = ["xdr", "rpc"]
 categories = ["rpc"]
@@ -20,7 +20,7 @@ socket2 = "0.6"
 tokio = { version = "1.47.1", features = ["full"] }
 thiserror = "2.0"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
-xdrs = { registry = "thruput", version = "0.12.0", features = ["derive", "alloc"] }
+xdrs = { workspace = true, features = ["derive", "alloc"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

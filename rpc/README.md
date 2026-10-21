@@ -1,4 +1,8 @@
-# xdr_rpc
+# xdr_rpc (rpc_api, rpc_driver)
+
+The ONC-RPC stack lives in this `rpc/` directory of the `xdrs` repository
+(it was previously the separate `thruputchain/xdr_rpc` repository). Its
+crates are members of the root Cargo workspace.
 
 An async ONC-RPC (RFC 5531) client/server library for Rust, built on tokio and [xdrs](https://github.com/thruputchain/xdrs).
 
@@ -249,14 +253,16 @@ crates to republish. It versions independently of the workspace:
   generated against, so an `xdrs` release never forces an `rpc_api`
   release, and never splits the dependency tree between `rpc_api`'s `xdrs`
   and a protocol crate's. Only `rpc_driver` depends on `xdrs`.
-- **`rpc_driver` keeps the workspace version** and its own cadence,
+- **`rpc_driver` shares the workspace version with the `xdrs` crates**
+  (unified at 0.16.0 when the repositories merged) and releases with them,
   depending on the current `rpc_api` minor and re-exporting it at the
   historical paths (the 0.10.2 split was a source-compatible patch).
 - **Releases** (`publish.yml`) publish `rpc_api` under its own
   `rpc_api-v<version>` tag first — skipped when unchanged, and failing
-  loudly if its source changed without a version bump — then `rpc_driver`
-  under `v<version>`. Keep the workspace `rpc_api` dependency pin in sync
-  with `rpc_api/Cargo.toml`.
+  loudly if its source changed without a version bump — then the `xdrs`
+  crates and `rpc_driver` under the shared `v<version>` tag. Keep the
+  workspace `rpc_api` dependency pin in the root `Cargo.toml` in sync with
+  `rpc_api/Cargo.toml`.
 - **Migration:** until x23c emits `::rpc_api::` paths and protocol crates
   depend on `rpc_api` directly, a *breaking* driver release still recreates
   the version diamond for pre-split protocol crates — regenerate first.

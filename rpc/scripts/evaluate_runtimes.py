@@ -121,9 +121,13 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     work = output / 'builds'
     work.mkdir(exist_ok=True)
-    baseline = work / 'main'
+    worktree = work / 'main'
     baseline_sha = resolve_baseline(args.baseline)
-    run(['git', 'worktree', 'add', '--detach', str(baseline), baseline_sha])
+    run(['git', 'worktree', 'add', '--detach', str(worktree), baseline_sha])
+    # The worktree holds the whole repository; the RPC workspace members sit
+    # at the same path inside it as ROOT does inside this checkout.
+    toplevel = run(['git', 'rev-parse', '--show-toplevel'], capture_output=True).stdout.strip()
+    baseline = worktree / ROOT.relative_to(Path(toplevel).resolve())
     try:
         # Share the workload and runtime harness, but keep each revision's
         # service implementations (everything above the marker): if the
@@ -255,7 +259,7 @@ def main():
         data['complete'] = True
         save()
     finally:
-        run(['git', 'worktree', 'remove', '--force', str(baseline)])
+        run(['git', 'worktree', 'remove', '--force', str(worktree)])
 
 
 if __name__ == '__main__':
