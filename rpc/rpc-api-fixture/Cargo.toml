@@ -1,0 +1,24 @@
+[package]
+name = "rpc-api-fixture"
+version.workspace = true
+edition = "2024"
+rust-version.workspace = true
+publish = false
+description = "Consumer fixture proving generated-style bindings need only rpc_api"
+license = "Apache-2.0"
+repository = "https://github.com/thruputchain/xdr_rpc"
+
+# The lib target mimics x23c-generated protocol bindings and must depend on
+# rpc_api ONLY — adding rpc_driver (or anything transport-flavored) to
+# [dependencies] defeats the fixture's purpose. The integration tests wire
+# the fixture through a real driver via [dev-dependencies].
+[dependencies]
+rpc_api = { workspace = true }
+async-trait = "0.1.89"
+
+[dev-dependencies]
+rpc_driver = { workspace = true }
+tokio = { version = "1.47.1", features = ["full", "test-util"] }
+
+[lints]
+workspace = true

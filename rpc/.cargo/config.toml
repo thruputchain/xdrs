@@ -1,0 +1,5 @@
+[registries]
+thruput = { index = "sparse+https://crates.thruput.network/api/v1/crates/" }
+
+[source]
+thruput = { registry = "sparse+https://crates.thruput.network/api/v1/crates/" }

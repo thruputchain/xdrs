@@ -1,0 +1,25 @@
+[package]
+name = "rpc_api"
+# Versioned independently of the workspace: this crate is the stable API
+# boundary shared by rpc_driver and generated protocol bindings, and it
+# releases only when the boundary itself changes. See "Versioning and
+# releases" in the README.
+version = "0.3.0"
+edition = "2024"
+rust-version.workspace = true
+authors = ["Groundhog Team"]
+license = "Apache-2.0"
+publish = ["thruput"]
+description = "Stable API boundary for the Groundhog ONC-RPC stack: sender/handler traits and shared response/error types."
+repository = "https://github.com/thruputchain/xdr_rpc"
+homepage = "https://github.com/thruputchain/xdr_rpc"
+readme = "../README.md"
+keywords = ["xdr", "rpc"]
+categories = ["rpc"]
+
+[dependencies]
+async-trait = "0.1.89"
+thiserror = "2.0"
+
+[lints]
+workspace = true

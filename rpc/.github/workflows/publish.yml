@@ -1,0 +1,253 @@
+# Releases every published crate in this repository in one idempotent pass.
+#
+# Publishing runs in dependency order:
+#
+#   1. `rpc_api` — the stable API boundary crate (sender/handler traits and
+#      shared response/error types). It versions independently of the
+#      workspace and publishes under its own `rpc_api-v<version>` tag.
+#   2. `rpc_driver` — the transport/pool implementation, workspace-versioned
+#      and published under the `v<version>` tag. It depends on the published
+#      `rpc_api`.
+#
+# Every step tolerates re-runs: the cargo-release-tag action recreates tags
+# at HEAD and treats an already-pushed tag on this commit as released, and
+# `cargo publish` skips versions the registry already has — so a run that
+# fails partway is resumed by dispatching it again (on the tagged commit;
+# running on a later commit without a version bump fails at the tag step,
+# deliberately). When a release doesn't bump `rpc_api`, its tag stays at the
+# previous release commit and — after verifying the version is really in the
+# registry and the source still matches the tag — its publish step is
+# skipped.
+#
+# Nothing is tagged or pushed until every check has passed: the offline
+# dry run, and the preflight that proves the release tags and rpc_api are
+# consistent with the registry and with HEAD. A run that fails in preflight
+# leaves the repository untouched, so the fix can be released from a new
+# commit without cleaning up a stale tag first.
+#
+# Dispatch with dry_run for all of the verification and none of the tagging
+# or publishing.
+name: Release package
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run only (no tag/publish)'
+        required: false
+        type: boolean
+        default: false
+
+# Two concurrent releases would race on tags and registry state; queue them.
+concurrency:
+  group: publish
+
+env:
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  # The stable API boundary crate: versioned independently of the workspace,
+  # published under its own `rpc_api-v<version>` tag.
+  API_PACKAGES: rpc_api
+  # Workspace-versioned crates published under the `v<version>` tag.
+  PRIMARY_PACKAGES: rpc_driver
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    permissions:
+      contents: write # pushes the release tags
+    runs-on: namespace-profile-hogd-linux-2604
+    env:
+      # cargo vendor in the dry-run action resolves against the private registry.
+      CARGO_REGISTRIES_THRUPUT_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+      CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
+
+    steps:
+      # No persisted credentials: the tag action pushes with github.token
+      # itself. Full history brings every tag, so preflight reads them locally.
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install rustup if needed
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+            curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused \
+              --location --silent --show-error --fail https://sh.rustup.rs \
+              | sh -s -- --default-toolchain none --profile minimal -y
+            echo "CARGO_HOME=$CARGO_HOME" >> "$GITHUB_ENV"
+            echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Set up Rust 1.96
+        run: |
+          rustup toolchain install 1.96.0 --profile minimal --component clippy,rustfmt --no-self-update
+          rustup default 1.96.0
+
+      - name: Install cargo-hack
+        env:
+          CARGO_HACK_VERSION: '0.6.45'
+        run: |
+          source "$HOME/.cargo/env"
+          if [ "$(cargo hack --version 2>/dev/null | awk '{print $2}')" != "$CARGO_HACK_VERSION" ]; then
+            cargo install cargo-hack --version "=$CARGO_HACK_VERSION" --locked
+          fi
+          cargo hack --version
+
+      # Verifies both crates offline, in dependency order: the action
+      # packages each listed crate into vendor/ before the next one resolves
+      # against it, so rpc_api must precede rpc_driver.
+      - name: Publish dry run
+        uses: thruputchain/actions/cargo-publish-dry-run@c003527eff402d35ff357854a591cbec2935c2c3
+        with:
+          packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
+          registry-name: thruput
+
+      # Everything the tag and publish steps would reject, checked first and
+      # without side effects, so a failure here pushes no tag:
+      #
+      #   - `v<workspace version>` must not already exist on another commit
+      #     (a release commit re-run is fine; a new commit needs a bump).
+      #   - When `rpc_api-v<rpc_api version>` exists on another commit, that
+      #     version must be in the registry (otherwise a previous run died
+      #     between tag push and publish) and HEAD's rpc_api source must be
+      #     identical to the tagged commit (otherwise rpc_api changed without
+      #     a bump, and rpc_driver would publish against an older registry
+      #     rpc_api than the dry run validated).
+      #
+      # Runs in dry runs too; they are the way to check a release commit
+      # before tagging it.
+      - name: Preflight release tags and rpc_api consistency
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA=$(git rev-parse HEAD)
+
+          package_version() {
+            cargo metadata --no-deps --format-version 1 \
+              | jq -r --arg name "$1" '.packages[] | select(.name == $name) | .version'
+          }
+          remote_tag_commit() {
+            # Prints the commit a tag points at, or nothing when the tag does
+            # not exist. Checkout fetched every remote tag (fetch-depth: 0).
+            git rev-parse -q --verify "refs/tags/$1^{commit}" || true
+          }
+          index_path() {
+            local name="$1"
+            case ${#name} in
+              1) echo "1/$name" ;;
+              2) echo "2/$name" ;;
+              3) echo "3/${name:0:1}/$name" ;;
+              *) echo "${name:0:2}/${name:2:2}/$name" ;;
+            esac
+          }
+          registry_has() {
+            # Whether the thruput registry index lists $1@$2. 404/410/451
+            # mean the crate has no published versions at all.
+            local index_url
+            index_url=$(sed -n 's/.*"sparse+\([^"]*\)".*/\1/p' .cargo/config.toml | head -n 1)
+            local entries
+            entries=$(mktemp)
+            local http_code
+            http_code=$(curl -sS -o "$entries" -w '%{http_code}' \
+              -H "Authorization: ${REGISTRY_TOKEN}" "${index_url}$(index_path "$1")")
+            case "$http_code" in
+              200) jq -r '.vers' "$entries" | grep -qx "$2" ;;
+              404|410|451) return 1 ;;
+              *)
+                echo "::error::Registry probe for '$1' failed (HTTP $http_code); cannot tell whether $1@$2 is published"
+                exit 1
+                ;;
+            esac
+          }
+
+          for pkg in $PRIMARY_PACKAGES; do
+            VERSION=$(package_version "$pkg")
+            TAG="v$VERSION"
+            TAG_SHA=$(remote_tag_commit "$TAG")
+            if [[ -n "$TAG_SHA" && "$TAG_SHA" != "$HEAD_SHA" ]]; then
+              echo "::error::Tag $TAG already exists at $TAG_SHA, not at HEAD ($HEAD_SHA)"
+              echo "::error::Bump the workspace version to release this commit, or delete the tag if $pkg@$VERSION was never published"
+              exit 1
+            fi
+            echo "OK: $TAG is free or already at HEAD"
+          done
+
+          for pkg in $API_PACKAGES; do
+            VERSION=$(package_version "$pkg")
+            TAG="rpc_api-v$VERSION"
+            TAG_SHA=$(remote_tag_commit "$TAG")
+            if [[ -z "$TAG_SHA" || "$TAG_SHA" == "$HEAD_SHA" ]]; then
+              echo "OK: $TAG is free or already at HEAD; $pkg@$VERSION releases from this commit"
+              continue
+            fi
+            if ! registry_has "$pkg" "$VERSION"; then
+              echo "::error::Tag $TAG points at $TAG_SHA (not this commit) but $pkg@$VERSION is not in the registry"
+              echo "::error::A previous release likely died between tag push and publish. Re-run from the tagged commit, or delete the stale tag"
+              exit 1
+            fi
+            if ! git diff --quiet "refs/tags/$TAG^{commit}" HEAD -- "$pkg"; then
+              echo "::error::$pkg changed since tag $TAG ($TAG_SHA) but its version was not bumped"
+              echo "::error::Bump the version in $pkg/Cargo.toml (and the workspace dependency pin) before releasing"
+              exit 1
+            fi
+            echo "OK: $pkg@$VERSION is published and its source matches $TAG; skipping its publish is safe"
+          done
+
+      # Tags HEAD `v<workspace version>`, pushes, and fails when the tag
+      # already exists on another commit (a release commit re-run is a no-op;
+      # a new commit without a version bump fails here, loudly — the action's
+      # default). Preflight has already proven neither applies.
+      - name: Tag commit with version
+        if: ${{ inputs.dry_run == false }}
+        id: publish-tag
+        uses: thruputchain/actions/cargo-release-tag@c003527eff402d35ff357854a591cbec2935c2c3
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          github-token: ${{ github.token }}
+
+      # rpc_api gets its own `rpc_api-v<version>` tag, which legitimately
+      # pre-exists at an older commit whenever a release doesn't bump rpc_api.
+      # skip-if-published verifies against the registry that such a version is
+      # really already published — released=false then skips the publish step
+      # below. Preflight has already checked the same, plus that HEAD's
+      # rpc_api source matches the tag, so this cannot fail after the
+      # workspace tag was pushed.
+      - name: Tag rpc_api
+        if: ${{ inputs.dry_run == false }}
+        id: tag-rpc-api
+        uses: thruputchain/actions/cargo-release-tag@c003527eff402d35ff357854a591cbec2935c2c3
+        with:
+          packages: ${{ env.API_PACKAGES }}
+          tag-prefix: 'rpc_api-v'
+          github-token: ${{ github.token }}
+          on-existing-tag: 'skip-if-published'
+          registry-name: thruput
+          registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+
+      # Unlike the dry run, the publish steps resolve deps against the live
+      # registry — hence the dependency order: rpc_api publishes before
+      # rpc_driver, whose publish-time verify build needs it in the registry.
+      - name: Publish rpc_api
+        if: ${{ inputs.dry_run == false && steps.tag-rpc-api.outputs.released == 'true' }}
+        uses: thruputchain/actions/cargo-publish@c003527eff402d35ff357854a591cbec2935c2c3
+        with:
+          packages: ${{ env.API_PACKAGES }}
+          git-tag: ${{ steps.tag-rpc-api.outputs.tag }}
+          tag-prefix: 'rpc_api-v'
+          registry-name: thruput
+          registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+
+      - name: Publish rpc_driver
+        if: ${{ inputs.dry_run == false }}
+        uses: thruputchain/actions/cargo-publish@c003527eff402d35ff357854a591cbec2935c2c3
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          git-tag: ${{ steps.publish-tag.outputs.tag }}
+          registry-name: thruput
+          registry-token: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}

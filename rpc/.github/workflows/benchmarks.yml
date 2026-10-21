@@ -1,0 +1,70 @@
+name: RPC Metrics (hog_sched)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full_evaluation:
+        description: Compare main and candidate across the full suite and runtime layouts
+        type: boolean
+        default: false
+      pool_evaluation:
+        description: Compare the connection pools against each other on the candidate
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_REGISTRIES_THRUPUT_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+  CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
+
+jobs:
+  metrics:
+    runs-on: self-hosted
+    timeout-minutes: 120
+    steps:
+      - name: Verify metrics history write credential
+        env:
+          METRICS_HISTORY_WRITE_KEY: ${{ secrets.METRICS_HISTORY_WRITE_KEY }}
+        run: |
+          if [[ -z "$METRICS_HISTORY_WRITE_KEY" ]]; then
+            echo "::error::Configure METRICS_HISTORY_WRITE_KEY for groundhogchain/metrics_history before running RPC metrics."
+            exit 1
+          fi
+      # hog_sched forwards this agent to the cluster host for history writes.
+      # Source reads use this job's read-only GITHUB_TOKEN instead.
+      - uses: webfactory/ssh-agent@e83874834305fe9a4a2997156cb26c5de65a8555 # v0.10.0
+        with:
+          ssh-private-key: ${{ secrets.METRICS_HISTORY_WRITE_KEY }}
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Run hog schedule
+        env:
+          BRANCH_NAME: ${{ github.ref_name }}
+          FULL_EVALUATION: ${{ inputs.full_evaluation || false }}
+          POOL_EVALUATION: ${{ inputs.pool_evaluation || false }}
+          SOURCE_SHA: ${{ github.sha }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          RUN_ID: ${{ github.run_id }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_GIT_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ secrets.GROUNDHOG_REGISTRY_TOKEN }}
+        run: |
+          echo "Branch name: $BRANCH_NAME"
+          hog_sched \
+            --i="${REPO_NAME}-${RUN_ID}" \
+            --key=github_repo --value="$REPOSITORY" \
+            --key=git_token --value="$SOURCE_GIT_TOKEN" \
+            --key=git_branch --value="$BRANCH_NAME" \
+            --key=git_commit --value="$SOURCE_SHA" \
+            --key=cargo_registry_token --value="$REGISTRY_TOKEN" \
+            --key=cargo_registry_global_credential_providers --value="$CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS" \
+            --key=full_evaluation --value="$FULL_EVALUATION" \
+            --key=pool_evaluation --value="$POOL_EVALUATION" \
+            --timeout-sec=6600 \
+            ./scripts/schedules/metrics.toml
