@@ -220,11 +220,14 @@ it isolates server-side scaling by throwing independent client processes at it.
 ### Full runtime evaluation
 
 `python3 scripts/evaluate_runtimes.py --output benchmark-results/evaluation`
-(from the repository root) builds main at the pinned comparison commit and the
-current checkout in separate Cargo target directories. It runs identical
-benchmark sources against both drivers, enabling main's inline-ready dispatch.
-The report records executable SHA-256 hashes, CPU topology, worker budgets, every
-repetition, and completion checks.
+(from the repository root) builds the baseline (where the checkout forked from
+`main`, or `--baseline <rev>`) and the current checkout in separate Cargo target
+directories. It runs identical benchmark sources against both drivers; each
+keeps its own service implementations so a handler API change still builds.
+Every run also includes a candidate control that reruns the candidate's own
+executables, measuring run-to-run noise. The report records executable
+SHA-256 hashes, CPU topology, worker budgets, every repetition, and completion
+checks.
 
 The complete `rpc_bench` suite runs with 2, 4, and 8 total workers, comparing one
 shared runtime against separate client/server runtimes with half the workers each.

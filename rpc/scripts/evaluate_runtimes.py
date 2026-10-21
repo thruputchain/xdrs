@@ -16,7 +16,6 @@ import subprocess
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE = '6b63990b191c667e9ee26652e621e40a0ac10a3c'
 
 
 def run(argv, root=ROOT, **kwargs):
@@ -34,12 +33,36 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def build(root, target, baseline, log):
+def resolve_baseline(requested):
+    """The revision to compare against: `requested` if given, else where this
+    checkout's history meets origin's main, so a branch is measured against
+    the main it was built on rather than a pinned commit that goes stale. On
+    main itself that is HEAD, so compare against its parent instead."""
+    if requested:
+        # Any local revision (HEAD^, a short SHA, a branch) resolves directly;
+        # fetch only a commit this checkout doesn't have yet.
+        local = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'{requested}^{{commit}}'],
+                               cwd=ROOT, text=True, capture_output=True)
+        if local.returncode == 0:
+            return local.stdout.strip()
+        run(['git', 'fetch', '--quiet', '--depth=1', 'origin', requested])
+        return run(['git', 'rev-parse', 'FETCH_HEAD'], capture_output=True).stdout.strip()
+    shallow = run(['git', 'rev-parse', '--is-shallow-repository'],
+                  capture_output=True).stdout.strip() == 'true'
+    # Shallow CI checkouts carry no history to find the fork point in.
+    run(['git', 'fetch', '--quiet', *(['--unshallow'] if shallow else []), 'origin', 'main'])
+    head = run(['git', 'rev-parse', 'HEAD'], capture_output=True).stdout.strip()
+    base = run(['git', 'merge-base', 'HEAD', 'FETCH_HEAD'], capture_output=True).stdout.strip()
+    if base == head:
+        base = run(['git', 'rev-parse', 'HEAD^'], capture_output=True).stdout.strip()
+    return base
+
+
+def build(root, target, log):
     env = dict(os.environ, CARGO_TARGET_DIR=str(target))
-    features = ['--features', 'concurrent-dispatch'] if baseline else []
     # Ask Cargo for the exact executable, not an arbitrary matching stale file.
     result = run(['cargo', 'bench', '--locked', '-p', 'rpc_driver', '--bench',
-                  'rpc_bench', '--bench', 'primitives', '--no-run', '--message-format=json', *features],
+                  'rpc_bench', '--bench', 'primitives', '--no-run', '--message-format=json'],
                  root=root, env=env, stdout=subprocess.PIPE, stderr=log, timeout=900)
     bench = next(Path(row['executable']) for row in map(json.loads, result.stdout.splitlines())
                  if row.get('executable') and row.get('target', {}).get('name') == 'rpc_bench')
@@ -50,16 +73,6 @@ def build(root, target, baseline, log):
     return {'suite': bench, 'primitives': primitives, 'client': target / 'release/rpc-bench-client',
             'server': target / 'release/rpc-smoke-server',
             'smoke': target / 'release/rpc-smoke', 'smoke_client': target / 'release/rpc-smoke-client'}
-
-
-def without_multiplex_pool(text):
-    """Drop the smoke client's MultiplexPool import and pool arm for a driver without it."""
-    import re
-    stripped = text.replace('FixedSerialPool, MultiplexPool, ProgVers', 'FixedSerialPool, ProgVers')
-    stripped, arms = re.subn(r'\n        "multiplex" => Arc::new\(\n(?:.*\n)*?        \),\n', '\n', stripped)
-    if 'MultiplexPool' in stripped or arms != 1:
-        raise RuntimeError('could not adapt rpc-smoke/src/client.rs for a baseline without MultiplexPool')
-    return stripped
 
 
 def e2e(binaries, workers, shards, case, quick, log):
@@ -101,50 +114,48 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--quick', action='store_true')
     parser.add_argument('--smoke-only', action='store_true', help='write a separate smoke-evaluation.json report')
+    parser.add_argument('--baseline', help='revision to compare against (default: where HEAD forked '
+                        "from origin's main, or HEAD's parent on main)")
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     work = output / 'builds'
     work.mkdir(exist_ok=True)
     baseline = work / 'main'
-    run(['git', 'fetch', '--depth=1', 'origin', BASELINE])
-    run(['git', 'worktree', 'add', '--detach', str(baseline), BASELINE])
+    baseline_sha = resolve_baseline(args.baseline)
+    run(['git', 'worktree', 'add', '--detach', str(baseline), baseline_sha])
     try:
-        baseline_has_multiplex_pool = 'MultiplexPool' in (baseline / 'rpc_driver/src/pool.rs').read_text()
-        # Identical benchmark source for both implementations. Only adapt the
-        # baseline's removed configuration API and absent pools; do not alter
-        # driver sources.
+        # Share the workload and runtime harness, but keep each revision's
+        # service implementations (everything above the marker): if the
+        # candidate changes the handler API, its handlers would not compile
+        # against the baseline driver, and a compatibility shim would distort
+        # the result. Without an API change the two prefixes are identical.
         for name in ['rpc_driver/benches/rpc_bench.rs', 'rpc-smoke/src/server.rs',
                      'rpc-smoke/src/bench_client.rs', 'rpc-smoke/src/runtime.rs',
                      'rpc-smoke/src/harness.rs', 'rpc-smoke/src/client.rs',
                      'rpc-smoke/src/profile.rs', 'rpc-smoke/src/metrics.rs']:
             text = (ROOT / name).read_text()
-            if name.endswith('rpc_bench.rs'):
-                text = text.replace('let start = async move {',
-                                    'let config = config.with_inline_ready_dispatch(true);\n    let start = async move {')
-                text = text.replace('ConnectionConfig::default()',
-                                    'ConnectionConfig::default().with_inline_ready_dispatch(true)')
-                text = text.replace('ConnectionConfig::new(None, client_services)',
-                                    'ConnectionConfig::new(None, client_services).with_inline_ready_dispatch(true)')
-            elif name.endswith('server.rs'):
-                text = text.replace('ConnectionConfig::new(None, services);',
-                                    'ConnectionConfig::new(None, services).with_inline_ready_dispatch(true);')
-            elif name == 'rpc-smoke/src/client.rs' and not baseline_has_multiplex_pool:
-                # The baseline predates MultiplexPool; the smoke client keeps the
-                # pools both revisions have, and no smoke case selects the other.
-                text = without_multiplex_pool(text)
+            marker = {'rpc_driver/benches/rpc_bench.rs': '// Setup helpers',
+                      'rpc-smoke/src/server.rs': '#[derive(Parser)]'}.get(name)
+            if marker:
+                original = (baseline / name).read_text()
+                text = original[:original.index(marker)] + text[text.index(marker):]
             (baseline / name).write_text(text)
         with (output / 'build.log').open('w') as log:
             binaries = {
-                'main': build(baseline, work / 'main-target', True, log),
-                'candidate': build(ROOT, work / 'candidate-target', False, log),
+                'main': build(baseline, work / 'main-target', log),
+                'candidate': build(ROOT, work / 'candidate-target', log),
             }
         hashes = {variant: {name: digest(path) for name, path in bins.items()}
                   for variant, bins in binaries.items()}
-        if any(hashes['main'][key] == hashes['candidate'][key] for key in hashes['main']):
-            raise RuntimeError('baseline and candidate unexpectedly share an executable')
+        # A change need not reach every executable (a read-loop change leaves
+        # the primitives bench alone, a pool change the server), so only
+        # refuse when nothing the evaluation runs differs from the baseline.
+        if all(hashes['main'][key] == hashes['candidate'][key] for key in hashes['main']):
+            raise RuntimeError(f'the candidate builds the same executables as baseline {baseline_sha}; '
+                               'nothing to compare (pass --baseline to pick another revision)')
         data = {'metadata': {
-            'baseline_sha': BASELINE,
+            'baseline_sha': baseline_sha,
             'candidate_sha': run(['git', 'rev-parse', 'HEAD'], capture_output=True).stdout.strip(),
             'hostname': platform.node(), 'cpu_count': os.cpu_count(),
             'affinity': sorted(os.sched_getaffinity(0)),
@@ -152,6 +163,7 @@ def main():
             'toolchain': run(['rustc', '--version'], capture_output=True).stdout.strip(),
             'scope': 'smoke' if args.smoke_only else 'full',
             'baseline_inline_callbacks': True,
+            'control': 'candidate_control reruns the exact candidate executables',
             'quick': args.quick, 'executable_sha256': hashes,
             'started_unix': time.time(),
             'notes': 'No CPU pinning. E2E worker count is per process; suite count is total. '
@@ -176,17 +188,23 @@ def main():
                     save()
             for workers in [2, 4, 8]:
                 for repeat in range(repetitions):
-                    variants = ['main', 'candidate'] if repeat % 2 == 0 else ['candidate', 'main']
+                    # candidate_control reruns the exact candidate executable: its
+                    # A/A change measures host and scheduler variation, not an
+                    # implementation change. Rotate all three positions so a
+                    # consistent run-order bias cannot pass for a real change.
+                    variants = ['main', 'candidate', 'candidate_control']
+                    variants = variants[repeat % 3:] + variants[:repeat % 3]
                     for split in [False, True]:
                         for variant in variants:
+                            binary_variant = 'candidate' if variant == 'candidate_control' else variant
                             label = f'suite-{variant}-w{workers}-split{int(split)}-r{repeat}'
                             destination = output / f'{label}.json'
                             env = dict(os.environ, TOKIO_WORKER_THREADS=str(workers),
                                        RPC_BENCH_SERVER_WORKERS=str(workers // 2 if split else 0),
                                        RPC_BENCH_OUTPUT=str(destination))
                             with (output / f'{label}.log').open('w') as log:
-                                run([str(binaries[variant]['suite']), '--json', *(['--quick'] if args.quick else [])],
-                                    root=baseline if variant == 'main' else ROOT,
+                                run([str(binaries[binary_variant]['suite']), '--json', *(['--quick'] if args.quick else [])],
+                                    root=baseline if binary_variant == 'main' else ROOT,
                                     env=env, stdout=log, stderr=log, timeout=300)
                             result = json.loads(destination.read_text())
                             rows = result['scenarios']
@@ -202,8 +220,9 @@ def main():
                         for shards in [s for s in [1, 2, 4] if s <= workers and s <= case[0]]:
                             for variant in variants:
                                 label = f'e2e-{variant}-w{workers}-s{shards}-c{case[0]}-q{case[1]}-b{case[2]}-r{repeat}'
+                                binary_variant = 'candidate' if variant == 'candidate_control' else variant
                                 with (output / f'{label}.log').open('w') as log:
-                                    row = e2e(binaries[variant], workers, shards, case, args.quick, log)
+                                    row = e2e(binaries[binary_variant], workers, shards, case, args.quick, log)
                                 data['e2e'].append(dict(variant=variant, workers=workers, shards=shards,
                                                         repeat=repeat, **row))
                                 save()
@@ -216,11 +235,13 @@ def main():
         for workers in [2, 8]:
             for repeat in range(repetitions):
                 for name, arguments in smoke_cases:
-                    for variant in (['main', 'candidate'] if repeat % 2 == 0 else ['candidate', 'main']):
+                    variants = ['main', 'candidate', 'candidate_control']
+                    for variant in variants[repeat % 3:] + variants[:repeat % 3]:
+                        binary_variant = 'candidate' if variant == 'candidate_control' else variant
                         label = f'smoke-{variant}-w{workers}-{name}-r{repeat}'
                         env = dict(os.environ, TOKIO_WORKER_THREADS=str(workers))
                         with (output / f'{label}.log').open('w') as log:
-                            result = run([str(binaries[variant]['smoke']), '--skip-build', '--json',
+                            result = run([str(binaries[binary_variant]['smoke']), '--skip-build', '--json',
                                           '--duration', '1' if args.quick else '5', *arguments],
                                          env=env, stdout=subprocess.PIPE, stderr=log, timeout=180)
                         rows = json.loads(result.stdout)

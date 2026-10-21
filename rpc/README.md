@@ -322,11 +322,15 @@ Configure that secret before running the workflow; no source deploy key is neede
 Failed or partial runs are not published as successful measurements; diagnostics
 are printed in the workflow log. No timing threshold gates PRs.
 
-The manual workflow's `full_evaluation` input additionally compares the pinned
-main baseline and candidate with identical harnesses and isolated build directories.
-It runs all RPC scenarios, components, runtime layouts, and smoke workloads with
-three interleaved repetitions, recording executable hashes and host metadata under
-`xdr-rpc-runtime-evaluation`. Run it locally with
+The manual workflow's `full_evaluation` input additionally compares a baseline
+and the candidate with identical harnesses and isolated build directories. The
+baseline is where the candidate forked from `main` (on `main` itself, the
+previous commit); `--baseline <rev>` picks another. It runs all RPC scenarios,
+components, runtime layouts, and smoke workloads with three interleaved
+repetitions that rotate the baseline, the candidate, and a candidate control
+that reruns the exact candidate executables, so the control's A/A change shows
+run-to-run noise. It records executable hashes and host
+metadata under `xdr-rpc-runtime-evaluation`. Run it locally with
 `python3 scripts/evaluate_runtimes.py --output target/runtime-evaluation`, then
 summarize the raw report with `python3 scripts/summarize_runtimes.py
 target/runtime-evaluation/evaluation.json`. The smoke README describes the runtime
