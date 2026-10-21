@@ -1,0 +1,41 @@
+name: Benchmarks
+
+# Starts the RPC metrics run for each push to main. The run itself happens in
+# the private thruputchain/benchmarks repository, on the hog cluster; this job
+# only asks for it, on a GitHub-hosted runner.
+#
+# BENCHMARKS_DISPATCH_TOKEN is a fine-grained PAT whose only repository is
+# thruputchain/benchmarks and whose only permission is Actions: read and write.
+# It is a secret of the `benchmarks` environment, whose deployment branches are
+# limited to main, so only workflows already merged to main can read it; a
+# workflow on any other branch or a fork PR never sees it. See xdrs/README.md
+# in that repository.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch RPC metrics
+    # Forks have no token and no business starting runs.
+    if: github.repository == 'thruputchain/xdrs'
+    environment: benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch xdrs-rpc-metrics.yml
+        env:
+          GH_TOKEN: ${{ secrets.BENCHMARKS_DISPATCH_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Configure BENCHMARKS_DISPATCH_TOKEN to start RPC metrics runs."
+            exit 1
+          fi
+          gh workflow run xdrs-rpc-metrics.yml -R thruputchain/benchmarks \
+            -f sha="$SHA" -f branch=main
+          echo "Dispatched RPC metrics for $SHA (thruputchain/benchmarks)" >> "$GITHUB_STEP_SUMMARY"

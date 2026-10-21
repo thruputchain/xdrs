@@ -316,8 +316,9 @@ completion counts, dispatch mode, source SHA, CPU, Rust version, and worker coun
 `primitives.json`, `summary.md`, and diagnostic logs accompany it. Benchmarks do
 not execute in this repository's CI. The cluster workflows live in the private
 `thruputchain/benchmarks` repository, so no workflow here can reach the hog
-cluster's runners: it polls `main` and runs the RPC metrics for each new head,
-and maintainers can dispatch a run for any commit on an xdrs branch. See that
+cluster's runners. Each push to `main` asks that repository to run the RPC
+metrics for it (`.github/workflows/benchmarks.yml`), and maintainers can
+dispatch a run there for any commit on an xdrs branch. See that
 repository's README for how to request a run. It checks out the selected commit
 through `hog_sched` on a dedicated benchmark host, runs these scripts' component
 and separate-process matrix, and writes JSON to `groundhogchain/metrics_history`
