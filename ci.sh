@@ -61,6 +61,11 @@ cargo test --doc --features "alloc,derive,repr,ns,int128"
 
 cargo clippy --workspace --all-features
 
+# RPC crates (rpc/) deny clippy warnings outright
+cargo clippy --all-targets --locked \
+    -p rpc_api -p rpc_driver -p rpc-smoke -p rpc-api-fixture -p bench-compare \
+    -- -D warnings
+
 set +x
 
 cargo fmt --check --quiet || {

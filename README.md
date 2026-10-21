@@ -39,6 +39,15 @@ The library is `no_std`. Optional features:
 See the crate docs (`cargo doc --open`) for details on each feature and
 the full API.
 
+## ONC-RPC (`rpc/`)
+
+The ONC-RPC stack built on `xdrs` — `rpc_api` (the stable API boundary for
+generated bindings) and `rpc_driver` (transports, pools, server) — lives in
+[`rpc/`](rpc/README.md). It was previously the `thruputchain/xdr_rpc`
+repository. `rpc_driver` shares the workspace version with the `xdrs`
+crates and releases under the same `v<version>` tag; `rpc_api` versions
+independently under `rpc_api-v<version>`.
+
 ## TODOs
 
 - Consider adding an optional recursion depth limit for decoding
