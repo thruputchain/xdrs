@@ -1,0 +1,7 @@
+# thruput-sdk-rs's toolchain: the rv32 build needs nightly (-Zbuild-std and
+# panic=immediate-abort) and rust-src.
+[toolchain]
+channel = "nightly-2026-07-01"
+targets = ["riscv32im-unknown-none-elf"]
+profile = "minimal"
+components = ["rust-src"]

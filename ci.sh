@@ -13,58 +13,61 @@ rustup toolchain install \
     --no-self-update
 
 # check the root library without alloc
-cargo test -F int128
+cargo test --locked -F int128
 
 # run the same malformed-input corpus with compact ReadError diagnostics
-cargo test --no-default-features
-cargo test --no-default-features --features derive --test read_errors
+cargo test --locked --no-default-features
+cargo test --locked --no-default-features --features derive --test read_errors
 
 # check derive macros without alloc (const writers for VecM/BytesM/StringM
 # are only exercised with non-empty static data in no-alloc builds)
-cargo test -F derive,int128
+cargo test --locked -F derive,int128
 
 # check feature "permissive"
-cargo test -F permissive,int128 --test ints
+cargo test --locked -F permissive,int128 --test ints
 
 # check feature "int128"
-cargo test -F int128 --test ints
+cargo test --locked -F int128 --test ints
 
 # check everything else
-cargo test --workspace --all-features
+cargo test --locked --workspace --all-features
 
 # Test on xdr-common with varying features
-cargo test -p xdr-common --no-default-features
-cargo test -p xdr-common --features alloc
-cargo test -p xdr-common --features serde
-cargo test -p xdr-common --features schemars
+cargo test --locked -p xdr-common --no-default-features
+cargo test --locked -p xdr-common --features alloc
+cargo test --locked -p xdr-common --features serde
+cargo test --locked -p xdr-common --features schemars
 
 # Compile Serde support for a target with no standard library.
 rustup target add thumbv7em-none-eabi
-cargo check -p xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
+cargo check --locked -p xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
 
-cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build -p xdr-common --no-default-features -Zbuild-std=core,alloc
-cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build -p xdr-common --features alloc -Zbuild-std=core,alloc
+cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build --locked -p xdr-common --no-default-features -Zbuild-std=core,alloc
+cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build --locked -p xdr-common --features alloc -Zbuild-std=core,alloc
 
 # check that the benchmarks compile
-cargo test --benches --all-features
+cargo test --locked --benches --all-features
 
 # check that the docs build cleanly
-cargo doc --workspace --all-features
+cargo doc --locked --workspace --all-features
 
 # docsrs docs
 RUSTDOCFLAGS="--cfg docsrs" \
-    cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" doc --workspace --all-features --no-deps
+    cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" doc --locked --workspace --all-features --no-deps
 
 # Test Documentation Examples
-cargo test --doc -p xdr-repr --features "ns,int128"
-cargo test --doc --features "alloc,derive,repr,ns,int128"
+cargo test --locked --doc -p xdr-repr --features "ns,int128"
+cargo test --locked --doc --features "alloc,derive,repr,ns,int128"
 
-cargo clippy --workspace --all-features
+cargo clippy --locked --workspace --all-features
 
 # RPC crates (rpc/) deny clippy warnings outright
 cargo clippy --all-targets --locked \
     -p rpc_api -p rpc_driver -p rpc-smoke -p rpc-api-fixture -p bench-compare \
     -- -D warnings
+
+# xdrs linked into an rv32 binary with the thruput-sdk-rs contract config
+bash scripts/rv32-size.sh
 
 set +x
 
