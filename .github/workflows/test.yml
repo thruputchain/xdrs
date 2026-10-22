@@ -137,6 +137,23 @@ jobs:
         env:
           RUSTDOCFLAGS: "--cfg docsrs --deny warnings"
 
+  rv32-size:
+    needs: dependency-policy # don't build anything until deps are known to be clean
+    name: RV32 size probe
+    runs-on: ubuntu-latest
+    # No RUSTFLAGS here: it would replace rv32-size-test's SDK target
+    # rustflags, which already deny warnings.
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: true
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Build with the thruput-sdk-rs rv32 config
+        run: |
+          bash scripts/rv32-size.sh | tee "$RUNNER_TEMP/rv32-size.txt"
+          tail -n 1 "$RUNNER_TEMP/rv32-size.txt" >> "$GITHUB_STEP_SUMMARY"
+
   stable-compat:
     needs: dependency-policy # don't build anything until deps are known to be clean
     name: Current stable compatibility
