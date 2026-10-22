@@ -50,7 +50,7 @@ def main():
         binaries = args.bin_dir.resolve()
     else:
         with (output / 'primitives.json').open('w') as stdout:
-            command(['cargo', 'bench', '--locked', '-p', 'rpc_driver', '--bench', 'primitives',
+            command(['cargo', 'bench', '-p', 'rpc_driver', '--bench', 'primitives',
                      '--locked', '--', *(['--quick'] if args.quick else [])], stdout=stdout, env=env, timeout=600)
         command(['cargo', 'build', '--release', '--locked', '-p', 'rpc-smoke'], env=env, timeout=600)
         # Ask Cargo instead of assuming CARGO_TARGET_DIR is unset.
