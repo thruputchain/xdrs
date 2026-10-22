@@ -53,39 +53,39 @@ jobs:
       - name: Check format
         run: cargo fmt --check
       - name: Build workspace (no features)
-        run: cargo build --workspace
+        run: cargo build --locked --workspace
       - name: Test (root lib without alloc)
-        run: cargo test -F int128
+        run: cargo test --locked -F int128
       - name: Test compact read errors
         run: |
-          cargo test --no-default-features
-          cargo test --no-default-features --features derive --test read_errors
+          cargo test --locked --no-default-features
+          cargo test --locked --no-default-features --features derive --test read_errors
       - name: Test (derive without alloc)
         # const writers for VecM/BytesM/StringM are only exercised with
         # non-empty static data in no-alloc builds
-        run: cargo test -F derive,int128
+        run: cargo test --locked -F derive,int128
       - name: Test (feature permissive)
-        run: cargo test -F permissive,int128 --test ints
+        run: cargo test --locked -F permissive,int128 --test ints
       - name: Test (feature int128)
-        run: cargo test -F int128 --test ints
+        run: cargo test --locked -F int128 --test ints
       - name: Test (workspace)
-        run: cargo test --workspace --all-features
+        run: cargo test --locked --workspace --all-features
       - name: Test (benchmarks)
-        run: cargo test --benches --all-features
+        run: cargo test --locked --benches --all-features
       - name: Docs
-        run: cargo doc --workspace --all-features
+        run: cargo doc --locked --workspace --all-features
       - name: Test (xdr-common)
         run: |
-          cargo test -p thruput-xdr-common --no-default-features
-          cargo test -p thruput-xdr-common --features alloc
-          cargo test -p thruput-xdr-common --features serde
-          cargo test -p thruput-xdr-common --features schemars
+          cargo test --locked -p thruput-xdr-common --no-default-features
+          cargo test --locked -p thruput-xdr-common --features alloc
+          cargo test --locked -p thruput-xdr-common --features serde
+          cargo test --locked -p thruput-xdr-common --features schemars
       - name: Check xdr-common Serde without std
-        run: cargo check -p thruput-xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
+        run: cargo check --locked -p thruput-xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
       - name: Check RV32 without std
-        run: cargo check -p thruput-xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
+        run: cargo check --locked -p thruput-xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
       - name: Check clippy
-        run: cargo clippy --all-features -p thruput-xdr-common -p thruput-xdr-repr -p thruput-xdr-derive -p thruput-xdrs
+        run: cargo clippy --locked --all-features -p thruput-xdr-common -p thruput-xdr-repr -p thruput-xdr-derive -p thruput-xdrs
       - name: Check clippy (RPC crates)
         run: >-
           cargo clippy --all-targets --locked
@@ -107,8 +107,8 @@ jobs:
           echo "OK: no duplicate thruput-rpc-api/thruput-rpc-driver/thruput-xdrs in the graph"
       - name: Test Documentation Examples
         run: |
-          cargo test --doc -p thruput-xdr-repr --features "ns,int128"
-          cargo test --doc --features "alloc,derive,repr,ns,int128"
+          cargo test --locked --doc -p thruput-xdr-repr --features "ns,int128"
+          cargo test --locked --doc --features "alloc,derive,repr,ns,int128"
 
   nightly:
     needs: dependency-policy # don't build anything until deps are known to be clean
@@ -129,10 +129,10 @@ jobs:
           components: rust-src
       - name: Build xdr-common with build-std
         run: |
-          cargo +nightly-2026-05-26 build -p thruput-xdr-common --no-default-features -Zbuild-std=core,alloc
-          cargo +nightly-2026-05-26 build -p thruput-xdr-common --features alloc -Zbuild-std=core,alloc
+          cargo +nightly-2026-05-26 build --locked -p thruput-xdr-common --no-default-features -Zbuild-std=core,alloc
+          cargo +nightly-2026-05-26 build --locked -p thruput-xdr-common --features alloc -Zbuild-std=core,alloc
       - name: Docs (docsrs)
-        run: cargo +nightly-2026-05-26 doc --workspace --all-features --no-deps
+        run: cargo +nightly-2026-05-26 doc --locked --workspace --all-features --no-deps
         env:
           RUSTDOCFLAGS: "--cfg docsrs --deny warnings"
 
@@ -154,4 +154,4 @@ jobs:
         with:
           toolchain: stable
       - name: Test workspace on current stable
-        run: cargo +stable test --workspace --all-features
+        run: cargo +stable test --locked --workspace --all-features

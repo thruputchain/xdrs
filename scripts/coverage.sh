@@ -3,7 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 coverage_toolchain="${XDRS_COVERAGE_TOOLCHAIN:-nightly-2026-05-26}"
-cov() { cargo +"$coverage_toolchain" llvm-cov "$@"; }
+# --locked: build exactly the committed Cargo.lock.
+cov() { cargo +"$coverage_toolchain" llvm-cov "$@" --locked; }
 cov clean --workspace
 cov --no-report --workspace --lib --tests \
     --features alloc,derive,repr,ns,int128,heapless,serde,schemars

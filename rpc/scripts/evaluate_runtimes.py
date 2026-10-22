@@ -61,7 +61,7 @@ def resolve_baseline(requested):
 def build(root, target, log):
     env = dict(os.environ, CARGO_TARGET_DIR=str(target))
     # Ask Cargo for the exact executable, not an arbitrary matching stale file.
-    result = run(['cargo', 'bench', '--locked', '-p', 'rpc_driver', '--bench',
+    result = run(['cargo', 'bench', '--locked', '-p', 'thruput-rpc-driver', '--bench',
                   'rpc_bench', '--bench', 'primitives', '--no-run', '--message-format=json'],
                  root=root, env=env, stdout=subprocess.PIPE, stderr=log, timeout=900)
     bench = next(Path(row['executable']) for row in map(json.loads, result.stdout.splitlines())
