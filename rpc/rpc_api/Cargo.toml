@@ -1,5 +1,5 @@
 [package]
-name = "rpc_api"
+name = "xdr-rpc-api"
 # Versioned independently of the workspace: this crate is the stable API
 # boundary shared by rpc_driver and generated protocol bindings, and it
 # releases only when the boundary itself changes. See "Versioning and
@@ -9,13 +9,18 @@ edition = "2024"
 rust-version.workspace = true
 authors = ["Groundhog Team"]
 license = "Apache-2.0"
-publish = ["thruput"]
+publish = ["crates-io"]
 description = "Stable API boundary for the Groundhog ONC-RPC stack: sender/handler traits and shared response/error types."
 repository = "https://github.com/thruputchain/xdrs"
 homepage = "https://github.com/thruputchain/xdrs"
 readme = "../README.md"
 keywords = ["xdr", "rpc"]
 categories = ["rpc"]
+
+# The package was renamed for crates.io, where `rpc_api` belongs to another
+# project. The library keeps its name so `use rpc_api::...` is unchanged.
+[lib]
+name = "rpc_api"
 
 [dependencies]
 async-trait = "0.1.89"

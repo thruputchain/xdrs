@@ -13,11 +13,11 @@ repository = "https://github.com/thruputchain/xdrs"
 # [dependencies] defeats the fixture's purpose. The integration tests wire
 # the fixture through a real driver via [dev-dependencies].
 [dependencies]
-rpc_api = { workspace = true }
+xdr-rpc-api = { workspace = true }
 async-trait = "0.1.89"
 
 [dev-dependencies]
-rpc_driver = { workspace = true }
+xdr-rpc-driver = { workspace = true }
 tokio = { version = "1.47.1", features = ["full", "test-util"] }
 
 [lints]

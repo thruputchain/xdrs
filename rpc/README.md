@@ -1,4 +1,4 @@
-# xdr_rpc (rpc_api, rpc_driver)
+# xdr_rpc (xdr-rpc-api, xdr-rpc-driver)
 
 The ONC-RPC stack lives in this `rpc/` directory of the `xdrs` repository
 (it was previously the separate `thruputchain/xdr_rpc` repository). Its
@@ -218,17 +218,23 @@ Instrumentation cost is workload- and subscriber-dependent. Measure it on the
 target system with:
 
 ```sh
-cargo bench -p rpc_driver --bench rpc_bench -- --tracing debug
+cargo bench -p xdr-rpc-driver --bench rpc_bench -- --tracing debug
 ```
 
 See `rpc-smoke/src/server.rs` for a complete reference example.
 
 ## Workspace
 
+The two published packages are named `xdr-rpc-api` and `xdr-rpc-driver` on
+crates.io (`rpc_api` was already taken there), but their libraries keep the
+names `rpc_api` and `rpc_driver`, so code still writes `use rpc_api::...` and
+`use rpc_driver::...`. Depend on them as
+`xdr-rpc-api = "0.3"` / `xdr-rpc-driver = "0.16"`.
+
 | Crate | Purpose |
 |---|---|
-| `rpc_api` | Stable API boundary: `RpcSender`/`RpcHandler` traits, `CallBuf`, `RpcResponse`, `RpcError`, `ProgramError`, `ProgVers` |
-| `rpc_driver` | Core RPC library (transports, pools, server, dispatch); re-exports `rpc_api` |
+| `xdr-rpc-api` (lib `rpc_api`) | Stable API boundary: `RpcSender`/`RpcHandler` traits, `CallBuf`, `RpcResponse`, `RpcError`, `ProgramError`, `ProgVers` |
+| `xdr-rpc-driver` (lib `rpc_driver`) | Core RPC library (transports, pools, server, dispatch); re-exports `rpc_api` |
 | `rpc-smoke` | Multi-connection smoke test suite |
 | `bench-compare` | Local benchmark comparison tooling |
 | `rpc-api-fixture` | Unpublished fixture proving generated-style bindings need only `rpc_api` |
@@ -257,12 +263,13 @@ crates to republish. It versions independently of the workspace:
   (unified at 0.16.0 when the repositories merged) and releases with them,
   depending on the current `rpc_api` minor and re-exporting it at the
   historical paths (the 0.10.2 split was a source-compatible patch).
-- **Releases** (`publish.yml`) publish `rpc_api` under its own
-  `rpc_api-v<version>` tag first — skipped when unchanged, and failing
-  loudly if its source changed without a version bump — then the `xdrs`
-  crates and `rpc_driver` under the shared `v<version>` tag. Keep the
-  workspace `rpc_api` dependency pin in the root `Cargo.toml` in sync with
-  `rpc_api/Cargo.toml`.
+- **Releases** (`publish.yml`) publish `xdr-rpc-api` to crates.io under
+  its own `xdr-rpc-api-v<version>` tag first — skipped when unchanged, and
+  failing loudly if its source changed without a version bump — then the
+  `xdrs` crates and `xdr-rpc-driver` under the shared `v<version>` tag.
+  Keep the workspace `xdr-rpc-api` dependency pin in the root `Cargo.toml`
+  in sync with `rpc_api/Cargo.toml`. (Releases up to `rpc_api-v0.3.1` went
+  to the private `thruput` registry under the old package names.)
 - **Migration:** until x23c emits `::rpc_api::` paths and protocol crates
   depend on `rpc_api` directly, a *breaking* driver release still recreates
   the version diamond for pre-split protocol crates — regenerate first.
@@ -291,7 +298,7 @@ python3 rpc/scripts/benchmark.py --quick --output target/bench-smoke
 
 The script builds release binaries with the lockfile, then runs:
 
-- `cargo bench -p rpc_driver --bench primitives`: x23-style empty function,
+- `cargo bench -p xdr-rpc-driver --bench primitives`: x23-style empty function,
   ready future, scalar XDR encode/decode (0, 4, and 400 wire bytes), scheduler
   yield, and buffered TCP record timings. Codec measurements time batches and
   retain seven trials. The scalar loops match x23 wire sizes, not its generated

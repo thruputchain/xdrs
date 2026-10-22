@@ -17,8 +17,7 @@ permissions:
 jobs:
   # Audit Rust dependencies
   dependency-policy:
-    # (No registry credentials here: this repo publishes to the private registry
-    # but depends on nothing from it, so the graph resolves unauthenticated.)
+    # (No registry credentials here: every dependency comes from crates.io.)
     permissions:
       contents: read
     uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@c003527eff402d35ff357854a591cbec2935c2c3
@@ -90,7 +89,7 @@ jobs:
       - name: Check clippy (RPC crates)
         run: >-
           cargo clippy --all-targets --locked
-          -p rpc_api -p rpc_driver -p rpc-smoke -p rpc-api-fixture -p bench-compare
+          -p xdr-rpc-api -p xdr-rpc-driver -p rpc-smoke -p rpc-api-fixture -p bench-compare
           -- -D warnings
       # A consumer must never end up with two incompatible copies of the RPC
       # boundary crates in one build — that is exactly the type-identity
@@ -98,14 +97,14 @@ jobs:
       # rpc/README.md).
       - name: Check for duplicate RPC boundary crates
         run: |
-          DUPES=$(cargo tree --workspace --duplicates --edges normal --locked | grep -E '^(rpc_api|rpc_driver|xdrs) v' || true)
+          DUPES=$(cargo tree --workspace --duplicates --edges normal --locked | grep -E '^(xdr-rpc-api|xdr-rpc-driver|xdrs) v' || true)
           if [ -n "$DUPES" ]; then
             echo "::error::Duplicate RPC boundary crates in the dependency graph:"
             echo "$DUPES"
             cargo tree --workspace --duplicates --edges normal --locked
             exit 1
           fi
-          echo "OK: no duplicate rpc_api/rpc_driver/xdrs in the graph"
+          echo "OK: no duplicate xdr-rpc-api/xdr-rpc-driver/xdrs in the graph"
       - name: Test Documentation Examples
         run: |
           cargo test --doc -p xdr-repr --features "ns,int128"

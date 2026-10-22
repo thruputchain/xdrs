@@ -8,12 +8,12 @@ env:
   # Dependency order: the action packages each listed crate into vendor/
   # before the next one resolves against it. Keep in sync with publish.yml.
   PUBLISH_PACKAGES: >-
-    rpc_api
+    xdr-rpc-api
     xdr-common
     xdr-derive
     xdr-repr
     xdrs
-    rpc_driver
+    xdr-rpc-driver
 
 permissions:
   contents: read
@@ -23,10 +23,6 @@ jobs:
     permissions:
       contents: read
     runs-on: namespace-profile-hogd-linux-2604
-    env:
-      # Plain Cargo calls in the dry-run action need registry authentication too.
-      CARGO_REGISTRIES_THRUPUT_TOKEN: ${{ secrets.CARGO_PUBLISH_TOKEN }}
-      CARGO_REGISTRY_GLOBAL_CREDENTIAL_PROVIDERS: cargo:token
 
     steps:
       - name: Checkout
@@ -65,4 +61,4 @@ jobs:
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
-          registry-name: thruput
+          registry-name: crates-io

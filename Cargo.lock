@@ -86,7 +86,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "bench-compare"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -672,51 +672,26 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
 name = "rpc-api-fixture"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "async-trait",
- "rpc_api",
- "rpc_driver",
  "tokio",
+ "xdr-rpc-api",
+ "xdr-rpc-driver",
 ]
 
 [[package]]
 name = "rpc-smoke"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "async-trait",
  "clap",
- "rpc_driver",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "rpc_api"
-version = "0.3.1"
-dependencies = [
- "async-trait",
- "thiserror",
-]
-
-[[package]]
-name = "rpc_driver"
-version = "0.16.0"
-dependencies = [
- "async-trait",
- "libc",
- "rpc_api",
- "serde",
- "serde_json",
- "socket2",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "xdrs",
+ "xdr-rpc-driver",
 ]
 
 [[package]]
@@ -1128,7 +1103,7 @@ dependencies = [
 
 [[package]]
 name = "xdr-common"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "escape-bytes",
  "regex-lite",
@@ -1139,7 +1114,7 @@ dependencies = [
 
 [[package]]
 name = "xdr-derive"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -1150,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "xdr-repr"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "heapless",
  "pretty_assertions",
@@ -1160,8 +1135,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "xdr-rpc-api"
+version = "0.3.1"
+dependencies = [
+ "async-trait",
+ "thiserror",
+]
+
+[[package]]
+name = "xdr-rpc-driver"
+version = "0.16.1"
+dependencies = [
+ "async-trait",
+ "libc",
+ "serde",
+ "serde_json",
+ "socket2",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "xdr-rpc-api",
+ "xdrs",
+]
+
+[[package]]
 name = "xdrs"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "criterion",
  "heapless",

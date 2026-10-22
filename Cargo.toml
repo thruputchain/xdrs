@@ -14,12 +14,12 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.16.0"
+version = "0.16.1"
 edition = "2024"
 rust-version = "1.96"
 authors = ["Groundhog Team"]
-license = "Apache-2.0"  
-publish = ["thruput"]
+license = "Apache-2.0"
+publish = ["crates-io"]
 description = "XDR Serialization Library"
 repository = "https://github.com/thruputchain/xdrs"
 homepage = "https://github.com/thruputchain/xdrs"
@@ -31,14 +31,14 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.16.0", registry = "thruput" }
-xdr-repr = { path = "xdr-repr", version = "=0.16.0", registry = "thruput" }
-xdr-common = { path = "xdr-common", version = "=0.16.0", registry = "thruput" }
-xdrs = { path = ".", version = "0.16.0", registry = "thruput" }
-rpc_driver = { path = "rpc/rpc_driver", version = "0.16.0", registry = "thruput" }
-# rpc_api versions independently of the workspace (it is the stable API
+xdr-derive = { path = "xdr-derive", version = "=0.16.1" }
+xdr-repr = { path = "xdr-repr", version = "=0.16.1" }
+xdr-common = { path = "xdr-common", version = "=0.16.1" }
+xdrs = { path = ".", version = "0.16.1" }
+xdr-rpc-driver = { path = "rpc/rpc_driver", version = "0.16.1" }
+# xdr-rpc-api versions independently of the workspace (it is the stable API
 # boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
-rpc_api = { path = "rpc/rpc_api", version = "0.3.1", registry = "thruput" }
+xdr-rpc-api = { path = "rpc/rpc_api", version = "0.3.1" }
 
 pretty_assertions = "1.4.1"
 heapless = "0.9.3"
@@ -93,9 +93,12 @@ keywords.workspace = true
 categories.workspace = true
 
 exclude = [
+    ".github/",
     "rust-toolchain.toml",
     "ci.sh",
     "cooldown.toml",
+    "deny.toml",
+    "scripts/",
     "rpc/",
 ]
 

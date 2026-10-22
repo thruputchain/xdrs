@@ -41,12 +41,13 @@ the full API.
 
 ## ONC-RPC (`rpc/`)
 
-The ONC-RPC stack built on `xdrs` — `rpc_api` (the stable API boundary for
-generated bindings) and `rpc_driver` (transports, pools, server) — lives in
+The ONC-RPC stack built on `xdrs` — `xdr-rpc-api` (library `rpc_api`, the
+stable API boundary for generated bindings) and `xdr-rpc-driver` (library
+`rpc_driver`: transports, pools, server) — lives in
 [`rpc/`](rpc/README.md). It was previously the `thruputchain/xdr_rpc`
-repository. `rpc_driver` shares the workspace version with the `xdrs`
-crates and releases under the same `v<version>` tag; `rpc_api` versions
-independently under `rpc_api-v<version>`.
+repository. `xdr-rpc-driver` shares the workspace version with the `xdrs`
+crates and releases under the same `v<version>` tag; `xdr-rpc-api` versions
+independently under `xdr-rpc-api-v<version>`.
 
 ## TODOs
 
