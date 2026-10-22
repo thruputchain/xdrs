@@ -6,7 +6,7 @@
 #   1. `xdr-rpc-api` (library `rpc_api`): the stable API boundary crate
 #      (sender/handler traits and shared response/error types). It versions
 #      independently of the workspace, releases under its own
-#      `xdr-rpc-api-v<version>` tag, and is skipped when a release doesn't
+#      `rpc_api-v<version>` tag, and is skipped when a release doesn't
 #      bump it (and its package is unchanged since its tag).
 #   2. The workspace-versioned crates, `xdr-common`, `xdr-derive`,
 #      `xdr-repr`, `xdrs` and `xdr-rpc-driver`, under the shared
@@ -45,7 +45,7 @@ concurrency:
 env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   # The stable API boundary crate: versioned independently of the workspace,
-  # published under its own `xdr-rpc-api-v<version>` tag.
+  # published under its own `rpc_api-v<version>` tag.
   API_PACKAGES: xdr-rpc-api
   # Workspace-versioned crates published under the `v<version>` tag, in
   # dependency order.
@@ -121,7 +121,7 @@ jobs:
         with:
           mode: check
           packages: ${{ env.API_PACKAGES }}
-          tag-prefix: 'xdr-rpc-api-v'
+          tag-prefix: 'rpc_api-v'
           on-existing-tag: skip-if-published
           bootstrap-token: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
 
@@ -141,7 +141,7 @@ jobs:
         uses: thruputchain/actions/cargo-release-tag@4e90cc39e4143f52e27360e95c1528c9be8cecb8
         with:
           packages: ${{ env.API_PACKAGES }}
-          tag-prefix: 'xdr-rpc-api-v'
+          tag-prefix: 'rpc_api-v'
           github-token: ${{ github.token }}
 
       - name: Tag workspace crates
@@ -161,7 +161,7 @@ jobs:
         with:
           mode: publish
           packages: ${{ env.API_PACKAGES }}
-          tag-prefix: 'xdr-rpc-api-v'
+          tag-prefix: 'rpc_api-v'
           git-tag: ${{ steps.tag-api.outputs.tag }}
           bootstrap-token: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
 

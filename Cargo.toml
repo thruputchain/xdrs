@@ -38,7 +38,7 @@ xdrs = { path = ".", version = "0.16.1" }
 xdr-rpc-driver = { path = "rpc/rpc_driver", version = "0.16.1" }
 # xdr-rpc-api versions independently of the workspace (it is the stable API
 # boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
-xdr-rpc-api = { path = "rpc/rpc_api", version = "0.3.1" }
+xdr-rpc-api = { path = "rpc/rpc_api", version = "0.3.2" }
 
 pretty_assertions = "1.4.1"
 heapless = "0.9.3"

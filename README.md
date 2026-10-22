@@ -47,7 +47,7 @@ stable API boundary for generated bindings) and `xdr-rpc-driver` (library
 [`rpc/`](rpc/README.md). It was previously the `thruputchain/xdr_rpc`
 repository. `xdr-rpc-driver` shares the workspace version with the `xdrs`
 crates and releases under the same `v<version>` tag; `xdr-rpc-api` versions
-independently under `xdr-rpc-api-v<version>`.
+independently under `rpc_api-v<version>`.
 
 ## TODOs
 

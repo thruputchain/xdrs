@@ -264,7 +264,7 @@ crates to republish. It versions independently of the workspace:
   depending on the current `rpc_api` minor and re-exporting it at the
   historical paths (the 0.10.2 split was a source-compatible patch).
 - **Releases** (`publish.yml`) publish `xdr-rpc-api` to crates.io under
-  its own `xdr-rpc-api-v<version>` tag first — skipped when unchanged, and
+  its own `rpc_api-v<version>` tag first — skipped when unchanged, and
   failing loudly if its source changed without a version bump — then the
   `xdrs` crates and `xdr-rpc-driver` under the shared `v<version>` tag.
   Keep the workspace `xdr-rpc-api` dependency pin in the root `Cargo.toml`
