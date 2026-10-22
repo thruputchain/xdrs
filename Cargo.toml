@@ -38,7 +38,7 @@ xdrs = { package = "thruput-xdrs", path = ".", version = "0.16.1" }
 rpc_driver = { package = "thruput-rpc-driver", path = "rpc/rpc_driver", version = "0.16.1" }
 # rpc_api versions independently of the workspace (it is the stable API
 # boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
-rpc_api = { package = "thruput-rpc-api", path = "rpc/rpc_api", version = "0.3.2" }
+rpc_api = { package = "thruput-rpc-api", path = "rpc/rpc_api", version = "0.3.3" }
 
 pretty_assertions = "1.4.1"
 heapless = "0.9.3"

@@ -110,20 +110,44 @@ impl TestProgram_TestVersion_Client {
     pub async fn null(&self) -> Result<(), RpcError> {
         let mut call = self.handle.call_buf();
         encode_args(&mut call, &())?;
-        let buf = self.handle.send_call(Self::prog_vers(), 0, call).await?;
-        xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
+        // SAFETY: the callback lives across the await and retains no slice.
+        unsafe {
+            self.handle
+                .send_call_decoded(Self::prog_vers(), 0, call, &mut |bytes| {
+                    xdrs::txs::decode(bytes).map_err(|_| RpcError::SystemError)
+                })
+                .await
+        }
     }
     pub async fn takes_int(&self, i: i32) -> Result<i32, RpcError> {
         let mut call = self.handle.call_buf();
         encode_args(&mut call, &(i,))?;
-        let buf = self.handle.send_call(Self::prog_vers(), 1, call).await?;
-        xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
+        let mut result = None;
+        // SAFETY: callback/result live across the await; decoding retains no slice.
+        unsafe {
+            self.handle
+                .send_call_decoded(Self::prog_vers(), 1, call, &mut |bytes| {
+                    result = Some(xdrs::txs::decode(bytes).map_err(|_| RpcError::SystemError)?);
+                    Ok(())
+                })
+                .await?;
+        }
+        Ok(result.unwrap())
     }
     pub async fn takes_two_ints(&self, i1: i32, i2: i32) -> Result<i32, RpcError> {
         let mut call = self.handle.call_buf();
         encode_args(&mut call, &(i1, i2))?;
-        let buf = self.handle.send_call(Self::prog_vers(), 2, call).await?;
-        xdrs::txs::decode(&buf).map_err(|_| RpcError::SystemError)
+        let mut result = None;
+        // SAFETY: callback/result live across the await; decoding retains no slice.
+        unsafe {
+            self.handle
+                .send_call_decoded(Self::prog_vers(), 2, call, &mut |bytes| {
+                    result = Some(xdrs::txs::decode(bytes).map_err(|_| RpcError::SystemError)?);
+                    Ok(())
+                })
+                .await?;
+        }
+        Ok(result.unwrap())
     }
 }
 
