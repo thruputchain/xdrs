@@ -44,5 +44,9 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           SHA: ${{ github.sha }}
         run: |
-          gh workflow run xdrs-rpc-metrics.yml -R thruputchain/benchmarks -f sha="$SHA"
+          # The REST dispatch endpoint needs only Actions: write. `gh workflow
+          # run` would first look up the default branch, which needs Contents.
+          gh api --method POST \
+            repos/thruputchain/benchmarks/actions/workflows/xdrs-rpc-metrics.yml/dispatches \
+            -f ref=main -f "inputs[sha]=$SHA"
           echo "Dispatched RPC metrics for $SHA (thruputchain/benchmarks)" >> "$GITHUB_STEP_SUMMARY"
