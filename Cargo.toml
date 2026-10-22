@@ -10,7 +10,7 @@ members = [
     "rpc/rpc-api-fixture",
 ]
 exclude = [
-    "wasm-size-test",
+    "rv32-size-test",
 ]
 
 [workspace.package]

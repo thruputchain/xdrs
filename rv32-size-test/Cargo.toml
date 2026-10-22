@@ -1,0 +1,25 @@
+[package]
+name = "rv32-size-test"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "rv32-size-test"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+xdrs = { package = "thruput-xdrs", path = "..", default-features = false, features = ["alloc"] }
+
+# thruput-sdk-rs example-contracts' release profile.
+[profile.release]
+opt-level = 3
+overflow-checks = false
+debug = false
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+lto = true
+codegen-units = 1

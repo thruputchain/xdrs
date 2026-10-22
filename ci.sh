@@ -66,6 +66,9 @@ cargo clippy --all-targets --locked \
     -p thruput-rpc-api -p thruput-rpc-driver -p rpc-smoke -p rpc-api-fixture -p bench-compare \
     -- -D warnings
 
+# xdrs linked into an rv32 binary with the thruput-sdk-rs contract config
+bash scripts/rv32-size.sh
+
 set +x
 
 cargo fmt --check --quiet || {
