@@ -1,5 +1,5 @@
 [package]
-name = "xdr-derive"
+name = "thruput-xdr-derive"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,6 +14,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [lib]
+name = "xdr_derive"
 proc-macro = true
 doctest = true
 
@@ -24,7 +25,7 @@ quote = "1.0.43"
 syn = { version = "3.0.3", features = ["visit"] }
 
 [dev-dependencies]
-xdrs = { path = "..", features = ["alloc", "derive", "repr"] }
+xdrs = { package = "thruput-xdrs", path = "..", features = ["alloc", "derive", "repr"] }
 
 [lints.rust]
 unsafe_code = "forbid"

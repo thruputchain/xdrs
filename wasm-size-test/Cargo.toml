@@ -9,7 +9,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-xdrs = { path = "..", default-features = false, features = ["alloc"] }
+xdrs = { package = "thruput-xdrs", path = "..", default-features = false, features = ["alloc"] }
 lol_alloc = "=0.4.1"
 
 [profile.release]

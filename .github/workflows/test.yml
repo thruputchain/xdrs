@@ -76,20 +76,20 @@ jobs:
         run: cargo doc --workspace --all-features
       - name: Test (xdr-common)
         run: |
-          cargo test -p xdr-common --no-default-features
-          cargo test -p xdr-common --features alloc
-          cargo test -p xdr-common --features serde
-          cargo test -p xdr-common --features schemars
+          cargo test -p thruput-xdr-common --no-default-features
+          cargo test -p thruput-xdr-common --features alloc
+          cargo test -p thruput-xdr-common --features serde
+          cargo test -p thruput-xdr-common --features schemars
       - name: Check xdr-common Serde without std
-        run: cargo check -p xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
+        run: cargo check -p thruput-xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
       - name: Check RV32 without std
-        run: cargo check -p xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
+        run: cargo check -p thruput-xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
       - name: Check clippy
-        run: cargo clippy --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
+        run: cargo clippy --all-features -p thruput-xdr-common -p thruput-xdr-repr -p thruput-xdr-derive -p thruput-xdrs
       - name: Check clippy (RPC crates)
         run: >-
           cargo clippy --all-targets --locked
-          -p xdr-rpc-api -p xdr-rpc-driver -p rpc-smoke -p rpc-api-fixture -p bench-compare
+          -p thruput-rpc-api -p thruput-rpc-driver -p rpc-smoke -p rpc-api-fixture -p bench-compare
           -- -D warnings
       # A consumer must never end up with two incompatible copies of the RPC
       # boundary crates in one build — that is exactly the type-identity
@@ -97,17 +97,17 @@ jobs:
       # rpc/README.md).
       - name: Check for duplicate RPC boundary crates
         run: |
-          DUPES=$(cargo tree --workspace --duplicates --edges normal --locked | grep -E '^(xdr-rpc-api|xdr-rpc-driver|xdrs) v' || true)
+          DUPES=$(cargo tree --workspace --duplicates --edges normal --locked | grep -E '^(thruput-rpc-api|thruput-rpc-driver|thruput-xdrs) v' || true)
           if [ -n "$DUPES" ]; then
             echo "::error::Duplicate RPC boundary crates in the dependency graph:"
             echo "$DUPES"
             cargo tree --workspace --duplicates --edges normal --locked
             exit 1
           fi
-          echo "OK: no duplicate xdr-rpc-api/xdr-rpc-driver/xdrs in the graph"
+          echo "OK: no duplicate thruput-rpc-api/thruput-rpc-driver/thruput-xdrs in the graph"
       - name: Test Documentation Examples
         run: |
-          cargo test --doc -p xdr-repr --features "ns,int128"
+          cargo test --doc -p thruput-xdr-repr --features "ns,int128"
           cargo test --doc --features "alloc,derive,repr,ns,int128"
 
   nightly:
@@ -129,8 +129,8 @@ jobs:
           components: rust-src
       - name: Build xdr-common with build-std
         run: |
-          cargo +nightly-2026-05-26 build -p xdr-common --no-default-features -Zbuild-std=core,alloc
-          cargo +nightly-2026-05-26 build -p xdr-common --features alloc -Zbuild-std=core,alloc
+          cargo +nightly-2026-05-26 build -p thruput-xdr-common --no-default-features -Zbuild-std=core,alloc
+          cargo +nightly-2026-05-26 build -p thruput-xdr-common --features alloc -Zbuild-std=core,alloc
       - name: Docs (docsrs)
         run: cargo +nightly-2026-05-26 doc --workspace --all-features --no-deps
         env:

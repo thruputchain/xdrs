@@ -41,13 +41,17 @@ the full API.
 
 ## ONC-RPC (`rpc/`)
 
-The ONC-RPC stack built on `xdrs` — `xdr-rpc-api` (library `rpc_api`, the
-stable API boundary for generated bindings) and `xdr-rpc-driver` (library
-`rpc_driver`: transports, pools, server) — lives in
+The ONC-RPC stack built on `xdrs` — `rpc_api` (the stable API boundary for
+generated bindings) and `rpc_driver` (transports, pools, server) — lives in
 [`rpc/`](rpc/README.md). It was previously the `thruputchain/xdr_rpc`
-repository. `xdr-rpc-driver` shares the workspace version with the `xdrs`
-crates and releases under the same `v<version>` tag; `xdr-rpc-api` versions
+repository. `rpc_driver` shares the workspace version with the `xdrs`
+crates and releases under the same `v<version>` tag; `rpc_api` versions
 independently under `rpc_api-v<version>`.
+
+On crates.io every crate here is published with a `thruput-` prefix:
+`thruput-xdrs`, `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr`,
+`thruput-rpc-api` and `thruput-rpc-driver`. Their library names don't change,
+so code still uses `xdrs::`, `rpc_api::` and so on.
 
 ## TODOs
 

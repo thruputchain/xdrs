@@ -6,7 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-xdr-rpc-driver = { workspace = true }
+rpc_driver = { workspace = true }
 tokio = { version = "1.47.1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

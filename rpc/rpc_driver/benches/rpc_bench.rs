@@ -3,7 +3,7 @@
 //! Measures the single automatic dispatch/write path across latency,
 //! throughput, bidirectional RPC, and handler fanout workloads.
 //!
-//! Run: `cargo bench -p rpc_driver --bench rpc_bench`.
+//! Run: `cargo bench -p thruput-rpc-driver --bench rpc_bench`.
 //!
 //! # Flags (after `--`)
 //!

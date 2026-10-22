@@ -31,14 +31,14 @@ categories = ["data-formats"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { path = "xdr-derive", version = "=0.16.0" }
-xdr-repr = { path = "xdr-repr", version = "=0.16.0" }
-xdr-common = { path = "xdr-common", version = "=0.16.0" }
-xdrs = { path = ".", version = "0.16.0" }
-xdr-rpc-driver = { path = "rpc/rpc_driver", version = "0.16.0" }
-# xdr-rpc-api versions independently of the workspace (it is the stable API
+xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.16.0" }
+xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.16.0" }
+xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=0.16.0" }
+xdrs = { package = "thruput-xdrs", path = ".", version = "0.16.0" }
+rpc_driver = { package = "thruput-rpc-driver", path = "rpc/rpc_driver", version = "0.16.0" }
+# rpc_api versions independently of the workspace (it is the stable API
 # boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
-xdr-rpc-api = { path = "rpc/rpc_api", version = "0.3.1" }
+rpc_api = { package = "thruput-rpc-api", path = "rpc/rpc_api", version = "0.3.2" }
 
 pretty_assertions = "1.4.1"
 heapless = "0.9.3"
@@ -78,7 +78,7 @@ upper_case_acronyms = "allow"
 match_single_binding = "allow"
 
 [package]
-name = "xdrs"
+name = "thruput-xdrs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -140,6 +140,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
+name = "xdrs"
 doctest = true
 bench = false # disable libtest benchmarks, in favor of Criterion
 

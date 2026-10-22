@@ -3,15 +3,16 @@
 #
 # The crates release as two groups, in dependency order:
 #
-#   1. `xdr-rpc-api` (library `rpc_api`): the stable API boundary crate
+#   1. `thruput-rpc-api` (library `rpc_api`): the stable API boundary crate
 #      (sender/handler traits and shared response/error types). It versions
 #      independently of the workspace, releases under its own
-#      `rpc_api-v<version>` tag, and is skipped when a release doesn't
-#      bump it (and its package is unchanged since its tag).
-#   2. The workspace-versioned crates, `xdr-common`, `xdr-derive`,
-#      `xdr-repr`, `xdrs` and `xdr-rpc-driver`, under the shared
-#      `v<version>` tag. `xdr-rpc-driver` depends on the published `xdrs` and
-#      `xdr-rpc-api`, so it goes last.
+#      `rpc_api-v<version>` tag, and is skipped when a release doesn't bump
+#      it (and its package is unchanged since its tag).
+#   2. The workspace-versioned crates, `thruput-xdr-common`,
+#      `thruput-xdr-derive`, `thruput-xdr-repr`, `thruput-xdrs` and
+#      `thruput-rpc-driver`, under the shared `v<version>` tag.
+#      `thruput-rpc-driver` depends on the published `thruput-xdrs` and
+#      `thruput-rpc-api`, so it goes last.
 #
 # Nothing is tagged until the dry run and both groups' checks pass, so a run
 # that fails before tagging leaves the repository untouched. Publishing skips
@@ -46,15 +47,15 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
   # The stable API boundary crate: versioned independently of the workspace,
   # published under its own `rpc_api-v<version>` tag.
-  API_PACKAGES: xdr-rpc-api
+  API_PACKAGES: thruput-rpc-api
   # Workspace-versioned crates published under the `v<version>` tag, in
   # dependency order.
   PRIMARY_PACKAGES: >-
-    xdr-common
-    xdr-derive
-    xdr-repr
-    xdrs
-    xdr-rpc-driver
+    thruput-xdr-common
+    thruput-xdr-derive
+    thruput-xdr-repr
+    thruput-xdrs
+    thruput-rpc-driver
 
 permissions:
   contents: read
@@ -103,7 +104,7 @@ jobs:
 
       # Verifies every crate offline, in dependency order: the action
       # packages each listed crate into vendor/ before the next one resolves
-      # against it, so xdr-rpc-api and xdrs must precede xdr-rpc-driver.
+      # against it, so thruput-rpc-api and thruput-xdrs must precede thruput-rpc-driver.
       - name: Publish dry run
         uses: thruputchain/actions/cargo-publish-dry-run@4e90cc39e4143f52e27360e95c1528c9be8cecb8
         with:
@@ -111,11 +112,11 @@ jobs:
           cargo-hack-feature-options: --feature-powerset
           registry-name: crates-io
 
-      # Both groups' checks run before anything is tagged. xdr-rpc-api's tag
+      # Both groups' checks run before anything is tagged. thruput-rpc-api's tag
       # legitimately sits on an older commit when a release doesn't bump it:
       # skip-if-published then reports release=false, provided the version is
       # on crates.io and its package is unchanged since the tag.
-      - name: Check xdr-rpc-api release
+      - name: Check thruput-rpc-api release
         id: check-api
         uses: thruputchain/actions/crates-io-publish@4e90cc39e4143f52e27360e95c1528c9be8cecb8
         with:
@@ -135,7 +136,7 @@ jobs:
           packages: ${{ env.PRIMARY_PACKAGES }}
           bootstrap-token: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
 
-      - name: Tag xdr-rpc-api
+      - name: Tag thruput-rpc-api
         id: tag-api
         if: ${{ inputs.dry_run == false && steps.check-api.outputs.release == 'true' }}
         uses: thruputchain/actions/cargo-release-tag@4e90cc39e4143f52e27360e95c1528c9be8cecb8
@@ -153,9 +154,9 @@ jobs:
           github-token: ${{ github.token }}
 
       # Unlike the dry run, publishing resolves deps against crates.io, hence
-      # the order: xdr-rpc-api and the xdrs crates must be live before
-      # xdr-rpc-driver's publish-time verify build.
-      - name: Publish xdr-rpc-api
+      # the order: thruput-rpc-api and the xdrs crates must be live before
+      # thruput-rpc-driver's publish-time verify build.
+      - name: Publish thruput-rpc-api
         if: ${{ inputs.dry_run == false && steps.check-api.outputs.release == 'true' }}
         uses: thruputchain/actions/crates-io-publish@4e90cc39e4143f52e27360e95c1528c9be8cecb8
         with:
