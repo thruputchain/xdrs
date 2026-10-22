@@ -1,0 +1,48 @@
+name: Benchmarks
+
+# Starts the RPC metrics run for each push to main. The run itself happens in
+# the private thruputchain/benchmarks repository, on the hog cluster; this job
+# only asks for it, on a GitHub-hosted runner.
+#
+# It dispatches as a GitHub App whose only permission is Actions: read and
+# write, installed only on thruputchain/benchmarks. Its client ID and key
+# (GEOPHREY_CLIENT_ID, GEOPHREY_KEY) are secrets of the `benchmarks`
+# environment, whose deployment branches are limited to main, so only
+# workflows already merged to main can use them; a workflow on any other branch
+# or a fork PR never sees them. The App's runs show as <app>[bot]: the
+# benchmarks repository accepts them only for metrics of xdrs main commits and
+# refuses them for PR benchmarks. See xdrs/README.md in that repository.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: Dispatch RPC metrics
+    # Forks have no App key and no business starting runs.
+    if: github.repository == 'thruputchain/xdrs'
+    environment: benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mint dispatch token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.GEOPHREY_CLIENT_ID }}
+          private-key: ${{ secrets.GEOPHREY_KEY }}
+          owner: thruputchain
+          repositories: benchmarks
+          permission-actions: write
+
+      - name: Dispatch xdrs-rpc-metrics.yml
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh workflow run xdrs-rpc-metrics.yml -R thruputchain/benchmarks -f sha="$SHA"
+          echo "Dispatched RPC metrics for $SHA (thruputchain/benchmarks)" >> "$GITHUB_STEP_SUMMARY"
