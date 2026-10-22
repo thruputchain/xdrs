@@ -17,7 +17,9 @@ entries=$(mktemp)
 trap 'rm -f "$entries"' EXIT
 http_code=$(curl -sS -o "$entries" -w '%{http_code}' "https://index.crates.io/$path")
 case "$http_code" in
-  200) jq -r '.vers' "$entries" | grep -qxF "$version" ;;
+  # Not grep -q: exiting at the first match can fail jq with SIGPIPE,
+  # which pipefail would report as "not published".
+  200) jq -r '.vers' "$entries" | grep -xF "$version" >/dev/null ;;
   # 404 means the crate has no published versions at all.
   404) exit 1 ;;
   *)
