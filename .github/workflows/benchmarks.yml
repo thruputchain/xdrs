@@ -5,10 +5,11 @@ name: Benchmarks
 # only asks for it, on a GitHub-hosted runner.
 #
 # It dispatches as a GitHub App whose only permission is Actions: read and
-# write, installed only on thruputchain/benchmarks. Its ID and key live in the
-# `benchmarks` environment, whose deployment branches are limited to main, so
-# only workflows already merged to main can use them; a workflow on any other
-# branch or a fork PR never sees them. The App's runs show as <app>[bot]: the
+# write, installed only on thruputchain/benchmarks. Its client ID and key
+# (GEOPHREY_CLIENT_ID, GEOPHREY_KEY) are secrets of the `benchmarks`
+# environment, whose deployment branches are limited to main, so only
+# workflows already merged to main can use them; a workflow on any other branch
+# or a fork PR never sees them. The App's runs show as <app>[bot]: the
 # benchmarks repository accepts them only for metrics of xdrs main commits and
 # refuses them for PR benchmarks. See xdrs/README.md in that repository.
 
@@ -32,8 +33,8 @@ jobs:
         id: app
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.BENCHMARKS_DISPATCH_APP_ID }}
-          private-key: ${{ secrets.BENCHMARKS_DISPATCH_APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.GEOPHREY_CLIENT_ID }}
+          private-key: ${{ secrets.GEOPHREY_KEY }}
           owner: thruputchain
           repositories: benchmarks
           permission-actions: write
