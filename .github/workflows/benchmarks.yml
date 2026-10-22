@@ -6,8 +6,8 @@ name: Benchmarks
 #
 # It dispatches as a GitHub App whose only permission is Actions: read and
 # write, installed only on thruputchain/benchmarks. Its client ID and key
-# (GEOPHREY_CLIENT_ID, GEOPHREY_KEY) are secrets of the `benchmarks`
-# environment, whose deployment branches are limited to main, so only
+# (GEOPHREY_CLIENT_ID, GEOPHREY_KEY) are secrets of the `main` environment,
+# whose deployment branches are limited to the main branch, so only
 # workflows already merged to main can use them; a workflow on any other branch
 # or a fork PR never sees them. The App's runs show as <app>[bot]: the
 # benchmarks repository accepts them only for metrics of xdrs main commits and
@@ -25,7 +25,7 @@ jobs:
     name: Dispatch RPC metrics
     # Forks have no App key and no business starting runs.
     if: github.repository == 'thruputchain/xdrs'
-    environment: benchmarks
+    environment: main
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
