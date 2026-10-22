@@ -1,43 +1,32 @@
 # Releases every published crate in this repository to crates.io in one
-# idempotent pass.
+# idempotent pass, with the shared thruputchain/actions release actions.
 #
-# Publishing runs in dependency order:
+# The crates release as two groups, in dependency order:
 #
-#   1. `xdr-rpc-api` (library `rpc_api`) — the stable API boundary crate
+#   1. `xdr-rpc-api` (library `rpc_api`): the stable API boundary crate
 #      (sender/handler traits and shared response/error types). It versions
-#      independently of the workspace and publishes under its own
-#      `xdr-rpc-api-v<version>` tag.
-#   2. The workspace-versioned crates — `xdr-common`, `xdr-derive`,
-#      `xdr-repr`, `xdrs` and `xdr-rpc-driver` — published together under
-#      the shared `v<version>` tag. `xdr-rpc-driver` depends on the published
-#      `xdrs` and `xdr-rpc-api`, so it goes last.
+#      independently of the workspace, releases under its own
+#      `xdr-rpc-api-v<version>` tag, and is skipped when a release doesn't
+#      bump it (and its package is unchanged since its tag).
+#   2. The workspace-versioned crates, `xdr-common`, `xdr-derive`,
+#      `xdr-repr`, `xdrs` and `xdr-rpc-driver`, under the shared
+#      `v<version>` tag. `xdr-rpc-driver` depends on the published `xdrs` and
+#      `xdr-rpc-api`, so it goes last.
 #
-# Every step tolerates re-runs: the cargo-release-tag action recreates tags
-# at HEAD and treats an already-pushed tag on this commit as released, and
-# the publish step skips versions crates.io already has — so a run that
-# fails partway is resumed by dispatching it again (on the tagged commit;
-# running on a later commit without a version bump fails at the tag step,
-# deliberately). When a release doesn't bump `xdr-rpc-api`, its tag stays at
-# the previous release commit and — after verifying the version is really on
-# crates.io and the source still matches the tag — it is neither tagged nor
-# published.
+# Nothing is tagged until the dry run and both groups' checks pass, so a run
+# that fails before tagging leaves the repository untouched. Publishing skips
+# versions crates.io already has, so a run that fails partway is resumed by
+# dispatching it again on the tagged commit.
 #
-# Nothing is tagged or pushed until every check has passed: the offline
-# dry run, and the preflight that proves the release tags and xdr-rpc-api
-# are consistent with crates.io and with HEAD. A run that fails in preflight
-# leaves the repository untouched, so the fix can be released from a new
-# commit without cleaning up a stale tag first.
+# Authentication: crates.io trusted publishing (GitHub OIDC) for existing
+# crates; see crates-io-publish's README in thruputchain/actions. Creating a
+# crate needs the CRATES_IO_BOOTSTRAP_TOKEN secret, a crates.io API token
+# with the scopes publish-new and trusted-publishing. The publish step
+# registers this workflow as each new crate's trusted publisher, so remove
+# the secret and revoke the token once every crate exists.
 #
-# Authentication: crates.io trusted publishing (GitHub OIDC), configured on
-# each crate's crates.io settings page for this repository and workflow.
-# Trusted publishing can only be configured on a crate that already exists,
-# so a release that publishes a brand-new crate needs a crates.io API token
-# (scopes publish-new and publish-update) in the CRATES_IO_TOKEN secret.
-# When that secret is set it is used instead of OIDC; delete it once every
-# crate has a trusted publisher.
-#
-# Dispatch with dry_run for all of the verification and none of the tagging
-# or publishing.
+# Dispatch with dry_run for the dry run and the checks, with no tagging or
+# publishing.
 name: Release package
 
 on:
@@ -76,14 +65,10 @@ jobs:
       contents: write # pushes the release tags
       id-token: write # crates.io trusted publishing
     runs-on: namespace-profile-hogd-linux-2604
-    env:
-      # Only needed while a release publishes a crate that doesn't exist on
-      # crates.io yet; see the header.
-      CRATES_IO_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
     steps:
       # No persisted credentials: the tag action pushes with github.token
-      # itself. Full history brings every tag, so preflight reads them locally.
+      # itself. Full history brings every tag, which the checks read.
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -120,172 +105,71 @@ jobs:
       # packages each listed crate into vendor/ before the next one resolves
       # against it, so xdr-rpc-api and xdrs must precede xdr-rpc-driver.
       - name: Publish dry run
-        uses: thruputchain/actions/cargo-publish-dry-run@c003527eff402d35ff357854a591cbec2935c2c3
+        uses: thruputchain/actions/cargo-publish-dry-run@4e90cc39e4143f52e27360e95c1528c9be8cecb8
         with:
           packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
           registry-name: crates-io
 
-      # Everything the tag and publish steps would reject, checked first and
-      # without side effects, so a failure here pushes no tag:
-      #
-      #   - `v<workspace version>` must not already exist on another commit
-      #     (a release commit re-run is fine; a new commit needs a bump).
-      #   - When `xdr-rpc-api-v<version>` exists on another commit, that
-      #     version must be on crates.io (otherwise a previous run died
-      #     between tag push and publish) and HEAD's xdr-rpc-api source must
-      #     be identical to the tagged commit (otherwise it changed without a
-      #     bump, and xdr-rpc-driver would publish against an older
-      #     xdr-rpc-api than the dry run validated).
-      #
-      # Sets api-release=true when this commit releases xdr-rpc-api.
-      #
-      # Runs in dry runs too; they are the way to check a release commit
-      # before tagging it.
-      - name: Preflight release tags and xdr-rpc-api consistency
-        id: preflight
-        run: |
-          set -euo pipefail
-          HEAD_SHA=$(git rev-parse HEAD)
-
-          package_version() {
-            cargo metadata --no-deps --format-version 1 \
-              | jq -r --arg name "$1" '.packages[] | select(.name == $name) | .version'
-          }
-          remote_tag_commit() {
-            # Prints the commit a tag points at, or nothing when the tag does
-            # not exist. Checkout fetched every remote tag (fetch-depth: 0).
-            git rev-parse -q --verify "refs/tags/$1^{commit}" || true
-          }
-          on_crates_io() {
-            # Exit 2 from the probe (index unreachable) stops the release.
-            local rc=0
-            scripts/crates-io-has.sh "$1" "$2" || rc=$?
-            if [[ $rc -gt 1 ]]; then exit 1; fi
-            return "$rc"
-          }
-          package_dir() {
-            cargo metadata --no-deps --format-version 1 \
-              | jq -r --arg name "$1" '.packages[] | select(.name == $name) | .manifest_path' \
-              | xargs dirname | xargs realpath --relative-to=.
-          }
-
-          for pkg in $PRIMARY_PACKAGES; do
-            VERSION=$(package_version "$pkg")
-            TAG="v$VERSION"
-            TAG_SHA=$(remote_tag_commit "$TAG")
-            if [[ -n "$TAG_SHA" && "$TAG_SHA" != "$HEAD_SHA" ]]; then
-              echo "::error::Tag $TAG already exists at $TAG_SHA, not at HEAD ($HEAD_SHA)"
-              echo "::error::Bump the workspace version to release this commit, or delete the tag if $pkg@$VERSION was never published"
-              exit 1
-            fi
-            echo "OK: $TAG is free or already at HEAD for $pkg"
-          done
-
-          API_RELEASE=false
-          for pkg in $API_PACKAGES; do
-            VERSION=$(package_version "$pkg")
-            TAG="$pkg-v$VERSION"
-            TAG_SHA=$(remote_tag_commit "$TAG")
-            if [[ -z "$TAG_SHA" ]] && on_crates_io "$pkg" "$VERSION"; then
-              echo "::error::$pkg@$VERSION is already on crates.io but $TAG does not exist in this repository"
-              echo "::error::Bump the version in $(package_dir "$pkg")/Cargo.toml (and the workspace dependency pin) to release it from here"
-              exit 1
-            fi
-            if [[ -z "$TAG_SHA" || "$TAG_SHA" == "$HEAD_SHA" ]]; then
-              echo "OK: $TAG is free or already at HEAD; $pkg@$VERSION releases from this commit"
-              API_RELEASE=true
-              continue
-            fi
-            if ! on_crates_io "$pkg" "$VERSION"; then
-              echo "::error::Tag $TAG points at $TAG_SHA (not this commit) but $pkg@$VERSION is not on crates.io"
-              echo "::error::A previous release likely died between tag push and publish. Re-run from the tagged commit, or delete the stale tag"
-              exit 1
-            fi
-            PKG_DIR=$(package_dir "$pkg")
-            if ! git diff --quiet "refs/tags/$TAG^{commit}" HEAD -- "$PKG_DIR"; then
-              echo "::error::$pkg changed since tag $TAG ($TAG_SHA) but its version was not bumped"
-              echo "::error::Bump the version in $PKG_DIR/Cargo.toml (and the workspace dependency pin) before releasing"
-              exit 1
-            fi
-            echo "OK: $pkg@$VERSION is published and its source matches $TAG; skipping its release is safe"
-          done
-          echo "api-release=$API_RELEASE" >> "$GITHUB_OUTPUT"
-
-      # Tags HEAD `v<workspace version>`, pushes, and fails when the tag
-      # already exists on another commit (a release commit re-run is a no-op;
-      # a new commit without a version bump fails here, loudly — the action's
-      # default). Preflight has already proven neither applies.
-      - name: Tag commit with version
-        if: ${{ inputs.dry_run == false }}
-        uses: thruputchain/actions/cargo-release-tag@c003527eff402d35ff357854a591cbec2935c2c3
+      # Both groups' checks run before anything is tagged. xdr-rpc-api's tag
+      # legitimately sits on an older commit when a release doesn't bump it:
+      # skip-if-published then reports release=false, provided the version is
+      # on crates.io and its package is unchanged since the tag.
+      - name: Check xdr-rpc-api release
+        id: check-api
+        uses: thruputchain/actions/crates-io-publish@4e90cc39e4143f52e27360e95c1528c9be8cecb8
         with:
-          packages: ${{ env.PRIMARY_PACKAGES }}
-          github-token: ${{ github.token }}
+          mode: check
+          packages: ${{ env.API_PACKAGES }}
+          tag-prefix: 'xdr-rpc-api-v'
+          on-existing-tag: skip-if-published
+          bootstrap-token: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
 
-      # xdr-rpc-api gets its own `xdr-rpc-api-v<version>` tag, which
-      # legitimately pre-exists at an older commit whenever a release doesn't
-      # bump it; preflight has then verified the version is on crates.io and
-      # unchanged, and this step and its publish are skipped.
+      # `v<version>` must be free or already on HEAD: a new commit needs a
+      # version bump.
+      - name: Check workspace crates release
+        id: check-primary
+        uses: thruputchain/actions/crates-io-publish@4e90cc39e4143f52e27360e95c1528c9be8cecb8
+        with:
+          mode: check
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          bootstrap-token: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
+
       - name: Tag xdr-rpc-api
-        if: ${{ inputs.dry_run == false && steps.preflight.outputs.api-release == 'true' }}
-        uses: thruputchain/actions/cargo-release-tag@c003527eff402d35ff357854a591cbec2935c2c3
+        id: tag-api
+        if: ${{ inputs.dry_run == false && steps.check-api.outputs.release == 'true' }}
+        uses: thruputchain/actions/cargo-release-tag@4e90cc39e4143f52e27360e95c1528c9be8cecb8
         with:
           packages: ${{ env.API_PACKAGES }}
           tag-prefix: 'xdr-rpc-api-v'
           github-token: ${{ github.token }}
 
-      - name: Authenticate with crates.io (trusted publishing)
-        if: ${{ inputs.dry_run == false && env.CRATES_IO_TOKEN == '' }}
-        id: crates-io-auth
-        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      - name: Tag workspace crates
+        id: tag-primary
+        if: ${{ inputs.dry_run == false && steps.check-primary.outputs.release == 'true' }}
+        uses: thruputchain/actions/cargo-release-tag@4e90cc39e4143f52e27360e95c1528c9be8cecb8
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          github-token: ${{ github.token }}
 
       # Unlike the dry run, publishing resolves deps against crates.io, hence
-      # the dependency order: xdr-rpc-api and the xdrs crates must be live
-      # before xdr-rpc-driver's publish-time verify build. `cargo publish`
-      # waits for each crate to appear in the index before returning.
-      #
-      # crates.io rate-limits brand-new crates (a burst of a few, then one
-      # every few minutes), so a 429 waits and retries rather than failing a
-      # first release halfway.
-      - name: Publish to crates.io
-        if: ${{ inputs.dry_run == false }}
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token || env.CRATES_IO_TOKEN }}
-          API_RELEASE: ${{ steps.preflight.outputs.api-release }}
-        run: |
-          set -euo pipefail
-          PACKAGES="$PRIMARY_PACKAGES"
-          if [[ "$API_RELEASE" == "true" ]]; then
-            PACKAGES="$API_PACKAGES $PACKAGES"
-          fi
+      # the order: xdr-rpc-api and the xdrs crates must be live before
+      # xdr-rpc-driver's publish-time verify build.
+      - name: Publish xdr-rpc-api
+        if: ${{ inputs.dry_run == false && steps.check-api.outputs.release == 'true' }}
+        uses: thruputchain/actions/crates-io-publish@4e90cc39e4143f52e27360e95c1528c9be8cecb8
+        with:
+          mode: publish
+          packages: ${{ env.API_PACKAGES }}
+          tag-prefix: 'xdr-rpc-api-v'
+          git-tag: ${{ steps.tag-api.outputs.tag }}
+          bootstrap-token: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
 
-          for pkg in $PACKAGES; do
-            VERSION=$(cargo metadata --no-deps --format-version 1 \
-              | jq -r --arg name "$pkg" '.packages[] | select(.name == $name) | .version')
-            rc=0
-            scripts/crates-io-has.sh "$pkg" "$VERSION" || rc=$?
-            if [[ $rc -eq 0 ]]; then
-              echo "SKIP: $pkg@$VERSION is already on crates.io"
-              continue
-            elif [[ $rc -gt 1 ]]; then
-              exit 1
-            fi
-
-            for attempt in 1 2 3 4 5 6; do
-              rc=0
-              OUTPUT=$(cargo publish --locked --all-features -p "$pkg" 2>&1) || rc=$?
-              echo "$OUTPUT"
-              if [[ $rc -eq 0 ]]; then
-                echo "OK: published $pkg@$VERSION"
-                break
-              fi
-              if grep -q "429" <<<"$OUTPUT" && [[ $attempt -lt 6 ]]; then
-                echo "crates.io rate limit hit (attempt $attempt); retrying in 5 minutes"
-                sleep 300
-                continue
-              fi
-              echo "::error::Failed to publish $pkg@$VERSION"
-              exit 1
-            done
-          done
+      - name: Publish workspace crates
+        if: ${{ inputs.dry_run == false && steps.check-primary.outputs.release == 'true' }}
+        uses: thruputchain/actions/crates-io-publish@4e90cc39e4143f52e27360e95c1528c9be8cecb8
+        with:
+          mode: publish
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          git-tag: ${{ steps.tag-primary.outputs.tag }}
+          bootstrap-token: ${{ secrets.CRATES_IO_BOOTSTRAP_TOKEN }}
