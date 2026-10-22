@@ -1,3 +1,108 @@
+/// Explicitly invoked diagnostic for the checked-in generated-style dispatcher.
+/// A current-thread runtime counts the complete warmed TCP round trip, including
+/// both endpoints. Run with --release --ignored --nocapture and this test's name.
+#[cfg(test)]
+mod allocation_benchmark {
+    use super::*;
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
+
+    struct CountingAllocator;
+    thread_local! {
+        static COUNTS: Cell<Option<(usize, usize)>> = const { Cell::new(None) };
+    }
+    #[global_allocator]
+    static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+    // SAFETY: all allocation operations delegate unchanged to System. The
+    // thread-local counters contain no heap allocation and never dereference ptr.
+    unsafe impl GlobalAlloc for CountingAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            let _ = COUNTS.try_with(|counts| {
+                if let Some((a, r)) = counts.get() {
+                    counts.set(Some((a + 1, r)));
+                }
+            });
+            unsafe { System.alloc(layout) }
+        }
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            let _ = COUNTS.try_with(|counts| {
+                if let Some((a, r)) = counts.get() {
+                    counts.set(Some((a + 1, r)));
+                }
+            });
+            unsafe { System.alloc_zeroed(layout) }
+        }
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+            let _ = COUNTS.try_with(|counts| {
+                if let Some((a, r)) = counts.get() {
+                    counts.set(Some((a, r + 1)));
+                }
+            });
+            unsafe { System.realloc(ptr, layout, size) }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) }
+        }
+    }
+
+    struct Echo {
+        yielding: bool,
+    }
+    #[async_trait]
+    impl TestProgram_TestVersion for Echo {
+        async fn null(&self) -> Result<(), ProgramError> {
+            Ok(())
+        }
+        async fn takes_int(&self, i: i32) -> Result<i32, ProgramError> {
+            if self.yielding {
+                tokio::task::yield_now().await;
+            }
+            Ok(i)
+        }
+        async fn takes_two_ints(&self, a: i32, b: i32) -> Result<i32, ProgramError> {
+            Ok(a + b)
+        }
+    }
+
+    #[test]
+    #[ignore = "explicit performance diagnostic; counts warmed TCP allocations"]
+    fn benchmark_checked_in_dispatch() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        for yielding in [false, true] {
+            runtime.block_on(async {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let addr = listener.local_addr().unwrap();
+                let mut services = rpc_driver::ServiceMap::new();
+                services.add_service(Box::new(TestProgram_TestVersion_Dispatcher::new(Box::new(Echo { yielding }))));
+                let server = rpc_driver::RpcServer::new(listener, services).start().await;
+                let connection = rpc_driver::connect_client(&addr).await.unwrap();
+                let client = TestProgram_TestVersion_Client::new(connection.handle().clone());
+                for i in 0..2000 { assert_eq!(client.takes_int(i).await.unwrap(), i); }
+                let mut trials = Vec::new();
+                for _ in 0..7 {
+                    COUNTS.with(|counts| counts.set(Some((0, 0))));
+                    let start = std::time::Instant::now();
+                    for i in 0..10_000 { assert_eq!(client.takes_int(i).await.unwrap(), i); }
+                    let elapsed = start.elapsed();
+                    let (allocations, reallocations) = COUNTS.with(|counts| counts.replace(None).unwrap());
+                    trials.push(serde_json::json!({
+                        "ns_per_call": elapsed.as_nanos() as f64 / 10_000.0,
+                        "allocations_per_call": allocations as f64 / 10_000.0,
+                        "reallocations_per_call": reallocations as f64 / 10_000.0,
+                    }));
+                }
+                println!("{}", serde_json::json!({"yielding": yielding, "calls_per_trial": 10_000, "trials": trials}));
+                connection.shutdown().await;
+                server.abort();
+            });
+        }
+    }
+}
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
