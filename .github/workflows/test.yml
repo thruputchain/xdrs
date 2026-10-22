@@ -151,6 +151,7 @@ jobs:
           persist-credentials: false
       - name: Build with the thruput-sdk-rs rv32 config
         run: |
+          set -o pipefail
           bash scripts/rv32-size.sh | tee "$RUNNER_TEMP/rv32-size.txt"
           tail -n 1 "$RUNNER_TEMP/rv32-size.txt" >> "$GITHUB_STEP_SUMMARY"
 

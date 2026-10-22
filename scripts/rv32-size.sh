@@ -11,7 +11,10 @@ unset RUSTFLAGS
 
 # The toolchain rv32-size-test/rust-toolchain.toml pins.
 rustup toolchain install --no-self-update
+# An explicit --target-dir, so an exported CARGO_TARGET_DIR can't move the
+# ELF away from where it is read below.
 cargo build --locked --release --target riscv32im-unknown-none-elf \
+    --target-dir target \
     -Zbuild-std=core,alloc -Zbuild-std-features=std/optimize_for_size
 
 elf=target/riscv32im-unknown-none-elf/release/rv32-size-test
