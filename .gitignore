@@ -11,3 +11,4 @@ actions/
 # Local-only
 docs/
 /rpc/target
+/wasm-size-test/target
