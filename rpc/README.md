@@ -11,7 +11,7 @@ An async ONC-RPC (RFC 5531) client and server API for Rust.
 
 `rpc_api` versions independently: keep changes additive (patch bump); a
 breaking change forces every generated protocol crate to republish. It has no
-`xdrs` dependency. `rpc_driver` shares the workspace version with `xdrs`.
+`xdrs` dependency. `rpc_driver` is versioned and released with `xdrs`.
 
 ## Features
 
