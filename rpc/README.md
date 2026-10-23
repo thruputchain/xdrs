@@ -6,7 +6,6 @@ An async ONC-RPC (RFC 5531) client and server API for Rust.
 |---|---|
 | `thruput-rpc-api` | Stable traits and types for generated bindings |
 | `thruput-rpc-driver` | Transports, pools, server, dispatch; re-exports `thruput-rpc-api` |
-| `rpc-smoke` | Multi-connection smoke tests |
 | `rpc-api-fixture` | Proves generated bindings need only `thruput-rpc-api` |
 
 `thruput-rpc-api` versions independently: keep changes additive (patch bump); a
@@ -82,7 +81,7 @@ Message-size limits, admission, and pools are not modeled.
 
 Spans: `rpc_connection{peer, role}` (INFO) → `rpc_call{xid, prog, vers, proc}`
 (DEBUG). Use `FmtSpan::CLOSE` with `tracing-subscriber` to log durations, or
-`tracing-opentelemetry` for export. See `rpc-smoke/src/server.rs`.
+`tracing-opentelemetry` for export.
 
 ## Known issues
 
