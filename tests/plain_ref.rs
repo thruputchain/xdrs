@@ -53,7 +53,7 @@ fn struct_with_plain_ref_const_matches_runtime() {
     );
 }
 
-// --- Enum with &T variant fields (mirrors sdk_rs ContractTypeView) ---
+// --- Enum with &T variant fields (mirrors thruput-sdk-rs ContractTypeView) ---
 
 #[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
 #[repr(i32)]
@@ -141,7 +141,7 @@ fn struct_with_mut_ref_const_size_matches_shared_ref() {
     assert_eq!(val.const_txs_size(), BORROWED_LEAF.const_txs_size());
 }
 
-// --- Option<&T> (the sdk_rs pattern) ---
+// --- Option<&T> (the thruput-sdk-rs pattern) ---
 
 #[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR)]
 struct OptionRef<'a> {

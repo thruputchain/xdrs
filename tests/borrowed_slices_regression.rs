@@ -77,8 +77,8 @@ fn bytes_then_tag() {
 
 // Two distinct lifetime parameters, each used by a `&[u8]` field.
 //
-// This is the shape that fails in sdk_rs (`MultiLifetimeEvent<'a, 'b>` after
-// the `#[derive(Event)]` macro generates the payload struct). PR #220's
+// This is the shape that fails in thruput-sdk-rs (`MultiLifetimeEvent<'a, 'b>`
+// after the `#[derive(Event)]` macro generates the payload struct). PR #220's
 // per-field `where T: ReadXDR<'_r>` bounds tripped E0283 here because the
 // where clause forced T to be `&'a [u8]` while the blanket
 // `impl<'r> ReadXDR<'r> for &'r [u8]` required `'a = '_r` — and the solver
