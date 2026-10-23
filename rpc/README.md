@@ -1,8 +1,17 @@
-# xdr_rpc (rpc_api, rpc_driver)
+# rpc
 
-Async ONC-RPC (RFC 5531) client/server for Rust, built on tokio and
-[xdrs](https://github.com/thruputchain/xdrs). The crates are members of the
-root Cargo workspace.
+An async ONC-RPC (RFC 5531) client and server API for Rust.
+
+| Crate | Purpose |
+|---|---|
+| `rpc_api` (`thruput-rpc-api`) | Stable traits and types for generated bindings |
+| `rpc_driver` (`thruput-rpc-driver`) | Transports, pools, server, dispatch; re-exports `rpc_api` |
+| `rpc-smoke` | Multi-connection smoke tests |
+| `rpc-api-fixture` | Proves generated bindings need only `rpc_api` |
+
+`rpc_api` versions independently: keep changes additive (patch bump); a
+breaking change forces every generated protocol crate to republish. It has no
+`xdrs` dependency. `rpc_driver` shares the workspace version with `xdrs`.
 
 ## Features
 
@@ -73,19 +82,6 @@ Message-size limits, admission, and pools are not modeled.
 Spans: `rpc_connection{peer, role}` (INFO) → `rpc_call{xid, prog, vers, proc}`
 (DEBUG). Use `FmtSpan::CLOSE` with `tracing-subscriber` to log durations, or
 `tracing-opentelemetry` for export. See `rpc-smoke/src/server.rs`.
-
-## Workspace
-
-| Crate | Purpose |
-|---|---|
-| `rpc_api` (`thruput-rpc-api`) | Stable traits and types for generated bindings |
-| `rpc_driver` (`thruput-rpc-driver`) | Transports, pools, server, dispatch; re-exports `rpc_api` |
-| `rpc-smoke` | Multi-connection smoke tests |
-| `rpc-api-fixture` | Proves generated bindings need only `rpc_api` |
-
-`rpc_api` versions independently: keep changes additive (patch bump); a
-breaking change forces every generated protocol crate to republish. It has no
-`xdrs` dependency. `rpc_driver` shares the workspace version with `xdrs`.
 
 ## Known issues
 
