@@ -27,10 +27,6 @@ jobs:
     permissions:
       contents: read
     uses: thruputchain/actions/.github/workflows/workflow-lint.yml@24f3732ad8954a602975b7f8fe91fb8fa1279116
-    with:
-      lint-app-id: ${{ vars.PROTOCOL_SYNCHRONIZER_APP_ID }}
-    secrets:
-      lint-app-private-key: ${{ secrets.PROTOCOL_SYNCHRONIZER_SECRET_KEY }}
 
   stable:
     needs: dependency-policy # don't build anything until deps are known to be clean
@@ -39,7 +35,6 @@ jobs:
     env:
       RUSTFLAGS: "--deny warnings"
       RUSTDOCFLAGS: "--deny warnings"
-      CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -117,7 +112,6 @@ jobs:
     env:
       RUSTFLAGS: "--deny warnings"
       RUSTDOCFLAGS: "--deny warnings"
-      CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -142,8 +136,6 @@ jobs:
     runs-on: ubuntu-latest
     # No RUSTFLAGS here: it would replace rv32-size-test's SDK target
     # rustflags, which already deny warnings.
-    env:
-      CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -162,7 +154,6 @@ jobs:
     env:
       RUSTFLAGS: "--deny warnings"
       RUSTDOCFLAGS: "--deny warnings"
-      CARGO_NET_GIT_FETCH_WITH_CLI: true
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
