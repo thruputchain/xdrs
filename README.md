@@ -64,9 +64,6 @@ allocating, no-alloc, compact-error and permissive test runs. CI runs the same
 script and uploads the reports; there is no minimum percentage. Doctests and
 benchmarks are excluded.
 
-Derive-generated methods are instrumented like any other code and are
-attributed to the invocation site.
-
 ## TODOs
 
 - Optional recursion depth limit for decoding recursive datastructures (see
