@@ -11,7 +11,7 @@ repository = "https://github.com/thruputchain/xdrs"
 homepage = "https://github.com/thruputchain/xdrs"
 readme = "../README.md"
 keywords = ["xdr", "rpc"]
-categories = ["rpc"]
+categories = ["network-programming", "asynchronous"]
 
 # Published as thruput-rpc-driver. The library keeps its name, so
 # `use rpc_driver::...` is unchanged.
