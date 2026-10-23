@@ -21,13 +21,13 @@ jobs:
     # but depends on nothing from it, so the graph resolves unauthenticated.)
     permissions:
       contents: read
-    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@c003527eff402d35ff357854a591cbec2935c2c3
+    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
 
   # Lint this repo's workflows
   workflow-lint:
     permissions:
       contents: read
-    uses: thruputchain/actions/.github/workflows/workflow-lint.yml@c003527eff402d35ff357854a591cbec2935c2c3
+    uses: thruputchain/actions/.github/workflows/workflow-lint.yml@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
     with:
       lint-app-id: ${{ vars.PROTOCOL_SYNCHRONIZER_APP_ID }}
     secrets:
