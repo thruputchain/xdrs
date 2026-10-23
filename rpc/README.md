@@ -4,14 +4,15 @@ An async ONC-RPC (RFC 5531) client and server API for Rust.
 
 | Crate | Purpose |
 |---|---|
-| `rpc_api` (`thruput-rpc-api`) | Stable traits and types for generated bindings |
-| `rpc_driver` (`thruput-rpc-driver`) | Transports, pools, server, dispatch; re-exports `rpc_api` |
+| `thruput-rpc-api` | Stable traits and types for generated bindings |
+| `thruput-rpc-driver` | Transports, pools, server, dispatch; re-exports `thruput-rpc-api` |
 | `rpc-smoke` | Multi-connection smoke tests |
-| `rpc-api-fixture` | Proves generated bindings need only `rpc_api` |
+| `rpc-api-fixture` | Proves generated bindings need only `thruput-rpc-api` |
 
-`rpc_api` versions independently: keep changes additive (patch bump); a
+`thruput-rpc-api` versions independently: keep changes additive (patch bump); a
 breaking change forces every generated protocol crate to republish. It has no
-`xdrs` dependency. `rpc_driver` is versioned and released with `xdrs`.
+`thruput-xdrs` dependency. `thruput-rpc-driver` is versioned and released with
+`thruput-xdrs`.
 
 ## Features
 
