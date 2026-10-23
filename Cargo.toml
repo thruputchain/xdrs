@@ -90,7 +90,7 @@ repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
 keywords.workspace = true
-categories.workspace = true
+categories = ["encoding", "no-std", "no-std::no-alloc"]
 
 exclude = [
     ".github/",
