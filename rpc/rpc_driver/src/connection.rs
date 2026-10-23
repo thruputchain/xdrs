@@ -716,6 +716,19 @@ impl ConnectionState {
                 self.pending_requests.remove(&xid);
                 return true;
             }
+            if matches!(slot, CallbackSlot::Decoder { .. }) {
+                // The reader's decoder_calls check is only a hint, so an owned
+                // reply can still reach a decoder: decode from the copy.
+                return match reply {
+                    ReplyResult::Ok(buf, offset) => {
+                        self.handle_reply_bytes(xid, Ok(&buf[offset..]))
+                    }
+                    ReplyResult::Err(error) => self.handle_reply_bytes(xid, Err(error)),
+                    ReplyResult::Decoded | ReplyResult::DecodePanic(_) => {
+                        unreachable!("the reader only delivers raw replies")
+                    }
+                };
+            }
             let prev = std::mem::replace(slot, CallbackSlot::Ready(reply));
             if let CallbackSlot::Waiting(waker) = prev {
                 waker.wake();
@@ -817,6 +830,11 @@ pub struct ConnectionHandle {
     /// Atomic pending-request counter — avoids locking `connection_state`
     /// for load-balancing queries in DynamicPool.
     pending_count: AtomicUsize,
+    /// Decoded calls in flight. While it is zero, which is always the case for
+    /// callers that only use `send_call`, the reader copies a reply before
+    /// taking `connection_state` instead of under it (see
+    /// [`ConnectionHandle::deliver_reply`]).
+    decoder_calls: AtomicUsize,
     /// Pool selection only needs the shutdown flag, not the callback map lock.
     poisoned: AtomicBool,
     // Cold — accessed rarely:
@@ -846,6 +864,7 @@ impl ConnectionHandle {
             connection_state: StdMutex::new(ConnectionState::new()),
             writer,
             pending_count: AtomicUsize::new(0),
+            decoder_calls: AtomicUsize::new(0),
             poisoned: AtomicBool::new(false),
             connection_span: span,
             max_message_size: config.max_message_size,
@@ -961,6 +980,9 @@ impl ConnectionHandle {
                 &'static mut (dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send),
             >(decode)
         };
+        // Declared before the call so it outlives the pending slot, which the
+        // call's own guard removes first.
+        let _decoding = DecoderCall::new(&self.decoder_calls);
         match self
             .send_call_inner(progvers, proc, call, Some(decode))
             .await?
@@ -970,6 +992,32 @@ impl ConnectionHandle {
             ReplyResult::DecodePanic(panic) => std::panic::resume_unwind(panic),
             _ => unreachable!("decoded call received a raw reply"),
         }
+    }
+
+    /// Deliver a reply the reader parsed out of its receive buffer. Callers
+    /// waiting for an owned response get a copy made before taking the lock,
+    /// as without decoders; only while decoded calls are in flight does the
+    /// reader take the lock first, to decode in place or copy under it.
+    pub(crate) fn deliver_reply(&self, xid: u32, reply: Result<&[u8], RpcError>) -> bool {
+        if self.decoder_calls.load(Ordering::Acquire) != 0 {
+            return self
+                .connection_state
+                .lock()
+                .unwrap()
+                .handle_reply_bytes(xid, reply);
+        }
+        let reply = match reply {
+            Ok(bytes) => {
+                let mut buffer = take_buffer();
+                buffer.extend_from_slice(bytes);
+                ReplyResult::Ok(buffer, 0)
+            }
+            Err(error) => ReplyResult::Err(error),
+        };
+        self.connection_state
+            .lock()
+            .unwrap()
+            .handle_reply(xid, reply)
     }
 
     async fn send_call_inner(
@@ -1170,6 +1218,22 @@ impl ConnectionHandle {
 ///
 /// If the future is dropped before the response arrives, this removes
 /// the pending entry from the HashMap so it doesn't leak.
+/// Counts a decoded call in [`ConnectionHandle::decoder_calls`] while it lives.
+struct DecoderCall<'a>(&'a AtomicUsize);
+
+impl<'a> DecoderCall<'a> {
+    fn new(count: &'a AtomicUsize) -> Self {
+        count.fetch_add(1, Ordering::Release);
+        Self(count)
+    }
+}
+
+impl Drop for DecoderCall<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Release);
+    }
+}
+
 struct CallGuard<'a> {
     state: &'a StdMutex<ConnectionState>,
     pending_count: &'a AtomicUsize,
@@ -1370,6 +1434,33 @@ mod tests {
         let mut call = CallBuf::new();
         call.extend_from_slice(payload);
         call
+    }
+
+    #[test]
+    fn owned_reply_reaching_a_decoder_slot_is_decoded() {
+        let mut seen = Vec::new();
+        let mut decode = |bytes: &[u8]| {
+            seen.extend_from_slice(bytes);
+            Ok(())
+        };
+        let mut state = ConnectionState::new();
+        let xid = state.register_call().unwrap();
+        // SAFETY: the slot is consumed below, before `decode` goes out of scope.
+        let decode: &'static mut ReplyDecoder<'static> = unsafe {
+            std::mem::transmute::<&mut ReplyDecoder<'_>, &'static mut ReplyDecoder<'static>>(
+                &mut decode,
+            )
+        };
+        *state.pending_requests.get_mut(&xid).unwrap() = CallbackSlot::Decoder {
+            decode,
+            waker: None,
+        };
+        assert!(!state.handle_reply(xid, ReplyResult::Ok(b"hdrpayload".to_vec(), 3)));
+        assert!(matches!(
+            state.pending_requests.remove(&xid),
+            Some(CallbackSlot::Ready(ReplyResult::Decoded))
+        ));
+        assert_eq!(seen, b"payload");
     }
 
     #[test]

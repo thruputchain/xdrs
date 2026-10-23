@@ -69,31 +69,14 @@ fn route_reply(
     rbody: rpc_msg::reply_body,
     payload: &[u8],
 ) {
-    let was_fire_and_forget = match rbody {
-        rpc_msg::reply_body::MSG_ACCEPTED { areply } => {
-            if let rpc_msg::accepted_reply_reply_data::SUCCESS { results: _results } =
-                areply.reply_data
-            {
-                client_cbs
-                    .connection_state
-                    .lock()
-                    .unwrap()
-                    .handle_reply_bytes(xid, Ok(payload))
-            } else {
-                client_cbs
-                    .connection_state
-                    .lock()
-                    .unwrap()
-                    .handle_reply_bytes(xid, Err(areply.reply_data.into()))
-            }
-        }
-        rpc_msg::reply_body::MSG_DENIED { rreply } => client_cbs
-            .connection_state
-            .lock()
-            .unwrap()
-            .handle_reply_bytes(xid, Err(rreply.into())),
+    let reply = match rbody {
+        rpc_msg::reply_body::MSG_ACCEPTED { areply } => match areply.reply_data {
+            rpc_msg::accepted_reply_reply_data::SUCCESS { results: _results } => Ok(payload),
+            reply_data => Err(reply_data.into()),
+        },
+        rpc_msg::reply_body::MSG_DENIED { rreply } => Err(rreply.into()),
     };
-    if was_fire_and_forget {
+    if client_cbs.deliver_reply(xid, reply) {
         client_cbs.decrement_pending();
     }
 }
@@ -101,12 +84,7 @@ fn route_reply(
 /// Route an accepted SUCCESS reply whose payload is `payload`.
 #[inline]
 fn route_success(client_cbs: &ConnectionHandle, xid: u32, payload: &[u8]) {
-    let was_fire_and_forget = client_cbs
-        .connection_state
-        .lock()
-        .unwrap()
-        .handle_reply_bytes(xid, Ok(payload));
-    if was_fire_and_forget {
+    if client_cbs.deliver_reply(xid, Ok(payload)) {
         client_cbs.decrement_pending();
     }
 }
