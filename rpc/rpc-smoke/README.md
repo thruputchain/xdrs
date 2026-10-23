@@ -241,8 +241,7 @@ Three repetitions alternate main/candidate ordering. `--quick` is for harness
 validation only and cannot be published as performance evidence.
 
 The metrics workflow's `full_evaluation` manual input runs this comparison on a
-reserved cluster host and publishes it to `metrics_history` alongside normal
-metrics. These are benchmark options, not additional RPC driver modes.
+reserved cluster host and records it alongside the normal metrics. These are benchmark options, not additional RPC driver modes.
 
 The full evaluation also runs the smoke harness's realistic service mix, scaling
 sweep (10–500 connections), multi-process throughput sweep, CPU-prefix handler,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Store complete RPC measurements using hogd's metrics_history layout."""
+"""Store complete RPC measurements in the results repository."""
 import argparse
 from datetime import datetime, timezone
 import json
@@ -16,7 +16,7 @@ def main():
     parser.add_argument('--branch', required=True, help='source branch; selects the series directory')
     parser.add_argument('--commit', required=True)
     parser.add_argument('--commit-time', type=int, required=True)
-    parser.add_argument('--history-url', default='https://github.com/groundhogchain/metrics_history.git')
+    parser.add_argument('--history-url', required=True, help='git URL of the results repository')
     args = parser.parse_args()
     if not re.fullmatch(r'[0-9a-f]{40}', args.commit):
         parser.error('--commit must be a full commit SHA')
@@ -55,8 +55,8 @@ def main():
         git('init', '--quiet')
         git('remote', 'add', 'origin', args.history_url)
         git('config', 'user.name', 'metrics-script')
-        git('config', 'user.email', 'metrics-script@groundhogchain.com')
-        # Like hogd: populate the index, not the historical working tree. On a
+        git('config', 'user.email', 'metrics-script@users.noreply.github.com')
+        # Populate the index, not the historical working tree. On a
         # concurrent push, refresh the parent and stage only this run's files.
         for attempt in range(5):
             git('fetch', '--depth=1', '--filter=blob:none', '--quiet', 'origin', 'main')
@@ -76,7 +76,7 @@ def main():
                 print(f'Recorded RPC metrics for {args.commit}')
                 return
             print(f'Metrics push failed; refreshing parent (attempt {attempt + 1}/5).')
-        raise RuntimeError('could not publish metrics_history after five attempts')
+        raise RuntimeError('could not publish metrics after five attempts')
 
 
 if __name__ == '__main__':
