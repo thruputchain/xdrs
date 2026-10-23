@@ -80,21 +80,11 @@ Spans: `rpc_connection{peer, role}` (INFO) → `rpc_call{xid, prog, vers, proc}`
 | `rpc_api` (`thruput-rpc-api`) | Stable traits and types for generated bindings |
 | `rpc_driver` (`thruput-rpc-driver`) | Transports, pools, server, dispatch; re-exports `rpc_api` |
 | `rpc-smoke` | Multi-connection smoke tests |
-| `bench-compare` | Benchmark comparison tooling |
 | `rpc-api-fixture` | Proves generated bindings need only `rpc_api` |
 
 `rpc_api` versions independently: keep changes additive (patch bump); a
 breaking change forces every generated protocol crate to republish. It has no
 `xdrs` dependency. `rpc_driver` shares the workspace version with `xdrs`.
-
-## Benchmarks
-
-```sh
-python3 rpc/scripts/benchmark.py --output target/bench-report
-python3 rpc/scripts/evaluate_runtimes.py --output target/runtime-evaluation
-```
-
-Cluster runs live in the private `thruputchain/benchmarks` repository.
 
 ## Known issues
 
