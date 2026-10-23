@@ -120,7 +120,7 @@ default = ["detailed-errors"]
 detailed-errors = [] # retain precise ReadError variants and diagnostic payloads
 permissive = [] # relax wire validation: CXS minimal integer encoding + TXS non-zero padding
 alloc = ["xdr-common/alloc"] # enable allocating interfaces
-int128 = ["xdr-repr?/int128"] # enable de/serialization of i128/u128
+int128 = [] # no-op: i128/u128 de/serialization is always on; kept for compatibility
 serde = ["xdr-common/serde"] # serde support for xdr-common types
 schemars = ["xdr-common/schemars"] # schemars JsonSchema support for xdr-common types
 
@@ -147,7 +147,7 @@ bench = false # disable libtest benchmarks, in favor of Criterion
 [[bench]]
 name = "bench1"
 harness = false
-required-features = ["alloc", "int128"]
+required-features = ["alloc"]
 
 [[test]]
 name = "repr"

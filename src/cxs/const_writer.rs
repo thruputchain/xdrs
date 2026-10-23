@@ -182,16 +182,12 @@ impl<const N: usize> ConstWriter<N> {
     }
 
     /// Writes a signed 128-bit integer as `(i64, u64)` using CXS variable-width encoding.
-    #[cfg(feature = "int128")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
     pub const fn write_i128(&mut self, n: i128) {
         self.write_i64((n >> 64) as i64);
         self.write_u64((n & 0xffffffffffffffff) as u64);
     }
 
     /// Writes an unsigned 128-bit integer as `(u64, u64)` using CXS variable-width encoding.
-    #[cfg(feature = "int128")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
     pub const fn write_u128(&mut self, n: u128) {
         self.write_u64((n >> 64) as u64);
         self.write_u64((n & 0xffffffffffffffff) as u64);
@@ -299,15 +295,11 @@ const fn size_i8(n: i8) -> usize {
 }
 
 /// Returns the CXS encoded size of a signed 128-bit integer.
-#[cfg(feature = "int128")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 pub const fn size_i128(n: i128) -> usize {
     size_i64((n >> 64) as i64) + size_u64((n & 0xffffffffffffffff) as u64)
 }
 
 /// Returns the CXS encoded size of an unsigned 128-bit integer.
-#[cfg(feature = "int128")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 pub const fn size_u128(n: u128) -> usize {
     size_u64((n >> 64) as u64) + size_u64((n & 0xffffffffffffffff) as u64)
 }
@@ -407,15 +399,11 @@ pub const fn max_size_u64() -> usize {
 }
 
 /// Worst-case CXS encoded size of a signed 128-bit integer (two 64-bit halves).
-#[cfg(feature = "int128")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 pub const fn max_size_i128() -> usize {
     18
 }
 
 /// Worst-case CXS encoded size of an unsigned 128-bit integer (two 64-bit halves).
-#[cfg(feature = "int128")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 pub const fn max_size_u128() -> usize {
     18
 }
@@ -576,7 +564,6 @@ mod tests {
         assert_eq!(max_size_f64(), size_f64(0.0));
     }
 
-    #[cfg(feature = "int128")]
     #[test]
     fn max_sizes_dominate_worst_case_int128() {
         assert_eq!(max_size_i128(), size_i128(i128::MAX));

@@ -21,7 +21,6 @@ use super::const_writer::{
     max_size_i32, max_size_i64, max_size_max, max_size_opaque_fixed, max_size_opaque_variable,
     max_size_u16, max_size_u32, max_size_u64, size_i32,
 };
-#[cfg(feature = "int128")]
 use super::const_writer::{max_size_i128, max_size_u128};
 use core::convert::Infallible;
 use core::marker::PhantomData;
@@ -60,7 +59,6 @@ impl_primitive! {
     f64 => max_size_f64,
 }
 
-#[cfg(feature = "int128")]
 impl_primitive! {
     i128 => max_size_i128,
     u128 => max_size_u128,
@@ -245,9 +243,7 @@ mod tests {
         Some(n) if n == 4 + u32::MAX as usize + 1
     ));
 
-    #[cfg(feature = "int128")]
     const _: () = assert!(matches!(bound::<i128>(), Some(16)));
-    #[cfg(feature = "int128")]
     const _: () = assert!(matches!(bound::<u128>(), Some(16)));
 
     #[test]
