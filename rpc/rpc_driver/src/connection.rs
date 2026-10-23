@@ -955,11 +955,61 @@ impl ConnectionHandle {
         proc: u32,
         call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
-        match self.send_call_inner(progvers, proc, call, None).await? {
-            ReplyResult::Ok(buf, offset) => Ok(RpcResponse::from_record(buf, offset)),
-            ReplyResult::Err(error) => Err(error),
-            _ => unreachable!("raw call received a decoded reply"),
+        // Deliberately separate from send_decoded_call, so the decoder slot
+        // setup adds nothing to the path every existing caller takes.
+        let xid = self.connection_state.lock().unwrap().register_call()?;
+        self.pending_count.fetch_add(1, Ordering::Relaxed);
+
+        let span = tracing::debug_span!(
+            parent: &self.connection_span,
+            "rpc_call",
+            xid,
+            prog = progvers.prog(),
+            vers = progvers.vers(),
+            proc = proc,
+        );
+
+        // Guard removes the pending entry on drop (cancellation safety).
+        let guard = CallGuard {
+            state: &self.connection_state,
+            pending_count: &self.pending_count,
+            xid,
+            done: false,
+        };
+
+        // On error the guard's drop cleans up the pending entry.
+        let msg = self.frame_call_or_warn(call, xid, progvers, proc)?;
+
+        let mut replied = false;
+        let result = async {
+            if let Err(e) = self.writer.send_call(msg) {
+                tracing::debug!(?e, "call refused by the connection writer");
+                if e.kind() != io::ErrorKind::WouldBlock {
+                    let _shutdown = self.begin_poison();
+                }
+                return Err(RpcError::SystemError);
+            }
+
+            let result = match self.await_reply(xid).await {
+                Ok(ReplyResult::Ok(buf, offset)) => Ok(RpcResponse::from_record(buf, offset)),
+                Ok(ReplyResult::Err(error)) | Err(error) => Err(error),
+                Ok(ReplyResult::Decoded | ReplyResult::DecodePanic(_)) => {
+                    unreachable!("raw call received a decoded reply")
+                }
+            };
+            replied = true;
+            result
         }
+        .instrument(span)
+        .await;
+
+        if replied {
+            // await_reply took the entry with it, so skip the lock.
+            guard.complete_without_entry();
+        } else {
+            guard.complete();
+        }
+        result
     }
 
     /// Caller must uphold RpcSender::send_call_decoded's lifetime contract.
@@ -972,7 +1022,7 @@ impl ConnectionHandle {
     ) -> Result<(), RpcError> {
         // SAFETY: the caller keeps the callback valid even if this future is
         // forgotten. The pending slot is only accessed under connection_state;
-        // send_call_inner installs its cancellation guard before publishing it.
+        // send_decoded_call installs its cancellation guard before publishing it.
         // Completion removes the reference before waking/returning to the caller.
         let decode = unsafe {
             std::mem::transmute::<
@@ -983,10 +1033,7 @@ impl ConnectionHandle {
         // Declared before the call so it outlives the pending slot, which the
         // call's own guard removes first.
         let _decoding = DecoderCall::new(&self.decoder_calls);
-        match self
-            .send_call_inner(progvers, proc, call, Some(decode))
-            .await?
-        {
+        match self.send_decoded_call(progvers, proc, call, decode).await? {
             ReplyResult::Decoded => Ok(()),
             ReplyResult::Err(error) => Err(error),
             ReplyResult::DecodePanic(panic) => std::panic::resume_unwind(panic),
@@ -1020,12 +1067,12 @@ impl ConnectionHandle {
             .handle_reply(xid, reply)
     }
 
-    async fn send_call_inner(
+    async fn send_decoded_call(
         &self,
         progvers: ProgVers,
         proc: u32,
         call: CallBuf,
-        decode: Option<&'static mut ReplyDecoder<'static>>,
+        decode: &'static mut ReplyDecoder<'static>,
     ) -> Result<ReplyResult, RpcError> {
         let (xid, guard) = {
             let mut state = self.connection_state.lock().unwrap();
@@ -1037,12 +1084,10 @@ impl ConnectionHandle {
                 xid,
                 done: false,
             };
-            if let Some(decode) = decode {
-                *state.pending_requests.get_mut(&xid).unwrap() = CallbackSlot::Decoder {
-                    decode,
-                    waker: None,
-                };
-            }
+            *state.pending_requests.get_mut(&xid).unwrap() = CallbackSlot::Decoder {
+                decode,
+                waker: None,
+            };
             (xid, guard)
         };
 
