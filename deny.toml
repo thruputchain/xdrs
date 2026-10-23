@@ -40,7 +40,8 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# crates.io only: the crates publish there, and crates.io rejects a crate
+# that depends on another registry.
 allow-registry = [
     "https://github.com/rust-lang/crates.io-index",
-    "sparse+https://crates.thruput.network/api/v1/crates/",
 ]
