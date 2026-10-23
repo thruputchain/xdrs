@@ -16,7 +16,7 @@ jobs:
     name: Check dependency policy
     permissions:
       contents: read
-    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@e2453db03db2b6eaa289e558bf3d7ed62d0f916b
+    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
     with:
       checks: advisories
 
@@ -27,4 +27,4 @@ jobs:
     permissions:
       contents: read
       issues: write
-    uses: thruputchain/actions/.github/workflows/rust-advisory-issue.yml@e2453db03db2b6eaa289e558bf3d7ed62d0f916b
+    uses: thruputchain/actions/.github/workflows/rust-advisory-issue.yml@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
