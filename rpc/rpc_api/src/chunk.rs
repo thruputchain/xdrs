@@ -1,6 +1,6 @@
 //! The wire-level vocabulary of a chunked RPC: where a record sits in its
 //! run, and how a chunked record comes apart into key, position and part.
-//! Reassembling a run is the driver's job (`rpc_driver::ChunkRunAssembler`);
+//! Reassembling a run is the driver's job (`thruput_rpc_driver::ChunkRunAssembler`);
 //! this crate holds only what a protocol crate needs to describe its chunked
 //! records, so generated bindings keep their single dependency on it.
 
@@ -38,7 +38,7 @@ impl ChunkPosition {
 /// no transport dependency to implement it.
 ///
 /// ```
-/// use rpc_api::{ChunkPosition, ChunkRecord};
+/// use thruput_rpc_api::{ChunkPosition, ChunkRecord};
 ///
 /// // The shape a chunked wire record takes: the message it belongs to, its
 /// // position in the run, and its slice of the items.

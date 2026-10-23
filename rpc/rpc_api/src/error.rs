@@ -4,7 +4,7 @@
 ///
 /// Protocol errors correspond to ONC-RPC reply statuses. Local transport and
 /// pool errors have no wire-level equivalent; if returned by a server handler,
-/// `rpc_driver` encodes them as [`RpcError::SystemError`].
+/// `thruput_rpc_driver` encodes them as [`RpcError::SystemError`].
 ///
 /// # Wire boundary versus driver-local variants
 ///

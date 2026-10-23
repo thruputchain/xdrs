@@ -540,11 +540,11 @@ pub(crate) fn frame_call(
 /// The ONC RPC version every call header carries.
 const RPC_VERSION: u32 = 2;
 
-// CallBuf, RpcResponse and the RpcSender trait live in the stable `rpc_api`
+// CallBuf, RpcResponse and the RpcSender trait live in the stable `thruput_rpc_api`
 // crate; re-exported here at their historical paths for source
 // compatibility. This module implements RpcSender for [`ConnectionHandle`]
 // and [`ClientConnection`]; the pools in [`crate::pool`] implement it too.
-pub use rpc_api::{CallBuf, RpcResponse, RpcSender};
+pub use thruput_rpc_api::{CallBuf, RpcResponse, RpcSender};
 
 #[async_trait]
 impl RpcSender for ConnectionHandle {

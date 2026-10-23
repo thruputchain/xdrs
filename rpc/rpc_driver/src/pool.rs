@@ -1492,8 +1492,8 @@ impl RpcSender for MultiplexPool {
 /// # Example
 ///
 /// ```no_run
-/// # async fn example() -> Result<(), rpc_driver::RpcError> {
-/// use rpc_driver::{CpuSetPool, ProgVers, RpcSender};
+/// # async fn example() -> Result<(), thruput_rpc_driver::RpcError> {
+/// use thruput_rpc_driver::{CpuSetPool, ProgVers, RpcSender};
 ///
 /// let pool = CpuSetPool::connect(&"127.0.0.1:9876".parse().unwrap()).await?;
 /// println!("opened {} CPU-affine connections", pool.size());

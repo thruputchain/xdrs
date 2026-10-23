@@ -1,13 +1,13 @@
 //! Wire-level encoding and decoding of RPC errors.
 //!
-//! The [`RpcError`] type itself lives in the stable `rpc_api` crate; this
+//! The [`RpcError`] type itself lives in the stable `thruput_rpc_api` crate; this
 //! module owns its conversions to and from the generated ONC-RPC message
 //! types, which are driver internals.
 
 use xdrs::BytesM;
 
 use crate::rpc_msg;
-use rpc_api::RpcError;
+use thruput_rpc_api::RpcError;
 
 #[allow(unreachable_pub)]
 pub const DEFAULT_OPAQUE_AUTH: rpc_msg::opaque_auth = rpc_msg::opaque_auth {
@@ -128,7 +128,7 @@ fn to_rpc_msg(err: &RpcError, xid: u32) -> rpc_msg::rpc_msg {
         },
         // SystemError, the local operational errors (ConnectFailed,
         // PoolClosed, Canceled, InvalidPoolConfiguration), and any variant
-        // added to rpc_api after this driver release.
+        // added to thruput_rpc_api after this driver release.
         _ => rpc_msg::rpc_msg {
             xid,
             body: rpc_msg::rpc_msg_body::REPLY {

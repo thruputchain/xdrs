@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use rpc_driver::{
+use thruput_rpc_driver::{
     CallBuf, ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
     handler::RpcHandler, handler::ServiceMap,
 };
@@ -42,7 +42,7 @@ impl RpcHandler for InlineCallbackService {
         match proc {
             0 => Ok(vec![]),
             1 => {
-                let peer = rpc_driver::peer();
+                let peer = thruput_rpc_driver::peer();
                 // Call back to the client's EchoService on the same connection.
                 // This requires the read loop to process the REPLY while this
                 // handler is still running — only possible with concurrent dispatch.

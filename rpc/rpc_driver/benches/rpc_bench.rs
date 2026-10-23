@@ -1,4 +1,4 @@
-//! rpc_driver benchmark suite.
+//! thruput_rpc_driver benchmark suite.
 //!
 //! Measures the single automatic dispatch/write path across latency,
 //! throughput, bidirectional RPC, and handler fanout workloads.
@@ -20,12 +20,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use rpc_driver::{
+use serde::Serialize;
+use thruput_rpc_driver::{
     CallBuf, ConnectionConfig, DynamicPool, FixedSerialPool, ProgVers, RpcError, RpcSender,
     RpcServer, connect_client_with_config,
     handler::{RpcHandler, ServiceMap},
 };
-use serde::Serialize;
 
 /// A call carrying `payload`, in a buffer recycled from `sender`.
 fn call_with<S: RpcSender + ?Sized>(sender: &S, payload: &[u8]) -> CallBuf {
@@ -162,7 +162,7 @@ impl RpcHandler for InlineCallbackService {
             0 => Ok(vec![]),
             1 => {
                 // Call back to the peer on the same connection, inline.
-                let peer = rpc_driver::peer();
+                let peer = thruput_rpc_driver::peer();
                 let mut call = peer.call_buf();
                 call.extend_from_slice(data);
                 let response = peer.send_call(ECHO_PROG, 1, call).await?;
@@ -189,7 +189,7 @@ impl RpcHandler for FanoutService {
         match proc {
             0 => Ok(vec![]),
             1 => {
-                let peer = rpc_driver::peer();
+                let peer = thruput_rpc_driver::peer();
                 let mut handles = Vec::with_capacity(self.fanout);
                 for _ in 0..self.fanout {
                     let peer = peer.clone();
@@ -1272,12 +1272,12 @@ async fn run() {
     };
 
     if cli.gh_bench {
-        eprintln!("=== rpc_driver benchmark (loopback TCP) ===");
+        eprintln!("=== thruput_rpc_driver benchmark (loopback TCP) ===");
         eprintln!("    dispatch: ready inline; suspended handlers spawned");
         eprintln!("{tracing_label}");
         eprintln!();
     } else {
-        println!("=== rpc_driver benchmark (loopback TCP) ===");
+        println!("=== thruput_rpc_driver benchmark (loopback TCP) ===");
         println!("    dispatch: ready inline; suspended handlers spawned");
         println!("{tracing_label}");
         println!();

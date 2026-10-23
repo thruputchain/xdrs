@@ -7,11 +7,11 @@ use async_trait::async_trait;
 ///
 /// Implement this trait to define how your service handles incoming RPC
 /// calls. Generated protocol dispatchers implement it; hand-written services
-/// can too. Register handlers with `rpc_driver::ServiceMap` and pass the map
-/// to `rpc_driver::RpcServer`.
+/// can too. Register handlers with `thruput_rpc_driver::ServiceMap` and pass the map
+/// to `thruput_rpc_driver::RpcServer`.
 ///
 /// For bidirectional RPC (calling back to the peer from within a handler),
-/// use `rpc_driver::peer()` to obtain the per-connection sender.
+/// use `thruput_rpc_driver::peer()` to obtain the per-connection sender.
 ///
 /// With the driver's default serial dispatch, calling back to the peer
 /// inline will deadlock — spawn a separate task instead. With the driver's

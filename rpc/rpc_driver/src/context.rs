@@ -19,7 +19,7 @@ tokio::task_local! {
 /// own task while the reader continues routing replies. If you spawn an
 /// additional task yourself, capture its peer sender first. The
 /// [`RpcHandler`](crate::handler::RpcHandler) docs published with
-/// `rpc_api` 0.2.0 predate this and still describe a serial dispatch mode
+/// `thruput_rpc_api` 0.2.0 predate this and still describe a serial dispatch mode
 /// and a `concurrent-dispatch` feature; neither exists, and this crate's
 /// behavior is the one that applies.
 ///

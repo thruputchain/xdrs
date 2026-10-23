@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rpc_driver::{CallBuf, ProgVers, ProgramError, RpcError, RpcSender};
+use thruput_rpc_driver::{CallBuf, ProgVers, ProgramError, RpcError, RpcSender};
 
 #[allow(non_camel_case_types)]
 #[async_trait]
@@ -35,7 +35,7 @@ impl std::fmt::Debug for TestProgram_TestVersion_Dispatcher {
 }
 
 #[async_trait]
-impl rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatcher {
+impl thruput_rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatcher {
     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
         match proc {
             0 => {
@@ -86,7 +86,7 @@ impl std::fmt::Debug for TestProgram_TestVersion_Client {
 }
 
 /// What a generated client emits for its argument tuple: serialize straight
-/// into the record buffer with the client's own `xdrs`, since `rpc_api`
+/// into the record buffer with the client's own `xdrs`, since `thruput_rpc_api`
 /// carries no serializer.
 fn encode_args<T: xdrs::WriteXDR>(call: &mut CallBuf, args: &T) -> Result<(), RpcError> {
     call.append_with(|buf| {
@@ -130,13 +130,15 @@ impl TestProgram_TestVersion_Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rpc_driver::ProgramError;
-    use rpc_driver::connection::ConnectionHandle;
-    use rpc_driver::pool::DynamicPool;
-    use rpc_driver::tasks::launch_read_task;
-    use rpc_driver::tcp_connection::connect;
-    use rpc_driver::{RpcServer, connect_client, handler::ServiceMap, tcp_connection::accept};
     use std::sync::Arc;
+    use thruput_rpc_driver::ProgramError;
+    use thruput_rpc_driver::connection::ConnectionHandle;
+    use thruput_rpc_driver::pool::DynamicPool;
+    use thruput_rpc_driver::tasks::launch_read_task;
+    use thruput_rpc_driver::tcp_connection::connect;
+    use thruput_rpc_driver::{
+        RpcServer, connect_client, handler::ServiceMap, tcp_connection::accept,
+    };
     use tokio::net::TcpListener;
 
     struct EchoCallbackService {}
@@ -385,8 +387,8 @@ mod tests {
             Ok(())
         }
         async fn takes_int(&self, i: i32) -> Result<i32, ProgramError> {
-            // Use rpc_driver::peer() to get the per-connection sender
-            let cb_client = TestProgram_TestVersion_Client::new(rpc_driver::peer());
+            // Use thruput_rpc_driver::peer() to get the per-connection sender
+            let cb_client = TestProgram_TestVersion_Client::new(thruput_rpc_driver::peer());
             let notify = self.callback_result.clone();
             tokio::spawn(async move {
                 let result = cb_client.takes_int(i).await.unwrap();
@@ -425,8 +427,8 @@ mod tests {
             EchoCallbackService {},
         ))));
 
-        let client_config = rpc_driver::ConnectionConfig::new(None, client_services);
-        let conn = rpc_driver::connect_client_with_config(&addr, client_config)
+        let client_config = thruput_rpc_driver::ConnectionConfig::new(None, client_services);
+        let conn = thruput_rpc_driver::connect_client_with_config(&addr, client_config)
             .await
             .unwrap();
 
@@ -476,8 +478,10 @@ mod tests {
                 _: ProgVers,
                 _: u32,
                 _: CallBuf,
-            ) -> Result<rpc_driver::RpcResponse, RpcError> {
-                Ok(rpc_driver::RpcResponse::from_payload(self.response.clone()))
+            ) -> Result<thruput_rpc_driver::RpcResponse, RpcError> {
+                Ok(thruput_rpc_driver::RpcResponse::from_payload(
+                    self.response.clone(),
+                ))
             }
         }
 

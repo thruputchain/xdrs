@@ -4,14 +4,14 @@ An async ONC-RPC (RFC 5531) client and server API for Rust.
 
 | Crate | Purpose |
 |---|---|
-| `rpc_api` (`thruput-rpc-api`) | Stable traits and types for generated bindings |
-| `rpc_driver` (`thruput-rpc-driver`) | Transports, pools, server, dispatch; re-exports `rpc_api` |
-| `rpc-smoke` | Multi-connection smoke tests |
-| `rpc-api-fixture` | Proves generated bindings need only `rpc_api` |
+| `thruput-rpc-api` | Stable traits and types for generated bindings |
+| `thruput-rpc-driver` | Transports, pools, server, dispatch; re-exports `thruput-rpc-api` |
+| `rpc-api-fixture` | Proves generated bindings need only `thruput-rpc-api` |
 
-`rpc_api` versions independently: keep changes additive (patch bump); a
+`thruput-rpc-api` versions independently: keep changes additive (patch bump); a
 breaking change forces every generated protocol crate to republish. It has no
-`xdrs` dependency. `rpc_driver` shares the workspace version with `xdrs`.
+`thruput-xdrs` dependency. `thruput-rpc-driver` is versioned and released with
+`thruput-xdrs`.
 
 ## Features
 
@@ -28,7 +28,7 @@ Callers own request deadlines; keepalive does not bound RPC latency.
 ## Usage
 
 ```rust
-use rpc_driver::{RpcServer, ServiceMap, connect_client, ProgVers};
+use thruput_rpc_driver::{RpcServer, ServiceMap, connect_client, ProgVers};
 use tokio::net::TcpListener;
 
 // Server
@@ -61,11 +61,11 @@ Both default to `None` (unlimited).
 
 ## Testing without TCP
 
-`rpc_driver::loopback::LoopbackLink` connects two `ServiceMap`s in-process
+`thruput_rpc_driver::loopback::LoopbackLink` connects two `ServiceMap`s in-process
 for unit tests of code that holds an `Arc<dyn RpcSender>`:
 
 ```rust
-use rpc_driver::loopback::LoopbackLink;
+use thruput_rpc_driver::loopback::LoopbackLink;
 
 let link = LoopbackLink::connect(ServiceMap::new(), server_services)
     .with_latency(Duration::from_millis(5)); // one-way, tokio time
@@ -81,7 +81,7 @@ Message-size limits, admission, and pools are not modeled.
 
 Spans: `rpc_connection{peer, role}` (INFO) → `rpc_call{xid, prog, vers, proc}`
 (DEBUG). Use `FmtSpan::CLOSE` with `tracing-subscriber` to log durations, or
-`tracing-opentelemetry` for export. See `rpc-smoke/src/server.rs`.
+`tracing-opentelemetry` for export.
 
 ## Known issues
 
