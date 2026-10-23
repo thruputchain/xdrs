@@ -1,17 +1,16 @@
 //! Connection pools for RPC clients.
 //!
-//! Three pool implementations, modeling different x23/hogd connection patterns:
+//! Four pool implementations, following x23's client connection patterns:
 //!
 //! - [`FixedSerialPool`] — Fixed-size pool with FIFO request dispatch. Each
 //!   connection has a dedicated worker task that processes requests
-//!   sequentially (1 in-flight per connection). Models x23 sync RPC
-//!   (executor→DB).
+//!   sequentially (1 in-flight per connection). Models x23 sync RPC.
 //!
 //! - [`DynamicPool`] — Lazy pool with min-pending load balancing. Opens
 //!   connections on demand up to a maximum, routes each call to the
 //!   connection with the fewest in-flight requests, and evicts idle
 //!   connections after a configurable TTL. Many in-flight per connection.
-//!   Models x23 async RPC (coordinator→mempool).
+//!   Models x23 async RPC.
 //!
 //! - [`CpuSetPool`] — LLC-topology-aware pool. Creates one connection per
 //!   L3 cache group, routes by the caller's current CPU via `sched_getcpu`.
@@ -143,9 +142,6 @@ impl Drop for FixedWorkerConnectionGuard {
 /// the replacement connection. [`CanceledCallPolicy::PoisonConnection`]
 /// instead terminates the affected worker, leaving any other workers available
 /// at reduced capacity until the owner discards the pool.
-///
-/// This matches the Go `ConnectPoolToScheduler` pattern: a fixed number
-/// of connections with sequential dispatch per connection.
 #[derive(Debug)]
 pub struct FixedSerialPool {
     inner: Arc<FixedSerialPoolInner>,

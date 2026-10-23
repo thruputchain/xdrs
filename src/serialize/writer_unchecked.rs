@@ -9,7 +9,7 @@
 //!
 //! Preconditions are checked with `debug_assert!` only, so misuse is caught
 //! in debug builds at zero release-mode cost. This is intended for
-//! code-size-sensitive targets (e.g. wasm smart contracts) where the
+//! code-size-sensitive targets (e.g. wasm or rv32 guest programs) where the
 //! `WriteResult` plumbing and per-write bounds checks of
 //! [`Writer`](crate::serialize::writer::Writer) are unwanted overhead.
 

@@ -133,7 +133,8 @@ connection-closing output cap or handler semaphore. Message-size and socket
 read-buffer settings remain. Like x23, the message-size limit also rejects
 oversized outgoing CALLs before transmission. `rpc_api` and the wire format are unchanged.
 `FixedSerialPool` still explicitly serializes client calls per connection;
-use a direct connection, `DynamicPool`, or `CpuSetPool` for multiplexed calls.
+use a direct connection, `MultiplexPool`, `DynamicPool`, or `CpuSetPool` for
+multiplexed calls.
 
 ## Testing without TCP
 
@@ -351,8 +352,8 @@ the binary build SHA alongside the report. Run baseline/candidate alternately on
 an otherwise idle host and compare individual repeated runs, not just minima.
 
 These end-to-end results cover Rust client → TCP → Rust RPC server → reply,
-including framing, dispatch and scheduling. They are not gateway/transaction
-execution benchmarks or a measured claim of parity with C++ x23. A direct C++
+including framing, dispatch and scheduling. They are not application-handler
+benchmarks or a measured claim of parity with C++ x23. A direct C++
 comparison also needs the same handler, wire payload, connection count, in-flight
 load, CPU placement, and logging settings. Rust and C++ can plausibly reach similar
 performance; their scheduler and task/channel allocation paths still differ.

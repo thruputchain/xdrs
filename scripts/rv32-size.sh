@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds rv32-size-test the way thruput-sdk-rs builds contracts, from its
-# committed Cargo.lock, and prints the ELF's on-chain-relevant section sizes
-# (the same fields as thruput-sdk-rs's sdk_codesizes_rv32.sh).
+# committed Cargo.lock, and prints the ELF's section sizes and file size (the
+# same fields as thruput-sdk-rs's sdk_codesizes_rv32.sh).
 set -euo pipefail
 cd "$(dirname "$0")/../rv32-size-test"
 

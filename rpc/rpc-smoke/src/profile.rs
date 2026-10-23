@@ -66,7 +66,8 @@ pub struct PairingProfile {
     pub duration_secs: u64,
 }
 
-/// Built-in profiles modeled from hogd service pairings.
+/// Built-in profiles. The service-named ones stand for the load shapes of a
+/// multi-process deployment; `echo` and `cpu-prefix-ready` isolate dispatch.
 pub fn builtin_profiles() -> Vec<PairingProfile> {
     vec![
         PairingProfile {
