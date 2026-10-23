@@ -56,7 +56,7 @@ jobs:
           cargo hack --version
 
       - name: dry run
-        uses: thruputchain/actions/cargo-publish-dry-run@24f3732ad8954a602975b7f8fe91fb8fa1279116
+        uses: thruputchain/actions/cargo-publish-dry-run@484be875e4e630d26594110bcc0ab6bf42eeaba7
         with:
           packages: ${{ env.PUBLISH_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
