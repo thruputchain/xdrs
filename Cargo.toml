@@ -147,7 +147,7 @@ bench = false # disable libtest benchmarks, in favor of Criterion
 [[bench]]
 name = "bench1"
 harness = false
-required-features = ["alloc"]
+required-features = ["alloc", "derive"]
 
 [[test]]
 name = "repr"
@@ -225,7 +225,7 @@ required-features = ["alloc", "derive"]
 
 [[test]]
 name = "issue_105_bufwriter_overflow"
-required-features = ["alloc"]
+required-features = ["alloc", "derive"]
 
 [[test]]
 name = "vecm_prealloc_dos"
