@@ -22,9 +22,10 @@
 # Authentication: crates.io trusted publishing (GitHub OIDC) for existing
 # crates; see crates-io-publish's README in thruputchain/actions. Creating a
 # crate needs the CRATESIO_CREATE_PACKAGE_TOKEN secret, a crates.io API token
-# with the scopes publish-new and trusted-publishing. The publish step
-# registers this workflow as each new crate's trusted publisher, so remove
-# the secret and revoke the token once every crate exists.
+# with the scopes publish-new, trusted-publishing and change-owners. The
+# publish step registers this workflow as each new crate's trusted publisher
+# and adds CRATE_OWNERS as its owners, so remove the secret and revoke the
+# token once every crate exists.
 #
 # Dispatch with dry_run for the dry run and the checks, with no tagging or
 # publishing.
@@ -44,6 +45,8 @@ concurrency:
   group: publish
 
 env:
+  # Owners added to each crate a run creates, besides the token's owner.
+  CRATE_OWNERS: github:thruputchain:core-maintainers
   # The stable API boundary crate: versioned independently of the workspace,
   # published under its own `rpc_api-v<version>` tag.
   API_PACKAGES: thruput-rpc-api
@@ -164,6 +167,7 @@ jobs:
           tag-prefix: 'rpc_api-v'
           git-tag: ${{ steps.tag-api.outputs.tag }}
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
+          crate-owners: ${{ env.CRATE_OWNERS }}
 
       - name: Publish workspace crates
         if: ${{ inputs.dry_run == false && steps.check-primary.outputs.release == 'true' }}
@@ -173,3 +177,4 @@ jobs:
           packages: ${{ env.PRIMARY_PACKAGES }}
           git-tag: ${{ steps.tag-primary.outputs.tag }}
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
+          crate-owners: ${{ env.CRATE_OWNERS }}
