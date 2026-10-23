@@ -25,7 +25,7 @@ repository = "https://github.com/thruputchain/xdrs"
 homepage = "https://github.com/thruputchain/xdrs"
 readme = "README.md"
 keywords = ["xdr", "serialization"]
-categories = ["data-formats"]
+categories = ["encoding"]
 
 # NOTE: The version must be duplicated here despite workspace.package.version above.
 # Cargo requires explicit versions for dependencies when publishing,
