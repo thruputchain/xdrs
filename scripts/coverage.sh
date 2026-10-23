@@ -11,6 +11,6 @@ cov --no-report --workspace --lib --tests \
 cov --no-report --lib --tests --features derive,int128
 cov --no-report --lib --tests --no-default-features --features derive,int128
 cov --no-report --features permissive,int128 --test ints
-cov report -p xdrs -p xdr-common -p xdr-derive -p xdr-repr --html
-cov report -p xdrs -p xdr-common -p xdr-derive -p xdr-repr --lcov --output-path target/llvm-cov/lcov.info
-cov report -p xdrs -p xdr-common -p xdr-derive -p xdr-repr
+cov report -p thruput-xdrs -p thruput-xdr-common -p thruput-xdr-derive -p thruput-xdr-repr --html
+cov report -p thruput-xdrs -p thruput-xdr-common -p thruput-xdr-derive -p thruput-xdr-repr --lcov --output-path target/llvm-cov/lcov.info
+cov report -p thruput-xdrs -p thruput-xdr-common -p thruput-xdr-derive -p thruput-xdr-repr

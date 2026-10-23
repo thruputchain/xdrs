@@ -1,17 +1,22 @@
 [package]
-name = "rpc_driver"
+name = "thruput-rpc-driver"
 version.workspace = true
 edition = "2024"
 rust-version.workspace = true
 authors = ["Groundhog Team"]
 license = "Apache-2.0"
-publish = ["thruput"]
+publish = ["crates-io"]
 description = "Async ONC-RPC (RFC 5531) client/server library built on tokio."
 repository = "https://github.com/thruputchain/xdrs"
 homepage = "https://github.com/thruputchain/xdrs"
 readme = "../README.md"
 keywords = ["xdr", "rpc"]
 categories = ["rpc"]
+
+# Published as thruput-rpc-driver. The library keeps its name, so
+# `use rpc_driver::...` is unchanged.
+[lib]
+name = "rpc_driver"
 
 [dependencies]
 rpc_api = { workspace = true }

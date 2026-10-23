@@ -17,17 +17,16 @@ permissions:
 jobs:
   # Audit Rust dependencies
   dependency-policy:
-    # (No registry credentials here: this repo publishes to the private registry
-    # but depends on nothing from it, so the graph resolves unauthenticated.)
+    # (No registry credentials here: every dependency comes from crates.io.)
     permissions:
       contents: read
-    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
+    uses: thruputchain/actions/.github/workflows/rust-dependency-policy.yml@24f3732ad8954a602975b7f8fe91fb8fa1279116
 
   # Lint this repo's workflows
   workflow-lint:
     permissions:
       contents: read
-    uses: thruputchain/actions/.github/workflows/workflow-lint.yml@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
+    uses: thruputchain/actions/.github/workflows/workflow-lint.yml@24f3732ad8954a602975b7f8fe91fb8fa1279116
     with:
       lint-app-id: ${{ vars.PROTOCOL_SYNCHRONIZER_APP_ID }}
     secrets:
@@ -46,7 +45,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Rust 1.96.0
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: 1.96.0
           components: rustfmt,clippy
@@ -77,20 +76,20 @@ jobs:
         run: cargo doc --locked --workspace --all-features
       - name: Test (xdr-common)
         run: |
-          cargo test --locked -p xdr-common --no-default-features
-          cargo test --locked -p xdr-common --features alloc
-          cargo test --locked -p xdr-common --features serde
-          cargo test --locked -p xdr-common --features schemars
+          cargo test --locked -p thruput-xdr-common --no-default-features
+          cargo test --locked -p thruput-xdr-common --features alloc
+          cargo test --locked -p thruput-xdr-common --features serde
+          cargo test --locked -p thruput-xdr-common --features schemars
       - name: Check xdr-common Serde without std
-        run: cargo check --locked -p xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
+        run: cargo check --locked -p thruput-xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
       - name: Check RV32 without std
-        run: cargo check --locked -p xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
+        run: cargo check --locked -p thruput-xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
       - name: Check clippy
-        run: cargo clippy --locked --all-features -p xdr-common -p xdr-repr -p xdr-derive -p xdrs
+        run: cargo clippy --locked --all-features -p thruput-xdr-common -p thruput-xdr-repr -p thruput-xdr-derive -p thruput-xdrs
       - name: Check clippy (RPC crates)
         run: >-
           cargo clippy --all-targets --locked
-          -p rpc_api -p rpc_driver -p rpc-smoke -p rpc-api-fixture -p bench-compare
+          -p thruput-rpc-api -p thruput-rpc-driver -p rpc-smoke -p rpc-api-fixture -p bench-compare
           -- -D warnings
       # A consumer must never end up with two incompatible copies of the RPC
       # boundary crates in one build — that is exactly the type-identity
@@ -98,17 +97,17 @@ jobs:
       # rpc/README.md).
       - name: Check for duplicate RPC boundary crates
         run: |
-          DUPES=$(cargo tree --workspace --duplicates --edges normal --locked | grep -E '^(rpc_api|rpc_driver|xdrs) v' || true)
+          DUPES=$(cargo tree --workspace --duplicates --edges normal --locked | grep -E '^(thruput-rpc-api|thruput-rpc-driver|thruput-xdrs) v' || true)
           if [ -n "$DUPES" ]; then
             echo "::error::Duplicate RPC boundary crates in the dependency graph:"
             echo "$DUPES"
             cargo tree --workspace --duplicates --edges normal --locked
             exit 1
           fi
-          echo "OK: no duplicate rpc_api/rpc_driver/xdrs in the graph"
+          echo "OK: no duplicate thruput-rpc-api/thruput-rpc-driver/thruput-xdrs in the graph"
       - name: Test Documentation Examples
         run: |
-          cargo test --locked --doc -p xdr-repr --features "ns,int128"
+          cargo test --locked --doc -p thruput-xdr-repr --features "ns,int128"
           cargo test --locked --doc --features "alloc,derive,repr,ns,int128"
 
   nightly:
@@ -124,14 +123,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up pinned nightly
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: nightly-2026-05-26
           components: rust-src
       - name: Build xdr-common with build-std
         run: |
-          cargo +nightly-2026-05-26 build --locked -p xdr-common --no-default-features -Zbuild-std=core,alloc
-          cargo +nightly-2026-05-26 build --locked -p xdr-common --features alloc -Zbuild-std=core,alloc
+          cargo +nightly-2026-05-26 build --locked -p thruput-xdr-common --no-default-features -Zbuild-std=core,alloc
+          cargo +nightly-2026-05-26 build --locked -p thruput-xdr-common --features alloc -Zbuild-std=core,alloc
       - name: Docs (docsrs)
         run: cargo +nightly-2026-05-26 doc --locked --workspace --all-features --no-deps
         env:
@@ -169,7 +168,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up current stable
-        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # v1
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: stable
       - name: Test workspace on current stable

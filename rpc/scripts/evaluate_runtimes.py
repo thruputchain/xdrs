@@ -58,10 +58,20 @@ def resolve_baseline(requested):
     return base
 
 
+def driver_package(root):
+    """The driver's package name in the checkout at `root`: a baseline from
+    before the crates.io rename calls it `rpc_driver`, later ones
+    `thruput-rpc-driver`."""
+    metadata = json.loads(run(['cargo', 'metadata', '--locked', '--no-deps', '--format-version', '1'],
+                              root=root, capture_output=True).stdout)
+    return next(package['name'] for package in metadata['packages']
+                if Path(package['manifest_path']).parent.name == 'rpc_driver')
+
+
 def build(root, target, log):
     env = dict(os.environ, CARGO_TARGET_DIR=str(target))
     # Ask Cargo for the exact executable, not an arbitrary matching stale file.
-    result = run(['cargo', 'bench', '--locked', '-p', 'rpc_driver', '--bench',
+    result = run(['cargo', 'bench', '--locked', '-p', driver_package(root), '--bench',
                   'rpc_bench', '--bench', 'primitives', '--no-run', '--message-format=json'],
                  root=root, env=env, stdout=subprocess.PIPE, stderr=log, timeout=900)
     bench = next(Path(row['executable']) for row in map(json.loads, result.stdout.splitlines())

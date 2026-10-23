@@ -48,6 +48,11 @@ repository. `rpc_driver` shares the workspace version with the `xdrs`
 crates and releases under the same `v<version>` tag; `rpc_api` versions
 independently under `rpc_api-v<version>`.
 
+On crates.io every crate here is published with a `thruput-` prefix:
+`thruput-xdrs`, `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr`,
+`thruput-rpc-api` and `thruput-rpc-driver`. Their library names don't change,
+so code still uses `xdrs::`, `rpc_api::` and so on.
+
 ## TODOs
 
 - Consider adding an optional recursion depth limit for decoding

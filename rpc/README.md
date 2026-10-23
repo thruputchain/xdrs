@@ -218,12 +218,15 @@ Instrumentation cost is workload- and subscriber-dependent. Measure it on the
 target system with:
 
 ```sh
-cargo bench -p rpc_driver --bench rpc_bench -- --tracing debug
+cargo bench -p thruput-rpc-driver --bench rpc_bench -- --tracing debug
 ```
 
 See `rpc-smoke/src/server.rs` for a complete reference example.
 
 ## Workspace
+
+`rpc_api` and `rpc_driver` are published as `thruput-rpc-api` and
+`thruput-rpc-driver`; their library names are unchanged.
 
 | Crate | Purpose |
 |---|---|
@@ -291,7 +294,7 @@ python3 rpc/scripts/benchmark.py --quick --output target/bench-smoke
 
 The script builds release binaries with the lockfile, then runs:
 
-- `cargo bench -p rpc_driver --bench primitives`: x23-style empty function,
+- `cargo bench -p thruput-rpc-driver --bench primitives`: x23-style empty function,
   ready future, scalar XDR encode/decode (0, 4, and 400 wire bytes), scheduler
   yield, and buffered TCP record timings. Codec measurements time batches and
   retain seven trials. The scalar loops match x23 wire sizes, not its generated

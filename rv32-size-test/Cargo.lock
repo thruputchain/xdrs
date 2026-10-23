@@ -12,19 +12,19 @@ checksum = "2bfcf67fea2815c2fc3b90873fae90957be12ff417335dfadc7f52927feb03b2"
 name = "rv32-size-test"
 version = "0.0.0"
 dependencies = [
- "xdrs",
+ "thruput-xdrs",
 ]
 
 [[package]]
-name = "xdr-common"
+name = "thruput-xdr-common"
 version = "0.16.1"
 dependencies = [
  "escape-bytes",
 ]
 
 [[package]]
-name = "xdrs"
+name = "thruput-xdrs"
 version = "0.16.1"
 dependencies = [
- "xdr-common",
+ "thruput-xdr-common",
 ]

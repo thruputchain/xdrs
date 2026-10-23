@@ -11,7 +11,7 @@ test = false
 bench = false
 
 [dependencies]
-xdrs = { path = "..", default-features = false, features = ["alloc"] }
+xdrs = { package = "thruput-xdrs", path = "..", default-features = false, features = ["alloc"] }
 
 # thruput-sdk-rs example-contracts' release profile.
 [profile.release]

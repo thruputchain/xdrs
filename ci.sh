@@ -33,17 +33,17 @@ cargo test --locked -F int128 --test ints
 cargo test --locked --workspace --all-features
 
 # Test on xdr-common with varying features
-cargo test --locked -p xdr-common --no-default-features
-cargo test --locked -p xdr-common --features alloc
-cargo test --locked -p xdr-common --features serde
-cargo test --locked -p xdr-common --features schemars
+cargo test --locked -p thruput-xdr-common --no-default-features
+cargo test --locked -p thruput-xdr-common --features alloc
+cargo test --locked -p thruput-xdr-common --features serde
+cargo test --locked -p thruput-xdr-common --features schemars
 
 # Compile Serde support for a target with no standard library.
 rustup target add thumbv7em-none-eabi
-cargo check --locked -p xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
+cargo check --locked -p thruput-xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
 
-cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build --locked -p xdr-common --no-default-features -Zbuild-std=core,alloc
-cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build --locked -p xdr-common --features alloc -Zbuild-std=core,alloc
+cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build --locked -p thruput-xdr-common --no-default-features -Zbuild-std=core,alloc
+cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" build --locked -p thruput-xdr-common --features alloc -Zbuild-std=core,alloc
 
 # check that the benchmarks compile
 cargo test --locked --benches --all-features
@@ -56,14 +56,14 @@ RUSTDOCFLAGS="--cfg docsrs" \
     cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" doc --locked --workspace --all-features --no-deps
 
 # Test Documentation Examples
-cargo test --locked --doc -p xdr-repr --features "ns,int128"
+cargo test --locked --doc -p thruput-xdr-repr --features "ns,int128"
 cargo test --locked --doc --features "alloc,derive,repr,ns,int128"
 
 cargo clippy --locked --workspace --all-features
 
 # RPC crates (rpc/) deny clippy warnings outright
 cargo clippy --all-targets --locked \
-    -p rpc_api -p rpc_driver -p rpc-smoke -p rpc-api-fixture -p bench-compare \
+    -p thruput-rpc-api -p thruput-rpc-driver -p rpc-smoke -p rpc-api-fixture -p bench-compare \
     -- -D warnings
 
 # xdrs linked into an rv32 binary with the thruput-sdk-rs contract config

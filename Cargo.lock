@@ -675,8 +675,8 @@ name = "rpc-api-fixture"
 version = "0.16.1"
 dependencies = [
  "async-trait",
- "rpc_api",
- "rpc_driver",
+ "thruput-rpc-api",
+ "thruput-rpc-driver",
  "tokio",
 ]
 
@@ -686,37 +686,12 @@ version = "0.16.1"
 dependencies = [
  "async-trait",
  "clap",
- "rpc_driver",
  "serde",
  "serde_json",
+ "thruput-rpc-driver",
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "rpc_api"
-version = "0.3.2"
-dependencies = [
- "async-trait",
- "thiserror",
-]
-
-[[package]]
-name = "rpc_driver"
-version = "0.16.1"
-dependencies = [
- "async-trait",
- "libc",
- "rpc_api",
- "serde",
- "serde_json",
- "socket2",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "xdrs",
 ]
 
 [[package]]
@@ -915,6 +890,77 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad99c4c6d32803332c548b1af0540b357b3f5fc0be8f6c6bfe8b2e6ae784070"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "thruput-rpc-api"
+version = "0.3.2"
+dependencies = [
+ "async-trait",
+ "thiserror",
+]
+
+[[package]]
+name = "thruput-rpc-driver"
+version = "0.16.1"
+dependencies = [
+ "async-trait",
+ "libc",
+ "serde",
+ "serde_json",
+ "socket2",
+ "thiserror",
+ "thruput-rpc-api",
+ "thruput-xdrs",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "thruput-xdr-common"
+version = "0.16.1"
+dependencies = [
+ "escape-bytes",
+ "regex-lite",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "thruput-xdr-derive"
+version = "0.16.1"
+dependencies = [
+ "darling",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
+ "thruput-xdrs",
+]
+
+[[package]]
+name = "thruput-xdr-repr"
+version = "0.16.1"
+dependencies = [
+ "heapless",
+ "pretty_assertions",
+ "serde_json",
+ "thruput-xdr-common",
+ "thruput-xdrs",
+]
+
+[[package]]
+name = "thruput-xdrs"
+version = "0.16.1"
+dependencies = [
+ "criterion",
+ "heapless",
+ "hex",
+ "pretty_assertions",
+ "thruput-xdr-common",
+ "thruput-xdr-derive",
+ "thruput-xdr-repr",
 ]
 
 [[package]]
@@ -1124,52 +1170,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "xdr-common"
-version = "0.16.1"
-dependencies = [
- "escape-bytes",
- "regex-lite",
- "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "xdr-derive"
-version = "0.16.1"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "syn 3.0.5",
- "xdrs",
-]
-
-[[package]]
-name = "xdr-repr"
-version = "0.16.1"
-dependencies = [
- "heapless",
- "pretty_assertions",
- "serde_json",
- "xdr-common",
- "xdrs",
-]
-
-[[package]]
-name = "xdrs"
-version = "0.16.1"
-dependencies = [
- "criterion",
- "heapless",
- "hex",
- "pretty_assertions",
- "xdr-common",
- "xdr-derive",
- "xdr-repr",
 ]
 
 [[package]]
