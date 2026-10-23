@@ -51,19 +51,6 @@ On crates.io every crate here is published with a `thruput-` prefix:
 library names (`xdrs::`); the rpc crates are imported by package name
 (`thruput_rpc_api::`, `thruput_rpc_driver::`).
 
-## Coverage
-
-```sh
-cargo +nightly-2026-05-26 install cargo-llvm-cov --version 0.9.1 --locked
-rustup component add llvm-tools-preview --toolchain nightly-2026-05-26
-bash scripts/coverage.sh
-```
-
-This writes HTML (`target/llvm-cov/html/index.html`) and LCOV, merging the
-allocating, no-alloc, compact-error and permissive test runs. CI runs the same
-script and uploads the reports; there is no minimum percentage. Doctests and
-benchmarks are excluded.
-
 ## TODOs
 
 - Optional recursion depth limit for decoding recursive datastructures (see
