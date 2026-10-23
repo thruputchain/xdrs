@@ -94,7 +94,7 @@ Key subscriber decisions (see `src/server.rs` inline docs):
 Example output at DEBUG level:
 
 ```
-rpc_connection{peer=10.0.0.1:4567 role="server"}:rpc_call{xid=42 prog=100 vers=1 proc=1}: close time.busy=4.2us time.idle=515us
+rpc_connection{peer=192.0.2.1:4567 role="server"}:rpc_call{xid=42 prog=100 vers=1 proc=1}: close time.busy=4.2us time.idle=515us
 ```
 
 Performance impact: INFO adds <1% overhead; DEBUG adds ~5% on realistic workloads.
