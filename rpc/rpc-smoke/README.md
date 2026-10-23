@@ -1,9 +1,11 @@
 # rpc-smoke
 
-Multi-connection smoke and load test for `rpc_driver`. The harness starts one
-server and many client processes; each client drives a handler profile (echo,
-sleep, mutex contention, CPU spin) through one of the connection pools, so a
-run exercises concurrent dispatch under a mixed load.
+Multi-connection smoke and load test for `rpc_driver`. The harness starts a
+server (or targets a remote one) and drives it from one or more client
+processes, each running a handler profile (echo, sleep, mutex contention, CPU
+spin) through one of the connection pools. The `realistic` scenario runs every
+service profile at once for a mixed load; the other scenarios isolate
+connection scaling, multi-process throughput, or a single profile.
 
 ## Quick Start
 
