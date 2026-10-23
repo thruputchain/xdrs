@@ -41,9 +41,10 @@ let config = ConnectionConfig::new(None, services)
     .with_max_suspended_handlers(Some(320));
 ```
 
-- **Output admission threshold**: once queued output reaches it, new outgoing
-  calls fail locally and incoming calls get `SYSTEM_ERR`. Replies always go
-  through. Not a hard memory bound.
+- **Output admission threshold** (bytes of queued output): an outgoing call
+  that would exceed it fails locally with `SystemError`; once the backlog is
+  at or above it, incoming calls get `SYSTEM_ERR`. Replies always go through.
+  Not a hard memory bound.
 - **Max suspended handlers**: excess suspended handlers are dropped with
   `SYSTEM_ERR`; ready handlers still complete.
 
