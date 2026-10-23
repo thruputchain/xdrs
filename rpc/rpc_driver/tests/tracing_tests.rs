@@ -12,6 +12,13 @@ use thruput_rpc_driver::{
 use tokio::net::TcpListener;
 use tracing_subscriber::fmt::format::FmtSpan;
 
+/// tracing caches each callsite's interest process-wide. While another test
+/// in this binary runs without a subscriber (or with a different one), that
+/// cache can record a span as disabled for the subscriber a test installed,
+/// and the test then sees, say, `rpc_call` without its `rpc_connection`
+/// parent. Each test holds this for its whole run.
+static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn call_with(payload: &[u8]) -> CallBuf {
     let mut call = CallBuf::new();
     call.extend_from_slice(payload);
@@ -87,6 +94,7 @@ impl RpcHandler for EchoService {
 /// Verify that connection spans and rpc_call spans appear with expected fields.
 #[tokio::test]
 async fn test_tracing_connection_and_call_spans() {
+    let _serial = SERIAL.lock().await;
     let buf = CaptureBuffer::new();
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
@@ -169,6 +177,7 @@ async fn test_tracing_connection_and_call_spans() {
 /// Verify that rpc_call spans still appear for failed RPC calls.
 #[tokio::test]
 async fn test_tracing_spans_for_failed_calls() {
+    let _serial = SERIAL.lock().await;
     let buf = CaptureBuffer::new();
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
@@ -222,6 +231,7 @@ async fn test_tracing_spans_for_failed_calls() {
 /// With the fmt subscriber, child spans appear as context on the same line.
 #[tokio::test]
 async fn test_tracing_span_nesting() {
+    let _serial = SERIAL.lock().await;
     let buf = CaptureBuffer::new();
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
@@ -277,6 +287,7 @@ async fn test_tracing_span_nesting() {
 /// Verify that RPC calls work without any tracing subscriber installed.
 #[tokio::test]
 async fn test_no_subscriber() {
+    let _serial = SERIAL.lock().await;
     // No subscriber installed — tracing macros are no-ops, no panics.
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -303,6 +314,7 @@ async fn test_no_subscriber() {
 /// waiting for the ERROR events that fire on connection close.
 #[tokio::test(flavor = "current_thread")]
 async fn test_info_level_filters_rpc_calls() {
+    let _serial = SERIAL.lock().await;
     let buf = CaptureBuffer::new();
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
