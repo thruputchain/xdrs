@@ -184,7 +184,7 @@ overhead depends on the build, platform, and workload.
 ### Span hierarchy
 
 ```text
-rpc_connection{peer=10.0.0.1:4567 role="server"}     INFO  — per TCP connection
+rpc_connection{peer=192.0.2.1:4567 role="server"}     INFO  — per TCP connection
   rpc_call{xid=42 prog=100 vers=1 proc=3}            DEBUG — per RPC call
 ```
 

@@ -21,7 +21,7 @@ struct Args {
     duration: u64,
 
     /// Connect to an existing remote server instead of spawning one locally.
-    /// Format: host:port (e.g. 10.0.1.5:9876)
+    /// Format: host:port (e.g. 192.0.2.10:9876)
     #[arg(long, global = true)]
     server_addr: Option<String>,
 
