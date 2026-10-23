@@ -106,7 +106,7 @@ jobs:
       # packages each listed crate into vendor/ before the next one resolves
       # against it, so thruput-rpc-api and thruput-xdrs must precede thruput-rpc-driver.
       - name: Publish dry run
-        uses: thruputchain/actions/cargo-publish-dry-run@9cdf02f82c1ac8e0c659c2397f7b17c96724d02e
+        uses: thruputchain/actions/cargo-publish-dry-run@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
         with:
           packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
@@ -118,7 +118,7 @@ jobs:
       # on crates.io and its package is unchanged since the tag.
       - name: Check thruput-rpc-api release
         id: check-api
-        uses: thruputchain/actions/crates-io-publish@9cdf02f82c1ac8e0c659c2397f7b17c96724d02e
+        uses: thruputchain/actions/crates-io-publish@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
         with:
           mode: check
           packages: ${{ env.API_PACKAGES }}
@@ -130,7 +130,7 @@ jobs:
       # version bump.
       - name: Check workspace crates release
         id: check-primary
-        uses: thruputchain/actions/crates-io-publish@9cdf02f82c1ac8e0c659c2397f7b17c96724d02e
+        uses: thruputchain/actions/crates-io-publish@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
         with:
           mode: check
           packages: ${{ env.PRIMARY_PACKAGES }}
@@ -139,7 +139,7 @@ jobs:
       - name: Tag thruput-rpc-api
         id: tag-api
         if: ${{ inputs.dry_run == false && steps.check-api.outputs.release == 'true' }}
-        uses: thruputchain/actions/cargo-release-tag@9cdf02f82c1ac8e0c659c2397f7b17c96724d02e
+        uses: thruputchain/actions/cargo-release-tag@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
         with:
           packages: ${{ env.API_PACKAGES }}
           tag-prefix: 'rpc_api-v'
@@ -148,7 +148,7 @@ jobs:
       - name: Tag workspace crates
         id: tag-primary
         if: ${{ inputs.dry_run == false && steps.check-primary.outputs.release == 'true' }}
-        uses: thruputchain/actions/cargo-release-tag@9cdf02f82c1ac8e0c659c2397f7b17c96724d02e
+        uses: thruputchain/actions/cargo-release-tag@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
         with:
           packages: ${{ env.PRIMARY_PACKAGES }}
           github-token: ${{ github.token }}
@@ -158,7 +158,7 @@ jobs:
       # thruput-rpc-driver's publish-time verify build.
       - name: Publish thruput-rpc-api
         if: ${{ inputs.dry_run == false && steps.check-api.outputs.release == 'true' }}
-        uses: thruputchain/actions/crates-io-publish@9cdf02f82c1ac8e0c659c2397f7b17c96724d02e
+        uses: thruputchain/actions/crates-io-publish@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
         with:
           mode: publish
           packages: ${{ env.API_PACKAGES }}
@@ -168,7 +168,7 @@ jobs:
 
       - name: Publish workspace crates
         if: ${{ inputs.dry_run == false && steps.check-primary.outputs.release == 'true' }}
-        uses: thruputchain/actions/crates-io-publish@9cdf02f82c1ac8e0c659c2397f7b17c96724d02e
+        uses: thruputchain/actions/crates-io-publish@c2827cac0ab8b51c5a3ef119b2c1c854dffa5ae6
         with:
           mode: publish
           packages: ${{ env.PRIMARY_PACKAGES }}
