@@ -833,8 +833,10 @@ pub struct ConnectionHandle {
     /// Decoded calls in flight. While it is zero, which is always the case for
     /// callers that only use `send_call`, the reader copies a reply before
     /// taking `connection_state` instead of under it (see
-    /// [`ConnectionHandle::deliver_reply`]).
-    decoder_calls: AtomicUsize,
+    /// [`ConnectionHandle::deliver_reply`]). The reader loads it on every
+    /// reply, so it sits on its own cache line, away from `pending_count`,
+    /// which callers write on every call.
+    decoder_calls: CacheLine<AtomicUsize>,
     /// Pool selection only needs the shutdown flag, not the callback map lock.
     poisoned: AtomicBool,
     // Cold — accessed rarely:
@@ -864,7 +866,7 @@ impl ConnectionHandle {
             connection_state: StdMutex::new(ConnectionState::new()),
             writer,
             pending_count: AtomicUsize::new(0),
-            decoder_calls: AtomicUsize::new(0),
+            decoder_calls: CacheLine(AtomicUsize::new(0)),
             poisoned: AtomicBool::new(false),
             connection_span: span,
             max_message_size: config.max_message_size,
@@ -1032,7 +1034,7 @@ impl ConnectionHandle {
         };
         // Declared before the call so it outlives the pending slot, which the
         // call's own guard removes first.
-        let _decoding = DecoderCall::new(&self.decoder_calls);
+        let _decoding = DecoderCall::new(&self.decoder_calls.0);
         match self.send_decoded_call(progvers, proc, call, decode).await? {
             ReplyResult::Decoded => Ok(()),
             ReplyResult::Err(error) => Err(error),
@@ -1046,7 +1048,7 @@ impl ConnectionHandle {
     /// as without decoders; only while decoded calls are in flight does the
     /// reader take the lock first, to decode in place or copy under it.
     pub(crate) fn deliver_reply(&self, xid: u32, reply: Result<&[u8], RpcError>) -> bool {
-        if self.decoder_calls.load(Ordering::Acquire) != 0 {
+        if self.decoder_calls.0.load(Ordering::Acquire) != 0 {
             return self
                 .connection_state
                 .lock()
@@ -1263,6 +1265,12 @@ impl ConnectionHandle {
 ///
 /// If the future is dropped before the response arrives, this removes
 /// the pending entry from the HashMap so it doesn't leak.
+/// Keeps a value on its own cache line (128 bytes covers adjacent-line
+/// prefetching on x86).
+#[derive(Debug)]
+#[repr(align(128))]
+struct CacheLine<T>(T);
+
 /// Counts a decoded call in [`ConnectionHandle::decoder_calls`] while it lives.
 struct DecoderCall<'a>(&'a AtomicUsize);
 
