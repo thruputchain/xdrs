@@ -471,7 +471,7 @@ const MY_SPEC: InterfaceSpec = InterfaceSpec {
 };
 
 #[used]
-#[cfg_attr(target_family = "wasm", unsafe(link_section = "groundhogspecrawv0"))]
+#[cfg_attr(target_family = "wasm", unsafe(link_section = "xdrs_spec_raw"))]
 static RAW_INTERFACE_SPEC: [u8; MY_SPEC.const_txs_size()] = {
     let mut w = xdrs::txs::ConstWriter::<{ MY_SPEC.const_txs_size() }>::new();
     MY_SPEC.const_write_txs(&mut w);

@@ -318,15 +318,15 @@ fixed request rate, and its tail latency must not be presented as such.
 completion counts, dispatch mode, source SHA, CPU, Rust version, and worker count.
 `primitives.json`, `summary.md`, and diagnostic logs accompany it. Benchmarks do
 not execute in this repository's CI. The cluster workflows live in the private
-`thruputchain/benchmarks` repository, so no workflow here can reach the hog
-cluster's runners. Each push to `main` asks that repository to run the RPC
-metrics for it (`.github/workflows/benchmarks.yml`), and maintainers can
-dispatch a run there for any commit on an xdrs branch. See that
+`thruputchain/benchmarks` repository, so no workflow here can reach the
+benchmark cluster's runners. Each push to `main` asks that repository to run
+the RPC metrics for it (`.github/workflows/benchmarks.yml`), and maintainers
+can dispatch a run there for any commit on an xdrs branch. See that
 repository's README for how to request a run. It checks out the selected commit
-through `hog_sched` on a dedicated benchmark host, runs these scripts' component
-and separate-process matrix, and writes JSON to `groundhogchain/metrics_history`
-using hogd's `metrics/<name>/main/<commit-time>_<commit>` layout. The metric
-names are `xdr-rpc-e2e` and `xdr-rpc-components`. Failed or partial runs are not
+on a dedicated benchmark host, runs these scripts' component and
+separate-process matrix, and records the JSON results
+(`rpc/scripts/publish_metrics.py`) as `xdr-rpc-e2e` and
+`xdr-rpc-components`. Failed or partial runs are not
 published as successful measurements; diagnostics are printed in the workflow
 log. No timing threshold gates PRs.
 

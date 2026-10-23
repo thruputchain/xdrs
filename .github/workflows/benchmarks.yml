@@ -1,7 +1,7 @@
 name: Benchmarks
 
 # Starts the RPC metrics run for each push to main. The run itself happens in
-# the private thruputchain/benchmarks repository, on the hog cluster; this job
+# the private thruputchain/benchmarks repository, on its benchmark cluster; this job
 # only asks for it, on a GitHub-hosted runner.
 #
 # It dispatches as a GitHub App whose only permission is Actions: read and

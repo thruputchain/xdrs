@@ -2,7 +2,7 @@
 
 //! # rpc_api
 //!
-//! Stable API boundary for the Groundhog ONC-RPC stack.
+//! Stable API boundary for the Thruput ONC-RPC stack.
 //!
 //! This crate owns the shared public types that connect three parties:
 //!
