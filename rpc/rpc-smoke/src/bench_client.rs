@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use rpc_driver::{ProgVers, RpcSender, connect_client};
+use thruput_rpc_driver::{ProgVers, RpcSender, connect_client};
 use tokio::sync::Barrier;
 
 #[derive(Parser)]

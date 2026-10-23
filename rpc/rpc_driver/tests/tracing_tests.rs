@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use rpc_driver::{
+use thruput_rpc_driver::{
     CallBuf, ProgVers, RpcError, RpcServer, connect_client, handler::RpcHandler,
     handler::ServiceMap,
 };

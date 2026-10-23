@@ -1,10 +1,10 @@
 //! Reference example: RPC server with tracing subscriber setup.
 //!
 //! This server demonstrates the recommended pattern for consuming
-//! `rpc_driver`'s tracing instrumentation. Key points:
+//! `thruput_rpc_driver`'s tracing instrumentation. Key points:
 //!
 //! 1. **Add `tracing-subscriber` to your binary crate** (not the library).
-//!    `rpc_driver` emits spans/events via `tracing`; you choose the subscriber.
+//!    `thruput_rpc_driver` emits spans/events via `tracing`; you choose the subscriber.
 //!
 //! 2. **Initialize the subscriber before `RpcServer::start()`** so that
 //!    connection spans are captured from the first accept.
@@ -27,7 +27,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use clap::Parser;
-use rpc_driver::{
+use thruput_rpc_driver::{
     ConnectionConfig, ProgVers, RpcError, RpcServer,
     handler::{RpcHandler, ServiceMap},
 };
@@ -125,7 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // -- Tracing subscriber setup (reference example) --
     //
-    // rpc_driver emits:
+    // thruput_rpc_driver emits:
     //   - rpc_connection spans (INFO) with peer address and role
     //   - rpc_call spans (DEBUG) with xid, prog, vers, proc
     //   - error/warn events for connection failures, parse errors, etc.

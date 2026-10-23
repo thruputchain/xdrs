@@ -1,12 +1,12 @@
 #![warn(missing_docs)]
 
-//! # rpc_api
+//! # thruput_rpc_api
 //!
 //! Stable API boundary for the Thruput ONC-RPC stack.
 //!
 //! This crate owns the shared public types that connect three parties:
 //!
-//! - **`rpc_driver`** — the transport, pool, and dispatch implementation.
+//! - **`thruput_rpc_driver`** — the transport, pool, and dispatch implementation.
 //!   It depends on this crate, re-exports everything here at its historical
 //!   paths, and implements [`RpcSender`] for its connections and pools.
 //! - **Generated protocol bindings** (protocol-rs clients and dispatchers),
@@ -16,7 +16,7 @@
 //!   connections.
 //!
 //! Because all three share these types through a single, rarely-changing
-//! crate, `rpc_driver` can make breaking implementation-only releases
+//! crate, `thruput_rpc_driver` can make breaking implementation-only releases
 //! (pools, configuration, transports) without forcing generated protocol
 //! crates to republish.
 //!
@@ -45,7 +45,7 @@
 //! their argument tuple that way.
 //!
 //! ```
-//! use rpc_api::CallBuf;
+//! use thruput_rpc_api::CallBuf;
 //!
 //! let mut call = CallBuf::new();
 //! call.extend_from_slice(&42u32.to_be_bytes());
@@ -57,7 +57,7 @@
 //! A message too large for one record goes out as a run of records that
 //! may arrive in any order. [`ChunkPosition`] says where a record sits in
 //! its run, and a protocol crate implements [`ChunkRecord`] for each of its
-//! chunked records; `rpc_driver::ChunkRunAssembler` reassembles the runs on
+//! chunked records; `thruput_rpc_driver::ChunkRunAssembler` reassembles the runs on
 //! the server, so handlers push the records they receive as they are.
 
 mod call_buf;

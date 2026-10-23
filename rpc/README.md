@@ -28,7 +28,7 @@ Callers own request deadlines; keepalive does not bound RPC latency.
 ## Usage
 
 ```rust
-use rpc_driver::{RpcServer, ServiceMap, connect_client, ProgVers};
+use thruput_rpc_driver::{RpcServer, ServiceMap, connect_client, ProgVers};
 use tokio::net::TcpListener;
 
 // Server
@@ -61,11 +61,11 @@ Both default to `None` (unlimited).
 
 ## Testing without TCP
 
-`rpc_driver::loopback::LoopbackLink` connects two `ServiceMap`s in-process
+`thruput_rpc_driver::loopback::LoopbackLink` connects two `ServiceMap`s in-process
 for unit tests of code that holds an `Arc<dyn RpcSender>`:
 
 ```rust
-use rpc_driver::loopback::LoopbackLink;
+use thruput_rpc_driver::loopback::LoopbackLink;
 
 let link = LoopbackLink::connect(ServiceMap::new(), server_services)
     .with_latency(Duration::from_millis(5)); // one-way, tokio time

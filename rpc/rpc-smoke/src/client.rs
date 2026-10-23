@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use rpc_driver::{CpuSetPool, DynamicPool, FixedSerialPool, MultiplexPool, ProgVers, RpcSender};
+use thruput_rpc_driver::{
+    CpuSetPool, DynamicPool, FixedSerialPool, MultiplexPool, ProgVers, RpcSender,
+};
 use tokio::sync::Semaphore;
 
 use metrics::{ClientMetrics, ClientRunConfig, RpcCounts};

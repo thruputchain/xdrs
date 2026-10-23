@@ -1,4 +1,4 @@
-use rpc_driver::{
+use thruput_rpc_driver::{
     CallBuf, connection::ConnectionHandle, handler::ServiceMap, tasks::launch_read_task,
     tcp_connection::connect,
 };
@@ -17,7 +17,7 @@ mod tests {
     }
 
     use async_trait::async_trait;
-    use rpc_driver::{
+    use thruput_rpc_driver::{
         ConnectionConfig, ProgVers, RpcError, RpcSender, RpcServer, connect_client,
         connect_client_with_config, handler::RpcHandler, tcp_connection::accept,
     };
@@ -523,7 +523,7 @@ mod tests {
 
         // Connect client with matching max message size
         let client_config = ConnectionConfig::new(Some(1024), ServiceMap::new());
-        let client_handle = rpc_driver::connect_client_with_config(&addr, client_config)
+        let client_handle = thruput_rpc_driver::connect_client_with_config(&addr, client_config)
             .await
             .unwrap();
 
@@ -688,7 +688,7 @@ mod tests {
     #[tokio::test]
     async fn test_fixed_pool_drop_eventually_closes_connections() {
         let (addr, closed) = spawn_close_observer().await;
-        let pool = rpc_driver::pool::FixedSerialPool::connect(&addr, 2)
+        let pool = thruput_rpc_driver::pool::FixedSerialPool::connect(&addr, 2)
             .await
             .unwrap();
         drop(pool);
@@ -698,8 +698,12 @@ mod tests {
     #[tokio::test]
     async fn test_dynamic_pool_drop_eventually_closes_connections() {
         let (addr, closed) = spawn_close_observer().await;
-        let pool =
-            rpc_driver::pool::DynamicPool::new(addr, 2, std::time::Duration::from_secs(60), None);
+        let pool = thruput_rpc_driver::pool::DynamicPool::new(
+            addr,
+            2,
+            std::time::Duration::from_secs(60),
+            None,
+        );
         let _ = pool
             .send_fire_and_forget(ProgVers::new(1, 1), 1, call_with(b"open"))
             .await;
@@ -710,7 +714,7 @@ mod tests {
     #[tokio::test]
     async fn test_dynamic_pool_drop_with_evictor_eventually_closes_connections() {
         let (addr, closed) = spawn_close_observer().await;
-        let pool = Arc::new(rpc_driver::pool::DynamicPool::new(
+        let pool = Arc::new(thruput_rpc_driver::pool::DynamicPool::new(
             addr,
             2,
             std::time::Duration::from_millis(50),
@@ -730,7 +734,7 @@ mod tests {
     #[tokio::test]
     async fn test_cpu_pool_drop_eventually_closes_connections() {
         let (addr, closed) = spawn_close_observer().await;
-        let pool = rpc_driver::pool::CpuSetPool::connect_with_map(&addr, 2, vec![0, 1])
+        let pool = thruput_rpc_driver::pool::CpuSetPool::connect_with_map(&addr, 2, vec![0, 1])
             .await
             .unwrap();
         drop(pool);
@@ -758,13 +762,13 @@ mod tests {
         let mut expected_closed = 0usize;
 
         for _ in 0..64 {
-            let fixed = rpc_driver::pool::FixedSerialPool::connect(&addr, 4)
+            let fixed = thruput_rpc_driver::pool::FixedSerialPool::connect(&addr, 4)
                 .await
                 .unwrap();
             drop(fixed);
             expected_closed += 4;
 
-            let dynamic = Arc::new(rpc_driver::pool::DynamicPool::new(
+            let dynamic = Arc::new(thruput_rpc_driver::pool::DynamicPool::new(
                 addr,
                 4,
                 std::time::Duration::from_secs(60),
@@ -795,9 +799,10 @@ mod tests {
             }
             drop(dynamic);
 
-            let cpu = rpc_driver::pool::CpuSetPool::connect_with_map(&addr, 4, vec![0, 1, 2, 3])
-                .await
-                .unwrap();
+            let cpu =
+                thruput_rpc_driver::pool::CpuSetPool::connect_with_map(&addr, 4, vec![0, 1, 2, 3])
+                    .await
+                    .unwrap();
             drop(cpu);
             expected_closed += 4;
 
@@ -808,8 +813,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_pool_evicts_poisoned_connections() {
-        use rpc_driver::pool::DynamicPool;
         use std::time::Duration;
+        use thruput_rpc_driver::pool::DynamicPool;
 
         // Server: accept one connection, then drop it to trigger EOF.
         // Keep the listener alive but don't accept more connections so
@@ -861,8 +866,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_pool_skips_poisoned_on_lease() {
-        use rpc_driver::pool::DynamicPool;
         use std::time::Duration;
+        use thruput_rpc_driver::pool::DynamicPool;
 
         // Manual server with a blocking echo service on connection 1. Connection
         // 1 uses a blocking handler so we can hold it busy to force a second
@@ -974,8 +979,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_all_connections_poisoned_reopens() {
-        use rpc_driver::pool::DynamicPool;
         use std::time::Duration;
+        use thruput_rpc_driver::pool::DynamicPool;
 
         // Server: accept first connection and drop it to poison, then accept
         // the replacement connection with an echo service running.

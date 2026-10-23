@@ -3,9 +3,9 @@
 use crate::{ProgVers, RpcError};
 use std::collections::BTreeMap;
 
-// The RpcHandler trait lives in the stable `rpc_api` crate; re-exported here
+// The RpcHandler trait lives in the stable `thruput_rpc_api` crate; re-exported here
 // at its historical path for source compatibility.
-pub use rpc_api::RpcHandler;
+pub use thruput_rpc_api::RpcHandler;
 
 /// Registry of RPC services, keyed by program number and version.
 pub struct ServiceMap {

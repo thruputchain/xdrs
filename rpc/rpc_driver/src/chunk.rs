@@ -12,13 +12,13 @@
 //! A server hands every record it receives to a [`ChunkRunAssembler`] and
 //! acts on the [`ChunkRun`] it returns once the run is complete, reading its
 //! parts as one sequence through a [`ChunkedVector`]. A protocol crate
-//! implements [`ChunkRecord`] (from `rpc_api`, so it needs no transport
+//! implements [`ChunkRecord`] (from `thruput_rpc_api`, so it needs no transport
 //! dependency) for each of its chunked wire records, and a handler passes
 //! the record it was called with straight to
 //! [`ChunkRunAssembler::push_record`]:
 //!
 //! ```
-//! use rpc_driver::{ChunkPosition, ChunkRecord, ChunkRunAssembler, ProgramError};
+//! use thruput_rpc_driver::{ChunkPosition, ChunkRecord, ChunkRunAssembler, ProgramError};
 //!
 //! // The shape a chunked wire record takes: the message it belongs to, its
 //! // position in the run, and its slice of the items.
@@ -66,8 +66,8 @@ use std::iter::FusedIterator;
 use std::ops::Index;
 use std::sync::{Mutex, PoisonError};
 
-use rpc_api::ProgramError;
-pub use rpc_api::{ChunkPosition, ChunkRecord};
+use thruput_rpc_api::ProgramError;
+pub use thruput_rpc_api::{ChunkPosition, ChunkRecord};
 use xdrs::{StaticIfNoAlloc, VecM};
 
 /// One chunk's payload: a vector of items, as a variable-length XDR array
@@ -117,7 +117,7 @@ impl<T: StaticIfNoAlloc, const MAX: u32> ChunkPart for VecM<T, MAX> {
 /// [`into_chunks`](Self::into_chunks) gives them back as they came.
 ///
 /// ```
-/// use rpc_driver::ChunkedVector;
+/// use thruput_rpc_driver::ChunkedVector;
 ///
 /// let chunked = ChunkedVector::new(vec![vec![1, 2], vec![], vec![3]]);
 /// assert_eq!(chunked.len(), 3);
@@ -403,7 +403,7 @@ impl From<ChunkRunError> for ProgramError {
 /// when that has happened and drops the assembler with the connection.
 ///
 /// ```
-/// use rpc_driver::{ChunkPosition, ChunkRunAssembler};
+/// use thruput_rpc_driver::{ChunkPosition, ChunkRunAssembler};
 ///
 /// let assembler: ChunkRunAssembler<u64, Vec<u32>> = ChunkRunAssembler::new();
 /// // The second chunk of key 7's run arrives first.

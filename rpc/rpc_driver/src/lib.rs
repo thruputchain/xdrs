@@ -1,13 +1,13 @@
 #![warn(missing_docs)]
 
-//! # rpc_driver
+//! # thruput_rpc_driver
 //!
 //! Async ONC-RPC (RFC 5531) client/server library built on tokio.
 //!
 //! ## Quick Start
 //!
 //! ```no_run
-//! use rpc_driver::{connect_client, ProgVers};
+//! use thruput_rpc_driver::{connect_client, ProgVers};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let conn = connect_client(&"127.0.0.1:111".parse()?).await?;
@@ -23,7 +23,7 @@
 //! with a [`ServiceMap`] and pass it to [`RpcServer`]:
 //!
 //! ```no_run
-//! use rpc_driver::{ProgVers, RpcError, RpcServer, ServiceMap, handler::RpcHandler};
+//! use thruput_rpc_driver::{ProgVers, RpcError, RpcServer, ServiceMap, handler::RpcHandler};
 //! use async_trait::async_trait;
 //!
 //! struct MyService;
@@ -78,14 +78,14 @@
 //! Handlers can call back to the peer inline:
 //!
 //! ```no_run
-//! # use rpc_driver::{ProgVers, RpcError, handler::RpcHandler};
+//! # use thruput_rpc_driver::{ProgVers, RpcError, handler::RpcHandler};
 //! # use async_trait::async_trait;
 //! # struct MyService;
 //! # #[async_trait]
 //! # impl RpcHandler for MyService {
 //! #   fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
 //!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-//!         let peer = rpc_driver::peer();
+//!         let peer = thruput_rpc_driver::peer();
 //!         let resp = peer.send_call(ProgVers::new(200, 1), 0, peer.call_buf()).await?;
 //!         Ok(resp.to_vec())
 //!     }
@@ -105,7 +105,7 @@
 //! ## Tracing
 //!
 //! All diagnostic output uses the [`tracing`](https://docs.rs/tracing) crate.
-//! `rpc_driver` emits spans and events — your binary crate chooses the
+//! `thruput_rpc_driver` emits spans and events — your binary crate chooses the
 //! subscriber (console logging, OpenTelemetry, JSON, etc.).
 //!
 //! Without a subscriber, tracing callsites are disabled. Exact overhead depends
@@ -219,11 +219,11 @@ mod rpc_msg;
 mod rpc_error;
 
 // The stable API boundary — sender/handler traits and shared response/error
-// types — lives in the independently-versioned `rpc_api` crate so that
+// types — lives in the independently-versioned `thruput_rpc_api` crate so that
 // implementation-only driver releases do not force generated protocol
 // bindings to republish. Re-exported here at their historical paths for
 // source compatibility.
-pub use rpc_api::{ProgVers, ProgramError, RpcError};
+pub use thruput_rpc_api::{ProgVers, ProgramError, RpcError};
 
 #[doc(hidden)]
 pub mod tasks;

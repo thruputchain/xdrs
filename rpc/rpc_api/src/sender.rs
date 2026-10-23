@@ -5,11 +5,11 @@ use async_trait::async_trait;
 
 /// Trait for making outgoing RPC calls.
 ///
-/// `rpc_driver` implements this for real TCP connections
+/// `thruput_rpc_driver` implements this for real TCP connections
 /// (`ConnectionHandle`, `ClientConnection`) and for its pooled connections
 /// (`FixedSerialPool`, `DynamicPool`, `CpuSetPool`). Inside an
 /// [`RpcHandler`](crate::RpcHandler) dispatch, the per-connection sender is
-/// available via `rpc_driver::peer()`.
+/// available via `thruput_rpc_driver::peer()`.
 ///
 /// Generated protocol clients hold an `Arc<dyn RpcSender>` and are agnostic
 /// to which implementation backs it. Implement on a mock struct for unit

@@ -13,13 +13,8 @@ readme = "../README.md"
 keywords = ["xdr", "rpc"]
 categories = ["network-programming", "asynchronous"]
 
-# Published as thruput-rpc-driver. The library keeps its name, so
-# `use rpc_driver::...` is unchanged.
-[lib]
-name = "rpc_driver"
-
 [dependencies]
-rpc_api = { workspace = true }
+thruput-rpc-api = { workspace = true }
 async-trait = "0.1.89"
 socket2 = "0.6"
 tokio = { version = "1.47.1", features = ["full"] }
