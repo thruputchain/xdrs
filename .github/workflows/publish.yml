@@ -109,7 +109,7 @@ jobs:
       # packages each listed crate into vendor/ before the next one resolves
       # against it, so rpc_api and xdrs must precede rpc_driver.
       - name: Publish dry run
-        uses: thruputchain/actions/cargo-publish-dry-run@c003527eff402d35ff357854a591cbec2935c2c3
+        uses: thruputchain/actions/cargo-publish-dry-run@e2453db03db2b6eaa289e558bf3d7ed62d0f916b
         with:
           packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
@@ -228,7 +228,7 @@ jobs:
       - name: Tag commit with version
         if: ${{ inputs.dry_run == false }}
         id: publish-tag
-        uses: thruputchain/actions/cargo-release-tag@c003527eff402d35ff357854a591cbec2935c2c3
+        uses: thruputchain/actions/cargo-release-tag@e2453db03db2b6eaa289e558bf3d7ed62d0f916b
         with:
           packages: ${{ env.PRIMARY_PACKAGES }}
           github-token: ${{ github.token }}
@@ -243,7 +243,7 @@ jobs:
       - name: Tag rpc_api
         if: ${{ inputs.dry_run == false }}
         id: tag-rpc-api
-        uses: thruputchain/actions/cargo-release-tag@c003527eff402d35ff357854a591cbec2935c2c3
+        uses: thruputchain/actions/cargo-release-tag@e2453db03db2b6eaa289e558bf3d7ed62d0f916b
         with:
           packages: ${{ env.API_PACKAGES }}
           tag-prefix: 'rpc_api-v'
@@ -258,7 +258,7 @@ jobs:
       # and the xdrs crates publish before rpc_driver for the same reason.
       - name: Publish rpc_api
         if: ${{ inputs.dry_run == false && steps.tag-rpc-api.outputs.released == 'true' }}
-        uses: thruputchain/actions/cargo-publish@c003527eff402d35ff357854a591cbec2935c2c3
+        uses: thruputchain/actions/cargo-publish@e2453db03db2b6eaa289e558bf3d7ed62d0f916b
         with:
           packages: ${{ env.API_PACKAGES }}
           git-tag: ${{ steps.tag-rpc-api.outputs.tag }}
@@ -268,7 +268,7 @@ jobs:
 
       - name: Publish workspace crates
         if: ${{ inputs.dry_run == false }}
-        uses: thruputchain/actions/cargo-publish@c003527eff402d35ff357854a591cbec2935c2c3
+        uses: thruputchain/actions/cargo-publish@e2453db03db2b6eaa289e558bf3d7ed62d0f916b
         with:
           packages: ${{ env.PRIMARY_PACKAGES }}
           git-tag: ${{ steps.publish-tag.outputs.tag }}
