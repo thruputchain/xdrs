@@ -22,36 +22,36 @@
 //!
 //! // The shape a chunked wire record takes: the message it belongs to, its
 //! // position in the run, and its slice of the items.
-//! struct DeltaChunk {
-//!     block: i64,
+//! struct UpdateChunk {
+//!     batch: i64,
 //!     chunk_index: u32,
 //!     chunk_count: u32,
-//!     deltas: Vec<i64>,
+//!     updates: Vec<i64>,
 //! }
 //!
-//! impl ChunkRecord for DeltaChunk {
+//! impl ChunkRecord for UpdateChunk {
 //!     type Key = i64;
 //!     type Part = Vec<i64>;
 //!
 //!     fn into_chunk(self) -> (i64, ChunkPosition, Vec<i64>) {
 //!         let position = ChunkPosition::new(self.chunk_index, self.chunk_count);
-//!         (self.block, position, self.deltas)
+//!         (self.batch, position, self.updates)
 //!     }
 //! }
 //!
 //! struct Server {
-//!     transfers: ChunkRunAssembler<i64, Vec<i64>>,
+//!     batches: ChunkRunAssembler<i64, Vec<i64>>,
 //! }
 //!
 //! impl Server {
-//!     fn hogs_transferred_chunk(&self, chunk: DeltaChunk) -> Result<(), ProgramError> {
+//!     fn updates_chunk(&self, chunk: UpdateChunk) -> Result<(), ProgramError> {
 //!         // A chunk that breaks its run's framing is a sender bug; the error
 //!         // converts into the ProgramError a handler returns.
-//!         if let Some(run) = self.transfers.push_record(chunk)? {
-//!             let block: i64 = run.key;
+//!         if let Some(run) = self.batches.push_record(chunk)? {
+//!             let batch: i64 = run.key;
 //!             let total: i64 = run.parts.iter().sum();
-//!             for delta in &run.parts {
-//!                 // apply the block's delta ...
+//!             for update in &run.parts {
+//!                 // apply the batch's update ...
 //!             }
 //!         }
 //!         Ok(())
@@ -387,7 +387,7 @@ impl From<ChunkRunError> for ProgramError {
 
 /// Reassembles messages a sender split into runs of chunks (see
 /// [`ChunkPosition`]) whose chunks may arrive in any order. `K` identifies
-/// the message a run carries, such as a block height, and `P` is one chunk's
+/// the message a run carries, such as a batch number, and `P` is one chunk's
 /// payload. Runs of several keys may be pending at once, each completing on
 /// its own, and [`push`] may be called from any thread: it takes a mutex and
 /// never blocks on anything else, so a handler can call it inline.
