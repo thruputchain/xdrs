@@ -1480,9 +1480,10 @@ impl RpcSender for MultiplexPool {
 /// LLC-topology-aware connection pool.
 ///
 /// Creates one connection per Last-Level Cache (L3) group, then routes each
-/// RPC to the connection matching the caller's current CPU. This keeps RPC
-/// request/response data in the same L3 cache, avoiding cross-CCX traffic
-/// on multi-socket or chiplet architectures (AMD EPYC, Zen desktop).
+/// RPC to the connection matching the caller's current CPU. On Linux, only
+/// CPUs in the calling thread's allowed affinity mask participate in discovery.
+/// Routing alone does not pin the connection's reader/writer tasks or the
+/// caller's continuation; runtime scheduling must also preserve locality.
 ///
 /// Mirrors the x23 `RpcMulticlient` / `PerCpuSet` pattern.
 ///
@@ -1792,42 +1793,98 @@ fn detect_llc_topology() -> (usize, Vec<usize>) {
 /// Linux-specific LLC topology detection from sysfs.
 #[cfg(target_os = "linux")]
 fn detect_llc_topology_linux() -> Option<(usize, Vec<usize>)> {
-    use std::collections::BTreeMap;
     use std::fs;
 
-    let num_cpus = std::thread::available_parallelism().map(|n| n.get()).ok()?;
-
-    // Read each CPU's L3 shared_cpu_list to determine LLC groups.
-    // CPUs sharing the same list string belong to the same LLC.
-    let mut llc_groups: BTreeMap<String, usize> = BTreeMap::new();
-    let mut cpu_map = vec![usize::MAX; num_cpus];
-    let mut next_bucket = 0;
-
-    for (cpu_id, slot) in cpu_map.iter_mut().enumerate() {
-        let path = format!("/sys/devices/system/cpu/cpu{cpu_id}/cache/index3/shared_cpu_list");
-        let shared = match fs::read_to_string(&path) {
-            Ok(s) => s.trim().to_string(),
-            Err(_) => continue, // offline or no L3 — left as sentinel
-        };
-
-        *slot = *llc_groups.entry(shared).or_insert_with(|| {
-            let b = next_bucket;
-            next_bucket += 1;
-            b
-        });
-    }
-
-    if next_bucket == 0 {
+    // available_parallelism() is a count, not a list of logical CPU IDs.
+    // In a cpuset such as 72-79, inspecting cpu0..cpu7 would choose unrelated
+    // LLCs and leave every CPU the caller can actually use unmapped.
+    let mut affinity = unsafe { std::mem::zeroed::<libc::cpu_set_t>() };
+    // SAFETY: affinity is writable, correctly aligned, and its size is exact.
+    if unsafe { libc::sched_getaffinity(0, std::mem::size_of_val(&affinity), &mut affinity) } != 0 {
+        // Includes kernels whose CPU mask exceeds cpu_set_t. Preserve the
+        // conservative single-connection fallback instead of guessing IDs.
         return None;
     }
+    let cpus: Vec<usize> = (0..libc::CPU_SETSIZE as usize)
+        .filter(|&cpu| {
+            // SAFETY: cpu is below CPU_SETSIZE and affinity is initialized.
+            unsafe { libc::CPU_ISSET(cpu, &affinity) }
+        })
+        .collect();
+    llc_topology_for_cpus(&cpus, |cpu| {
+        fs::read_to_string(format!(
+            "/sys/devices/system/cpu/cpu{cpu}/cache/index3/shared_cpu_list"
+        ))
+        .ok()
+        .map(|s| s.trim().to_string())
+    })
+}
 
-    tracing::info!(groups = next_bucket, cpus = num_cpus, "detected LLC groups");
-    Some((next_bucket, cpu_map))
+#[cfg(target_os = "linux")]
+fn llc_topology_for_cpus(
+    cpus: &[usize],
+    mut read_group: impl FnMut(usize) -> Option<String>,
+) -> Option<(usize, Vec<usize>)> {
+    let mut llc_groups = std::collections::BTreeMap::new();
+    let mut cpu_map = vec![usize::MAX; cpus.iter().max()? + 1];
+    for &cpu in cpus {
+        let Some(group) = read_group(cpu).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let next = llc_groups.len();
+        cpu_map[cpu] = *llc_groups.entry(group).or_insert(next);
+    }
+    if llc_groups.is_empty() {
+        return None;
+    }
+    tracing::info!(
+        groups = llc_groups.len(),
+        cpus = cpus.len(),
+        "detected LLC groups"
+    );
+    Some((llc_groups.len(), cpu_map))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn llc_topology_uses_allowed_cpu_ids_instead_of_cpu_count() {
+        let allowed = [8, 9, 72, 73];
+        let mut inspected = Vec::new();
+        let (count, map) = llc_topology_for_cpus(&allowed, |cpu| {
+            inspected.push(cpu);
+            Some(if cpu < 10 { "8-15" } else { "72-79" }.to_string())
+        })
+        .unwrap();
+        assert_eq!(inspected, allowed);
+        assert_eq!(count, 2);
+        assert_eq!(map.len(), 74);
+        assert_eq!(map[8], map[9]);
+        assert_eq!(map[72], map[73]);
+        assert_ne!(map[8], map[72]);
+        assert_eq!(map[0], usize::MAX);
+        assert_eq!(map[71], usize::MAX);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn llc_topology_handles_restricted_and_unreadable_groups() {
+        let (count, map) = llc_topology_for_cpus(&[72, 73], |_| Some("72-79".into())).unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(map[72], 0);
+        assert_eq!(map[73], 0);
+        assert!(llc_topology_for_cpus(&[], |_| Some("0-7".into())).is_none());
+        assert!(llc_topology_for_cpus(&[72], |_| None).is_none());
+        let (count, map) =
+            llc_topology_for_cpus(&[8, 72], |cpu| (cpu == 72).then(|| "72-79".into())).unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(map[8], usize::MAX);
+        assert_eq!(map[72], 0);
+    }
+
     use crate::RpcServer;
     use crate::handler::{RpcHandler, ServiceMap};
     use async_trait::async_trait;
