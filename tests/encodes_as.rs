@@ -60,6 +60,9 @@ fn slices_of_pointers_stand_in_for_vecm() {
     let arc_refs: Vec<&Arc<Tx>> = arcs.iter().collect();
     let boxes: Vec<Box<Tx>> = owned.iter().cloned().map(Box::new).collect();
     let shared_slice: Arc<[Tx]> = owned.to_vec().into();
+    let boxed_slice: Box<[Tx]> = owned.to_vec().into();
+    let boxed_arcs: Box<[Arc<Tx>]> = arcs.clone().into();
+    let boxed_refs: Box<[&Tx]> = refs.clone().into();
 
     check_stands_in!(
         Batch,
@@ -70,6 +73,9 @@ fn slices_of_pointers_stand_in_for_vecm() {
         &arc_refs[..],
         &boxes[..],
         &shared_slice,
+        &boxed_slice,
+        &boxed_arcs,
+        &boxed_refs,
     );
 }
 
@@ -103,6 +109,46 @@ fn nested_slices_stand_in_for_nested_vecm() {
             .unwrap(),
         &outer[..],
     );
+
+    let boxed: Box<[Box<[Arc<u32>]>]> =
+        Box::new([inner.to_vec().into(), inner[..1].to_vec().into()]);
+    check_stands_in!(
+        VecM<VecM<u32, 2>, 3>,
+        vec![vec![1, 2].try_into().unwrap(), vec![1].try_into().unwrap()]
+            .try_into()
+            .unwrap(),
+        &boxed,
+    );
+}
+
+// `str` is unsized, so it can't be the owned value `check_stands_in!` takes.
+#[test]
+fn boxed_str_stands_in_for_str() {
+    fn check<F: Check>() {
+        let boxed: Box<str> = "memo".into();
+        let expected = F::encode("memo").unwrap();
+        F::check_encode(&boxed, &expected);
+        assert_eq!(encode_arg::<str, F>(&boxed), encode_arg::<str, F>("memo"));
+    }
+    check::<CXS>();
+    check::<TXS>();
+}
+
+// A value returned as `impl EncodesAs<X>`, as an RPC server handler's reply
+// is: boxed slices are built and handed back by value.
+#[test]
+fn boxed_slices_stand_in_by_value() {
+    fn reply(txs: &[Tx; 2]) -> impl EncodesAs<Batch> {
+        txs.iter().cloned().map(Arc::new).collect::<Box<[_]>>()
+    }
+    fn borrowed_reply(txs: &[Tx; 2]) -> impl EncodesAs<Batch> + '_ {
+        txs.iter().collect::<Box<[&Tx]>>()
+    }
+
+    let owned = txs();
+    let expected = Batch::try_from(owned.to_vec()).unwrap();
+    check_stands_in!(Batch, expected.clone(), &reply(&owned));
+    check_stands_in!(Batch, expected.clone(), &borrowed_reply(&owned));
 }
 
 // The bound is a promise, not a check: an oversized slice still encodes,
