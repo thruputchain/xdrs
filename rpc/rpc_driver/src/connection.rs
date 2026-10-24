@@ -548,7 +548,8 @@ const RPC_VERSION: u32 = 2;
 // and [`ClientConnection`]; the pools in [`crate::pool`] implement it too.
 pub use thruput_rpc_api::{CallBuf, RpcResponse, RpcSender};
 
-type ReplyDecoder<'a> = dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send + 'a;
+pub(crate) type ReplyDecoder<'a> =
+    dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send + 'a;
 
 #[async_trait]
 impl RpcSender for ConnectionHandle {
@@ -615,7 +616,7 @@ impl CallSlot {
     /// # Safety
     /// `decode` must stay valid until the call holding this slot finishes or
     /// its future is dropped.
-    unsafe fn new(decode: &mut ReplyDecoder<'_>) -> Self {
+    pub(crate) unsafe fn new(decode: &mut ReplyDecoder<'_>) -> Self {
         // SAFETY: lifetime erased under the caller's contract.
         let decode = unsafe {
             std::mem::transmute::<NonNull<ReplyDecoder<'_>>, NonNull<ReplyDecoder<'static>>>(
@@ -676,6 +677,32 @@ unsafe fn finish_call(slot: NonNull<CallSlot>, reply: Result<&[u8], RpcError>) {
     unsafe { *slot.outcome.get() = Some(outcome) };
     slot.done.store(true, Ordering::Release);
     // The future may free the slot from here on.
+}
+
+/// Deliver `reply` to call `xid` on the pending map `state`: the call's
+/// decoder runs here, outside the lock. Returns `Some(true)` for a
+/// fire-and-forget call's reply, and `None`, discarding the reply, for an
+/// xid not in the map.
+pub(crate) fn deliver_reply(
+    state: &StdMutex<ConnectionState>,
+    xid: u32,
+    reply: Result<&[u8], RpcError>,
+) -> Option<bool> {
+    let mut state = state.lock().unwrap();
+    match state.pending_requests.remove(&xid) {
+        Some(Pending::Call(slot)) => {
+            // SAFETY: removing the entry under the lock makes this its finisher.
+            let waker = unsafe { slot.as_ref().take_waker() };
+            drop(state);
+            unsafe { finish_call(slot, reply) };
+            if let Some(waker) = waker {
+                waker.wake();
+            }
+            Some(false)
+        }
+        Some(Pending::FireAndForget) => Some(true),
+        None => None,
+    }
 }
 
 /// A pending map entry: a waiting call, or a fire-and-forget call whose
@@ -977,11 +1004,7 @@ impl ConnectionHandle {
         let slot = unsafe { CallSlot::new(decode) };
         // Declared after `slot`, so it drops (and waits out a running
         // decoder) before the slot does.
-        let mut pending = PendingCall {
-            handle: self,
-            slot: &slot,
-            xid: None,
-        };
+        let mut pending = PendingCall::new(&self.connection_state, &self.pending_count, &slot);
         // Register with this poll's waker under one lock; the reply's
         // completion then needs no lock on this side.
         let xid = std::future::poll_fn(|cx| Poll::Ready(pending.register(cx.waker()))).await?;
@@ -1016,25 +1039,10 @@ impl ConnectionHandle {
     /// call's decoder runs here, outside the connection lock. Returns true
     /// for a fire-and-forget call's reply.
     pub(crate) fn deliver_reply(&self, xid: u32, reply: Result<&[u8], RpcError>) -> bool {
-        let mut state = self.connection_state.lock().unwrap();
-        match state.pending_requests.remove(&xid) {
-            Some(Pending::Call(slot)) => {
-                // SAFETY: removing the entry under the lock makes this its finisher.
-                let waker = unsafe { slot.as_ref().take_waker() };
-                drop(state);
-                unsafe { finish_call(slot, reply) };
-                if let Some(waker) = waker {
-                    waker.wake();
-                }
-                false
-            }
-            Some(Pending::FireAndForget) => true,
-            None => {
-                drop(state);
-                tracing::warn!(xid, "received reply for unknown xid");
-                false
-            }
-        }
+        deliver_reply(&self.connection_state, xid, reply).unwrap_or_else(|| {
+            tracing::warn!(xid, "received reply for unknown xid");
+            false
+        })
     }
 
     /// Send an RPC call without waiting for the response.
@@ -1139,30 +1147,46 @@ impl ConnectionHandle {
 /// A call's registration; dropping it cancels the call. It only borrows the
 /// slot: once registered, the reader reaches the slot through the pending
 /// map, so this side must never hold an exclusive reference to it.
-struct PendingCall<'a> {
-    handle: &'a ConnectionHandle,
+pub(crate) struct PendingCall<'a> {
+    state: &'a StdMutex<ConnectionState>,
+    pending_count: &'a AtomicUsize,
     slot: &'a CallSlot,
     /// Set while registered (and counted in `pending_count`).
     xid: Option<u32>,
 }
 
-impl PendingCall<'_> {
-    fn register(&mut self, waker: &Waker) -> Result<u32, RpcError> {
+impl<'a> PendingCall<'a> {
+    /// A call on the pending map `state`, counted in `pending_count` while
+    /// registered.
+    pub(crate) fn new(
+        state: &'a StdMutex<ConnectionState>,
+        pending_count: &'a AtomicUsize,
+        slot: &'a CallSlot,
+    ) -> Self {
+        Self {
+            state,
+            pending_count,
+            slot,
+            xid: None,
+        }
+    }
+
+    pub(crate) fn register(&mut self, waker: &Waker) -> Result<u32, RpcError> {
         // Clone first: a panicking clone must not leave the slot published
         // with nothing set to unpublish it.
         let waker = waker.clone();
         let slot = NonNull::from(self.slot);
-        let mut state = self.handle.connection_state.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
         let xid = state.register_call(slot)?;
         self.xid = Some(xid);
         // SAFETY: the entry was just inserted under this lock.
         unsafe { *self.slot.waker.get() = Some(waker) };
         drop(state);
-        self.handle.pending_count.fetch_add(1, Ordering::Relaxed);
+        self.pending_count.fetch_add(1, Ordering::Relaxed);
         Ok(xid)
     }
 
-    async fn wait(&mut self) -> Result<(), RpcError> {
+    pub(crate) async fn wait(&mut self) -> Result<(), RpcError> {
         let xid = self.xid.expect("registered");
         // The first poll is the one that registered the waker.
         let mut fresh = true;
@@ -1173,7 +1197,7 @@ impl PendingCall<'_> {
             if std::mem::take(&mut fresh) {
                 return Poll::Pending;
             }
-            let state = self.handle.connection_state.lock().unwrap();
+            let state = self.state.lock().unwrap();
             if state.pending_requests.contains_key(&xid) {
                 // SAFETY: our entry is in the map and the lock is held.
                 let waker = unsafe { &mut *self.slot.waker.get() };
@@ -1189,7 +1213,7 @@ impl PendingCall<'_> {
         })
         .await;
         self.xid = None;
-        self.handle.pending_count.fetch_sub(1, Ordering::Relaxed);
+        self.pending_count.fetch_sub(1, Ordering::Relaxed);
         // SAFETY: `done` was observed, so the outcome is published and no
         // one else touches the slot.
         match unsafe { (*self.slot.outcome.get()).take() }.expect("finished call has an outcome") {
@@ -1202,13 +1226,12 @@ impl PendingCall<'_> {
 impl Drop for PendingCall<'_> {
     fn drop(&mut self) {
         let Some(xid) = self.xid else { return };
-        self.handle.pending_count.fetch_sub(1, Ordering::Relaxed);
+        self.pending_count.fetch_sub(1, Ordering::Relaxed);
         if self.slot.is_done() {
             return;
         }
         let removed = self
-            .handle
-            .connection_state
+            .state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .pending_requests

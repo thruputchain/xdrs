@@ -14,7 +14,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.17.0"
+version = "0.17.1"
 edition = "2024"
 rust-version = "1.96"
 authors = ["Thruput Team"]
@@ -31,11 +31,11 @@ categories = ["encoding"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.17.0" }
-xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.17.0" }
-xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=0.17.0" }
-xdrs = { package = "thruput-xdrs", path = ".", version = "0.17.0" }
-thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.17.0" }
+xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.17.1" }
+xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.17.1" }
+xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=0.17.1" }
+xdrs = { package = "thruput-xdrs", path = ".", version = "0.17.1" }
+thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.17.1" }
 # rpc_api versions independently of the workspace (it is the stable API
 # boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
 thruput-rpc-api = { path = "rpc/rpc_api", version = "0.4.0" }
