@@ -33,7 +33,6 @@
 //!         proc: u32,
 //!         data: &[u8],
 //!         reply: thruput_rpc_driver::ReplyBuf,
-//!         slot: thruput_rpc_driver::FutureSlot,
 //!     ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
 //!         // Encode the result into `reply`, which already reserves the
 //!         // reply header; the future owns it, not the request bytes.
@@ -42,7 +41,7 @@
 //!             1 => reply.with(data),   // echo
 //!             _ => return Err(RpcError::InvalidProcedure),
 //!         };
-//!         Ok(slot.put(async move { Ok(reply) }))
+//!         Ok(Box::pin(async move { Ok(reply) }))
 //!     }
 //!     fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
 //! }
@@ -95,10 +94,9 @@
 //!         proc: u32,
 //!         data: &[u8],
 //!         reply: thruput_rpc_driver::ReplyBuf,
-//!         slot: thruput_rpc_driver::FutureSlot,
 //!     ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
 //!         let peer = thruput_rpc_driver::peer();
-//!         Ok(slot.put(async move {
+//!         Ok(Box::pin(async move {
 //!             let resp = peer.send_call(ProgVers::new(200, 1), 0, peer.call_buf()).await?;
 //!             Ok(reply.with(&resp))
 //!         }))

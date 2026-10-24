@@ -30,10 +30,9 @@
 //! #         _proc: u32,
 //! #         data: &[u8],
 //! #         reply: thruput_rpc_driver::ReplyBuf,
-//! #         slot: thruput_rpc_driver::FutureSlot,
 //! #     ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
 //! #         let reply = reply.with(data);
-//! #         Ok(slot.put(async move { Ok(reply) }))
+//! #         Ok(Box::pin(async move { Ok(reply) }))
 //! #     }
 //! #     fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
 //! # }
@@ -324,7 +323,6 @@ impl LoopbackSender {
                     proc,
                     call.payload(),
                     ReplyBuf::from_spare(crate::connection::take_buffer()),
-                    crate::FutureSlot::new(),
                 )?
                 .await
         });

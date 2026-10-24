@@ -27,7 +27,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use thruput_rpc_driver::{
-    ConnectionConfig, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
+    ConnectionConfig, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
     handler::{RpcHandler, ServiceMap},
 };
 use tokio::net::TcpListener;
@@ -51,13 +51,12 @@ impl RpcHandler for SmokeHandler {
         _proc: u32,
         data: &[u8],
         reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
         let (tag, duration_us) = decode_payload(data);
         let dur = Duration::from_micros(duration_us as u64);
         // Echo the payload back
         let reply = reply.with(data);
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             self.simulate(tag, dur).await?;
             Ok(reply)
         }))

@@ -3,8 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use thruput_rpc_driver::{
-    CallBuf, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcHandler, RpcSender, RpcServer,
-    ServiceMap,
+    CallBuf, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcHandler, RpcSender, RpcServer, ServiceMap,
 };
 use tokio::sync::Notify;
 
@@ -47,10 +46,9 @@ impl RpcHandler for Echo {
         proc: u32,
         bytes: &[u8],
         reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
         let reply = reply.with(bytes);
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             if proc == 1 {
                 self.entered.notify_one();
                 self.release.notified().await;

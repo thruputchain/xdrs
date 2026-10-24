@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use thruput_rpc_driver::{
-    CallBuf, ConnectionConfig, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
+    CallBuf, ConnectionConfig, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
     connect_client_with_config, handler::RpcHandler, handler::ServiceMap,
 };
 use tracing::field::{Field, Visit};
@@ -28,17 +28,11 @@ fn call_with(payload: &[u8]) -> CallBuf {
 struct MixedService;
 
 impl RpcHandler for MixedService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         let reply = reply.with(data);
         match proc {
-            0 => Ok(slot.put(async move { Ok(reply) })),
-            1 => Ok(slot.put(async move {
+            0 => Ok(Box::pin(async move { Ok(reply) })),
+            1 => Ok(Box::pin(async move {
                 tokio::task::yield_now().await;
                 Ok(reply)
             })),

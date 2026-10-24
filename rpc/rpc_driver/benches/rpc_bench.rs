@@ -21,8 +21,8 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use thruput_rpc_driver::{
-    CallBuf, ConnectionConfig, DynamicPool, FixedSerialPool, FutureSlot, ProgVers, ReplyBuf,
-    RpcError, RpcFuture, RpcSender, RpcServer, connect_client_with_config,
+    CallBuf, ConnectionConfig, DynamicPool, FixedSerialPool, ProgVers, ReplyBuf, RpcError,
+    RpcFuture, RpcSender, RpcServer, connect_client_with_config,
     handler::{RpcHandler, ServiceMap},
 };
 
@@ -114,19 +114,13 @@ const ECHO_PROG: ProgVers = ProgVers::new(1, 1);
 struct EchoService;
 
 impl RpcHandler for EchoService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         let reply = match proc {
             0 => reply,
             1 => reply.with(data),
             _ => return Err(RpcError::InvalidProcedure),
         };
-        Ok(slot.put(async move { Ok(reply) }))
+        Ok(Box::pin(async move { Ok(reply) }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -139,19 +133,13 @@ struct DelayEchoService {
 }
 
 impl RpcHandler for DelayEchoService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         let reply = match proc {
             0 => reply,
             1 => reply.with(data),
             _ => return Err(RpcError::InvalidProcedure),
         };
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             if proc == 1 {
                 tokio::time::sleep(self.delay).await;
             }
@@ -169,21 +157,15 @@ struct InlineCallbackService;
 const CALLBACK_PROG: ProgVers = ProgVers::new(2, 1);
 
 impl RpcHandler for InlineCallbackService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
-            0 => Ok(slot.put(async move { Ok(reply) })),
+            0 => Ok(Box::pin(async move { Ok(reply) })),
             1 => {
                 // Call back to the peer on the same connection, inline.
                 let peer = thruput_rpc_driver::peer();
                 let mut call = peer.call_buf();
                 call.extend_from_slice(data);
-                Ok(slot.put(async move {
+                Ok(Box::pin(async move {
                     let response = peer.send_call(ECHO_PROG, 1, call).await?;
                     Ok(reply.with(&response))
                 }))
@@ -204,15 +186,9 @@ struct FanoutService {
 }
 
 impl RpcHandler for FanoutService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         let data = data.to_vec();
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             match proc {
                 0 => Ok(reply),
                 1 => {
@@ -248,13 +224,7 @@ impl RpcHandler for FanoutService {
 struct ReadySubmitService;
 
 impl RpcHandler for ReadySubmitService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         let reply = match proc {
             // Null proc: pure transport and dispatch overhead.
             0 => reply,
@@ -262,7 +232,7 @@ impl RpcHandler for ReadySubmitService {
             1 => reply.with(data),
             _ => return Err(RpcError::InvalidProcedure),
         };
-        Ok(slot.put(async move { Ok(reply) }))
+        Ok(Box::pin(async move { Ok(reply) }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -283,10 +253,9 @@ impl RpcHandler for ContentionService {
         _proc: u32,
         data: &[u8],
         reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
         let reply = reply.with(data);
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             let _guard = self.lock.lock().await;
             tokio::time::sleep(self.work_duration).await;
             Ok(reply)

@@ -12,7 +12,7 @@
 use std::sync::Arc;
 
 use thruput_rpc_api::{
-    FutureSlot, ProgVers, ProgramError, ReplyBuf, RpcError, RpcFuture, RpcHandler, RpcSender,
+    ProgVers, ProgramError, ReplyBuf, RpcError, RpcFuture, RpcHandler, RpcSender,
 };
 
 /// Program number for the fixture echo service.
@@ -52,22 +52,16 @@ impl RpcHandler for EchoDispatcher {
         ProgVers::new(ECHO_PROG, ECHO_VERS)
     }
 
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
-            0 => Ok(slot.put(async move {
+            0 => Ok(Box::pin(async move {
                 self.inner.null().await.map_err(|_| RpcError::SystemError)?;
                 Ok(reply)
             })),
             1 => {
                 // Decode the arguments before the future exists.
                 let data = data.to_vec();
-                Ok(slot.put(async move {
+                Ok(Box::pin(async move {
                     let echoed = self
                         .inner
                         .echo(data)

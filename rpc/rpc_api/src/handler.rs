@@ -1,6 +1,12 @@
 //! Trait for implementing RPC service handlers.
 
-use crate::{FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture};
+use crate::{ProgVers, ReplyBuf, RpcError};
+use std::future::Future;
+use std::pin::Pin;
+
+/// A handler's invocation for one call: decoded arguments in, encoded reply
+/// out. It may borrow its service but not the request bytes.
+pub type RpcFuture<'a> = Pin<Box<dyn Future<Output = Result<ReplyBuf, RpcError>> + Send + 'a>>;
 
 /// Trait for implementing RPC service handlers.
 ///
@@ -20,11 +26,9 @@ pub trait RpcHandler: Send + Sync + 'static {
     /// Decode `data` into owned arguments before constructing the future.
     /// Move those arguments and `reply` into an `async move` block that
     /// invokes the service through `self`, encodes its result into `reply`
-    /// and returns it, and store that block with `slot.put`. `reply` comes
-    /// from the driver's buffer cache with the reply header reserved, and
-    /// `slot` is storage the driver reuses across calls, so a call that
-    /// completes without suspending allocates nothing. Neither the driver
-    /// nor the returned future needs to keep a copy of the serialized
+    /// and returns it, and return that block boxed. `reply` comes from the
+    /// driver's buffer cache with the reply header reserved. Neither the
+    /// driver nor the returned future needs to keep a copy of the serialized
     /// request.
     ///
     /// Invalid procedures and malformed arguments can be rejected immediately.
@@ -32,7 +36,7 @@ pub trait RpcHandler: Send + Sync + 'static {
     /// A future borrowing the input is rejected at compile time:
     ///
     /// ```compile_fail
-    /// use thruput_rpc_api::{FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcHandler};
+    /// use thruput_rpc_api::{ProgVers, ReplyBuf, RpcError, RpcFuture, RpcHandler};
     /// struct BorrowingHandler;
     /// impl RpcHandler for BorrowingHandler {
     ///     fn prog_vers(&self) -> ProgVers { ProgVers::new(1, 1) }
@@ -41,19 +45,12 @@ pub trait RpcHandler: Send + Sync + 'static {
     ///         _: u32,
     ///         data: &[u8],
     ///         reply: ReplyBuf,
-    ///         slot: FutureSlot,
     ///     ) -> Result<RpcFuture<'_>, RpcError> {
-    ///         Ok(slot.put(async move { Ok(reply.with(data)) }))
+    ///         Ok(Box::pin(async move { Ok(reply.with(data)) }))
     ///     }
     /// }
     /// ```
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError>;
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError>;
 
     /// Return the program number and version this service handles.
     fn prog_vers(&self) -> ProgVers;

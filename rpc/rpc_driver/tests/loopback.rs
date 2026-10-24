@@ -6,8 +6,7 @@ use std::time::Duration;
 
 use thruput_rpc_driver::loopback::{LoopbackLink, LoopbackSender};
 use thruput_rpc_driver::{
-    CallBuf, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcSender, ServiceMap,
-    handler::RpcHandler,
+    CallBuf, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcSender, ServiceMap, handler::RpcHandler,
 };
 use tokio::sync::mpsc;
 use tokio::time::Instant;
@@ -18,19 +17,13 @@ const ECHO: ProgVers = ProgVers::new(100, 1);
 struct EchoService;
 
 impl RpcHandler for EchoService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
             1 => {
                 let reply = reply.with(data);
-                Ok(slot.put(async move { Ok(reply) }))
+                Ok(Box::pin(async move { Ok(reply) }))
             }
-            2 => Ok(slot.put(async { Err(RpcError::PoolClosed) })),
+            2 => Ok(Box::pin(async { Err(RpcError::PoolClosed) })),
             _ => Err(RpcError::InvalidProcedure),
         }
     }
@@ -54,15 +47,9 @@ struct RecordingService {
 }
 
 impl RpcHandler for RecordingService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         let _ = self.entered.send((proc, data.to_vec()));
-        Ok(slot.put(async move { Ok(reply) }))
+        Ok(Box::pin(async move { Ok(reply) }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -88,10 +75,9 @@ impl RpcHandler for CallbackService {
         _proc: u32,
         data: &[u8],
         reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
         let data = data.to_vec();
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             let peer = thruput_rpc_driver::peer();
             let echoed = peer.send_call(ECHO, 1, call_with(&*peer, &data)).await?;
             Ok(reply.with(&echoed))
@@ -120,9 +106,8 @@ impl RpcHandler for PanickingService {
         _proc: u32,
         _data: &[u8],
         _reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
-        Ok(slot.put(async { panic!("handler bug") }))
+        Ok(Box::pin(async { panic!("handler bug") }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -144,9 +129,8 @@ impl RpcHandler for PoisoningService {
         _proc: u32,
         _data: &[u8],
         reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             self.link
                 .lock()
                 .unwrap()
@@ -184,9 +168,8 @@ impl RpcHandler for SuspendingService {
         _proc: u32,
         _data: &[u8],
         reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             let _guard = PanicOnDrop;
             std::future::pending::<()>().await;
             Ok(reply)
@@ -485,10 +468,9 @@ impl RpcHandler for GatedService {
         _proc: u32,
         data: &[u8],
         reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
         let reply = reply.with(data);
-        Ok(slot.put(async move {
+        Ok(Box::pin(async move {
             let guard = SetOnDrop(self.dropped.clone());
             let _ = self.entered.send(());
             self.permits.acquire().await.unwrap().forget();
@@ -641,17 +623,11 @@ const SYNC_FAILING: ProgVers = ProgVers::new(800, 1);
 struct SyncFailureService;
 
 impl RpcHandler for SyncFailureService {
-    fn dispatch(
-        &self,
-        proc: u32,
-        data: &[u8],
-        reply: ReplyBuf,
-        slot: FutureSlot,
-    ) -> Result<RpcFuture<'_>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
             0 => {
                 let reply = reply.with(data);
-                Ok(slot.put(async move { Ok(reply) }))
+                Ok(Box::pin(async move { Ok(reply) }))
             }
             1 => panic!("intentional panic while decoding"),
             2 => Err(RpcError::GarbageArguments),

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 // The RpcHandler trait lives in the stable `thruput_rpc_api` crate; re-exported here
 // at its historical path for source compatibility.
-pub use thruput_rpc_api::{FutureSlot, ReplyBuf, RpcFuture, RpcHandler};
+pub use thruput_rpc_api::{ReplyBuf, RpcFuture, RpcHandler};
 
 /// Registry of RPC services, keyed by program number and version.
 pub struct ServiceMap {
@@ -51,13 +51,12 @@ impl ServiceMap {
         proc: u32,
         data: &[u8],
         reply: ReplyBuf,
-        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
         if rpc_vers != 2 {
             return Err(RpcError::RpcMismatch);
         }
         if let Some(handler) = self.services.get(&srv) {
-            return handler.dispatch(proc, data, reply, slot);
+            return handler.dispatch(proc, data, reply);
         }
 
         let first_match = self.services.range(ProgVers::new(srv.prog(), 0)..);
@@ -99,14 +98,7 @@ mod tests {
             data: &[u8],
         ) -> Result<Vec<u8>, RpcError> {
             let reply = self
-                .dispatch(
-                    rpc_vers,
-                    srv,
-                    proc,
-                    data,
-                    ReplyBuf::new(),
-                    FutureSlot::new(),
-                )?
+                .dispatch(rpc_vers, srv, proc, data, ReplyBuf::new())?
                 .await?;
             Ok(reply.payload().to_vec())
         }
@@ -124,14 +116,13 @@ mod tests {
             proc: u32,
             data: &[u8],
             reply: ReplyBuf,
-            slot: FutureSlot,
         ) -> Result<RpcFuture<'_>, RpcError> {
             let reply = match proc {
                 0 => reply,            // null procedure
                 1 => reply.with(data), // echo
                 _ => return Err(RpcError::InvalidProcedure),
             };
-            Ok(slot.put(async move { Ok(reply) }))
+            Ok(Box::pin(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> ProgVers {

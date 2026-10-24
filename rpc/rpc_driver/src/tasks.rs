@@ -9,7 +9,7 @@ use crate::{
     ProgVers, RpcError,
     connection::{ConnectionHandle, RpcSender},
     context::with_peer,
-    handler::{FutureSlot, ReplyBuf, RpcFuture, ServiceMap},
+    handler::{ReplyBuf, RpcFuture, ServiceMap},
     rpc_msg,
     tcp_connection::ReadHalf,
 };
@@ -261,13 +261,11 @@ pub(crate) mod dispatch {
     type InvocationResult = Result<ReplyBuf, RpcError>;
     type Panic = Box<dyn std::any::Any + Send>;
 
-    /// Owns one CALL's handler future, which lives in a [`FutureSlot`]'s heap
-    /// storage and so never moves when this guard moves into a task.
+    /// Owns one CALL's handler future, which is boxed and so never moves
+    /// when this guard moves into a task.
     pub(super) struct HandlerFuture {
         future: Option<RpcFuture<'static>>,
         xid: u32,
-        /// Storage recovered from a completed future, for the next call.
-        spare: Option<FutureSlot>,
     }
 
     /// Detach an invocation from its borrow of the service map.
@@ -288,11 +286,7 @@ pub(crate) mod dispatch {
             dispatch: impl FnOnce() -> Result<RpcFuture<'static>, RpcError>,
             cx: &mut Context<'_>,
         ) -> (Self, Poll<HandlerResult>) {
-            let mut handler = Self {
-                future: None,
-                xid,
-                spare: None,
-            };
+            let mut handler = Self { future: None, xid };
             let result = std::panic::catch_unwind(AssertUnwindSafe(|| match dispatch() {
                 Ok(future) => Pin::new(handler.future.insert(future)).poll(cx),
                 Err(error) => Poll::Ready(Err(error)),
@@ -311,19 +305,15 @@ pub(crate) mod dispatch {
                 Err(panic) => Err(panic),
             };
             let response = handler_outcome(result, self.xid);
-            // Drop while still in the peer/span context, keeping its storage
-            // for the next call. A destructor panic overrides a successful
-            // result, just as a polling panic does.
-            if let Some(future) = self.future.take() {
-                match retire_handler(future, self.xid) {
-                    Some(slot) => self.spare = Some(slot),
-                    None => {
-                        return Poll::Ready(Ok(crate::rpc_error::to_error_record(
-                            &crate::RpcError::SystemError,
-                            self.xid,
-                        )));
-                    }
-                }
+            // Drop while still in the peer/span context. A destructor panic
+            // overrides a successful result, just as a polling panic does.
+            if let Some(future) = self.future.take()
+                && drop_handler(future, self.xid)
+            {
+                return Poll::Ready(Ok(crate::rpc_error::to_error_record(
+                    &crate::RpcError::SystemError,
+                    self.xid,
+                )));
             }
             Poll::Ready(response)
         }
@@ -374,19 +364,6 @@ pub(crate) mod dispatch {
                     &crate::RpcError::SystemError,
                     xid,
                 ))
-            }
-        }
-    }
-
-    /// Drop a finished handler and recover its storage, unless its
-    /// destructor panics.
-    fn retire_handler(handler: RpcFuture<'_>, xid: u32) -> Option<FutureSlot> {
-        match std::panic::catch_unwind(AssertUnwindSafe(|| handler.into_slot())) {
-            Ok(slot) => Some(slot),
-            Err(panic) => {
-                tracing::error!(xid, "handler destructor panicked");
-                discard_panic_payload(panic, xid, "handler destructor panic");
-                None
             }
         }
     }
@@ -501,9 +478,6 @@ pub(crate) mod dispatch {
         let writer = &client_cbs.writer;
         writer.reader_active();
         let mut since_yield = 0usize;
-        // Storage for the next handler future. Inline completions hand it
-        // back; a suspended handler takes it along to its task.
-        let mut spare_slot = None;
 
         let result = loop {
             if since_yield >= YIELD_EVERY {
@@ -596,8 +570,7 @@ pub(crate) mod dispatch {
             // cancelled by the cap or polled again by the task below, and the
             // `Future` contract requires it to re-register the waker it is
             // given on each poll.
-            let slot = spare_slot.take().unwrap_or_else(FutureSlot::with_block);
-            let (mut handler, probe) = {
+            let (handler, probe) = {
                 let _enter = span.enter();
                 HandlerFuture::start(
                     xid,
@@ -609,14 +582,12 @@ pub(crate) mod dispatch {
                                 proc,
                                 &record[payload_offset..],
                                 ReplyBuf::from_spare(crate::connection::take_buffer()),
-                                slot,
                             )
                             .map(detach)
                     },
                     &mut Context::from_waker(Waker::noop()),
                 )
             };
-            spare_slot = handler.spare.take();
 
             if let Poll::Ready(result) = probe {
                 ready_calls += 1;
@@ -775,11 +746,10 @@ mod tests {
             proc: u32,
             data: &[u8],
             reply: ReplyBuf,
-            slot: FutureSlot,
         ) -> Result<RpcFuture<'_>, RpcError> {
             self.entered.send(proc).unwrap();
             let reply = reply.with(data);
-            Ok(slot.put(async move { Ok(reply) }))
+            Ok(Box::pin(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> crate::ProgVers {
@@ -1037,10 +1007,9 @@ mod tests {
                 proc: u32,
                 data: &[u8],
                 reply: ReplyBuf,
-                slot: FutureSlot,
             ) -> Result<RpcFuture<'_>, RpcError> {
                 let reply = reply.with(data);
-                Ok(slot.put(async move {
+                Ok(Box::pin(async move {
                     if proc == 1 {
                         tokio::task::yield_now().await;
                     }
@@ -1109,9 +1078,8 @@ mod tests {
                 _proc: u32,
                 _data: &[u8],
                 _reply: ReplyBuf,
-                slot: FutureSlot,
             ) -> Result<RpcFuture<'_>, RpcError> {
-                Ok(slot.put(async move {
+                Ok(Box::pin(async move {
                     let _flag = DropFlag(self.0.lock().unwrap().take());
                     std::future::pending().await
                 }))
@@ -1188,7 +1156,7 @@ mod tests {
             }
         }
 
-        let handler = FutureSlot::with_block().put(ReadyPanicOnDrop);
+        let handler: RpcFuture<'_> = Box::pin(ReadyPanicOnDrop);
         assert!(dispatch::drop_handler(handler, 8));
     }
 }

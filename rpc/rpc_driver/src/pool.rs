@@ -1938,7 +1938,7 @@ mod tests {
     }
 
     use crate::RpcServer;
-    use crate::handler::{FutureSlot, ReplyBuf, RpcFuture, RpcHandler, ServiceMap};
+    use crate::handler::{ReplyBuf, RpcFuture, RpcHandler, ServiceMap};
     use std::sync::atomic::AtomicUsize;
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
@@ -1958,13 +1958,12 @@ mod tests {
             proc: u32,
             data: &[u8],
             reply: ReplyBuf,
-            slot: FutureSlot,
         ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
             let reply = reply.with(data);
-            Ok(slot.put(async move { Ok(reply) }))
+            Ok(Box::pin(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -1994,13 +1993,12 @@ mod tests {
             proc: u32,
             data: &[u8],
             reply: ReplyBuf,
-            slot: FutureSlot,
         ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
             let reply = reply.with(data);
-            Ok(slot.put(async move {
+            Ok(Box::pin(async move {
                 tokio::time::sleep(self.delay).await;
                 Ok(reply)
             }))
@@ -2017,7 +2015,6 @@ mod tests {
             proc: u32,
             data: &[u8],
             reply: ReplyBuf,
-            slot: FutureSlot,
         ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
@@ -2025,7 +2022,7 @@ mod tests {
             self.calls.lock().unwrap().push(data.to_vec());
             let blocked = data == b"blocked";
             let reply = reply.with(data);
-            Ok(slot.put(async move {
+            Ok(Box::pin(async move {
                 if blocked {
                     self.blocked_started.notify_one();
                     self.blocked_release.notified().await;
@@ -2045,13 +2042,12 @@ mod tests {
             proc: u32,
             data: &[u8],
             reply: ReplyBuf,
-            slot: FutureSlot,
         ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
             let reply = reply.with(data);
-            Ok(slot.put(async move {
+            Ok(Box::pin(async move {
                 self.started
                     .send(())
                     .expect("balancing test should still be waiting for calls");

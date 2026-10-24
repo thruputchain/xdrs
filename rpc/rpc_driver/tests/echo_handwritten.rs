@@ -145,14 +145,13 @@ impl thruput_rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatc
         proc: u32,
         data: &[u8],
         reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
     ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
         // As x23c emits: decode the arguments from the borrowed request
         // first, so the future owns them and not the request bytes.
         match proc {
             0 => {
                 let _args: () = xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                Ok(slot.put(async move {
+                Ok(Box::pin(async move {
                     self.inner.null().await.map_err(|_| RpcError::SystemError)?;
                     encode_reply(reply, &())
                 }))
@@ -160,7 +159,7 @@ impl thruput_rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatc
             1 => {
                 let args: (i32,) =
                     xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                Ok(slot.put(async move {
+                Ok(Box::pin(async move {
                     let res = self
                         .inner
                         .takes_int(args.0)
@@ -172,7 +171,7 @@ impl thruput_rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatc
             2 => {
                 let args: (i32, i32) =
                     xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                Ok(slot.put(async move {
+                Ok(Box::pin(async move {
                     let res = self
                         .inner
                         .takes_two_ints(args.0, args.1)
