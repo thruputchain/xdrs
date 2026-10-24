@@ -121,6 +121,19 @@ fn nested_slices_stand_in_for_nested_vecm() {
     );
 }
 
+// `str` is unsized, so it can't be the owned value `check_stands_in!` takes.
+#[test]
+fn boxed_str_stands_in_for_str() {
+    fn check<F: Check>() {
+        let boxed: Box<str> = "memo".into();
+        let expected = F::encode("memo").unwrap();
+        F::check_encode(&boxed, &expected);
+        assert_eq!(encode_arg::<str, F>(&boxed), encode_arg::<str, F>("memo"));
+    }
+    check::<CXS>();
+    check::<TXS>();
+}
+
 // A value returned as `impl EncodesAs<X>`, as an RPC server handler's reply
 // is: boxed slices are built and handed back by value.
 #[test]
