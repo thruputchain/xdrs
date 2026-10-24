@@ -211,9 +211,9 @@ fn cancellation_waits_for_a_decoder_running_on_another_thread() {
     let dropped = Arc::new(AtomicUsize::new(0));
     let flag = DropFlag(dropped.clone());
     let (started_tx, started_rx) = std::sync::mpsc::channel();
-    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
     let c = client.clone();
-    let task = rt.spawn(async move {
+    let mut call = Box::pin(async move {
         call_decoded(&*c, PROG, 0, request(&c), move |b| {
             started_tx.send(()).unwrap();
             release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -223,18 +223,31 @@ fn cancellation_waits_for_a_decoder_running_on_another_thread() {
         })
         .await
     });
+    // Send the call, then wait until the reader is inside its decoder.
+    rt.block_on(std::future::poll_fn(|cx| {
+        assert!(call.as_mut().poll(cx).is_pending());
+        std::task::Poll::Ready(())
+    }));
     started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-    task.abort();
+
+    // Cancel by dropping the future elsewhere while the decoder still runs:
+    // the drop must not return (and free what the decoder borrows) until the
+    // decoder has finished.
+    let (dropping_tx, dropping_rx) = std::sync::mpsc::channel();
+    let dropper = std::thread::spawn(move || {
+        dropping_tx.send(()).unwrap();
+        drop(call);
+    });
+    dropping_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(
+        !dropper.is_finished(),
+        "drop returned while the decoder was still running"
+    );
     assert_eq!(dropped.load(Ordering::SeqCst), 0);
+
     release_tx.send(()).unwrap();
-    // The abort lands at the task's next poll boundary. If the released
-    // decoder lets the call finish within the poll it is running in, the task
-    // completes before it can observe the abort; either outcome is correct.
-    // What matters is that the abort did not tear the decoder down mid-run.
-    match rt.block_on(task) {
-        Ok(result) => assert!(result.is_ok()),
-        Err(e) => assert!(e.is_cancelled()),
-    }
+    dropper.join().unwrap();
     assert_eq!(dropped.load(Ordering::SeqCst), 1);
     assert_eq!(client.num_pending_requests(), 0);
     rt.block_on(client.poison());

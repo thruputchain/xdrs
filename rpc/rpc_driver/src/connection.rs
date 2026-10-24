@@ -976,9 +976,12 @@ impl ConnectionHandle {
         decode: &mut ReplyDecoder<'_>,
     ) -> Result<(), RpcError> {
         // SAFETY: forwarded from this function's contract.
+        let slot = unsafe { CallSlot::new(decode) };
+        // Declared after `slot`, so it drops (and waits out a running
+        // decoder) before the slot does.
         let mut pending = PendingCall {
             handle: self,
-            slot: unsafe { CallSlot::new(decode) },
+            slot: &slot,
             xid: None,
         };
         // Register with this poll's waker under one lock; the reply's
@@ -1134,17 +1137,19 @@ impl ConnectionHandle {
     }
 }
 
-/// A call's slot and its registration; dropping it cancels the call.
+/// A call's registration; dropping it cancels the call. It only borrows the
+/// slot: once registered, the reader reaches the slot through the pending
+/// map, so this side must never hold an exclusive reference to it.
 struct PendingCall<'a> {
     handle: &'a ConnectionHandle,
-    slot: CallSlot,
+    slot: &'a CallSlot,
     /// Set while registered (and counted in `pending_count`).
     xid: Option<u32>,
 }
 
 impl PendingCall<'_> {
     fn register(&mut self, waker: &Waker) -> Result<u32, RpcError> {
-        let slot = NonNull::from(&self.slot);
+        let slot = NonNull::from(self.slot);
         let mut state = self.handle.connection_state.lock().unwrap();
         let xid = state.register_call(slot)?;
         // SAFETY: the entry was just inserted under this lock.
@@ -1900,6 +1905,45 @@ mod tests {
         drop(slot);
         drop(decode);
         assert_eq!(seen, b"hello");
+    }
+
+    /// The pattern the call path relies on, without I/O so Miri can run it:
+    /// the caller only ever shares its slot while another thread claims it
+    /// from the map and finishes it.
+    #[test]
+    fn another_thread_finishes_a_slot_the_caller_only_shares() {
+        let state = StdMutex::new(ConnectionState::new());
+        let mut seen = Vec::new();
+        let mut decode = recording_slot(&mut seen);
+        // SAFETY: `decode` outlives `slot`.
+        let slot = unsafe { CallSlot::new(&mut decode) };
+        let xid = state
+            .lock()
+            .unwrap()
+            .register_call(NonNull::from(&slot))
+            .unwrap();
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let mut st = state.lock().unwrap();
+                let Some(Pending::Call(claimed)) = st.pending_requests.remove(&xid) else {
+                    panic!("call entry missing");
+                };
+                // SAFETY: removed under the lock, so this thread finishes it.
+                unsafe {
+                    let waker = claimed.as_ref().take_waker();
+                    drop(st);
+                    finish_call(claimed, waker, Ok(b"payload"));
+                }
+            });
+            slot.wait_done();
+        });
+        assert!(matches!(
+            unsafe { (*slot.outcome.get()).take() },
+            Some(Ok(Ok(())))
+        ));
+        drop(slot);
+        drop(decode);
+        assert_eq!(seen, b"payload");
     }
 
     #[tokio::test]
