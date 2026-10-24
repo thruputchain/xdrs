@@ -484,16 +484,19 @@ const _: () = {
         }
     }
 
+    // On the heap `Box` itself rather than the `xdr_common::Box` alias, whose
+    // parameter is implicitly `Sized`: `?Sized` admits `Box<[T]>` and
+    // `Box<str>`, as for `&T` and `Arc<T>`.
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-    impl<T: WriteXDR> WriteXDR for xdr_common::Box<T> {
+    impl<T: WriteXDR + ?Sized> WriteXDR for alloc::boxed::Box<T> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
-            self.as_ref().write_xdr(w)
+            (**self).write_xdr(w)
         }
 
         unsafe fn write_xdr_unchecked<F, W: WriterUnchecked<F>>(&self, w: &mut W) {
             // SAFETY: forwarded caller contract.
-            unsafe { self.as_ref().write_xdr_unchecked(w) }
+            unsafe { (**self).write_xdr_unchecked(w) }
         }
     }
 };
