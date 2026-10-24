@@ -38,18 +38,29 @@ pub trait RpcSender: Send + Sync {
         call: CallBuf,
     ) -> Result<RpcResponse, RpcError>;
 
-    /// Decode a reply synchronously from the transport's receive-buffer slice.
+    /// Send a call and run `decode` on the reply's payload, which an
+    /// implementation may pass straight from its receive buffer.
     ///
-    /// Invoke `decode` synchronously on a successful reply, at most once.
-    /// The implementation must stop accessing it before this future returns
-    /// or finishes being dropped. The default supports existing senders.
+    /// `decode` runs at most once, only for a successful reply. The
+    /// implementation stops using it before this future returns or finishes
+    /// being dropped. The default awaits [`send_call`](Self::send_call) and
+    /// decodes the owned response in the caller's task; transports override
+    /// it to skip that copy, running `decode` on their reader instead.
     ///
     /// # Safety
     ///
-    /// Generated callers must keep the callback and its output slot valid and
-    /// stationary until completion or cancellation finishes, with no concurrent
-    /// access. Do not forget this future while allowing that state to be dropped.
-    /// The callback must not retain the slice or wait on the same connection.
+    /// Do not leak this future (`mem::forget`, a leaked box) and then free or
+    /// reuse what `decode` borrows. An implementation may call `decode` from
+    /// another thread until this future completes or its drop returns, and
+    /// leaking skips the drop that stops it. Dropping the future is fine.
+    ///
+    /// `decode` may run on the connection's reader, so it must not block, and
+    /// above all must not wait for another call on the same connection,
+    /// whose reply that reader would have to deliver.
+    ///
+    /// The rest is enforced by the signature: `decode` and what it captures
+    /// stay alive and unaliased while borrowed, and the `for<'reply>` bound
+    /// stops it from keeping the slice.
     async unsafe fn send_call_decoded(
         &self,
         progvers: ProgVers,
