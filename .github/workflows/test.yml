@@ -143,6 +143,12 @@ jobs:
         with:
           toolchain: nightly-2026-05-26
           components: miri, rust-src
+      # FutureSlot's inline storage and its unwinding paths are unsafe code
+      # the driver relies on for every call; its unit tests exercise them.
+      - name: rpc_api tests under Miri
+        run: cargo +nightly-2026-05-26 miri test --locked -p thruput-rpc-api
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation"
       # The loopback link runs calls through the same pending map and
       # reader-side decode as a connection, with no sockets, so Miri can
       # check that path end to end.
