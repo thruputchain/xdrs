@@ -142,7 +142,6 @@ fn containers_match() {
     assert_unchecked_matches_checked(&(1u32, true, 3.5f64));
 }
 
-#[cfg(feature = "int128")]
 #[test]
 fn int128_matches() {
     assert_unchecked_matches_checked(&i128::MIN);

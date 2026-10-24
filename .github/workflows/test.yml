@@ -50,7 +50,7 @@ jobs:
       - name: Build workspace (no features)
         run: cargo build --locked --workspace
       - name: Test (root lib without alloc)
-        run: cargo test --locked -F int128
+        run: cargo test --locked
       - name: Test compact read errors
         run: |
           cargo test --locked --no-default-features
@@ -58,11 +58,9 @@ jobs:
       - name: Test (derive without alloc)
         # const writers for VecM/BytesM/StringM are only exercised with
         # non-empty static data in no-alloc builds
-        run: cargo test --locked -F derive,int128
+        run: cargo test --locked -F derive
       - name: Test (feature permissive)
-        run: cargo test --locked -F permissive,int128 --test ints
-      - name: Test (feature int128)
-        run: cargo test --locked -F int128 --test ints
+        run: cargo test --locked -F permissive --test ints
       - name: Test (workspace)
         run: cargo test --locked --workspace --all-features
       - name: Test (benchmarks)
@@ -78,7 +76,7 @@ jobs:
       - name: Check xdr-common Serde without std
         run: cargo check --locked -p thruput-xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
       - name: Check RV32 without std
-        run: cargo check --locked -p thruput-xdrs --no-default-features --features derive,int128 --target riscv32imac-unknown-none-elf
+        run: cargo check --locked -p thruput-xdrs --no-default-features --features derive --target riscv32imac-unknown-none-elf
       - name: Check clippy
         run: cargo clippy --locked --all-features -p thruput-xdr-common -p thruput-xdr-repr -p thruput-xdr-derive -p thruput-xdrs
       - name: Check clippy (RPC crates)
@@ -102,8 +100,8 @@ jobs:
           echo "OK: no duplicate thruput-rpc-api/thruput-rpc-driver/thruput-xdrs in the graph"
       - name: Test Documentation Examples
         run: |
-          cargo test --locked --doc -p thruput-xdr-repr --features "ns,int128"
-          cargo test --locked --doc --features "alloc,derive,repr,ns,int128"
+          cargo test --locked --doc -p thruput-xdr-repr --features "ns"
+          cargo test --locked --doc --features "alloc,derive,repr,ns"
 
   nightly:
     needs: dependency-policy # don't build anything until deps are known to be clean
