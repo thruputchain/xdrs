@@ -655,17 +655,14 @@ impl CallSlot {
     }
 }
 
-/// Finish a call whose entry the caller just removed from the map, taking
-/// `waker` out while it still held the lock.
+/// Finish a call whose entry the caller just removed from the map. The
+/// caller must take the slot's waker first (while it held the lock) and wake
+/// it after this returns: once `done` is set the slot may be freed.
 ///
 /// # Safety
 /// `slot` must be the removed entry's slot; removal makes the caller its
 /// only finisher, and the owning future waits for `done` before freeing it.
-unsafe fn finish_call(
-    slot: NonNull<CallSlot>,
-    waker: Option<Waker>,
-    reply: Result<&[u8], RpcError>,
-) {
+unsafe fn finish_call(slot: NonNull<CallSlot>, reply: Result<&[u8], RpcError>) {
     // SAFETY: see above; the slot outlives this call until `done` is set.
     let slot = unsafe { slot.as_ref() };
     let outcome = match reply {
@@ -679,9 +676,6 @@ unsafe fn finish_call(
     unsafe { *slot.outcome.get() = Some(outcome) };
     slot.done.store(true, Ordering::Release);
     // The future may free the slot from here on.
-    if let Some(waker) = waker {
-        waker.wake();
-    }
 }
 
 /// A pending map entry: a waiting call, or a fire-and-forget call whose
@@ -774,16 +768,20 @@ impl ConnectionState {
     pub(crate) fn poison(&mut self) -> usize {
         self.poisoned = true;
         let mut faf_count = 0usize;
+        // Finish every call before waking any, so a panicking waker cannot
+        // leave a later caller waiting for `done` forever.
+        let mut wakers = Vec::new();
         for (_xid, pending) in self.pending_requests.drain() {
             match pending {
                 Pending::FireAndForget => faf_count += 1,
                 // SAFETY: draining the entry under the lock makes this its finisher.
                 Pending::Call(slot) => unsafe {
-                    let waker = slot.as_ref().take_waker();
-                    finish_call(slot, waker, Err(RpcError::SystemError));
+                    wakers.extend(slot.as_ref().take_waker());
+                    finish_call(slot, Err(RpcError::SystemError));
                 },
             }
         }
+        wakers.into_iter().for_each(Waker::wake);
         faf_count
     }
 }
@@ -1022,10 +1020,11 @@ impl ConnectionHandle {
         match state.pending_requests.remove(&xid) {
             Some(Pending::Call(slot)) => {
                 // SAFETY: removing the entry under the lock makes this its finisher.
-                unsafe {
-                    let waker = slot.as_ref().take_waker();
-                    drop(state);
-                    finish_call(slot, waker, reply);
+                let waker = unsafe { slot.as_ref().take_waker() };
+                drop(state);
+                unsafe { finish_call(slot, reply) };
+                if let Some(waker) = waker {
+                    waker.wake();
                 }
                 false
             }
@@ -1149,14 +1148,17 @@ struct PendingCall<'a> {
 
 impl PendingCall<'_> {
     fn register(&mut self, waker: &Waker) -> Result<u32, RpcError> {
+        // Clone first: a panicking clone must not leave the slot published
+        // with nothing set to unpublish it.
+        let waker = waker.clone();
         let slot = NonNull::from(self.slot);
         let mut state = self.handle.connection_state.lock().unwrap();
         let xid = state.register_call(slot)?;
+        self.xid = Some(xid);
         // SAFETY: the entry was just inserted under this lock.
-        unsafe { *self.slot.waker.get() = Some(waker.clone()) };
+        unsafe { *self.slot.waker.get() = Some(waker) };
         drop(state);
         self.handle.pending_count.fetch_add(1, Ordering::Relaxed);
-        self.xid = Some(xid);
         Ok(xid)
     }
 
@@ -1930,9 +1932,9 @@ mod tests {
                 };
                 // SAFETY: removed under the lock, so this thread finishes it.
                 unsafe {
-                    let waker = claimed.as_ref().take_waker();
+                    let _waker = claimed.as_ref().take_waker();
                     drop(st);
-                    finish_call(claimed, waker, Ok(b"payload"));
+                    finish_call(claimed, Ok(b"payload"));
                 }
             });
             slot.wait_done();
@@ -1967,6 +1969,59 @@ mod tests {
                 .pending_requests
                 .is_empty()
         );
+    }
+
+    /// A waker whose clone and wake both panic.
+    fn panicking_waker() -> std::task::Waker {
+        use std::task::{RawWaker, RawWakerVTable};
+        const VTABLE: RawWakerVTable = RawWakerVTable::new(
+            |_| panic!("clone"),
+            |_| panic!("wake"),
+            |_| panic!("wake_by_ref"),
+            |_| {},
+        );
+        // SAFETY: the vtable never dereferences the data pointer.
+        unsafe { std::task::Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+    }
+
+    #[tokio::test]
+    async fn panicking_waker_clone_leaves_nothing_registered() {
+        let (handle, _peer, _peer_write) = live_pair().await;
+        let waker = panicking_waker();
+        let mut call = Box::pin(handle.send_call(ProgVers::new(1, 1), 0, CallBuf::new()));
+        let polled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = call
+                .as_mut()
+                .poll(&mut std::task::Context::from_waker(&waker));
+        }));
+        assert!(polled.is_err());
+        drop(call);
+        assert!(
+            handle
+                .connection_state
+                .lock()
+                .unwrap()
+                .pending_requests
+                .is_empty()
+        );
+        assert_eq!(handle.num_pending_requests(), 0);
+    }
+
+    #[test]
+    fn panicking_wake_during_poison_still_finishes_every_call() {
+        let mut state = ConnectionState::new();
+        let mut decode = |_: &[u8]| Ok(());
+        let mut decode2 = |_: &[u8]| Ok(());
+        // SAFETY: the decoders outlive the slots.
+        let slots = unsafe { [CallSlot::new(&mut decode), CallSlot::new(&mut decode2)] };
+        for slot in &slots {
+            state.register_call(NonNull::from(slot)).unwrap();
+            // SAFETY: no lock to contend with in this test.
+            unsafe { *slot.waker.get() = Some(panicking_waker()) };
+        }
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| state.poison()));
+        assert!(poisoned.is_err());
+        assert!(slots.iter().all(CallSlot::is_done));
     }
 
     #[test]
