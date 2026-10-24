@@ -60,7 +60,7 @@ impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for &U {}
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-impl<X: ?Sized, U: EncodesAs<X>> EncodesAs<X> for alloc::boxed::Box<U> {}
+impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for alloc::boxed::Box<U> {}
 
 #[cfg(not(feature = "alloc"))]
 impl<X: ?Sized, U: EncodesAs<X>> EncodesAs<X> for xdr_common::Box<U> {}
