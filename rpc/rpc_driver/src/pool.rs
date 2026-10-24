@@ -604,6 +604,8 @@ impl Drop for FixedSerialPool {
 }
 
 #[async_trait]
+/// `send_call_decoded` keeps the trait's copying default here: calls run on
+/// the pool's worker tasks, so a borrowed decoder would have to cross tasks.
 impl RpcSender for FixedSerialPool {
     fn call_buf(&self) -> CallBuf {
         CallBuf::from_spare(crate::connection::take_buffer())
@@ -1019,6 +1021,21 @@ impl RpcSender for DynamicPool {
     ) -> Result<RpcResponse, RpcError> {
         let conn = self.connection_for_request().await?;
         let result = conn.send_call(progvers, proc, call).await;
+        self.touch_connection(&conn);
+        result
+    }
+
+    /// Forwarded to the chosen connection, which decodes on its reader.
+    async unsafe fn send_call_decoded(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+        decode: &mut (dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send),
+    ) -> Result<(), RpcError> {
+        let conn = self.connection_for_request().await?;
+        // SAFETY: the caller's contract, forwarded; the call runs in this future.
+        let result = unsafe { conn.send_call_decoded(progvers, proc, call, decode).await };
         self.touch_connection(&conn);
         result
     }
@@ -1455,6 +1472,28 @@ impl RpcSender for MultiplexPool {
         result
     }
 
+    /// Forwarded to the leased connection, which decodes on its reader.
+    async unsafe fn send_call_decoded(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+        decode: &mut (dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send),
+    ) -> Result<(), RpcError> {
+        let lease = self.inner.lease()?;
+        // SAFETY: the caller's contract, forwarded; the call runs in this future.
+        let result = unsafe {
+            lease
+                .handle
+                .send_call_decoded(progvers, proc, call, decode)
+                .await
+        };
+        if result.is_err() && lease.handle.is_poisoned() {
+            self.inner.replace(lease.index, &lease.handle);
+        }
+        result
+    }
+
     async fn send_fire_and_forget(
         &self,
         progvers: ProgVers,
@@ -1745,6 +1784,19 @@ impl RpcSender for CpuSetPool {
     ) -> Result<RpcResponse, RpcError> {
         let conn = self.connection_for_request()?;
         conn.send_call(progvers, proc, call).await
+    }
+
+    /// Forwarded to the chosen connection, which decodes on its reader.
+    async unsafe fn send_call_decoded(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+        decode: &mut (dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send),
+    ) -> Result<(), RpcError> {
+        let conn = self.connection_for_request()?;
+        // SAFETY: the caller's contract, forwarded; the call runs in this future.
+        unsafe { conn.send_call_decoded(progvers, proc, call, decode).await }
     }
 
     async fn send_fire_and_forget(

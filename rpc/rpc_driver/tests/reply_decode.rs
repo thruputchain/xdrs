@@ -61,6 +61,17 @@ async fn setup() -> (
     Arc<Notify>,
     tokio::task::JoinHandle<Result<(), std::io::Error>>,
 ) {
+    let (client, entered, release, server, _) = setup_with_addr().await;
+    (client, entered, release, server)
+}
+
+async fn setup_with_addr() -> (
+    Arc<thruput_rpc_driver::ClientConnection>,
+    Arc<Notify>,
+    Arc<Notify>,
+    tokio::task::JoinHandle<Result<(), std::io::Error>>,
+    std::net::SocketAddr,
+) {
     let entered = Arc::new(Notify::new());
     let release = Arc::new(Notify::new());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -72,7 +83,7 @@ async fn setup() -> (
     }));
     let server = RpcServer::new(listener, services).start().await;
     let client = Arc::new(thruput_rpc_driver::connect_client(&addr).await.unwrap());
-    (client, entered, release, server)
+    (client, entered, release, server, addr)
 }
 
 fn request(client: &thruput_rpc_driver::ClientConnection) -> CallBuf {
@@ -251,5 +262,56 @@ fn cancellation_waits_for_a_decoder_running_on_another_thread() {
     assert_eq!(dropped.load(Ordering::SeqCst), 1);
     assert_eq!(client.num_pending_requests(), 0);
     rt.block_on(client.poison());
+    server.abort();
+}
+
+/// The trait's default decodes a copy in the caller's task; a sender that
+/// forwards to its connection decodes in that connection's reader task. The
+/// pools other than FixedSerialPool must forward.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pools_decode_on_the_connection_reader() {
+    use thruput_rpc_driver::pool::{CpuSetPool, DynamicPool, FixedSerialPool, MultiplexPool};
+
+    let (_, _, _, server, addr) = setup_with_addr().await;
+    let senders: Vec<(&str, Arc<dyn RpcSender>, bool)> = vec![
+        (
+            "DynamicPool",
+            Arc::new(DynamicPool::new(addr, 1, Duration::from_secs(60), None)),
+            true,
+        ),
+        (
+            "MultiplexPool",
+            Arc::new(MultiplexPool::connect(&addr, 1).await.unwrap()),
+            true,
+        ),
+        (
+            "CpuSetPool",
+            Arc::new(CpuSetPool::connect(&addr).await.unwrap()),
+            true,
+        ),
+        // Control: keeps the default, so it must decode in the caller's task.
+        (
+            "FixedSerialPool",
+            Arc::new(FixedSerialPool::connect(&addr, 1).await.unwrap()),
+            false,
+        ),
+    ];
+    for (name, sender, forwards) in senders {
+        let (caller, decoded_in) = tokio::spawn(async move {
+            let caller = tokio::task::id();
+            let mut call = sender.call_buf();
+            call.extend_from_slice(b"reply");
+            let decoded_in = call_decoded(&*sender, PROG, 0, call, |b| {
+                assert_eq!(b, b"reply");
+                Ok(tokio::task::try_id())
+            })
+            .await
+            .unwrap();
+            (caller, decoded_in)
+        })
+        .await
+        .unwrap();
+        assert_eq!(decoded_in != Some(caller), forwards, "{name}");
+    }
     server.abort();
 }
