@@ -4,7 +4,6 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::{
     CallBuf, ProgVers, RpcError, RpcServer, connect_client, handler::RpcHandler,
     handler::ServiceMap,
@@ -76,14 +75,31 @@ async fn wait_for(buf: &CaptureBuffer, needle: &str) {
 
 struct EchoService;
 
-#[async_trait]
 impl RpcHandler for EchoService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(vec![]),
-            1 => Ok(data.to_vec()),
-            _ => Err(RpcError::InvalidProcedure),
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                match proc {
+                    0 => Ok(vec![]),
+                    1 => Ok(data.to_vec()),
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {

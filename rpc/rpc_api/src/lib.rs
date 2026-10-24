@@ -63,16 +63,20 @@
 mod call_buf;
 mod chunk;
 mod error;
+mod future_slot;
 mod handler;
 mod prog_error;
+mod reply_buf;
 mod response;
 mod sender;
 
 pub use call_buf::CallBuf;
 pub use chunk::{ChunkPosition, ChunkRecord};
 pub use error::RpcError;
+pub use future_slot::{FutureSlot, RpcFuture};
 pub use handler::RpcHandler;
 pub use prog_error::ProgramError;
+pub use reply_buf::ReplyBuf;
 pub use response::RpcResponse;
 pub use sender::RpcSender;
 

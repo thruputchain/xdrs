@@ -4,7 +4,6 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::loopback::{LoopbackLink, LoopbackSender};
 use thruput_rpc_driver::{CallBuf, ProgVers, RpcError, RpcSender, ServiceMap, handler::RpcHandler};
 use tokio::sync::mpsc;
@@ -15,14 +14,31 @@ const ECHO: ProgVers = ProgVers::new(100, 1);
 /// Echoes on proc 1; proc 2 fails with an error that has no wire encoding.
 struct EchoService;
 
-#[async_trait]
 impl RpcHandler for EchoService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            1 => Ok(data.to_vec()),
-            2 => Err(RpcError::PoolClosed),
-            _ => Err(RpcError::InvalidProcedure),
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                match proc {
+                    1 => Ok(data.to_vec()),
+                    2 => Err(RpcError::PoolClosed),
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -43,11 +59,28 @@ struct RecordingService {
     entered: mpsc::UnboundedSender<(u32, Vec<u8>)>,
 }
 
-#[async_trait]
 impl RpcHandler for RecordingService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let _ = self.entered.send((proc, data.to_vec()));
-        Ok(Vec::new())
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                let _ = self.entered.send((proc, data.to_vec()));
+                Ok(Vec::new())
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -67,12 +100,29 @@ const CALLBACK: ProgVers = ProgVers::new(300, 1);
 /// Answers by echoing its input through the peer's echo service.
 struct CallbackService;
 
-#[async_trait]
 impl RpcHandler for CallbackService {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let peer = thruput_rpc_driver::peer();
-        let reply = peer.send_call(ECHO, 1, call_with(&*peer, data)).await?;
-        Ok(reply.to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                let peer = thruput_rpc_driver::peer();
+                let reply = peer.send_call(ECHO, 1, call_with(&*peer, data)).await?;
+                Ok(reply.to_vec())
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -91,10 +141,25 @@ const PANICKER: ProgVers = ProgVers::new(400, 1);
 /// Panics on every call.
 struct PanickingService;
 
-#[async_trait]
 impl RpcHandler for PanickingService {
-    async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        panic!("handler bug");
+    fn dispatch(
+        &self,
+        _proc: u32,
+        _data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        Ok(slot.put(async move {
+            let result = body(async {
+                panic!("handler bug");
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -110,16 +175,31 @@ struct PoisoningService {
     link: Arc<Mutex<Option<LoopbackLink>>>,
 }
 
-#[async_trait]
 impl RpcHandler for PoisoningService {
-    async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        self.link
-            .lock()
-            .unwrap()
-            .as_ref()
-            .expect("link installed")
-            .poison();
-        Ok(b"too late".to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        _data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        Ok(slot.put(async move {
+            let result = body(async {
+                self.link
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .expect("link installed")
+                    .poison();
+                Ok(b"too late".to_vec())
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -143,12 +223,27 @@ impl Drop for PanicOnDrop {
 /// Parks forever holding a value whose destructor panics.
 struct SuspendingService;
 
-#[async_trait]
 impl RpcHandler for SuspendingService {
-    async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let _guard = PanicOnDrop;
-        std::future::pending::<()>().await;
-        Ok(Vec::new())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        _data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        Ok(slot.put(async move {
+            let result = body(async {
+                let _guard = PanicOnDrop;
+                std::future::pending::<()>().await;
+                Ok(Vec::new())
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -437,14 +532,31 @@ impl Drop for SetOnDrop {
     }
 }
 
-#[async_trait]
 impl RpcHandler for GatedService {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let guard = SetOnDrop(self.dropped.clone());
-        let _ = self.entered.send(());
-        self.permits.acquire().await.unwrap().forget();
-        std::mem::forget(guard);
-        Ok(data.to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                let guard = SetOnDrop(self.dropped.clone());
+                let _ = self.entered.send(());
+                self.permits.acquire().await.unwrap().forget();
+                std::mem::forget(guard);
+                Ok(data.to_vec())
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {

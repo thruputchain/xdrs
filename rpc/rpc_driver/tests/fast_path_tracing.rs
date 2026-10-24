@@ -8,7 +8,6 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::{
     CallBuf, ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
     handler::RpcHandler, handler::ServiceMap,
@@ -28,17 +27,34 @@ fn call_with(payload: &[u8]) -> CallBuf {
 /// Proc 0 never awaits; proc 1 yields first.
 struct MixedService;
 
-#[async_trait]
 impl RpcHandler for MixedService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(data.to_vec()),
-            1 => {
-                tokio::task::yield_now().await;
-                Ok(data.to_vec())
-            }
-            _ => Err(RpcError::InvalidProcedure),
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                match proc {
+                    0 => Ok(data.to_vec()),
+                    1 => {
+                        tokio::task::yield_now().await;
+                        Ok(data.to_vec())
+                    }
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
