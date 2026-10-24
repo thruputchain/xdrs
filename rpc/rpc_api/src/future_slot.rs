@@ -405,4 +405,87 @@ mod tests {
         }
         assert_eq!(drops.load(Ordering::SeqCst), 4);
     }
+
+    /// Ready after one pending poll, so tests see both poll outcomes.
+    #[derive(Default)]
+    struct YieldOnce(bool);
+
+    impl YieldOnce {
+        fn poll_once(&mut self) -> Poll<Output> {
+            if std::mem::replace(&mut self.0, true) {
+                Poll::Ready(Ok(ReplyBuf::new().with(b"done")))
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+
+    /// Small, but aligned past the block, so it must be boxed.
+    #[repr(align(64))]
+    #[derive(Default)]
+    struct OverAligned(YieldOnce, #[allow(dead_code)] Option<CountDrop>);
+
+    impl Future for OverAligned {
+        type Output = Output;
+        fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Output> {
+            assert_eq!(&*self as *const Self as usize % 64, 0, "misaligned future");
+            self.0.poll_once()
+        }
+    }
+
+    /// Takes no space at all, so it lives in the block.
+    struct ZeroSized;
+
+    impl Future for ZeroSized {
+        type Output = Output;
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Output> {
+            Poll::Ready(Ok(ReplyBuf::new().with(b"zst")))
+        }
+    }
+
+    fn poll_ready(future: &mut RpcFuture<'_>) -> Output {
+        let mut cx = Context::from_waker(Waker::noop());
+        loop {
+            if let Poll::Ready(out) = Pin::new(&mut *future).poll(&mut cx) {
+                return out;
+            }
+        }
+    }
+
+    #[test]
+    fn over_aligned_futures_are_boxed_and_keep_the_block() {
+        assert!(align_of::<OverAligned>() > align_of::<Block>());
+        assert!(size_of::<OverAligned>() <= BLOCK_SIZE);
+
+        let mut future = FutureSlot::with_block().put(OverAligned::default());
+        assert!(!future.vtable.inline);
+        assert!(future.spare.is_some());
+        assert_eq!(poll_ready(&mut future).unwrap().payload(), b"done");
+        assert!(future.into_slot().block.is_some());
+
+        // Dropped unfinished, it still runs its fields' destructors.
+        let drops = Arc::new(AtomicUsize::new(0));
+        let future = FutureSlot::with_block().put(OverAligned(
+            YieldOnce::default(),
+            Some(CountDrop(drops.clone())),
+        ));
+        drop(future);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn zero_sized_futures_live_in_the_block() {
+        let mut future = FutureSlot::with_block().put(ZeroSized);
+        assert!(future.vtable.inline);
+        assert_eq!(poll_ready(&mut future).unwrap().payload(), b"zst");
+        assert!(future.into_slot().block.is_some());
+
+        drop(FutureSlot::with_block().put(ZeroSized));
+
+        // Without a block, a zero-sized future is "boxed" without allocating.
+        let mut future = FutureSlot::new().put(ZeroSized);
+        assert!(!future.vtable.inline);
+        assert_eq!(poll_ready(&mut future).unwrap().payload(), b"zst");
+        assert!(future.into_slot().block.is_none());
+    }
 }

@@ -695,3 +695,50 @@ async fn concurrent_calls_on_a_multi_thread_runtime_each_get_their_reply() {
         call.await.unwrap();
     }
 }
+
+const SYNC_FAILING: ProgVers = ProgVers::new(800, 1);
+
+/// Fails in `dispatch` itself, before any future exists: proc 1 panics,
+/// proc 2 rejects its arguments. Proc 0 echoes.
+struct SyncFailureService;
+
+impl RpcHandler for SyncFailureService {
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        match proc {
+            0 => {
+                let reply = reply.with(data);
+                Ok(slot.put(async move { Ok(reply) }))
+            }
+            1 => panic!("intentional panic while decoding"),
+            2 => Err(RpcError::GarbageArguments),
+            _ => Err(RpcError::InvalidProcedure),
+        }
+    }
+
+    fn prog_vers(&self) -> ProgVers {
+        SYNC_FAILING
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn failures_in_dispatch_itself_reach_the_caller_and_the_link_survives() {
+    let mut services = ServiceMap::new();
+    services.add_service(Box::new(SyncFailureService));
+    let (_link, client) = client_to(services);
+
+    let panicked = client.send_call(SYNC_FAILING, 1, client.call_buf()).await;
+    assert_eq!(panicked, Err(RpcError::SystemError));
+    let garbage = client.send_call(SYNC_FAILING, 2, client.call_buf()).await;
+    assert_eq!(garbage, Err(RpcError::GarbageArguments));
+    let reply = client
+        .send_call(SYNC_FAILING, 0, call_with(&client, b"still up"))
+        .await
+        .unwrap();
+    assert_eq!(reply, b"still up");
+}

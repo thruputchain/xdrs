@@ -206,6 +206,38 @@ impl RpcHandler for PanicBeforeAwaitService {
     }
 }
 
+/// Fails in `dispatch` itself, before any future exists: proc 1 panics
+/// while "decoding", and proc 2 rejects anything but a 4-byte argument.
+/// Proc 0 echoes.
+struct SyncFailureService;
+
+impl RpcHandler for SyncFailureService {
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        match proc {
+            0 => {
+                let reply = reply.with(data);
+                Ok(slot.put(async move { Ok(reply) }))
+            }
+            1 => panic!("intentional panic while decoding"),
+            2 if data.len() != 4 => Err(RpcError::GarbageArguments),
+            2 => {
+                let reply = reply.with(data);
+                Ok(slot.put(async move { Ok(reply) }))
+            }
+            _ => Err(RpcError::InvalidProcedure),
+        }
+    }
+    fn prog_vers(&self) -> ProgVers {
+        ECHO_PROG
+    }
+}
+
 /// Service that panics on proc 1.
 struct PanickingService;
 
@@ -584,6 +616,45 @@ async fn test_panic_recovery() {
         .send_call(ECHO_PROG, 0, call_with(b"still alive"))
         .await;
     assert_eq!(result.unwrap(), b"still alive");
+}
+
+#[tokio::test]
+async fn failures_in_dispatch_itself_reply_and_leave_the_connection_up() {
+    let addr = start_server(Box::new(SyncFailureService)).await;
+    let client = connect_client_with_config(&addr, ConnectionConfig::default())
+        .await
+        .unwrap();
+
+    let panicked = tokio::time::timeout(
+        Duration::from_secs(2),
+        client.send_call(ECHO_PROG, 1, call_with(b"boom")),
+    )
+    .await
+    .expect("a panic in dispatch must still be answered");
+    assert_eq!(panicked.unwrap_err(), RpcError::SystemError);
+
+    let garbage = tokio::time::timeout(
+        Duration::from_secs(2),
+        client.send_call(ECHO_PROG, 2, call_with(b"short")),
+    )
+    .await
+    .expect("a rejected call must still be answered");
+    assert_eq!(garbage.unwrap_err(), RpcError::GarbageArguments);
+
+    assert_eq!(
+        client
+            .send_call(ECHO_PROG, 2, call_with(b"four"))
+            .await
+            .unwrap(),
+        b"four"
+    );
+    assert_eq!(
+        client
+            .send_call(ECHO_PROG, 0, call_with(b"still alive"))
+            .await
+            .unwrap(),
+        b"still alive"
+    );
 }
 
 // ---------------------------------------------------------------------------
