@@ -67,49 +67,24 @@ fn route_reply(
     client_cbs: &ConnectionHandle,
     xid: u32,
     rbody: rpc_msg::reply_body,
-    record: Vec<u8>,
-    payload_offset: usize,
+    payload: &[u8],
 ) {
-    use crate::connection::ReplyResult;
-    let was_fire_and_forget = match rbody {
-        rpc_msg::reply_body::MSG_ACCEPTED { areply } => {
-            if let rpc_msg::accepted_reply_reply_data::SUCCESS { results: _results } =
-                areply.reply_data
-            {
-                client_cbs
-                    .connection_state
-                    .lock()
-                    .unwrap()
-                    .handle_reply(xid, ReplyResult::Ok(record, payload_offset))
-            } else {
-                client_cbs
-                    .connection_state
-                    .lock()
-                    .unwrap()
-                    .handle_reply(xid, ReplyResult::Err(areply.reply_data.into()))
-            }
-        }
-        rpc_msg::reply_body::MSG_DENIED { rreply } => client_cbs
-            .connection_state
-            .lock()
-            .unwrap()
-            .handle_reply(xid, ReplyResult::Err(rreply.into())),
+    let reply = match rbody {
+        rpc_msg::reply_body::MSG_ACCEPTED { areply } => match areply.reply_data {
+            rpc_msg::accepted_reply_reply_data::SUCCESS { results: _results } => Ok(payload),
+            reply_data => Err(reply_data.into()),
+        },
+        rpc_msg::reply_body::MSG_DENIED { rreply } => Err(rreply.into()),
     };
-    if was_fire_and_forget {
+    if client_cbs.deliver_reply(xid, reply) {
         client_cbs.decrement_pending();
     }
 }
 
-/// Route an accepted SUCCESS reply whose payload is all of `record`.
+/// Route an accepted SUCCESS reply whose payload is `payload`.
 #[inline]
-fn route_success(client_cbs: &ConnectionHandle, xid: u32, record: Vec<u8>) {
-    use crate::connection::ReplyResult;
-    let was_fire_and_forget = client_cbs
-        .connection_state
-        .lock()
-        .unwrap()
-        .handle_reply(xid, ReplyResult::Ok(record, 0));
-    if was_fire_and_forget {
+fn route_success(client_cbs: &ConnectionHandle, xid: u32, payload: &[u8]) {
+    if client_cbs.deliver_reply(xid, Ok(payload)) {
         client_cbs.decrement_pending();
     }
 }
@@ -474,20 +449,14 @@ pub(crate) mod dispatch {
 
             let (call, payload_offset) = match fast_header(record) {
                 Some((FastHeader::Success { xid }, offset)) => {
-                    route_success(client_cbs, xid, copy_record(&record[offset..]));
+                    route_success(client_cbs, xid, &record[offset..]);
                     continue;
                 }
                 Some((FastHeader::Call(call), offset)) => (call, offset),
                 None => match parse_header(record) {
                     Ok((msg, offset)) => match msg.body {
                         rpc_msg::rpc_msg_body::REPLY { rbody } => {
-                            route_reply(
-                                client_cbs,
-                                msg.xid,
-                                rbody,
-                                copy_record(&record[offset..]),
-                                0,
-                            );
+                            route_reply(client_cbs, msg.xid, rbody, &record[offset..]);
                             continue;
                         }
                         rpc_msg::rpc_msg_body::CALL { cbody } => (

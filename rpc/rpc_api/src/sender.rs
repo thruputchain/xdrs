@@ -38,6 +38,29 @@ pub trait RpcSender: Send + Sync {
         call: CallBuf,
     ) -> Result<RpcResponse, RpcError>;
 
+    /// Decode a reply synchronously from the transport's receive-buffer slice.
+    ///
+    /// Invoke `decode` synchronously on a successful reply, at most once.
+    /// The implementation must stop accessing it before this future returns
+    /// or finishes being dropped. The default supports existing senders.
+    ///
+    /// # Safety
+    ///
+    /// Generated callers must keep the callback and its output slot valid and
+    /// stationary until completion or cancellation finishes, with no concurrent
+    /// access. Do not forget this future while allowing that state to be dropped.
+    /// The callback must not retain the slice or wait on the same connection.
+    async unsafe fn send_call_decoded(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+        decode: &mut (dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send),
+    ) -> Result<(), RpcError> {
+        let response = self.send_call(progvers, proc, call).await?;
+        decode(&response)
+    }
+
     /// Send an RPC call without waiting for the response.
     ///
     /// Default implementation calls [`send_call`](Self::send_call) and

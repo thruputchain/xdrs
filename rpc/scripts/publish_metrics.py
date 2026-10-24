@@ -48,6 +48,14 @@ def main():
                 or evaluation['metadata']['candidate_sha'] != args.commit):
             raise ValueError('runtime evaluation is incomplete or has the wrong source commit')
         files[f'metrics/xdr-rpc-runtime-evaluation/{args.branch}/{filename}'] = evaluation
+    decode_path = args.report / 'reply-decode/evaluation.json'
+    if decode_path.exists():
+        decoded = json.loads(decode_path.read_text())
+        if (not decoded.get('complete') or decoded['metadata']['quick']
+                or decoded['metadata']['prebuilt'] or len(decoded['runs']) != 216
+                or decoded['metadata']['candidate_sha'] != args.commit):
+            raise ValueError('reply decode evaluation is incomplete or has the wrong source commit')
+        files[f'metrics/xdr-rpc-reply-decode-evaluation/{args.branch}/{filename}'] = decoded
     env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
     with tempfile.TemporaryDirectory(prefix='rpc-metrics-history-') as directory:
         def git(*argv, check=True):

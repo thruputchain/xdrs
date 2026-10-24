@@ -26,10 +26,16 @@ struct Args {
     warmup: usize,
     #[arg(long, default_value_t = 64)]
     payload_bytes: usize,
+    /// Decode directly from the reader's slice (prototype builds only).
+    #[arg(long)]
+    decode_replies: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+    if args.decode_replies && !cfg!(feature = "reply-decode") {
+        return Err("rebuild rpc-smoke with --features reply-decode".into());
+    }
     let runtimes = args.runtime.build()?;
     let handles: Vec<_> = runtimes.iter().map(|rt| rt.handle().clone()).collect();
     runtimes[0].block_on(run(args, &handles))
@@ -55,8 +61,11 @@ async fn run(
     }
     let ready = Arc::new(Barrier::new(args.concurrency + 1));
     let start = Arc::new(Barrier::new(args.concurrency + 1));
-    let payload: Arc<[u8]> =
-        profile::encode_payload(profile::TAG_ECHO, 0, args.payload_bytes).into();
+    let payload = Arc::new(profile::encode_payload(
+        profile::TAG_ECHO,
+        0,
+        args.payload_bytes,
+    ));
     let prog = ProgVers::new(profile::SMOKE_PROG, 1);
     let mut workers = Vec::new();
     for worker in 0..args.concurrency {
@@ -66,24 +75,19 @@ async fn run(
         let start = start.clone();
         let iterations = args.iterations;
         let warmup = args.warmup;
+        let decode_replies = args.decode_replies;
         let shard = (worker % connections.len()) % handles.len();
         workers.push(handles[shard].spawn(async move {
             for _ in 0..warmup {
-                let mut call = sender.call_buf();
-                call.extend_from_slice(&payload);
-                let response = sender.send_call(prog, 1, call).await.unwrap();
-                assert_eq!(response.as_ref(), payload.as_ref());
+                roundtrip(&*sender, prog, &payload, decode_replies).await;
             }
             let mut samples = Vec::with_capacity(iterations);
             ready.wait().await;
             start.wait().await;
             for _ in 0..iterations {
                 let before = Instant::now();
-                let mut call = sender.call_buf();
-                call.extend_from_slice(&payload);
-                let response = sender.send_call(prog, 1, call).await.unwrap();
+                roundtrip(&*sender, prog, &payload, decode_replies).await;
                 let elapsed = before.elapsed();
-                assert_eq!(response.as_ref(), payload.as_ref());
                 samples.push(elapsed);
             }
             (samples, Instant::now())
@@ -114,10 +118,33 @@ async fn run(
             "connections": args.connections, "concurrency": args.concurrency,
             "iterations_per_worker": args.iterations, "warmup_per_worker": args.warmup,
             "payload_bytes": args.payload_bytes, "completed": samples.len(), "errors": 0,
+            "decode_replies": args.decode_replies,
             "wall_seconds": wall.as_secs_f64(),
             "throughput_rps": samples.len() as f64 / wall.as_secs_f64(),
             "latency_us": {"p50": percentile(50), "p95": percentile(95), "p99": percentile(99)}
         })
     );
     Ok(())
+}
+
+async fn roundtrip(sender: &dyn RpcSender, prog: ProgVers, payload: &[u8], decoded: bool) {
+    let mut call = sender.call_buf();
+    call.extend_from_slice(payload);
+    #[cfg(feature = "reply-decode")]
+    if decoded {
+        // SAFETY: payload and callback stay live until completion/cancellation.
+        unsafe {
+            sender
+                .send_call_decoded(prog, 1, call, &mut |bytes| {
+                    assert_eq!(bytes, payload);
+                    Ok(())
+                })
+                .await
+                .unwrap();
+        }
+        return;
+    }
+    let _ = decoded;
+    let response = sender.send_call(prog, 1, call).await.unwrap();
+    assert_eq!(response.as_ref(), payload);
 }

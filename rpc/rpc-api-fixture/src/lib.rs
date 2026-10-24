@@ -91,18 +91,34 @@ impl EchoClient {
 
     /// Call the null procedure (proc 0).
     pub async fn null(&self) -> Result<(), RpcError> {
-        self.handle
-            .send_call(Self::prog_vers(), 0, self.handle.call_buf())
-            .await
-            .map(|_| ())
+        // SAFETY: the callback lives across the await and retains no slice.
+        unsafe {
+            self.handle
+                .send_call_decoded(
+                    Self::prog_vers(),
+                    0,
+                    self.handle.call_buf(),
+                    &mut |_| Ok(()),
+                )
+                .await
+        }
     }
 
     /// Call the echo procedure (proc 1).
     pub async fn echo(&self, data: &[u8]) -> Result<Vec<u8>, RpcError> {
         let mut call = self.handle.call_buf();
         call.extend_from_slice(data);
-        let buf = self.handle.send_call(Self::prog_vers(), 1, call).await?;
-        Ok(buf.to_vec())
+        let mut result = None;
+        // SAFETY: the output lives in this pinned frame until the call finishes.
+        unsafe {
+            self.handle
+                .send_call_decoded(Self::prog_vers(), 1, call, &mut |bytes| {
+                    result = Some(bytes.to_vec());
+                    Ok(())
+                })
+                .await?;
+        }
+        Ok(result.unwrap())
     }
 }
 

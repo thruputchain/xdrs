@@ -1,10 +1,12 @@
 //! Connection state and RPC call handling.
 
+use std::cell::UnsafeCell;
 use std::collections::{HashMap, VecDeque};
 use std::io;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
-use std::task::Waker;
+use std::task::{Poll, Waker};
 use tracing::Instrument;
 
 use async_trait::async_trait;
@@ -546,6 +548,8 @@ const RPC_VERSION: u32 = 2;
 // and [`ClientConnection`]; the pools in [`crate::pool`] implement it too.
 pub use thruput_rpc_api::{CallBuf, RpcResponse, RpcSender};
 
+type ReplyDecoder<'a> = dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send + 'a;
+
 #[async_trait]
 impl RpcSender for ConnectionHandle {
     fn call_buf(&self) -> CallBuf {
@@ -561,6 +565,17 @@ impl RpcSender for ConnectionHandle {
         ConnectionHandle::send_call(self, progvers, proc, call).await
     }
 
+    async unsafe fn send_call_decoded(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+        decode: &mut (dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send),
+    ) -> Result<(), RpcError> {
+        // SAFETY: forward the caller's callback-lifetime contract unchanged.
+        unsafe { self.call(progvers, proc, call, decode).await }
+    }
+
     async fn send_fire_and_forget(
         &self,
         progvers: ProgVers,
@@ -571,43 +586,108 @@ impl RpcSender for ConnectionHandle {
     }
 }
 
-/// Result delivered to a pending RPC call.
+/// One call's rendezvous with the reader. It lives inside the call's own
+/// future, which is pinned while the call is registered, and the pending map
+/// holds only a pointer to it.
 ///
-/// Success carries `(record_buf, payload_offset)` — the raw record Vec and
-/// the byte offset where the payload begins. The consumer slices at read
-/// time, avoiding an O(n) `drain()` or `to_vec()` in the reader task.
-pub(crate) enum ReplyResult {
-    /// Success: record buffer + offset to payload start.
-    Ok(Vec<u8>, usize),
-    /// Error from the remote peer.
-    Err(RpcError),
+/// Whoever removes the call's map entry (the reader with its reply, or
+/// poisoning) owns finishing it: it runs the decoder outside the lock,
+/// stores the outcome and sets `done`, after which it never touches the slot
+/// again. The future reads its outcome from here without taking the lock.
+/// If the future is dropped while someone else holds its entry, the drop
+/// waits for `done` so the decoder never outlives what it borrows.
+pub(crate) struct CallSlot {
+    decode: NonNull<ReplyDecoder<'static>>,
+    /// Accessed only under `connection_state`, by the caller while its entry
+    /// is in the map and by whoever removes the entry.
+    waker: UnsafeCell<Option<Waker>>,
+    /// Written once, before `done`, by whoever finished the call.
+    outcome: UnsafeCell<Option<std::thread::Result<Result<(), RpcError>>>>,
+    done: AtomicBool,
 }
 
-/// State of a pending RPC call slot, stored directly in the HashMap.
-///
-/// Replaces `oneshot::channel()` — the HashMap entry IS the rendezvous
-/// point, eliminating one heap allocation per RPC call.
-pub(crate) enum CallbackSlot {
-    /// Entry registered, caller hasn't polled yet.
-    Registered,
-    /// Caller is parked, waker registered.
-    Waiting(Waker),
-    /// Reader has delivered the result.
-    Ready(ReplyResult),
-    /// Fire-and-forget: no caller waiting. Reader cleans up on reply.
-    FireAndForget,
-}
+// SAFETY: the decoder is `Send`; `waker` is guarded by `connection_state`, and
+// `outcome` is published by the release store to `done`.
+unsafe impl Send for CallSlot {}
+unsafe impl Sync for CallSlot {}
 
-impl std::fmt::Debug for CallbackSlot {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Registered => write!(f, "Registered"),
-            Self::Waiting(_) => write!(f, "Waiting(..)"),
-            Self::Ready(_) => write!(f, "Ready(..)"),
-            Self::FireAndForget => write!(f, "FireAndForget"),
+impl CallSlot {
+    /// # Safety
+    /// `decode` must stay valid until the call holding this slot finishes or
+    /// its future is dropped.
+    unsafe fn new(decode: &mut ReplyDecoder<'_>) -> Self {
+        // SAFETY: lifetime erased under the caller's contract.
+        let decode = unsafe {
+            std::mem::transmute::<NonNull<ReplyDecoder<'_>>, NonNull<ReplyDecoder<'static>>>(
+                NonNull::from(decode),
+            )
+        };
+        Self {
+            decode,
+            waker: UnsafeCell::new(None),
+            outcome: UnsafeCell::new(None),
+            done: AtomicBool::new(false),
+        }
+    }
+
+    /// # Safety
+    /// Requires the `connection_state` lock (see `waker`).
+    unsafe fn take_waker(&self) -> Option<Waker> {
+        unsafe { (*self.waker.get()).take() }
+    }
+
+    fn is_done(&self) -> bool {
+        self.done.load(Ordering::Acquire)
+    }
+
+    /// Wait for whoever removed this call's entry to finish it. That is the
+    /// length of one decode, so spin rather than park.
+    fn wait_done(&self) {
+        let mut spins = 0u32;
+        while !self.is_done() {
+            if spins < 64 {
+                std::hint::spin_loop();
+                spins += 1;
+            } else {
+                std::thread::yield_now();
+            }
         }
     }
 }
+
+/// Finish a call whose entry the caller just removed from the map. The
+/// caller must take the slot's waker first (while it held the lock) and wake
+/// it after this returns: once `done` is set the slot may be freed.
+///
+/// # Safety
+/// `slot` must be the removed entry's slot; removal makes the caller its
+/// only finisher, and the owning future waits for `done` before freeing it.
+unsafe fn finish_call(slot: NonNull<CallSlot>, reply: Result<&[u8], RpcError>) {
+    // SAFETY: see above; the slot outlives this call until `done` is set.
+    let slot = unsafe { slot.as_ref() };
+    let outcome = match reply {
+        Ok(bytes) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // SAFETY: the decoder lives as long as its call (CallSlot::new).
+            unsafe { (*slot.decode.as_ptr())(bytes) }
+        })),
+        Err(error) => Ok(Err(error)),
+    };
+    // SAFETY: only the finisher writes `outcome`, before publishing `done`.
+    unsafe { *slot.outcome.get() = Some(outcome) };
+    slot.done.store(true, Ordering::Release);
+    // The future may free the slot from here on.
+}
+
+/// A pending map entry: a waiting call, or a fire-and-forget call whose
+/// reply is discarded.
+#[derive(Debug)]
+pub(crate) enum Pending {
+    Call(NonNull<CallSlot>),
+    FireAndForget,
+}
+
+// SAFETY: `Call` points at a `Send + Sync` slot that outlives its entry.
+unsafe impl Send for Pending {}
 
 /// Hashes xids with one multiply. Every call looks its xid up several
 /// times, and the default SipHash costs more than the rest of the lookup.
@@ -637,7 +717,7 @@ pub(crate) type XidMap<V> = HashMap<u32, V, std::hash::BuildHasherDefault<XidHas
 
 #[derive(Debug)]
 pub(crate) struct ConnectionState {
-    pub(crate) pending_requests: XidMap<CallbackSlot>,
+    pub(crate) pending_requests: XidMap<Pending>,
     last_xid: u32,
     poisoned: bool,
 }
@@ -652,7 +732,7 @@ impl ConnectionState {
     }
 
     #[inline(always)]
-    pub(crate) fn register_call(&mut self) -> Result<u32, RpcError> {
+    pub(crate) fn register_call(&mut self, slot: NonNull<CallSlot>) -> Result<u32, RpcError> {
         if self.poisoned {
             return Err(RpcError::SystemError);
         }
@@ -662,7 +742,7 @@ impl ConnectionState {
             if let std::collections::hash_map::Entry::Vacant(e) =
                 self.pending_requests.entry(self.last_xid)
             {
-                e.insert(CallbackSlot::Registered);
+                e.insert(Pending::Call(slot));
                 return Ok(self.last_xid);
             }
         }
@@ -679,39 +759,29 @@ impl ConnectionState {
             if let std::collections::hash_map::Entry::Vacant(e) =
                 self.pending_requests.entry(self.last_xid)
             {
-                e.insert(CallbackSlot::FireAndForget);
+                e.insert(Pending::FireAndForget);
                 return Ok(self.last_xid);
             }
         }
     }
 
-    #[inline(always)]
-    pub(crate) fn handle_reply(&mut self, xid: u32, reply: ReplyResult) -> bool {
-        if let Some(slot) = self.pending_requests.get_mut(&xid) {
-            if matches!(slot, CallbackSlot::FireAndForget) {
-                self.pending_requests.remove(&xid);
-                return true;
-            }
-            let prev = std::mem::replace(slot, CallbackSlot::Ready(reply));
-            if let CallbackSlot::Waiting(waker) = prev {
-                waker.wake();
-            }
-            return false;
-        }
-        tracing::warn!(xid, "received reply for unknown xid");
-        false
-    }
-
     pub(crate) fn poison(&mut self) -> usize {
         self.poisoned = true;
         let mut faf_count = 0usize;
-        for (_xid, slot) in self.pending_requests.drain() {
-            match slot {
-                CallbackSlot::FireAndForget => faf_count += 1,
-                CallbackSlot::Waiting(waker) => waker.wake(),
-                _ => {}
+        // Finish every call before waking any, so a panicking waker cannot
+        // leave a later caller waiting for `done` forever.
+        let mut wakers = Vec::new();
+        for (_xid, pending) in self.pending_requests.drain() {
+            match pending {
+                Pending::FireAndForget => faf_count += 1,
+                // SAFETY: draining the entry under the lock makes this its finisher.
+                Pending::Call(slot) => unsafe {
+                    wakers.extend(slot.as_ref().take_waker());
+                    finish_call(slot, Err(RpcError::SystemError));
+                },
             }
         }
+        wakers.into_iter().for_each(Waker::wake);
         faf_count
     }
 }
@@ -872,8 +942,49 @@ impl ConnectionHandle {
         proc: u32,
         call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
-        let xid = self.connection_state.lock().unwrap().register_call()?;
-        self.pending_count.fetch_add(1, Ordering::Relaxed);
+        let mut reply = None;
+        // Runs on the reader, outside the connection lock: the same copy out
+        // of the receive buffer the reader always made.
+        let mut decode = |bytes: &[u8]| {
+            let mut buffer = take_buffer();
+            buffer.extend_from_slice(bytes);
+            reply = Some(buffer);
+            Ok(())
+        };
+        // SAFETY: `decode` lives in this future, so it outlives the call even
+        // if the future is leaked rather than dropped.
+        unsafe { self.call(progvers, proc, call, &mut decode).await }?;
+        Ok(RpcResponse::from_record(
+            reply.expect("a successful call ran its decoder"),
+            0,
+        ))
+    }
+
+    /// Send a call and run `decode` on the reader thread over the reply's
+    /// payload, straight from the receive buffer.
+    ///
+    /// # Safety
+    /// `decode` must stay valid until this future completes or is dropped;
+    /// leaking the future instead leaves the reader free to call it later.
+    async unsafe fn call(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+        decode: &mut ReplyDecoder<'_>,
+    ) -> Result<(), RpcError> {
+        // SAFETY: forwarded from this function's contract.
+        let slot = unsafe { CallSlot::new(decode) };
+        // Declared after `slot`, so it drops (and waits out a running
+        // decoder) before the slot does.
+        let mut pending = PendingCall {
+            handle: self,
+            slot: &slot,
+            xid: None,
+        };
+        // Register with this poll's waker under one lock; the reply's
+        // completion then needs no lock on this side.
+        let xid = std::future::poll_fn(|cx| Poll::Ready(pending.register(cx.waker()))).await?;
 
         let span = tracing::debug_span!(
             parent: &self.connection_span,
@@ -884,19 +995,10 @@ impl ConnectionHandle {
             proc = proc,
         );
 
-        // Guard removes the pending entry on drop (cancellation safety).
-        let guard = CallGuard {
-            state: &self.connection_state,
-            pending_count: &self.pending_count,
-            xid,
-            done: false,
-        };
-
-        // On error the guard's drop cleans up the pending entry.
+        // On error the pending call's drop cleans up its entry.
         let msg = self.frame_call_or_warn(call, xid, progvers, proc)?;
 
-        let mut replied = false;
-        let result = async {
+        async {
             if let Err(e) = self.writer.send_call(msg) {
                 tracing::debug!(?e, "call refused by the connection writer");
                 if e.kind() != io::ErrorKind::WouldBlock {
@@ -904,21 +1006,35 @@ impl ConnectionHandle {
                 }
                 return Err(RpcError::SystemError);
             }
-
-            let result = self.await_reply(xid).await;
-            replied = true;
-            result
+            pending.wait().await
         }
         .instrument(span)
-        .await;
+        .await
+    }
 
-        if replied {
-            // await_reply took the entry with it, so skip the lock.
-            guard.complete_without_entry();
-        } else {
-            guard.complete();
+    /// Deliver a reply the reader parsed out of its receive buffer: the
+    /// call's decoder runs here, outside the connection lock. Returns true
+    /// for a fire-and-forget call's reply.
+    pub(crate) fn deliver_reply(&self, xid: u32, reply: Result<&[u8], RpcError>) -> bool {
+        let mut state = self.connection_state.lock().unwrap();
+        match state.pending_requests.remove(&xid) {
+            Some(Pending::Call(slot)) => {
+                // SAFETY: removing the entry under the lock makes this its finisher.
+                let waker = unsafe { slot.as_ref().take_waker() };
+                drop(state);
+                unsafe { finish_call(slot, reply) };
+                if let Some(waker) = waker {
+                    waker.wake();
+                }
+                false
+            }
+            Some(Pending::FireAndForget) => true,
+            None => {
+                drop(state);
+                tracing::warn!(xid, "received reply for unknown xid");
+                false
+            }
         }
-        result
     }
 
     /// Send an RPC call without waiting for the response.
@@ -999,35 +1115,6 @@ impl ConnectionHandle {
         })
     }
 
-    /// Wait for the read loop to deliver a result for the given XID. Either
-    /// way — reply or poisoned connection — the pending entry is gone when
-    /// this returns.
-    async fn await_reply(&self, xid: u32) -> Result<RpcResponse, RpcError> {
-        std::future::poll_fn(|cx| {
-            let mut state = self.connection_state.lock().unwrap();
-            match state.pending_requests.get_mut(&xid) {
-                Some(CallbackSlot::Ready(_)) => match state.pending_requests.remove(&xid) {
-                    Some(CallbackSlot::Ready(reply)) => std::task::Poll::Ready(match reply {
-                        ReplyResult::Ok(buf, offset) => Ok(RpcResponse::from_record(buf, offset)),
-                        ReplyResult::Err(e) => Err(e),
-                    }),
-                    _ => unreachable!(),
-                },
-                Some(slot) => {
-                    // Avoid cloning the waker if unchanged since last poll.
-                    match slot {
-                        CallbackSlot::Waiting(w) if w.will_wake(cx.waker()) => {}
-                        _ => *slot = CallbackSlot::Waiting(cx.waker().clone()),
-                    }
-                    std::task::Poll::Pending
-                }
-                // Entry gone — connection was poisoned.
-                None => std::task::Poll::Ready(Err(RpcError::SystemError)),
-            }
-        })
-        .await
-    }
-
     /// Returns true if the connection has been poisoned (e.g. the remote
     /// peer closed the connection and the read task detected the EOF).
     pub fn is_poisoned(&self) -> bool {
@@ -1049,45 +1136,88 @@ impl ConnectionHandle {
     }
 }
 
-/// Drop guard for cancellation safety in `send_call`.
-///
-/// If the future is dropped before the response arrives, this removes
-/// the pending entry from the HashMap so it doesn't leak.
-struct CallGuard<'a> {
-    state: &'a StdMutex<ConnectionState>,
-    pending_count: &'a AtomicUsize,
-    xid: u32,
-    done: bool,
+/// A call's registration; dropping it cancels the call. It only borrows the
+/// slot: once registered, the reader reaches the slot through the pending
+/// map, so this side must never hold an exclusive reference to it.
+struct PendingCall<'a> {
+    handle: &'a ConnectionHandle,
+    slot: &'a CallSlot,
+    /// Set while registered (and counted in `pending_count`).
+    xid: Option<u32>,
 }
 
-impl CallGuard<'_> {
-    fn cleanup(&mut self) {
-        if !self.done {
-            self.done = true;
-            self.pending_count.fetch_sub(1, Ordering::Relaxed);
-            self.state
-                .lock()
-                .unwrap()
-                .pending_requests
-                .remove(&self.xid);
+impl PendingCall<'_> {
+    fn register(&mut self, waker: &Waker) -> Result<u32, RpcError> {
+        // Clone first: a panicking clone must not leave the slot published
+        // with nothing set to unpublish it.
+        let waker = waker.clone();
+        let slot = NonNull::from(self.slot);
+        let mut state = self.handle.connection_state.lock().unwrap();
+        let xid = state.register_call(slot)?;
+        self.xid = Some(xid);
+        // SAFETY: the entry was just inserted under this lock.
+        unsafe { *self.slot.waker.get() = Some(waker) };
+        drop(state);
+        self.handle.pending_count.fetch_add(1, Ordering::Relaxed);
+        Ok(xid)
+    }
+
+    async fn wait(&mut self) -> Result<(), RpcError> {
+        let xid = self.xid.expect("registered");
+        // The first poll is the one that registered the waker.
+        let mut fresh = true;
+        std::future::poll_fn(|cx| {
+            if self.slot.is_done() {
+                return Poll::Ready(());
+            }
+            if std::mem::take(&mut fresh) {
+                return Poll::Pending;
+            }
+            let state = self.handle.connection_state.lock().unwrap();
+            if state.pending_requests.contains_key(&xid) {
+                // SAFETY: our entry is in the map and the lock is held.
+                let waker = unsafe { &mut *self.slot.waker.get() };
+                if !waker.as_ref().is_some_and(|w| w.will_wake(cx.waker())) {
+                    *waker = Some(cx.waker().clone());
+                }
+                return Poll::Pending;
+            }
+            drop(state);
+            // Claimed: the reader is decoding into it right now.
+            self.slot.wait_done();
+            Poll::Ready(())
+        })
+        .await;
+        self.xid = None;
+        self.handle.pending_count.fetch_sub(1, Ordering::Relaxed);
+        // SAFETY: `done` was observed, so the outcome is published and no
+        // one else touches the slot.
+        match unsafe { (*self.slot.outcome.get()).take() }.expect("finished call has an outcome") {
+            Ok(result) => result,
+            Err(panic) => std::panic::resume_unwind(panic),
         }
     }
-
-    fn complete(mut self) {
-        self.cleanup();
-    }
-
-    /// Finish a call whose entry `await_reply` already removed.
-    fn complete_without_entry(mut self) {
-        debug_assert!(!self.done);
-        self.done = true;
-        self.pending_count.fetch_sub(1, Ordering::Relaxed);
-    }
 }
 
-impl Drop for CallGuard<'_> {
+impl Drop for PendingCall<'_> {
     fn drop(&mut self) {
-        self.cleanup();
+        let Some(xid) = self.xid else { return };
+        self.handle.pending_count.fetch_sub(1, Ordering::Relaxed);
+        if self.slot.is_done() {
+            return;
+        }
+        let removed = self
+            .handle
+            .connection_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pending_requests
+            .remove(&xid);
+        if removed.is_none() {
+            // Someone claimed it and may be running the decoder, which
+            // borrows memory this drop is about to free.
+            self.slot.wait_done();
+        }
     }
 }
 
@@ -1095,7 +1225,7 @@ impl Drop for CallGuard<'_> {
 ///
 /// If the future is dropped before the message is sent (e.g. due to a
 /// timeout), this removes the pending entry and decrements the counter.
-/// Unlike `CallGuard`, this only guards the send phase — once sent, the
+/// Unlike `PendingCall`, this only guards the send phase — once sent, the
 /// reader task handles cleanup via `route_reply`.
 struct FireAndForgetGuard<'a> {
     state: &'a StdMutex<ConnectionState>,
@@ -1215,6 +1345,17 @@ impl RpcSender for ClientConnection {
         call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
         (**self).send_call(progvers, proc, call).await
+    }
+
+    async unsafe fn send_call_decoded(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+        decode: &mut (dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send),
+    ) -> Result<(), RpcError> {
+        // SAFETY: forward the caller's callback-lifetime contract unchanged.
+        unsafe { (**self).call(progvers, proc, call, decode).await }
     }
 
     async fn send_fire_and_forget(
@@ -1597,11 +1738,7 @@ mod tests {
         handle.writer.unstall_for_test();
         let xid = peer_xid(&mut peer).await.unwrap();
         assert_eq!(peer_xid(&mut peer).await, Some(999));
-        handle
-            .connection_state
-            .lock()
-            .unwrap()
-            .handle_reply(xid, ReplyResult::Ok(b"completed".to_vec(), 0));
+        assert!(!handle.deliver_reply(xid, Ok(b"completed")));
         assert_eq!(pending.await.unwrap(), b"completed");
         assert_eq!(handle.num_pending_requests(), 0);
 
@@ -1723,64 +1860,191 @@ mod tests {
             .unwrap();
     }
 
-    #[test]
-    fn test_callback_roundtrip() {
-        let mut state = ConnectionState::new();
+    /// A slot whose decoder records the reply.
+    fn recording_slot(seen: &mut Vec<u8>) -> impl FnMut(&[u8]) -> Result<(), RpcError> + Send + '_ {
+        |bytes: &[u8]| {
+            seen.extend_from_slice(bytes);
+            Ok(())
+        }
+    }
 
-        let xid = state.register_call().unwrap();
+    #[tokio::test]
+    async fn test_callback_roundtrip() {
+        let (handle, _peer, _peer_write) = live_pair().await;
+        let mut seen = Vec::new();
+        let mut decode = recording_slot(&mut seen);
+        // SAFETY: `decode` outlives `slot`.
+        let slot = unsafe { CallSlot::new(&mut decode) };
+        let xid = handle
+            .connection_state
+            .lock()
+            .unwrap()
+            .register_call(NonNull::from(&slot))
+            .unwrap();
         assert_eq!(xid, 1);
 
-        // Reply for unknown xid — should be ignored.
-        state.handle_reply(0, ReplyResult::Ok(b"world".to_vec(), 0));
+        // A reply for an unknown xid is ignored.
+        assert!(!handle.deliver_reply(0, Ok(b"world")));
+        assert!(!slot.is_done());
 
-        // Reply for our xid.
-        state.handle_reply(xid, ReplyResult::Ok(b"hello".to_vec(), 0));
+        assert!(!handle.deliver_reply(xid, Ok(b"hello")));
+        assert!(slot.is_done());
+        assert!(matches!(
+            unsafe { (*slot.outcome.get()).take() },
+            Some(Ok(Ok(())))
+        ));
+        assert!(
+            handle
+                .connection_state
+                .lock()
+                .unwrap()
+                .pending_requests
+                .is_empty()
+        );
 
-        // Slot should now be Ready.
-        match state.pending_requests.remove(&xid) {
-            Some(CallbackSlot::Ready(ReplyResult::Ok(data, offset))) => {
-                assert_eq!(&data[offset..], b"hello");
-            }
-            other => panic!("expected Ready(Ok), got {other:?}"),
-        }
+        // A duplicate reply finds no entry.
+        assert!(!handle.deliver_reply(xid, Ok(b"foo")));
+        drop(slot);
+        drop(decode);
+        assert_eq!(seen, b"hello");
+    }
 
-        // Duplicate reply — entry already removed, should be ignored.
-        state.handle_reply(xid, ReplyResult::Ok(b"foo".to_vec(), 0));
+    /// The pattern the call path relies on, without I/O so Miri can run it:
+    /// the caller only ever shares its slot while another thread claims it
+    /// from the map and finishes it.
+    #[test]
+    fn another_thread_finishes_a_slot_the_caller_only_shares() {
+        let state = StdMutex::new(ConnectionState::new());
+        let mut seen = Vec::new();
+        let mut decode = recording_slot(&mut seen);
+        // SAFETY: `decode` outlives `slot`.
+        let slot = unsafe { CallSlot::new(&mut decode) };
+        let xid = state
+            .lock()
+            .unwrap()
+            .register_call(NonNull::from(&slot))
+            .unwrap();
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let mut st = state.lock().unwrap();
+                let Some(Pending::Call(claimed)) = st.pending_requests.remove(&xid) else {
+                    panic!("call entry missing");
+                };
+                // SAFETY: removed under the lock, so this thread finishes it.
+                unsafe {
+                    let _waker = claimed.as_ref().take_waker();
+                    drop(st);
+                    finish_call(claimed, Ok(b"payload"));
+                }
+            });
+            slot.wait_done();
+        });
+        assert!(matches!(
+            unsafe { (*slot.outcome.get()).take() },
+            Some(Ok(Ok(())))
+        ));
+        drop(slot);
+        drop(decode);
+        assert_eq!(seen, b"payload");
+    }
+
+    #[tokio::test]
+    async fn dropping_a_registered_call_removes_its_entry() {
+        let (handle, _peer, _peer_write) = live_pair().await;
+        let mut call = Box::pin(handle.send_call(ProgVers::new(1, 1), 0, CallBuf::new()));
+        std::future::poll_fn(|cx| {
+            assert!(call.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        assert_eq!(handle.num_pending_requests(), 1);
+
+        drop(call);
+        assert_eq!(handle.num_pending_requests(), 0);
+        assert!(
+            handle
+                .connection_state
+                .lock()
+                .unwrap()
+                .pending_requests
+                .is_empty()
+        );
+    }
+
+    /// A waker whose clone and wake both panic.
+    fn panicking_waker() -> std::task::Waker {
+        use std::task::{RawWaker, RawWakerVTable};
+        const VTABLE: RawWakerVTable = RawWakerVTable::new(
+            |_| panic!("clone"),
+            |_| panic!("wake"),
+            |_| panic!("wake_by_ref"),
+            |_| {},
+        );
+        // SAFETY: the vtable never dereferences the data pointer.
+        unsafe { std::task::Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+    }
+
+    #[tokio::test]
+    async fn panicking_waker_clone_leaves_nothing_registered() {
+        let (handle, _peer, _peer_write) = live_pair().await;
+        let waker = panicking_waker();
+        let mut call = Box::pin(handle.send_call(ProgVers::new(1, 1), 0, CallBuf::new()));
+        let polled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = call
+                .as_mut()
+                .poll(&mut std::task::Context::from_waker(&waker));
+        }));
+        assert!(polled.is_err());
+        drop(call);
+        assert!(
+            handle
+                .connection_state
+                .lock()
+                .unwrap()
+                .pending_requests
+                .is_empty()
+        );
+        assert_eq!(handle.num_pending_requests(), 0);
     }
 
     #[test]
-    fn test_call_guard_completion_cleans_registered_entry() {
-        let state = StdMutex::new(ConnectionState::new());
-        let xid = state.lock().unwrap().register_call().unwrap();
-        let pending_count = AtomicUsize::new(1);
-
-        CallGuard {
-            state: &state,
-            pending_count: &pending_count,
-            xid,
-            done: false,
+    fn panicking_wake_during_poison_still_finishes_every_call() {
+        let mut state = ConnectionState::new();
+        let mut decode = |_: &[u8]| Ok(());
+        let mut decode2 = |_: &[u8]| Ok(());
+        // SAFETY: the decoders outlive the slots.
+        let slots = unsafe { [CallSlot::new(&mut decode), CallSlot::new(&mut decode2)] };
+        for slot in &slots {
+            state.register_call(NonNull::from(slot)).unwrap();
+            // SAFETY: no lock to contend with in this test.
+            unsafe { *slot.waker.get() = Some(panicking_waker()) };
         }
-        .complete();
-
-        assert_eq!(pending_count.load(Ordering::Relaxed), 0);
-        assert!(state.lock().unwrap().pending_requests.is_empty());
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| state.poison()));
+        assert!(poisoned.is_err());
+        assert!(slots.iter().all(CallSlot::is_done));
     }
 
     #[test]
     fn test_poison_wakes_waiters() {
         let mut state = ConnectionState::new();
-        let xid = state.register_call().unwrap();
-
-        // Simulate a waiting caller by inserting a waker.
-        let waker = std::task::Waker::noop().clone();
-        *state.pending_requests.get_mut(&xid).unwrap() = CallbackSlot::Waiting(waker);
+        let mut decode = |_: &[u8]| Ok(());
+        // SAFETY: `decode` outlives `slot`.
+        let slot = unsafe { CallSlot::new(&mut decode) };
+        state.register_call(NonNull::from(&slot)).unwrap();
+        // SAFETY: no lock to contend with in this test.
+        unsafe { *slot.waker.get() = Some(std::task::Waker::noop().clone()) };
 
         state.poison();
         assert!(state.pending_requests.is_empty());
         assert!(state.poisoned);
+        assert!(slot.is_done());
+        assert!(matches!(
+            unsafe { (*slot.outcome.get()).take() },
+            Some(Ok(Err(RpcError::SystemError)))
+        ));
 
         // New registrations should fail.
-        assert!(state.register_call().is_err());
+        assert!(state.register_call(NonNull::from(&slot)).is_err());
     }
 
     #[test]
@@ -1792,7 +2056,7 @@ mod tests {
 
         // Slot should be FireAndForget.
         match state.pending_requests.get(&xid) {
-            Some(CallbackSlot::FireAndForget) => {}
+            Some(Pending::FireAndForget) => {}
             other => panic!("expected FireAndForget, got {other:?}"),
         }
 
@@ -1801,31 +2065,42 @@ mod tests {
         assert!(state.register_fire_and_forget().is_err());
     }
 
-    #[test]
-    fn test_handle_reply_fire_and_forget() {
-        let mut state = ConnectionState::new();
+    #[tokio::test]
+    async fn test_deliver_reply_fire_and_forget() {
+        let (handle, _peer, _peer_write) = live_pair().await;
 
-        // Fire-and-forget call: handle_reply should remove the entry and return true.
-        let faf_xid = state.register_fire_and_forget().unwrap();
-        let was_faf = state.handle_reply(faf_xid, ReplyResult::Ok(b"ignored".to_vec(), 0));
-        assert!(was_faf, "expected true for fire-and-forget reply");
+        // Fire-and-forget call: the entry goes and the reply reports it.
+        let faf_xid = handle
+            .connection_state
+            .lock()
+            .unwrap()
+            .register_fire_and_forget()
+            .unwrap();
+        assert!(handle.deliver_reply(faf_xid, Ok(b"ignored")));
         assert!(
-            !state.pending_requests.contains_key(&faf_xid),
-            "fire-and-forget entry should be removed"
+            !handle
+                .connection_state
+                .lock()
+                .unwrap()
+                .pending_requests
+                .contains_key(&faf_xid)
         );
 
-        // Normal call: handle_reply should keep the entry as Ready and return false.
-        let normal_xid = state.register_call().unwrap();
-        let was_faf = state.handle_reply(normal_xid, ReplyResult::Ok(b"hello".to_vec(), 0));
-        assert!(!was_faf, "expected false for normal reply");
-        match state.pending_requests.get(&normal_xid) {
-            Some(CallbackSlot::Ready(_)) => {}
-            other => panic!("expected Ready, got {other:?}"),
-        }
+        // Normal call: finished in place, not reported as fire-and-forget.
+        let mut decode = |_: &[u8]| Ok(());
+        // SAFETY: `decode` outlives `slot`.
+        let slot = unsafe { CallSlot::new(&mut decode) };
+        let normal_xid = handle
+            .connection_state
+            .lock()
+            .unwrap()
+            .register_call(NonNull::from(&slot))
+            .unwrap();
+        assert!(!handle.deliver_reply(normal_xid, Ok(b"hello")));
+        assert!(slot.is_done());
 
-        // Unknown xid: should return false.
-        let was_faf = state.handle_reply(9999, ReplyResult::Ok(b"unknown".to_vec(), 0));
-        assert!(!was_faf, "expected false for unknown xid");
+        // Unknown xid.
+        assert!(!handle.deliver_reply(9999, Ok(b"unknown")));
     }
 
     #[test]
@@ -1833,13 +2108,12 @@ mod tests {
         let mut state = ConnectionState::new();
 
         // Register a mix of normal and fire-and-forget calls.
-        let _normal_xid = state.register_call().unwrap();
+        let mut decode = |_: &[u8]| Ok(());
+        // SAFETY: `decode` outlives `slot`.
+        let slot = unsafe { CallSlot::new(&mut decode) };
+        state.register_call(NonNull::from(&slot)).unwrap();
         let _faf_xid1 = state.register_fire_and_forget().unwrap();
         let _faf_xid2 = state.register_fire_and_forget().unwrap();
-
-        // Add a Waiting entry (simulating a polled normal call).
-        let waker = std::task::Waker::noop().clone();
-        *state.pending_requests.get_mut(&_normal_xid).unwrap() = CallbackSlot::Waiting(waker);
 
         let faf_count = state.poison();
         assert_eq!(faf_count, 2, "expected 2 fire-and-forget entries");

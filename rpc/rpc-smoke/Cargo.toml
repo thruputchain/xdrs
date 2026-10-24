@@ -5,6 +5,10 @@ edition = "2024"
 rust-version.workspace = true
 publish = false
 
+[features]
+# Prototype benchmark selector; the driver has no feature switch.
+reply-decode = []
+
 [dependencies]
 thruput-rpc-driver = { workspace = true }
 tokio = { version = "1.47.1", features = ["full"] }
