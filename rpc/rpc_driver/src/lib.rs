@@ -24,18 +24,25 @@
 //!
 //! ```no_run
 //! use thruput_rpc_driver::{ProgVers, RpcError, RpcServer, ServiceMap, handler::RpcHandler};
-//! use async_trait::async_trait;
 //!
 //! struct MyService;
 //!
-//! #[async_trait]
 //! impl RpcHandler for MyService {
-//!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-//!         match proc {
-//!             0 => Ok(vec![]),           // null
-//!             1 => Ok(data.to_vec()),    // echo
-//!             _ => Err(RpcError::InvalidProcedure),
-//!         }
+//!     fn dispatch(
+//!         &self,
+//!         proc: u32,
+//!         data: &[u8],
+//!         reply: thruput_rpc_driver::ReplyBuf,
+//!         slot: thruput_rpc_driver::FutureSlot,
+//!     ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+//!         // Encode the result into `reply`, which already reserves the
+//!         // reply header; the future owns it, not the request bytes.
+//!         let reply = match proc {
+//!             0 => reply,              // null
+//!             1 => reply.with(data),   // echo
+//!             _ => return Err(RpcError::InvalidProcedure),
+//!         };
+//!         Ok(slot.put(async move { Ok(reply) }))
 //!     }
 //!     fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
 //! }
@@ -51,7 +58,8 @@
 //!
 //! ## Dispatch and automatic write batching
 //!
-//! Each handler is polled inline. Ready handlers reply without spawning a
+//! Each call is decoded synchronously from the receive buffer, then its
+//! handler future is polled inline. Ready handlers reply without spawning a
 //! task; suspended handlers move to a task while the reader keeps serving
 //! CALLs and REPLYs. There is one dispatch path, with no feature flags.
 //! Handler panics return [`RpcError::SystemError`]. CPU-heavy handlers should
@@ -79,15 +87,21 @@
 //!
 //! ```no_run
 //! # use thruput_rpc_driver::{ProgVers, RpcError, handler::RpcHandler};
-//! # use async_trait::async_trait;
 //! # struct MyService;
-//! # #[async_trait]
 //! # impl RpcHandler for MyService {
 //! #   fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
-//!     async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+//!     fn dispatch(
+//!         &self,
+//!         proc: u32,
+//!         data: &[u8],
+//!         reply: thruput_rpc_driver::ReplyBuf,
+//!         slot: thruput_rpc_driver::FutureSlot,
+//!     ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
 //!         let peer = thruput_rpc_driver::peer();
-//!         let resp = peer.send_call(ProgVers::new(200, 1), 0, peer.call_buf()).await?;
-//!         Ok(resp.to_vec())
+//!         Ok(slot.put(async move {
+//!             let resp = peer.send_call(ProgVers::new(200, 1), 0, peer.call_buf()).await?;
+//!             Ok(reply.with(&resp))
+//!         }))
 //!     }
 //! # }
 //! ```

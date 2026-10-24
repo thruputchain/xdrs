@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::{
     CallBuf, ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
     handler::RpcHandler, handler::ServiceMap,
@@ -22,10 +21,24 @@ fn call_with(payload: &[u8]) -> CallBuf {
 /// Simple echo service.
 struct EchoService;
 
-#[async_trait]
 impl RpcHandler for EchoService {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        Ok(data.to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async { Ok(data.to_vec()) }).await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -36,23 +49,40 @@ impl RpcHandler for EchoService {
 /// With serial dispatch this deadlocks. With concurrent dispatch it works.
 struct InlineCallbackService;
 
-#[async_trait]
 impl RpcHandler for InlineCallbackService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(vec![]),
-            1 => {
-                let peer = thruput_rpc_driver::peer();
-                // Call back to the client's EchoService on the same connection.
-                // This requires the read loop to process the REPLY while this
-                // handler is still running — only possible with concurrent dispatch.
-                let mut call = peer.call_buf();
-                call.extend_from_slice(data);
-                let response = peer.send_call(ECHO_PROG, 1, call).await?;
-                Ok(response.to_vec())
-            }
-            _ => Err(RpcError::InvalidProcedure),
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                match proc {
+                    0 => Ok(vec![]),
+                    1 => {
+                        let peer = thruput_rpc_driver::peer();
+                        // Call back to the client's EchoService on the same connection.
+                        // This requires the read loop to process the REPLY while this
+                        // handler is still running — only possible with concurrent dispatch.
+                        let mut call = peer.call_buf();
+                        call.extend_from_slice(data);
+                        let response = peer.send_call(ECHO_PROG, 1, call).await?;
+                        Ok(response.to_vec())
+                    }
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         CALLBACK_PROG
@@ -64,11 +94,28 @@ struct SleepService {
     delay: Duration,
 }
 
-#[async_trait]
 impl RpcHandler for SleepService {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        tokio::time::sleep(self.delay).await;
-        Ok(data.to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                tokio::time::sleep(self.delay).await;
+                Ok(data.to_vec())
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -84,18 +131,35 @@ struct ReadinessService {
     entered: Arc<AtomicUsize>,
 }
 
-#[async_trait]
 impl RpcHandler for ReadinessService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        self.entered.fetch_add(1, Ordering::SeqCst);
-        match proc {
-            0 => Ok(data.to_vec()),
-            1 => {
-                tokio::task::yield_now().await;
-                Ok(data.to_vec())
-            }
-            _ => Err(RpcError::InvalidProcedure),
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                self.entered.fetch_add(1, Ordering::SeqCst);
+                match proc {
+                    0 => Ok(data.to_vec()),
+                    1 => {
+                        tokio::task::yield_now().await;
+                        Ok(data.to_vec())
+                    }
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -106,19 +170,36 @@ impl RpcHandler for ReadinessService {
 /// the dispatch loop's probe poll rather than inside a spawned task.
 struct PanicBeforeAwaitService;
 
-#[async_trait]
 impl RpcHandler for PanicBeforeAwaitService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(data.to_vec()),
-            1 => panic!("intentional panic on first poll"),
-            // Suspends after earlier calls have panicked.
-            2 => {
-                tokio::task::yield_now().await;
-                Ok(data.to_vec())
-            }
-            _ => Err(RpcError::InvalidProcedure),
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                match proc {
+                    0 => Ok(data.to_vec()),
+                    1 => panic!("intentional panic on first poll"),
+                    // Suspends after earlier calls have panicked.
+                    2 => {
+                        tokio::task::yield_now().await;
+                        Ok(data.to_vec())
+                    }
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -128,14 +209,31 @@ impl RpcHandler for PanicBeforeAwaitService {
 /// Service that panics on proc 1.
 struct PanickingService;
 
-#[async_trait]
 impl RpcHandler for PanickingService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(data.to_vec()),
-            1 => panic!("intentional test panic"),
-            _ => Err(RpcError::InvalidProcedure),
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                match proc {
+                    0 => Ok(data.to_vec()),
+                    1 => panic!("intentional test panic"),
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -174,12 +272,29 @@ struct GatedEchoService {
     release: Arc<tokio::sync::Semaphore>,
 }
 
-#[async_trait]
 impl RpcHandler for GatedEchoService {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        self.entered.notify_one();
-        self.release.acquire().await.unwrap().forget();
-        Ok(data.to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
+        }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                self.entered.notify_one();
+                self.release.acquire().await.unwrap().forget();
+                Ok(data.to_vec())
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {

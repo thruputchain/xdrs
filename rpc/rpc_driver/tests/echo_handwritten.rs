@@ -139,34 +139,47 @@ impl std::fmt::Debug for TestProgram_TestVersion_Dispatcher {
     }
 }
 
-#[async_trait]
 impl thruput_rpc_driver::handler::RpcHandler for TestProgram_TestVersion_Dispatcher {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // As x23c emits: decode the arguments from the borrowed request
+        // first, so the future owns them and not the request bytes.
         match proc {
             0 => {
                 let _args: () = xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                let res = self.inner.null().await.map_err(|_| RpcError::SystemError)?;
-                xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
+                Ok(slot.put(async move {
+                    self.inner.null().await.map_err(|_| RpcError::SystemError)?;
+                    encode_reply(reply, &())
+                }))
             }
             1 => {
                 let args: (i32,) =
                     xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                let res = self
-                    .inner
-                    .takes_int(args.0)
-                    .await
-                    .map_err(|_| RpcError::SystemError)?;
-                xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
+                Ok(slot.put(async move {
+                    let res = self
+                        .inner
+                        .takes_int(args.0)
+                        .await
+                        .map_err(|_| RpcError::SystemError)?;
+                    encode_reply(reply, &res)
+                }))
             }
             2 => {
                 let args: (i32, i32) =
                     xdrs::txs::decode(data).map_err(|_| RpcError::GarbageArguments)?;
-                let res = self
-                    .inner
-                    .takes_two_ints(args.0, args.1)
-                    .await
-                    .map_err(|_| RpcError::SystemError)?;
-                xdrs::txs::encode(&res).map_err(|_| RpcError::SystemError)
+                Ok(slot.put(async move {
+                    let res = self
+                        .inner
+                        .takes_two_ints(args.0, args.1)
+                        .await
+                        .map_err(|_| RpcError::SystemError)?;
+                    encode_reply(reply, &res)
+                }))
             }
             _ => Err(RpcError::InvalidProcedure),
         }
@@ -188,6 +201,23 @@ impl std::fmt::Debug for TestProgram_TestVersion_Client {
         f.debug_struct("TestProgram_TestVersion_Client")
             .finish_non_exhaustive()
     }
+}
+
+/// What a generated dispatcher emits for its result: serialize straight
+/// into the reply buffer, after the header the driver reserved.
+fn encode_reply<T: xdrs::WriteXDR>(
+    mut reply: thruput_rpc_api::ReplyBuf,
+    result: &T,
+) -> Result<thruput_rpc_api::ReplyBuf, RpcError> {
+    reply
+        .append_with(|buf| {
+            let mut writer = xdrs::txs::buf_writer::BufWriter::from(std::mem::take(buf));
+            let written = xdrs::write_xdr(result, &mut writer);
+            *buf = writer.into();
+            written
+        })
+        .map_err(|_| RpcError::SystemError)?;
+    Ok(reply)
 }
 
 /// What a generated client emits for its argument tuple: serialize straight

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 // The RpcHandler trait lives in the stable `thruput_rpc_api` crate; re-exported here
 // at its historical path for source compatibility.
-pub use thruput_rpc_api::RpcHandler;
+pub use thruput_rpc_api::{FutureSlot, ReplyBuf, RpcFuture, RpcHandler};
 
 /// Registry of RPC services, keyed by program number and version.
 pub struct ServiceMap {
@@ -44,18 +44,20 @@ impl ServiceMap {
         self.services.insert(dispatch.prog_vers(), dispatch);
     }
 
-    pub(crate) async fn dispatch(
+    pub(crate) fn dispatch(
         &self,
         rpc_vers: u32,
         srv: ProgVers,
         proc: u32,
         data: &[u8],
-    ) -> Result<Vec<u8>, RpcError> {
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         if rpc_vers != 2 {
             return Err(RpcError::RpcMismatch);
         }
         if let Some(handler) = self.services.get(&srv) {
-            return handler.dispatch(proc, data).await;
+            return handler.dispatch(proc, data, reply, slot);
         }
 
         let first_match = self.services.range(ProgVers::new(srv.prog(), 0)..);
@@ -87,7 +89,28 @@ impl ServiceMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
+
+    impl ServiceMap {
+        async fn call(
+            &self,
+            rpc_vers: u32,
+            srv: ProgVers,
+            proc: u32,
+            data: &[u8],
+        ) -> Result<Vec<u8>, RpcError> {
+            let reply = self
+                .dispatch(
+                    rpc_vers,
+                    srv,
+                    proc,
+                    data,
+                    ReplyBuf::new(),
+                    FutureSlot::new(),
+                )?
+                .await?;
+            Ok(reply.payload().to_vec())
+        }
+    }
 
     /// Test service that echoes data back or returns the proc number as a u32.
     struct TestService {
@@ -95,14 +118,22 @@ mod tests {
         vers: u32,
     }
 
-    #[async_trait]
     impl RpcHandler for TestService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-            match proc {
-                0 => Ok(vec![]),        // null procedure
-                1 => Ok(data.to_vec()), // echo
-                _ => Err(RpcError::InvalidProcedure),
-            }
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+            slot: FutureSlot,
+        ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+            let data = data.to_vec();
+            Ok(slot.put(async move {
+                match proc {
+                    0 => Ok(reply),             // null procedure
+                    1 => Ok(reply.with(&data)), // echo
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            }))
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -115,13 +146,13 @@ mod tests {
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
 
-        let result = map.dispatch(1, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(1, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::RpcMismatch));
 
-        let result = map.dispatch(3, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(3, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::RpcMismatch));
 
-        let result = map.dispatch(0, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(0, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::RpcMismatch));
     }
 
@@ -130,10 +161,10 @@ mod tests {
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Ok(vec![]));
 
-        let result = map.dispatch(2, ProgVers::new(100, 1), 1, b"hello").await;
+        let result = map.call(2, ProgVers::new(100, 1), 1, b"hello").await;
         assert_eq!(result, Ok(b"hello".to_vec()));
     }
 
@@ -142,10 +173,10 @@ mod tests {
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
 
-        let result = map.dispatch(2, ProgVers::new(200, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(200, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::ProgUnavail));
 
-        let result = map.dispatch(2, ProgVers::new(99, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(99, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::ProgUnavail));
     }
 
@@ -153,7 +184,7 @@ mod tests {
     async fn test_empty_service_map() {
         let map = ServiceMap::new();
 
-        let result = map.dispatch(2, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::ProgUnavail));
     }
 
@@ -162,10 +193,10 @@ mod tests {
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 2 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::InvalidVersion { low: 2, high: 2 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 3), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 3), 0, b"").await;
         assert_eq!(result, Err(RpcError::InvalidVersion { low: 2, high: 2 }));
     }
 
@@ -176,24 +207,24 @@ mod tests {
         map.add_service(Box::new(TestService { prog: 100, vers: 3 }));
         map.add_service(Box::new(TestService { prog: 100, vers: 5 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 2), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 2), 0, b"").await;
         assert_eq!(result, Err(RpcError::InvalidVersion { low: 1, high: 5 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 4), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 4), 0, b"").await;
         assert_eq!(result, Err(RpcError::InvalidVersion { low: 1, high: 5 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 0), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 0), 0, b"").await;
         assert_eq!(result, Err(RpcError::InvalidVersion { low: 1, high: 5 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 6), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 6), 0, b"").await;
         assert_eq!(result, Err(RpcError::InvalidVersion { low: 1, high: 5 }));
 
         // Exact matches should still work
-        let result = map.dispatch(2, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Ok(vec![]));
-        let result = map.dispatch(2, ProgVers::new(100, 3), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 3), 0, b"").await;
         assert_eq!(result, Ok(vec![]));
-        let result = map.dispatch(2, ProgVers::new(100, 5), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 5), 0, b"").await;
         assert_eq!(result, Ok(vec![]));
     }
 
@@ -202,10 +233,10 @@ mod tests {
         let mut map = ServiceMap::new();
         map.add_service(Box::new(TestService { prog: 100, vers: 1 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 1), 2, b"").await;
+        let result = map.call(2, ProgVers::new(100, 1), 2, b"").await;
         assert_eq!(result, Err(RpcError::InvalidProcedure));
 
-        let result = map.dispatch(2, ProgVers::new(100, 1), 999, b"").await;
+        let result = map.call(2, ProgVers::new(100, 1), 999, b"").await;
         assert_eq!(result, Err(RpcError::InvalidProcedure));
     }
 
@@ -216,29 +247,29 @@ mod tests {
         map.add_service(Box::new(TestService { prog: 200, vers: 1 }));
         map.add_service(Box::new(TestService { prog: 200, vers: 2 }));
 
-        let result = map.dispatch(2, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Ok(vec![]));
 
-        let result = map.dispatch(2, ProgVers::new(100, 2), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 2), 0, b"").await;
         assert_eq!(result, Err(RpcError::InvalidVersion { low: 1, high: 1 }));
 
-        let result = map.dispatch(2, ProgVers::new(200, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(200, 1), 0, b"").await;
         assert_eq!(result, Ok(vec![]));
 
-        let result = map.dispatch(2, ProgVers::new(200, 2), 0, b"").await;
+        let result = map.call(2, ProgVers::new(200, 2), 0, b"").await;
         assert_eq!(result, Ok(vec![]));
 
-        let result = map.dispatch(2, ProgVers::new(200, 3), 0, b"").await;
+        let result = map.call(2, ProgVers::new(200, 3), 0, b"").await;
         assert_eq!(result, Err(RpcError::InvalidVersion { low: 1, high: 2 }));
 
-        let result = map.dispatch(2, ProgVers::new(150, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(150, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::ProgUnavail));
     }
 
     #[tokio::test]
     async fn test_default_impl() {
         let map = ServiceMap::default();
-        let result = map.dispatch(2, ProgVers::new(100, 1), 0, b"").await;
+        let result = map.call(2, ProgVers::new(100, 1), 0, b"").await;
         assert_eq!(result, Err(RpcError::ProgUnavail));
     }
 }

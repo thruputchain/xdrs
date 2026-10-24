@@ -45,25 +45,42 @@ impl std::fmt::Debug for EchoDispatcher {
     }
 }
 
-#[async_trait::async_trait]
 impl RpcHandler for EchoDispatcher {
     fn prog_vers(&self) -> ProgVers {
         ProgVers::new(ECHO_PROG, ECHO_VERS)
     }
 
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => {
-                self.inner.null().await.map_err(|_| RpcError::SystemError)?;
-                Ok(vec![])
-            }
-            1 => self
-                .inner
-                .echo(data.to_vec())
-                .await
-                .map_err(|_| RpcError::SystemError),
-            _ => Err(RpcError::InvalidProcedure),
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            let data: &[u8] = &data;
+            let result = body(async {
+                match proc {
+                    0 => {
+                        self.inner.null().await.map_err(|_| RpcError::SystemError)?;
+                        Ok(vec![])
+                    }
+                    1 => self
+                        .inner
+                        .echo(data.to_vec())
+                        .await
+                        .map_err(|_| RpcError::SystemError),
+                    _ => Err(RpcError::InvalidProcedure),
+                }
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 }
 

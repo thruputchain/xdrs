@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::{
     CallBuf, ProgVers, RpcError, RpcHandler, RpcSender, RpcServer, ServiceMap,
 };
@@ -38,20 +37,37 @@ struct Echo {
     release: Arc<Notify>,
 }
 
-#[async_trait]
 impl RpcHandler for Echo {
     fn prog_vers(&self) -> ProgVers {
         PROG
     }
-    async fn dispatch(&self, proc: u32, bytes: &[u8]) -> Result<Vec<u8>, RpcError> {
-        if proc == 1 {
-            self.entered.notify_one();
-            self.release.notified().await;
+    fn dispatch(
+        &self,
+        proc: u32,
+        bytes: &[u8],
+        reply: thruput_rpc_api::ReplyBuf,
+        slot: thruput_rpc_api::FutureSlot,
+    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        // Pins down the body's error type for `?`.
+        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
+            f
         }
-        if proc == 2 {
-            return Err(RpcError::InvalidProcedure);
-        }
-        Ok(bytes.to_vec())
+        let bytes = bytes.to_vec();
+        Ok(slot.put(async move {
+            let bytes: &[u8] = &bytes;
+            let result = body(async {
+                if proc == 1 {
+                    self.entered.notify_one();
+                    self.release.notified().await;
+                }
+                if proc == 2 {
+                    return Err(RpcError::InvalidProcedure);
+                }
+                Ok(bytes.to_vec())
+            })
+            .await;
+            result.map(|bytes| reply.with(&bytes))
+        }))
     }
 }
 

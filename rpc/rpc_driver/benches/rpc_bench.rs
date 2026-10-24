@@ -19,7 +19,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use serde::Serialize;
 use thruput_rpc_driver::{
     CallBuf, ConnectionConfig, DynamicPool, FixedSerialPool, ProgVers, RpcError, RpcSender,
@@ -114,14 +113,20 @@ const ECHO_PROG: ProgVers = ProgVers::new(1, 1);
 
 struct EchoService;
 
-#[async_trait]
 impl RpcHandler for EchoService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(vec![]),
-            1 => Ok(data.to_vec()),
-            _ => Err(RpcError::InvalidProcedure),
-        }
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_driver::ReplyBuf,
+        slot: thruput_rpc_driver::FutureSlot,
+    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        let reply = match proc {
+            0 => reply,
+            1 => reply.with(data),
+            _ => return Err(RpcError::InvalidProcedure),
+        };
+        Ok(slot.put(async move { Ok(reply) }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -133,17 +138,25 @@ struct DelayEchoService {
     delay: Duration,
 }
 
-#[async_trait]
 impl RpcHandler for DelayEchoService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(vec![]),
-            1 => {
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_driver::ReplyBuf,
+        slot: thruput_rpc_driver::FutureSlot,
+    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        let reply = match proc {
+            0 => reply,
+            1 => reply.with(data),
+            _ => return Err(RpcError::InvalidProcedure),
+        };
+        Ok(slot.put(async move {
+            if proc == 1 {
                 tokio::time::sleep(self.delay).await;
-                Ok(data.to_vec())
             }
-            _ => Err(RpcError::InvalidProcedure),
-        }
+            Ok(reply)
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -155,18 +168,25 @@ struct InlineCallbackService;
 
 const CALLBACK_PROG: ProgVers = ProgVers::new(2, 1);
 
-#[async_trait]
 impl RpcHandler for InlineCallbackService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_driver::ReplyBuf,
+        slot: thruput_rpc_driver::FutureSlot,
+    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
         match proc {
-            0 => Ok(vec![]),
+            0 => Ok(slot.put(async move { Ok(reply) })),
             1 => {
                 // Call back to the peer on the same connection, inline.
                 let peer = thruput_rpc_driver::peer();
                 let mut call = peer.call_buf();
                 call.extend_from_slice(data);
-                let response = peer.send_call(ECHO_PROG, 1, call).await?;
-                Ok(response.to_vec())
+                Ok(slot.put(async move {
+                    let response = peer.send_call(ECHO_PROG, 1, call).await?;
+                    Ok(reply.with(&response))
+                }))
             }
             _ => Err(RpcError::InvalidProcedure),
         }
@@ -183,31 +203,39 @@ struct FanoutService {
     fanout: usize,
 }
 
-#[async_trait]
 impl RpcHandler for FanoutService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(vec![]),
-            1 => {
-                let peer = thruput_rpc_driver::peer();
-                let mut handles = Vec::with_capacity(self.fanout);
-                for _ in 0..self.fanout {
-                    let peer = peer.clone();
-                    let mut call = peer.call_buf();
-                    call.extend_from_slice(data);
-                    handles.push(tokio::spawn(async move {
-                        peer.send_call(ECHO_PROG, 1, call).await
-                    }));
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_driver::ReplyBuf,
+        slot: thruput_rpc_driver::FutureSlot,
+    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        let data = data.to_vec();
+        Ok(slot.put(async move {
+            match proc {
+                0 => Ok(reply),
+                1 => {
+                    let peer = thruput_rpc_driver::peer();
+                    let mut handles = Vec::with_capacity(self.fanout);
+                    for _ in 0..self.fanout {
+                        let peer = peer.clone();
+                        let mut call = peer.call_buf();
+                        call.extend_from_slice(&data);
+                        handles.push(tokio::spawn(async move {
+                            peer.send_call(ECHO_PROG, 1, call).await
+                        }));
+                    }
+                    let mut total_len: u32 = 0;
+                    for h in handles {
+                        let resp = h.await.map_err(|_| RpcError::SystemError)??;
+                        total_len += resp.len() as u32;
+                    }
+                    Ok(reply.with(&total_len.to_be_bytes()))
                 }
-                let mut total_len: u32 = 0;
-                for h in handles {
-                    let resp = h.await.map_err(|_| RpcError::SystemError)??;
-                    total_len += resp.len() as u32;
-                }
-                Ok(total_len.to_be_bytes().to_vec())
+                _ => Err(RpcError::InvalidProcedure),
             }
-            _ => Err(RpcError::InvalidProcedure),
-        }
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         CALLBACK_PROG
@@ -219,16 +247,22 @@ impl RpcHandler for FanoutService {
 /// submission and application work a real handler performs.
 struct ReadySubmitService;
 
-#[async_trait]
 impl RpcHandler for ReadySubmitService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
+    fn dispatch(
+        &self,
+        proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_driver::ReplyBuf,
+        slot: thruput_rpc_driver::FutureSlot,
+    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        let reply = match proc {
             // Null proc: pure transport and dispatch overhead.
-            0 => Ok(vec![]),
+            0 => reply,
             // Accept-and-return: no await anywhere on this path.
-            1 => Ok(data.to_vec()),
-            _ => Err(RpcError::InvalidProcedure),
-        }
+            1 => reply.with(data),
+            _ => return Err(RpcError::InvalidProcedure),
+        };
+        Ok(slot.put(async move { Ok(reply) }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -243,12 +277,20 @@ struct ContentionService {
     work_duration: Duration,
 }
 
-#[async_trait]
 impl RpcHandler for ContentionService {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let _guard = self.lock.lock().await;
-        tokio::time::sleep(self.work_duration).await;
-        Ok(data.to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: thruput_rpc_driver::ReplyBuf,
+        slot: thruput_rpc_driver::FutureSlot,
+    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
+        Ok(slot.put(async move {
+            let _guard = self.lock.lock().await;
+            tokio::time::sleep(self.work_duration).await;
+            Ok(reply)
+        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
