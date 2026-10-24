@@ -11,7 +11,9 @@
 
 use std::sync::Arc;
 
-use thruput_rpc_api::{ProgVers, ProgramError, RpcError, RpcHandler, RpcSender};
+use thruput_rpc_api::{
+    FutureSlot, ProgVers, ProgramError, ReplyBuf, RpcError, RpcFuture, RpcHandler, RpcSender,
+};
 
 /// Program number for the fixture echo service.
 pub const ECHO_PROG: u32 = 3123125;
@@ -54,33 +56,28 @@ impl RpcHandler for EchoDispatcher {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
-        Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                match proc {
-                    0 => {
-                        self.inner.null().await.map_err(|_| RpcError::SystemError)?;
-                        Ok(vec![])
-                    }
-                    1 => self
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        match proc {
+            0 => Ok(slot.put(async move {
+                self.inner.null().await.map_err(|_| RpcError::SystemError)?;
+                Ok(reply)
+            })),
+            1 => {
+                // Decode the arguments before the future exists.
+                let data = data.to_vec();
+                Ok(slot.put(async move {
+                    let echoed = self
                         .inner
-                        .echo(data.to_vec())
+                        .echo(data)
                         .await
-                        .map_err(|_| RpcError::SystemError),
-                    _ => Err(RpcError::InvalidProcedure),
-                }
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
-        }))
+                        .map_err(|_| RpcError::SystemError)?;
+                    Ok(reply.with(&echoed))
+                }))
+            }
+            _ => Err(RpcError::InvalidProcedure),
+        }
     }
 }
 

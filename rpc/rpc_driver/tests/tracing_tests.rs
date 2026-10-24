@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use thruput_rpc_driver::{
-    CallBuf, ProgVers, RpcError, RpcServer, connect_client, handler::RpcHandler,
-    handler::ServiceMap,
+    CallBuf, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer, connect_client,
+    handler::RpcHandler, handler::ServiceMap,
 };
 use tokio::net::TcpListener;
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -80,26 +80,15 @@ impl RpcHandler for EchoService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
-        Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                match proc {
-                    0 => Ok(vec![]),
-                    1 => Ok(data.to_vec()),
-                    _ => Err(RpcError::InvalidProcedure),
-                }
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
-        }))
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = match proc {
+            0 => reply,
+            1 => reply.with(data),
+            _ => return Err(RpcError::InvalidProcedure),
+        };
+        Ok(slot.put(async move { Ok(reply) }))
     }
 
     fn prog_vers(&self) -> ProgVers {

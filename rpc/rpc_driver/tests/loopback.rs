@@ -5,7 +5,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use thruput_rpc_driver::loopback::{LoopbackLink, LoopbackSender};
-use thruput_rpc_driver::{CallBuf, ProgVers, RpcError, RpcSender, ServiceMap, handler::RpcHandler};
+use thruput_rpc_driver::{
+    CallBuf, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcSender, ServiceMap,
+    handler::RpcHandler,
+};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -19,26 +22,17 @@ impl RpcHandler for EchoService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        match proc {
+            1 => {
+                let reply = reply.with(data);
+                Ok(slot.put(async move { Ok(reply) }))
+            }
+            2 => Ok(slot.put(async { Err(RpcError::PoolClosed) })),
+            _ => Err(RpcError::InvalidProcedure),
         }
-        let data = data.to_vec();
-        Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                match proc {
-                    1 => Ok(data.to_vec()),
-                    2 => Err(RpcError::PoolClosed),
-                    _ => Err(RpcError::InvalidProcedure),
-                }
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
-        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -64,23 +58,11 @@ impl RpcHandler for RecordingService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
-        Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                let _ = self.entered.send((proc, data.to_vec()));
-                Ok(Vec::new())
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
-        }))
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let _ = self.entered.send((proc, data.to_vec()));
+        Ok(slot.put(async move { Ok(reply) }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -105,23 +87,14 @@ impl RpcHandler for CallbackService {
         &self,
         _proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let data = data.to_vec();
         Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                let peer = thruput_rpc_driver::peer();
-                let reply = peer.send_call(ECHO, 1, call_with(&*peer, data)).await?;
-                Ok(reply.to_vec())
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+            let peer = thruput_rpc_driver::peer();
+            let echoed = peer.send_call(ECHO, 1, call_with(&*peer, &data)).await?;
+            Ok(reply.with(&echoed))
         }))
     }
 
@@ -146,20 +119,10 @@ impl RpcHandler for PanickingService {
         &self,
         _proc: u32,
         _data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        Ok(slot.put(async move {
-            let result = body(async {
-                panic!("handler bug");
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
-        }))
+        _reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        Ok(slot.put(async { panic!("handler bug") }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -180,25 +143,17 @@ impl RpcHandler for PoisoningService {
         &self,
         _proc: u32,
         _data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         Ok(slot.put(async move {
-            let result = body(async {
-                self.link
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .expect("link installed")
-                    .poison();
-                Ok(b"too late".to_vec())
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+            self.link
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("link installed")
+                .poison();
+            Ok(reply.with(b"too late"))
         }))
     }
 
@@ -228,21 +183,13 @@ impl RpcHandler for SuspendingService {
         &self,
         _proc: u32,
         _data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         Ok(slot.put(async move {
-            let result = body(async {
-                let _guard = PanicOnDrop;
-                std::future::pending::<()>().await;
-                Ok(Vec::new())
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+            let _guard = PanicOnDrop;
+            std::future::pending::<()>().await;
+            Ok(reply)
         }))
     }
 
@@ -537,25 +484,16 @@ impl RpcHandler for GatedService {
         &self,
         _proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
         Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                let guard = SetOnDrop(self.dropped.clone());
-                let _ = self.entered.send(());
-                self.permits.acquire().await.unwrap().forget();
-                std::mem::forget(guard);
-                Ok(data.to_vec())
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+            let guard = SetOnDrop(self.dropped.clone());
+            let _ = self.entered.send(());
+            self.permits.acquire().await.unwrap().forget();
+            std::mem::forget(guard);
+            Ok(reply)
         }))
     }
 
@@ -707,9 +645,9 @@ impl RpcHandler for SyncFailureService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
             0 => {
                 let reply = reply.with(data);

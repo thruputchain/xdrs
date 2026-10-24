@@ -282,10 +282,7 @@ mod tests {
         });
         assert!(future.vtable.inline);
         assert_eq!(future.future.as_ptr() as usize, block);
-        match poll_once(&mut future) {
-            Poll::Ready(Ok(reply)) => assert_eq!(reply.payload(), b"done"),
-            other => panic!("unexpected {other:?}"),
-        }
+        assert_eq!(payload(poll_once(&mut future)), b"done");
         let slot = future.into_slot();
         assert_eq!(drops.load(Ordering::SeqCst), 1);
         assert_eq!(
@@ -367,30 +364,15 @@ mod tests {
         assert_eq!(drops.load(Ordering::SeqCst), 4);
     }
 
-    /// Ready after one pending poll, so tests see both poll outcomes.
-    #[derive(Default)]
-    struct YieldOnce(bool);
-
-    impl YieldOnce {
-        fn poll_once(&mut self) -> Poll<Output> {
-            if std::mem::replace(&mut self.0, true) {
-                Poll::Ready(Ok(ReplyBuf::new().with(b"done")))
-            } else {
-                Poll::Pending
-            }
-        }
-    }
-
     /// Small, but aligned past the block, so it must be boxed.
     #[repr(align(64))]
-    #[derive(Default)]
-    struct OverAligned(YieldOnce, #[allow(dead_code)] Option<CountDrop>);
+    struct OverAligned(#[allow(dead_code)] Option<CountDrop>);
 
     impl Future for OverAligned {
         type Output = Output;
-        fn poll(mut self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Output> {
+        fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Output> {
             assert_eq!(&*self as *const Self as usize % 64, 0, "misaligned future");
-            self.0.poll_once()
+            Poll::Ready(Ok(ReplyBuf::new().with(b"done")))
         }
     }
 
@@ -404,12 +386,10 @@ mod tests {
         }
     }
 
-    fn poll_ready(future: &mut RpcFuture<'_>) -> Output {
-        let mut cx = Context::from_waker(Waker::noop());
-        loop {
-            if let Poll::Ready(out) = Pin::new(&mut *future).poll(&mut cx) {
-                return out;
-            }
+    fn payload(poll: Poll<Output>) -> Vec<u8> {
+        match poll {
+            Poll::Ready(Ok(reply)) => reply.payload().to_vec(),
+            other => panic!("unexpected {other:?}"),
         }
     }
 
@@ -418,19 +398,15 @@ mod tests {
         assert!(align_of::<OverAligned>() > align_of::<Block>());
         assert!(size_of::<OverAligned>() <= BLOCK_SIZE);
 
-        let mut future = FutureSlot::with_block().put(OverAligned::default());
+        let mut future = FutureSlot::with_block().put(OverAligned(None));
         assert!(!future.vtable.inline);
         assert!(future.spare.is_some());
-        assert_eq!(poll_ready(&mut future).unwrap().payload(), b"done");
+        assert_eq!(payload(poll_once(&mut future)), b"done");
         assert!(future.into_slot().block.is_some());
 
-        // Dropped unfinished, it still runs its fields' destructors.
+        // Dropped unpolled, it still runs its fields' destructors.
         let drops = Arc::new(AtomicUsize::new(0));
-        let future = FutureSlot::with_block().put(OverAligned(
-            YieldOnce::default(),
-            Some(CountDrop(drops.clone())),
-        ));
-        drop(future);
+        drop(FutureSlot::with_block().put(OverAligned(Some(CountDrop(drops.clone())))));
         assert_eq!(drops.load(Ordering::SeqCst), 1);
     }
 
@@ -438,7 +414,7 @@ mod tests {
     fn zero_sized_futures_live_in_the_block() {
         let mut future = FutureSlot::with_block().put(ZeroSized);
         assert!(future.vtable.inline);
-        assert_eq!(poll_ready(&mut future).unwrap().payload(), b"zst");
+        assert_eq!(payload(poll_once(&mut future)), b"zst");
         assert!(future.into_slot().block.is_some());
 
         drop(FutureSlot::with_block().put(ZeroSized));
@@ -446,7 +422,7 @@ mod tests {
         // Without a block, a zero-sized future is "boxed" without allocating.
         let mut future = FutureSlot::new().put(ZeroSized);
         assert!(!future.vtable.inline);
-        assert_eq!(poll_ready(&mut future).unwrap().payload(), b"zst");
+        assert_eq!(payload(poll_once(&mut future)), b"zst");
         assert!(future.into_slot().block.is_none());
     }
 }

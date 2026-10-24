@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use thruput_rpc_driver::{
-    CallBuf, ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
-    handler::RpcHandler, handler::ServiceMap,
+    CallBuf, ConnectionConfig, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
+    connect_client_with_config, handler::RpcHandler, handler::ServiceMap,
 };
 
 const ECHO_PROG: ProgVers = ProgVers::new(1, 1);
@@ -26,19 +26,11 @@ impl RpcHandler for EchoService {
         &self,
         _proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
-        Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async { Ok(data.to_vec()) }).await;
-            result.map(|bytes| reply.with(&bytes))
-        }))
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
+        Ok(slot.put(async move { Ok(reply) }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG
@@ -54,34 +46,25 @@ impl RpcHandler for InlineCallbackService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let data = data.to_vec();
         Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                match proc {
-                    0 => Ok(vec![]),
-                    1 => {
-                        let peer = thruput_rpc_driver::peer();
-                        // Call back to the client's EchoService on the same connection.
-                        // This requires the read loop to process the REPLY while this
-                        // handler is still running — only possible with concurrent dispatch.
-                        let mut call = peer.call_buf();
-                        call.extend_from_slice(data);
-                        let response = peer.send_call(ECHO_PROG, 1, call).await?;
-                        Ok(response.to_vec())
-                    }
-                    _ => Err(RpcError::InvalidProcedure),
+            match proc {
+                0 => Ok(reply),
+                1 => {
+                    let peer = thruput_rpc_driver::peer();
+                    // Call back to the client's EchoService on the same connection.
+                    // This requires the read loop to process the REPLY while this
+                    // handler is still running — only possible with concurrent dispatch.
+                    let mut call = peer.call_buf();
+                    call.extend_from_slice(&data);
+                    let response = peer.send_call(ECHO_PROG, 1, call).await?;
+                    Ok(reply.with(&response))
                 }
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+                _ => Err(RpcError::InvalidProcedure),
+            }
         }))
     }
     fn prog_vers(&self) -> ProgVers {
@@ -99,22 +82,13 @@ impl RpcHandler for SleepService {
         &self,
         _proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
         Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                tokio::time::sleep(self.delay).await;
-                Ok(data.to_vec())
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+            tokio::time::sleep(self.delay).await;
+            Ok(reply)
         }))
     }
     fn prog_vers(&self) -> ProgVers {
@@ -136,29 +110,20 @@ impl RpcHandler for ReadinessService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
         Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                self.entered.fetch_add(1, Ordering::SeqCst);
-                match proc {
-                    0 => Ok(data.to_vec()),
-                    1 => {
-                        tokio::task::yield_now().await;
-                        Ok(data.to_vec())
-                    }
-                    _ => Err(RpcError::InvalidProcedure),
+            self.entered.fetch_add(1, Ordering::SeqCst);
+            match proc {
+                0 => Ok(reply),
+                1 => {
+                    tokio::task::yield_now().await;
+                    Ok(reply)
                 }
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+                _ => Err(RpcError::InvalidProcedure),
+            }
         }))
     }
     fn prog_vers(&self) -> ProgVers {
@@ -175,30 +140,21 @@ impl RpcHandler for PanicBeforeAwaitService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
         Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                match proc {
-                    0 => Ok(data.to_vec()),
-                    1 => panic!("intentional panic on first poll"),
-                    // Suspends after earlier calls have panicked.
-                    2 => {
-                        tokio::task::yield_now().await;
-                        Ok(data.to_vec())
-                    }
-                    _ => Err(RpcError::InvalidProcedure),
+            match proc {
+                0 => Ok(reply),
+                1 => panic!("intentional panic on first poll"),
+                // Suspends after earlier calls have panicked.
+                2 => {
+                    tokio::task::yield_now().await;
+                    Ok(reply)
                 }
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+                _ => Err(RpcError::InvalidProcedure),
+            }
         }))
     }
     fn prog_vers(&self) -> ProgVers {
@@ -216,9 +172,9 @@ impl RpcHandler for SyncFailureService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
             0 => {
                 let reply = reply.with(data);
@@ -246,25 +202,16 @@ impl RpcHandler for PanickingService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
         Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                match proc {
-                    0 => Ok(data.to_vec()),
-                    1 => panic!("intentional test panic"),
-                    _ => Err(RpcError::InvalidProcedure),
-                }
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+            match proc {
+                0 => Ok(reply),
+                1 => panic!("intentional test panic"),
+                _ => Err(RpcError::InvalidProcedure),
+            }
         }))
     }
     fn prog_vers(&self) -> ProgVers {
@@ -309,23 +256,14 @@ impl RpcHandler for GatedEchoService {
         &self,
         _proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
-        }
-        let data = data.to_vec();
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
         Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                self.entered.notify_one();
-                self.release.acquire().await.unwrap().forget();
-                Ok(data.to_vec())
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
+            self.entered.notify_one();
+            self.release.acquire().await.unwrap().forget();
+            Ok(reply)
         }))
     }
 

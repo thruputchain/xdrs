@@ -1938,7 +1938,7 @@ mod tests {
     }
 
     use crate::RpcServer;
-    use crate::handler::{RpcHandler, ServiceMap};
+    use crate::handler::{FutureSlot, ReplyBuf, RpcFuture, RpcHandler, ServiceMap};
     use std::sync::atomic::AtomicUsize;
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
@@ -1957,25 +1957,14 @@ mod tests {
             &self,
             proc: u32,
             data: &[u8],
-            reply: thruput_rpc_api::ReplyBuf,
-            slot: thruput_rpc_api::FutureSlot,
-        ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-            // Pins down the body's error type for `?`.
-            fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-                f
+            reply: ReplyBuf,
+            slot: FutureSlot,
+        ) -> Result<RpcFuture<'_>, RpcError> {
+            if proc != 1 {
+                return Err(RpcError::InvalidProcedure);
             }
-            let data = data.to_vec();
-            Ok(slot.put(async move {
-                let data: &[u8] = &data;
-                let result = body(async {
-                    if proc != 1 {
-                        return Err(RpcError::InvalidProcedure);
-                    }
-                    Ok(data.to_vec())
-                })
-                .await;
-                result.map(|bytes| reply.with(&bytes))
-            }))
+            let reply = reply.with(data);
+            Ok(slot.put(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -2004,25 +1993,16 @@ mod tests {
             &self,
             proc: u32,
             data: &[u8],
-            reply: thruput_rpc_api::ReplyBuf,
-            slot: thruput_rpc_api::FutureSlot,
-        ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-            // Pins down the body's error type for `?`.
-            fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-                f
+            reply: ReplyBuf,
+            slot: FutureSlot,
+        ) -> Result<RpcFuture<'_>, RpcError> {
+            if proc != 1 {
+                return Err(RpcError::InvalidProcedure);
             }
-            let data = data.to_vec();
+            let reply = reply.with(data);
             Ok(slot.put(async move {
-                let data: &[u8] = &data;
-                let result = body(async {
-                    if proc != 1 {
-                        return Err(RpcError::InvalidProcedure);
-                    }
-                    tokio::time::sleep(self.delay).await;
-                    Ok(data.to_vec())
-                })
-                .await;
-                result.map(|bytes| reply.with(&bytes))
+                tokio::time::sleep(self.delay).await;
+                Ok(reply)
             }))
         }
 
@@ -2036,31 +2016,21 @@ mod tests {
             &self,
             proc: u32,
             data: &[u8],
-            reply: thruput_rpc_api::ReplyBuf,
-            slot: thruput_rpc_api::FutureSlot,
-        ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-            // Pins down the body's error type for `?`.
-            fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-                f
+            reply: ReplyBuf,
+            slot: FutureSlot,
+        ) -> Result<RpcFuture<'_>, RpcError> {
+            if proc != 1 {
+                return Err(RpcError::InvalidProcedure);
             }
-            let data = data.to_vec();
+            self.calls.lock().unwrap().push(data.to_vec());
+            let blocked = data == b"blocked";
+            let reply = reply.with(data);
             Ok(slot.put(async move {
-                let data: &[u8] = &data;
-                let result = body(async {
-                    if proc != 1 {
-                        return Err(RpcError::InvalidProcedure);
-                    }
-                    self.calls.lock().unwrap().push(data.to_vec());
-                    if data == b"blocked" {
-                        self.blocked_started.notify_one();
-                        self.blocked_release.notified().await;
-                        Ok(data.to_vec())
-                    } else {
-                        Ok(data.to_vec())
-                    }
-                })
-                .await;
-                result.map(|bytes| reply.with(&bytes))
+                if blocked {
+                    self.blocked_started.notify_one();
+                    self.blocked_release.notified().await;
+                }
+                Ok(reply)
             }))
         }
 
@@ -2074,32 +2044,23 @@ mod tests {
             &self,
             proc: u32,
             data: &[u8],
-            reply: thruput_rpc_api::ReplyBuf,
-            slot: thruput_rpc_api::FutureSlot,
-        ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-            // Pins down the body's error type for `?`.
-            fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-                f
+            reply: ReplyBuf,
+            slot: FutureSlot,
+        ) -> Result<RpcFuture<'_>, RpcError> {
+            if proc != 1 {
+                return Err(RpcError::InvalidProcedure);
             }
-            let data = data.to_vec();
+            let reply = reply.with(data);
             Ok(slot.put(async move {
-                let data: &[u8] = &data;
-                let result = body(async {
-                    if proc != 1 {
-                        return Err(RpcError::InvalidProcedure);
-                    }
-                    self.started
-                        .send(())
-                        .expect("balancing test should still be waiting for calls");
-                    self.release
-                        .acquire()
-                        .await
-                        .expect("balancing test release semaphore should remain open")
-                        .forget();
-                    Ok(data.to_vec())
-                })
-                .await;
-                result.map(|bytes| reply.with(&bytes))
+                self.started
+                    .send(())
+                    .expect("balancing test should still be waiting for calls");
+                self.release
+                    .acquire()
+                    .await
+                    .expect("balancing test release semaphore should remain open")
+                    .forget();
+                Ok(reply)
             }))
         }
 

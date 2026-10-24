@@ -50,8 +50,8 @@ impl ServiceMap {
         srv: ProgVers,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
+        reply: ReplyBuf,
+        slot: FutureSlot,
     ) -> Result<RpcFuture<'_>, RpcError> {
         if rpc_vers != 2 {
             return Err(RpcError::RpcMismatch);
@@ -125,15 +125,13 @@ mod tests {
             data: &[u8],
             reply: ReplyBuf,
             slot: FutureSlot,
-        ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-            let data = data.to_vec();
-            Ok(slot.put(async move {
-                match proc {
-                    0 => Ok(reply),             // null procedure
-                    1 => Ok(reply.with(&data)), // echo
-                    _ => Err(RpcError::InvalidProcedure),
-                }
-            }))
+        ) -> Result<RpcFuture<'_>, RpcError> {
+            let reply = match proc {
+                0 => reply,            // null procedure
+                1 => reply.with(data), // echo
+                _ => return Err(RpcError::InvalidProcedure),
+            };
+            Ok(slot.put(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> ProgVers {

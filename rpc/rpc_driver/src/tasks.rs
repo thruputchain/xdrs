@@ -3,11 +3,13 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 
+#[cfg(test)]
+use crate::rpc_error::DEFAULT_OPAQUE_AUTH;
 use crate::{
-    ProgVers,
+    ProgVers, RpcError,
     connection::{ConnectionHandle, RpcSender},
     context::with_peer,
-    handler::ServiceMap,
+    handler::{FutureSlot, ReplyBuf, RpcFuture, ServiceMap},
     rpc_msg,
     tcp_connection::ReadHalf,
 };
@@ -256,18 +258,16 @@ pub(crate) mod dispatch {
     // -- Handler futures -----------------------------------------------------
 
     type HandlerResult = Result<Vec<u8>, ReadTaskError>;
-    type InvocationResult = Result<thruput_rpc_api::ReplyBuf, crate::RpcError>;
+    type InvocationResult = Result<ReplyBuf, RpcError>;
     type Panic = Box<dyn std::any::Any + Send>;
 
     /// Owns one CALL's handler future, which lives in a [`FutureSlot`]'s heap
     /// storage and so never moves when this guard moves into a task.
-    ///
-    /// [`FutureSlot`]: thruput_rpc_api::FutureSlot
     pub(super) struct HandlerFuture {
-        future: Option<thruput_rpc_api::RpcFuture<'static>>,
+        future: Option<RpcFuture<'static>>,
         xid: u32,
         /// Storage recovered from a completed future, for the next call.
-        spare: Option<thruput_rpc_api::FutureSlot>,
+        spare: Option<FutureSlot>,
     }
 
     /// Detach an invocation from its borrow of the service map.
@@ -275,7 +275,7 @@ pub(crate) mod dispatch {
     /// The read loop holds the map for every inline poll and drop, and a
     /// suspended handler's task owns a reference to it in [`Detached`], so
     /// the map outlives the future without a per-call reference count.
-    fn detach(future: thruput_rpc_api::RpcFuture<'_>) -> thruput_rpc_api::RpcFuture<'static> {
+    fn detach(future: RpcFuture<'_>) -> RpcFuture<'static> {
         // SAFETY: see above; only the lifetime changes.
         unsafe { std::mem::transmute(future) }
     }
@@ -285,7 +285,7 @@ pub(crate) mod dispatch {
         /// that suspends survives this call.
         fn start(
             xid: u32,
-            dispatch: impl FnOnce() -> Result<thruput_rpc_api::RpcFuture<'static>, crate::RpcError>,
+            dispatch: impl FnOnce() -> Result<RpcFuture<'static>, RpcError>,
             cx: &mut Context<'_>,
         ) -> (Self, Poll<HandlerResult>) {
             let mut handler = Self {
@@ -380,10 +380,7 @@ pub(crate) mod dispatch {
 
     /// Drop a finished handler and recover its storage, unless its
     /// destructor panics.
-    fn retire_handler(
-        handler: thruput_rpc_api::RpcFuture<'_>,
-        xid: u32,
-    ) -> Option<thruput_rpc_api::FutureSlot> {
+    fn retire_handler(handler: RpcFuture<'_>, xid: u32) -> Option<FutureSlot> {
         match std::panic::catch_unwind(AssertUnwindSafe(|| handler.into_slot())) {
             Ok(slot) => Some(slot),
             Err(panic) => {
@@ -394,7 +391,7 @@ pub(crate) mod dispatch {
         }
     }
 
-    pub(super) fn drop_handler(handler: thruput_rpc_api::RpcFuture<'_>, xid: u32) -> bool {
+    pub(super) fn drop_handler(handler: RpcFuture<'_>, xid: u32) -> bool {
         match std::panic::catch_unwind(AssertUnwindSafe(|| drop(handler))) {
             Ok(()) => false,
             Err(panic) => {
@@ -599,9 +596,7 @@ pub(crate) mod dispatch {
             // cancelled by the cap or polled again by the task below, and the
             // `Future` contract requires it to re-register the waker it is
             // given on each poll.
-            let slot = spare_slot
-                .take()
-                .unwrap_or_else(thruput_rpc_api::FutureSlot::with_block);
+            let slot = spare_slot.take().unwrap_or_else(FutureSlot::with_block);
             let (mut handler, probe) = {
                 let _enter = span.enter();
                 HandlerFuture::start(
@@ -613,9 +608,7 @@ pub(crate) mod dispatch {
                                 vers,
                                 proc,
                                 &record[payload_offset..],
-                                thruput_rpc_api::ReplyBuf::from_spare(
-                                    crate::connection::take_buffer(),
-                                ),
+                                ReplyBuf::from_spare(crate::connection::take_buffer()),
                                 slot,
                             )
                             .map(detach)
@@ -704,14 +697,14 @@ pub async fn launch_read_task(
 
 /// Frame a successful reply in place.
 ///
-/// Fills the prefix a [`ReplyBuf`](thruput_rpc_api::ReplyBuf) reserves with the
+/// Fills the prefix a [`ReplyBuf`] reserves with the
 /// record mark and the RFC 5531 accepted-SUCCESS header (`AUTH_NONE`
 /// verifier), and returns the buffer as the complete single-part record.
 /// The payload is neither copied nor moved.
 #[inline]
-fn frame_reply(reply: thruput_rpc_api::ReplyBuf, xid: u32) -> Result<Vec<u8>, ReadTaskError> {
+fn frame_reply(reply: ReplyBuf, xid: u32) -> Result<Vec<u8>, ReadTaskError> {
     const REPLY_HEADER_WORDS: usize = 6;
-    const { assert!(thruput_rpc_api::ReplyBuf::PREFIX_LEN == 4 + 4 * REPLY_HEADER_WORDS) };
+    const { assert!(ReplyBuf::PREFIX_LEN == 4 + 4 * REPLY_HEADER_WORDS) };
 
     let mut record = reply.into_vec();
     let body_len = record.len() - 4;
@@ -731,7 +724,7 @@ fn frame_reply(reply: thruput_rpc_api::ReplyBuf, xid: u32) -> Result<Vec<u8>, Re
         0,                                        // verf.body length
         rpc_msg::accept_stat::SUCCESS.0 as u32,
     ];
-    for (slot, word) in record[..thruput_rpc_api::ReplyBuf::PREFIX_LEN]
+    for (slot, word) in record[..ReplyBuf::PREFIX_LEN]
         .chunks_exact_mut(4)
         .zip(words)
     {
@@ -747,7 +740,7 @@ fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
         body: rpc_msg::rpc_msg_body::REPLY {
             rbody: rpc_msg::reply_body::MSG_ACCEPTED {
                 areply: rpc_msg::accepted_reply {
-                    verf: crate::rpc_error::DEFAULT_OPAQUE_AUTH,
+                    verf: DEFAULT_OPAQUE_AUTH,
                     reply_data: rpc_msg::accepted_reply_reply_data::SUCCESS { results: [0u8; 0] },
                 },
             },
@@ -781,23 +774,12 @@ mod tests {
             &self,
             proc: u32,
             data: &[u8],
-            reply: thruput_rpc_api::ReplyBuf,
-            slot: thruput_rpc_api::FutureSlot,
-        ) -> Result<thruput_rpc_api::RpcFuture<'_>, crate::RpcError> {
-            // Pins down the body's error type for `?`.
-            fn body<F: std::future::Future<Output = Result<Vec<u8>, crate::RpcError>>>(f: F) -> F {
-                f
-            }
-            let data = data.to_vec();
-            Ok(slot.put(async move {
-                let data: &[u8] = &data;
-                let result = body(async {
-                    self.entered.send(proc).unwrap();
-                    Ok(data.to_vec())
-                })
-                .await;
-                result.map(|bytes| reply.with(&bytes))
-            }))
+            reply: ReplyBuf,
+            slot: FutureSlot,
+        ) -> Result<RpcFuture<'_>, RpcError> {
+            self.entered.send(proc).unwrap();
+            let reply = reply.with(data);
+            Ok(slot.put(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> crate::ProgVers {
@@ -815,8 +797,8 @@ mod tests {
                     prog: 1,
                     vers: 1,
                     proc,
-                    cred: crate::rpc_error::DEFAULT_OPAQUE_AUTH,
-                    verf: crate::rpc_error::DEFAULT_OPAQUE_AUTH,
+                    cred: DEFAULT_OPAQUE_AUTH,
+                    verf: DEFAULT_OPAQUE_AUTH,
                 },
             },
         };
@@ -1054,26 +1036,15 @@ mod tests {
                 &self,
                 proc: u32,
                 data: &[u8],
-                reply: thruput_rpc_api::ReplyBuf,
-                slot: thruput_rpc_api::FutureSlot,
-            ) -> Result<thruput_rpc_api::RpcFuture<'_>, crate::RpcError> {
-                // Pins down the body's error type for `?`.
-                fn body<F: std::future::Future<Output = Result<Vec<u8>, crate::RpcError>>>(
-                    f: F,
-                ) -> F {
-                    f
-                }
-                let data = data.to_vec();
+                reply: ReplyBuf,
+                slot: FutureSlot,
+            ) -> Result<RpcFuture<'_>, RpcError> {
+                let reply = reply.with(data);
                 Ok(slot.put(async move {
-                    let data: &[u8] = &data;
-                    let result = body(async {
-                        if proc == 1 {
-                            tokio::task::yield_now().await;
-                        }
-                        Ok(data.to_vec())
-                    })
-                    .await;
-                    result.map(|bytes| reply.with(&bytes))
+                    if proc == 1 {
+                        tokio::task::yield_now().await;
+                    }
+                    Ok(reply)
                 }))
             }
             fn prog_vers(&self) -> ProgVers {
@@ -1137,22 +1108,12 @@ mod tests {
                 &self,
                 _proc: u32,
                 _data: &[u8],
-                reply: thruput_rpc_api::ReplyBuf,
-                slot: thruput_rpc_api::FutureSlot,
-            ) -> Result<thruput_rpc_api::RpcFuture<'_>, crate::RpcError> {
-                // Pins down the body's error type for `?`.
-                fn body<F: std::future::Future<Output = Result<Vec<u8>, crate::RpcError>>>(
-                    f: F,
-                ) -> F {
-                    f
-                }
+                _reply: ReplyBuf,
+                slot: FutureSlot,
+            ) -> Result<RpcFuture<'_>, RpcError> {
                 Ok(slot.put(async move {
-                    let result = body(async {
-                        let _flag = DropFlag(self.0.lock().unwrap().take());
-                        std::future::pending().await
-                    })
-                    .await;
-                    result.map(|bytes| reply.with(&bytes))
+                    let _flag = DropFlag(self.0.lock().unwrap().take());
+                    std::future::pending().await
                 }))
             }
             fn prog_vers(&self) -> ProgVers {
@@ -1212,13 +1173,13 @@ mod tests {
     fn ready_handler_destructor_cannot_unwind_dispatch() {
         struct ReadyPanicOnDrop;
         impl std::future::Future for ReadyPanicOnDrop {
-            type Output = Result<thruput_rpc_api::ReplyBuf, crate::RpcError>;
+            type Output = Result<ReplyBuf, RpcError>;
 
             fn poll(
                 self: std::pin::Pin<&mut Self>,
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
-                std::task::Poll::Ready(Ok(thruput_rpc_api::ReplyBuf::new()))
+                std::task::Poll::Ready(Ok(ReplyBuf::new()))
             }
         }
         impl Drop for ReadyPanicOnDrop {
@@ -1227,7 +1188,7 @@ mod tests {
             }
         }
 
-        let handler = thruput_rpc_api::FutureSlot::with_block().put(ReadyPanicOnDrop);
+        let handler = FutureSlot::with_block().put(ReadyPanicOnDrop);
         assert!(dispatch::drop_handler(handler, 8));
     }
 }

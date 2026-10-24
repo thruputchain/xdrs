@@ -21,8 +21,8 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use thruput_rpc_driver::{
-    CallBuf, ConnectionConfig, DynamicPool, FixedSerialPool, ProgVers, RpcError, RpcSender,
-    RpcServer, connect_client_with_config,
+    CallBuf, ConnectionConfig, DynamicPool, FixedSerialPool, FutureSlot, ProgVers, ReplyBuf,
+    RpcError, RpcFuture, RpcSender, RpcServer, connect_client_with_config,
     handler::{RpcHandler, ServiceMap},
 };
 
@@ -118,9 +118,9 @@ impl RpcHandler for EchoService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_driver::ReplyBuf,
-        slot: thruput_rpc_driver::FutureSlot,
-    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let reply = match proc {
             0 => reply,
             1 => reply.with(data),
@@ -143,9 +143,9 @@ impl RpcHandler for DelayEchoService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_driver::ReplyBuf,
-        slot: thruput_rpc_driver::FutureSlot,
-    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let reply = match proc {
             0 => reply,
             1 => reply.with(data),
@@ -173,9 +173,9 @@ impl RpcHandler for InlineCallbackService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_driver::ReplyBuf,
-        slot: thruput_rpc_driver::FutureSlot,
-    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
             0 => Ok(slot.put(async move { Ok(reply) })),
             1 => {
@@ -208,9 +208,9 @@ impl RpcHandler for FanoutService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_driver::ReplyBuf,
-        slot: thruput_rpc_driver::FutureSlot,
-    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let data = data.to_vec();
         Ok(slot.put(async move {
             match proc {
@@ -252,9 +252,9 @@ impl RpcHandler for ReadySubmitService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_driver::ReplyBuf,
-        slot: thruput_rpc_driver::FutureSlot,
-    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let reply = match proc {
             // Null proc: pure transport and dispatch overhead.
             0 => reply,
@@ -282,9 +282,9 @@ impl RpcHandler for ContentionService {
         &self,
         _proc: u32,
         data: &[u8],
-        reply: thruput_rpc_driver::ReplyBuf,
-        slot: thruput_rpc_driver::FutureSlot,
-    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let reply = reply.with(data);
         Ok(slot.put(async move {
             let _guard = self.lock.lock().await;

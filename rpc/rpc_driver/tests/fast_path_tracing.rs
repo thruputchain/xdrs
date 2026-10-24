@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use thruput_rpc_driver::{
-    CallBuf, ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
-    handler::RpcHandler, handler::ServiceMap,
+    CallBuf, ConnectionConfig, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
+    connect_client_with_config, handler::RpcHandler, handler::ServiceMap,
 };
 use tracing::field::{Field, Visit};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
@@ -32,29 +32,18 @@ impl RpcHandler for MixedService {
         &self,
         proc: u32,
         data: &[u8],
-        reply: thruput_rpc_api::ReplyBuf,
-        slot: thruput_rpc_api::FutureSlot,
-    ) -> Result<thruput_rpc_api::RpcFuture<'_>, RpcError> {
-        // Pins down the body's error type for `?`.
-        fn body<F: std::future::Future<Output = Result<Vec<u8>, RpcError>>>(f: F) -> F {
-            f
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
+        match proc {
+            0 => Ok(slot.put(async move { Ok(reply) })),
+            1 => Ok(slot.put(async move {
+                tokio::task::yield_now().await;
+                Ok(reply)
+            })),
+            _ => Err(RpcError::InvalidProcedure),
         }
-        let data = data.to_vec();
-        Ok(slot.put(async move {
-            let data: &[u8] = &data;
-            let result = body(async {
-                match proc {
-                    0 => Ok(data.to_vec()),
-                    1 => {
-                        tokio::task::yield_now().await;
-                        Ok(data.to_vec())
-                    }
-                    _ => Err(RpcError::InvalidProcedure),
-                }
-            })
-            .await;
-            result.map(|bytes| reply.with(&bytes))
-        }))
     }
     fn prog_vers(&self) -> ProgVers {
         ECHO_PROG

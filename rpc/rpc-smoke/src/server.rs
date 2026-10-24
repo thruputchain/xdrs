@@ -27,7 +27,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use thruput_rpc_driver::{
-    ConnectionConfig, ProgVers, RpcError, RpcServer,
+    ConnectionConfig, FutureSlot, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
     handler::{RpcHandler, ServiceMap},
 };
 use tokio::net::TcpListener;
@@ -50,60 +50,67 @@ impl RpcHandler for SmokeHandler {
         &self,
         _proc: u32,
         data: &[u8],
-        reply: thruput_rpc_driver::ReplyBuf,
-        slot: thruput_rpc_driver::FutureSlot,
-    ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+        reply: ReplyBuf,
+        slot: FutureSlot,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let (tag, duration_us) = decode_payload(data);
         let dur = Duration::from_micros(duration_us as u64);
         // Echo the payload back
         let reply = reply.with(data);
         Ok(slot.put(async move {
-            match tag {
-                TAG_ECHO => {}
-                TAG_SLEEP => {
-                    tokio::time::sleep(dur).await;
-                }
-                TAG_CPU_SPIN => {
-                    tokio::task::spawn_blocking(move || {
-                        let deadline = std::time::Instant::now() + dur;
-                        while std::time::Instant::now() < deadline {
-                            std::hint::spin_loop();
-                        }
-                    })
-                    .await
-                    .unwrap();
-                }
-                TAG_CPU_PREFIX_READY => {
-                    let deadline = std::time::Instant::now() + dur;
-                    while std::time::Instant::now() < deadline {
-                        std::hint::spin_loop();
-                    }
-                }
-                TAG_MUTEX => {
-                    let mut guard = self.shared.lock.lock().await;
-                    tokio::time::sleep(dur).await;
-                    *guard += 1;
-                }
-                TAG_SLEEP_MUTEX => {
-                    let half = dur / 2;
-                    // Simulate async I/O
-                    tokio::time::sleep(half).await;
-                    // Then contend on shared state
-                    let mut guard = self.shared.lock.lock().await;
-                    tokio::time::sleep(half).await;
-                    *guard += 1;
-                }
-                _ => {
-                    eprintln!("[smoke-server] unknown tag: {tag:#x}");
-                    return Err(RpcError::GarbageArguments);
-                }
-            }
+            self.simulate(tag, dur).await?;
             Ok(reply)
         }))
     }
 
     fn prog_vers(&self) -> ProgVers {
         ProgVers::new(SMOKE_PROG, 1)
+    }
+}
+
+impl SmokeHandler {
+    async fn simulate(&self, tag: u8, dur: Duration) -> Result<(), RpcError> {
+        match tag {
+            TAG_ECHO => {}
+            TAG_SLEEP => {
+                tokio::time::sleep(dur).await;
+            }
+            TAG_CPU_SPIN => {
+                tokio::task::spawn_blocking(move || {
+                    let deadline = std::time::Instant::now() + dur;
+                    while std::time::Instant::now() < deadline {
+                        std::hint::spin_loop();
+                    }
+                })
+                .await
+                .unwrap();
+            }
+            TAG_CPU_PREFIX_READY => {
+                let deadline = std::time::Instant::now() + dur;
+                while std::time::Instant::now() < deadline {
+                    std::hint::spin_loop();
+                }
+            }
+            TAG_MUTEX => {
+                let mut guard = self.shared.lock.lock().await;
+                tokio::time::sleep(dur).await;
+                *guard += 1;
+            }
+            TAG_SLEEP_MUTEX => {
+                let half = dur / 2;
+                // Simulate async I/O
+                tokio::time::sleep(half).await;
+                // Then contend on shared state
+                let mut guard = self.shared.lock.lock().await;
+                tokio::time::sleep(half).await;
+                *guard += 1;
+            }
+            _ => {
+                eprintln!("[smoke-server] unknown tag: {tag:#x}");
+                return Err(RpcError::GarbageArguments);
+            }
+        }
+        Ok(())
     }
 }
 
