@@ -130,6 +130,27 @@ jobs:
         env:
           RUSTDOCFLAGS: "--cfg docsrs --deny warnings"
 
+  miri:
+    needs: dependency-policy # don't build anything until deps are known to be clean
+    name: Miri (loopback call path)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Set up pinned nightly
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: nightly-2026-05-26
+          components: miri, rust-src
+      # The loopback link runs calls through the same pending map and
+      # reader-side decode as a connection, with no sockets, so Miri can
+      # check that path end to end.
+      - name: Loopback tests under Miri
+        run: cargo +nightly-2026-05-26 miri test --locked -p thruput-rpc-driver --test loopback
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation"
+
   rv32-size:
     needs: dependency-policy # don't build anything until deps are known to be clean
     name: RV32 size probe

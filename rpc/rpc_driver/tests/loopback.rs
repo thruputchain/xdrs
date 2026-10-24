@@ -1,7 +1,7 @@
 //! A loopback link dispatches straight between two `ServiceMap`s, so these
 //! tests run without a socket and, under paused tokio time, without waiting.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -107,13 +107,18 @@ const POISONER: ProgVers = ProgVers::new(500, 1);
 /// Poisons its own link from inside the handler, then replies anyway: the
 /// loopback equivalent of the connection dropping while a handler runs.
 struct PoisoningService {
-    link: Arc<OnceLock<LoopbackLink>>,
+    link: Arc<Mutex<Option<LoopbackLink>>>,
 }
 
 #[async_trait]
 impl RpcHandler for PoisoningService {
     async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        self.link.get().expect("link installed").poison();
+        self.link
+            .lock()
+            .unwrap()
+            .as_ref()
+            .expect("link installed")
+            .poison();
         Ok(b"too late".to_vec())
     }
 
@@ -381,17 +386,19 @@ async fn a_handler_panic_is_a_system_error_and_the_link_survives() {
 async fn a_reply_from_a_handler_that_poisoned_the_link_is_lost() {
     // Zero latency: the handler runs inside the same poll as the caller's
     // wait, so the poison lands between the wait's check and the reply.
-    let link_slot = Arc::new(OnceLock::new());
+    let link_slot = Arc::new(Mutex::new(None));
     let mut services = ServiceMap::new();
     services.add_service(Box::new(PoisoningService {
         link: link_slot.clone(),
     }));
     let (link, client) = client_to(services);
-    assert!(link_slot.set(link.clone()).is_ok());
+    *link_slot.lock().unwrap() = Some(link.clone());
 
     let result = client.send_call(POISONER, 1, client.call_buf()).await;
     assert_eq!(result, Err(RpcError::SystemError));
     assert!(link.is_poisoned());
+    // The handler holds the link that holds the handler.
+    link_slot.lock().unwrap().take();
 }
 
 #[tokio::test(start_paused = true)]
@@ -410,4 +417,169 @@ async fn poisoning_a_suspended_handler_with_a_panicking_destructor_is_a_system_e
     // not unwind into the caller.
     let result = in_flight.await.expect("caller task panicked");
     assert_eq!(result, Err(RpcError::SystemError));
+}
+
+const GATED: ProgVers = ProgVers::new(700, 1);
+
+/// Reports entry, then waits for a permit before echoing, and reports when
+/// it is dropped unfinished.
+struct GatedService {
+    entered: mpsc::UnboundedSender<()>,
+    permits: Arc<tokio::sync::Semaphore>,
+    dropped: Arc<std::sync::atomic::AtomicBool>,
+}
+
+struct SetOnDrop(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for SetOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[async_trait]
+impl RpcHandler for GatedService {
+    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        let guard = SetOnDrop(self.dropped.clone());
+        let _ = self.entered.send(());
+        self.permits.acquire().await.unwrap().forget();
+        std::mem::forget(guard);
+        Ok(data.to_vec())
+    }
+
+    fn prog_vers(&self) -> ProgVers {
+        GATED
+    }
+}
+
+/// Runs `decode` through `send_call_decoded` and returns what it produced.
+async fn call_decoded<T: Send>(
+    sender: &dyn RpcSender,
+    progvers: ProgVers,
+    proc: u32,
+    call: CallBuf,
+    mut decode: impl FnMut(&[u8]) -> Result<T, RpcError> + Send,
+) -> Result<T, RpcError> {
+    let mut out = None;
+    let mut decoder = |bytes: &[u8]| {
+        out = Some(decode(bytes)?);
+        Ok(())
+    };
+    // SAFETY: the call is awaited here, and the decoder never blocks.
+    unsafe { sender.send_call_decoded(progvers, proc, call, &mut decoder) }.await?;
+    Ok(out.expect("a successful call ran its decoder"))
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_reply_is_decoded_on_the_answering_task_not_the_callers() {
+    let (_link, client) = client_to(echo_services());
+    let client: Arc<dyn RpcSender> = Arc::new(client);
+    let (caller, decoded_in) = tokio::spawn(async move {
+        let caller = tokio::task::id();
+        let decoded_in = call_decoded(&*client, ECHO, 1, call_with(&*client, b"hi"), |bytes| {
+            assert_eq!(bytes, b"hi");
+            Ok(tokio::task::try_id())
+        })
+        .await
+        .unwrap();
+        (caller, decoded_in)
+    })
+    .await
+    .unwrap();
+    assert!(decoded_in.is_some_and(|id| id != caller));
+}
+
+#[tokio::test(start_paused = true)]
+async fn decoder_errors_and_panics_reach_the_caller_and_the_link_survives() {
+    let (_link, client) = client_to(echo_services());
+
+    let result: Result<(), _> = call_decoded(&client, ECHO, 1, client.call_buf(), |_| {
+        Err(RpcError::GarbageArguments)
+    })
+    .await;
+    assert_eq!(result, Err(RpcError::GarbageArguments));
+
+    let panicked = tokio::spawn({
+        let client = client.clone();
+        async move {
+            call_decoded(&client, ECHO, 1, client.call_buf(), |_| -> Result<(), _> {
+                panic!("decoder bug")
+            })
+            .await
+        }
+    })
+    .await;
+    assert!(panicked.unwrap_err().is_panic());
+
+    let reply = client
+        .send_call(ECHO, 1, call_with(&client, b"still up"))
+        .await
+        .unwrap();
+    assert_eq!(reply, b"still up");
+}
+
+#[tokio::test(start_paused = true)]
+async fn dropping_a_call_aborts_its_handler_and_never_runs_its_decoder() {
+    let (entered, mut entries) = mpsc::unbounded_channel();
+    let permits = Arc::new(tokio::sync::Semaphore::new(0));
+    let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut services = echo_services();
+    services.add_service(Box::new(GatedService {
+        entered,
+        permits: permits.clone(),
+        dropped: dropped.clone(),
+    }));
+    let (_link, client) = client_to(services);
+
+    let decoded = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let call = tokio::spawn({
+        let client = client.clone();
+        let decoded = decoded.clone();
+        async move {
+            call_decoded(&client, GATED, 1, call_with(&client, b"x"), move |_| {
+                decoded.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+            .await
+        }
+    });
+    entries.recv().await.unwrap();
+    call.abort();
+    assert!(call.await.unwrap_err().is_cancelled());
+
+    // The handler task is aborted with its call; let it run its drop.
+    permits.add_permits(1);
+    tokio::task::yield_now().await;
+    assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(!decoded.load(std::sync::atomic::Ordering::SeqCst));
+
+    // Later calls are unaffected.
+    let reply = client
+        .send_call(ECHO, 1, call_with(&client, b"next"))
+        .await
+        .unwrap();
+    assert_eq!(reply, b"next");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_calls_on_a_multi_thread_runtime_each_get_their_reply() {
+    let (_link, client) = client_to(echo_services());
+    let client = Arc::new(client);
+    let calls: Vec<_> = (0..32u8)
+        .map(|i| {
+            let client = client.clone();
+            tokio::spawn(async move {
+                let payload = vec![i; usize::from(i) * 13];
+                let reply = call_decoded(&*client, ECHO, 1, call_with(&*client, &payload), |b| {
+                    Ok(b.to_vec())
+                })
+                .await
+                .unwrap();
+                assert_eq!(reply, payload);
+            })
+        })
+        .collect();
+    for call in calls {
+        call.await.unwrap();
+    }
 }

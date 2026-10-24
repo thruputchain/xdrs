@@ -1,11 +1,16 @@
 //! An RPC link with no transport: two [`ServiceMap`]s connected directly,
-//! so a call from either end runs the other end's handler on the caller's
-//! task.
+//! so a call from either end runs the other end's handler.
 //!
 //! This is for unit tests of code that holds an `Arc<dyn RpcSender>`, such
 //! as generated protocol clients, when the test wants real handlers but no
-//! socket. Nothing is framed, no xid is assigned, and no task is spawned
-//! for a call.
+//! socket. Nothing is framed, but a call goes through the same pending map a
+//! connection's calls do: it registers under an xid, its handler runs on a
+//! task of its own as a server's would, and that task decodes the reply
+//! into the waiting call with
+//! [`send_call_decoded`](RpcSender::send_call_decoded)'s decoder, as a
+//! connection's reader does. Dropping a call aborts its handler. Since
+//! there are no sockets, tests of that path can run under Miri. Calls must
+//! be made inside a tokio runtime.
 //!
 //! [`LoopbackLink::connect`] joins two ends, each a `ServiceMap` of what
 //! that end serves, and [`senders`](LoopbackLink::senders) hands back each
@@ -51,8 +56,8 @@
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -60,15 +65,35 @@ use async_trait::async_trait;
 use tokio::sync::Notify;
 
 use crate::{
-    CallBuf, ProgVers, RpcError, RpcResponse, RpcSender, ServiceMap, context::with_peer,
+    CallBuf, ProgVers, RpcError, RpcResponse, RpcSender, ServiceMap,
+    connection::{CallSlot, ConnectionState, PendingCall, deliver_reply},
+    context::with_peer,
     tasks::dispatch::CatchUnwind,
 };
+
+/// The calls waiting on one end, as a connection keeps them.
+#[derive(Debug)]
+struct Calls {
+    state: StdMutex<ConnectionState>,
+    pending: AtomicUsize,
+}
+
+impl Calls {
+    fn new() -> Self {
+        Self {
+            state: StdMutex::new(ConnectionState::new()),
+            pending: AtomicUsize::new(0),
+        }
+    }
+}
 
 /// Everything the two ends of a link share.
 #[derive(Debug)]
 struct Inner {
     /// What each end serves, in the order given to [`LoopbackLink::connect`].
     ends: [Arc<ServiceMap>; 2],
+    /// The calls waiting on an answer from each end, indexed like `ends`.
+    calls: [Calls; 2],
     /// One-way latency, in nanoseconds.
     latency: AtomicU64,
     poisoned: AtomicBool,
@@ -104,6 +129,7 @@ impl LoopbackLink {
         Self {
             inner: Arc::new(Inner {
                 ends: [Arc::new(a), Arc::new(b)],
+                calls: [Calls::new(), Calls::new()],
                 latency: AtomicU64::new(0),
                 poisoned: AtomicBool::new(false),
                 poison: Notify::new(),
@@ -150,6 +176,13 @@ impl LoopbackLink {
     /// call in flight is dropped where it is, handler included.
     pub fn poison(&self) {
         self.inner.poisoned.store(true, Ordering::SeqCst);
+        for calls in &self.inner.calls {
+            calls
+                .state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .poison();
+        }
         self.inner.poison.notify_waiters();
     }
 
@@ -195,6 +228,15 @@ fn discard_panic(panic: Box<dyn std::any::Any + Send>) {
     if let Err(drop_panic) = std::panic::catch_unwind(AssertUnwindSafe(|| drop(panic))) {
         tracing::error!("panic payload destructor panicked");
         std::mem::forget(drop_panic);
+    }
+}
+
+/// Aborts a call's handler task when the call is dropped.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 
@@ -286,6 +328,24 @@ impl LoopbackSender {
         }
     }
 
+    /// Answer call `xid` on the calling end's pending map, as a server and
+    /// the caller's reader would between them. A poisoned link has already
+    /// failed the call.
+    async fn answer(&self, xid: u32, progvers: ProgVers, proc: u32, call: CallBuf) {
+        let Ok(result) = self
+            .until_poisoned(self.round_trip(progvers, proc, &call))
+            .await
+        else {
+            return;
+        };
+        let calls = &self.inner.calls[self.to].state;
+        // `None`: the call was dropped while its handler finished.
+        let _ = match result {
+            Ok(reply) => deliver_reply(calls, xid, Ok(&reply)),
+            Err(error) => deliver_reply(calls, xid, Err(crate::rpc_error::as_received(error))),
+        };
+    }
+
     /// Carry a call over, run its handler, and carry the result back.
     async fn round_trip(
         &self,
@@ -312,10 +372,45 @@ impl RpcSender for LoopbackSender {
         proc: u32,
         call: CallBuf,
     ) -> Result<RpcResponse, RpcError> {
-        self.until_poisoned(self.round_trip(progvers, proc, &call))
-            .await?
-            .map(RpcResponse::from_payload)
-            .map_err(crate::rpc_error::as_received)
+        let mut reply = None;
+        let mut decode = |bytes: &[u8]| {
+            reply = Some(bytes.to_vec());
+            Ok(())
+        };
+        // SAFETY: `decode` lives in this future, so it outlives the call even
+        // if the future is leaked rather than dropped.
+        unsafe {
+            self.send_call_decoded(progvers, proc, call, &mut decode)
+                .await
+        }?;
+        Ok(RpcResponse::from_payload(
+            reply.expect("a successful call ran its decoder"),
+        ))
+    }
+
+    /// Registers the call, answers it on a task of its own, and runs
+    /// `decode` on that task over the handler's reply.
+    async unsafe fn send_call_decoded(
+        &self,
+        progvers: ProgVers,
+        proc: u32,
+        call: CallBuf,
+        decode: &mut (dyn for<'reply> FnMut(&'reply [u8]) -> Result<(), RpcError> + Send),
+    ) -> Result<(), RpcError> {
+        let calls = &self.inner.calls[self.to];
+        // SAFETY: forwarded from the caller's contract.
+        let slot = unsafe { CallSlot::new(decode) };
+        // Declared after `slot`, so it drops (and waits out a running
+        // decoder) before the slot does.
+        let mut pending = PendingCall::new(&calls.state, &calls.pending, &slot);
+        let xid = std::future::poll_fn(|cx| Poll::Ready(pending.register(cx.waker()))).await?;
+        // Declared after `pending`, so dropping the call aborts its handler
+        // before withdrawing it.
+        let _answer = AbortOnDrop(tokio::spawn({
+            let sender = self.clone();
+            async move { sender.answer(xid, progvers, proc, call).await }
+        }));
+        pending.wait().await
     }
 
     /// Returns as soon as the call is queued; the handler runs one leg of

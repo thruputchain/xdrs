@@ -17,14 +17,14 @@ dependencies = [
 
 [[package]]
 name = "thruput-xdr-common"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "escape-bytes",
 ]
 
 [[package]]
 name = "thruput-xdrs"
-version = "0.17.0"
+version = "0.17.1"
 dependencies = [
  "thruput-xdr-common",
 ]
