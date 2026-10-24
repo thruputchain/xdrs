@@ -24,38 +24,10 @@ const BLOCK_SIZE: usize = 1024;
 #[repr(C, align(16))]
 struct Block([MaybeUninit<u8>; BLOCK_SIZE]);
 
-/// Blocks retained per thread for reuse by suspended handlers' successors.
-const MAX_CACHED_BLOCKS: usize = 64;
-
-thread_local! {
-    // The boxes are the point: the cache hands back their allocations.
-    #[allow(clippy::vec_box)]
-    static BLOCKS: std::cell::RefCell<Vec<Box<Block>>> = const {
-        std::cell::RefCell::new(Vec::new())
-    };
-}
-
 impl Block {
-    /// A block from this thread's cache, or a new one.
-    fn take() -> Box<Self> {
-        BLOCKS
-            .try_with(|blocks| blocks.borrow_mut().pop())
-            .ok()
-            .flatten()
-            // SAFETY: a block is only uninitialized bytes.
-            .unwrap_or_else(|| unsafe { Box::<Self>::new_uninit().assume_init() })
-    }
-
-    /// Keep a spent block for this thread's next suspended handler. During
-    /// thread-local teardown, or with the cache full, it is freed instead.
-    fn recycle(block: Box<Self>) {
-        let mut block = Some(block);
-        let _ = BLOCKS.try_with(|blocks| {
-            let mut blocks = blocks.borrow_mut();
-            if blocks.len() < MAX_CACHED_BLOCKS {
-                blocks.extend(block.take());
-            }
-        });
+    fn new() -> Box<Self> {
+        // SAFETY: a block is only uninitialized bytes.
+        unsafe { Box::<Self>::new_uninit().assume_init() }
     }
 }
 
@@ -79,7 +51,7 @@ impl FutureSlot {
     #[doc(hidden)]
     pub fn with_block() -> Self {
         Self {
-            block: Some(Block::take()),
+            block: Some(Block::new()),
         }
     }
 
@@ -109,14 +81,6 @@ impl FutureSlot {
                 spare,
                 _lifetime: PhantomData,
             },
-        }
-    }
-}
-
-impl Drop for FutureSlot {
-    fn drop(&mut self) {
-        if let Some(block) = self.block.take() {
-            Block::recycle(block);
         }
     }
 }
@@ -272,12 +236,9 @@ impl Drop for Storage {
         // dropped, and nothing touches its storage again.
         unsafe {
             if self.vtable.inline {
-                Block::recycle(Box::from_raw(self.future.cast::<Block>().as_ptr()));
+                drop(Box::from_raw(self.future.cast::<Block>().as_ptr()));
             } else {
                 (self.vtable.free_box)(self.future);
-                if let Some(block) = self.spare.take() {
-                    Block::recycle(block);
-                }
             }
         }
     }
