@@ -1,4 +1,4 @@
-//! rpc_driver benchmark suite.
+//! thruput_rpc_driver benchmark suite.
 //!
 //! Measures the single automatic dispatch/write path across latency,
 //! throughput, bidirectional RPC, and handler fanout workloads.
@@ -20,12 +20,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use rpc_driver::{
+use serde::Serialize;
+use thruput_rpc_driver::{
     CallBuf, ConnectionConfig, DynamicPool, FixedSerialPool, ProgVers, RpcError, RpcSender,
     RpcServer, connect_client_with_config,
     handler::{RpcHandler, ServiceMap},
 };
-use serde::Serialize;
 
 /// A call carrying `payload`, in a buffer recycled from `sender`.
 fn call_with<S: RpcSender + ?Sized>(sender: &S, payload: &[u8]) -> CallBuf {
@@ -162,7 +162,7 @@ impl RpcHandler for InlineCallbackService {
             0 => Ok(vec![]),
             1 => {
                 // Call back to the peer on the same connection, inline.
-                let peer = rpc_driver::peer();
+                let peer = thruput_rpc_driver::peer();
                 let mut call = peer.call_buf();
                 call.extend_from_slice(data);
                 let response = peer.send_call(ECHO_PROG, 1, call).await?;
@@ -176,10 +176,9 @@ impl RpcHandler for InlineCallbackService {
     }
 }
 
-/// Simulates hogd scheduler: handler fans out N sub-RPCs to "executors" via
-/// the peer connection, collects results, then returns.  Models the
-/// `schedulercoord_nominate` flow where the mempool calls executors in
-/// parallel before replying.
+/// Fan-out handler: calls back to the peer N times in parallel over the same
+/// connection, waits for every reply, then replies to the original call.
+/// Models a coordinator that must hear from several workers before answering.
 struct FanoutService {
     fanout: usize,
 }
@@ -190,7 +189,7 @@ impl RpcHandler for FanoutService {
         match proc {
             0 => Ok(vec![]),
             1 => {
-                let peer = rpc_driver::peer();
+                let peer = thruput_rpc_driver::peer();
                 let mut handles = Vec::with_capacity(self.fanout);
                 for _ in 0..self.fanout {
                     let peer = peer.clone();
@@ -217,7 +216,7 @@ impl RpcHandler for FanoutService {
 
 /// Minimal accept-and-return handler that always completes on its first poll.
 /// This isolates dispatch overhead; it deliberately excludes the worker-queue
-/// submission and application work performed by a real Dogwood handler.
+/// submission and application work a real handler performs.
 struct ReadySubmitService;
 
 #[async_trait]
@@ -236,9 +235,9 @@ impl RpcHandler for ReadySubmitService {
     }
 }
 
-/// Simulates handler contention: all handlers acquire a shared lock
-/// (like hogd's `commit_lock_`) before doing work, then release.
-/// Models serialized critical sections within concurrent dispatch.
+/// Simulates handler contention: all handlers acquire a shared lock before
+/// doing work, then release.  Models serialized critical sections within
+/// concurrent dispatch.
 struct ContentionService {
     lock: Arc<tokio::sync::Mutex<()>>,
     work_duration: Duration,
@@ -984,9 +983,9 @@ async fn scenario_payload_concurrency(quick: bool) -> Vec<ScenarioResult> {
 // Production-pattern scenarios
 // ---------------------------------------------------------------------------
 
-/// Simulates hogd's nominate flow: client calls server, server handler fans
-/// out N sub-RPCs back to the client (like executor calls), collects results,
-/// then replies.  Requires bidirectional + concurrent dispatch.
+/// Fan-out flow: client calls server, server handler fans out N sub-RPCs back
+/// to the client, collects results, then replies.  Requires bidirectional +
+/// concurrent dispatch.
 async fn scenario_handler_fanout(quick: bool) -> Vec<ScenarioResult> {
     let fanout_levels: &[usize] = &[2, 5, 10];
     let payload = &[0u8; 64];
@@ -1167,8 +1166,8 @@ async fn scenario_ready_dispatch(quick: bool) -> Vec<ScenarioResult> {
 }
 
 /// Simulates handler contention: concurrent dispatches compete for a shared
-/// lock inside the handler.  Models hogd's `commit_lock_` pattern where some
-/// operations serialize through a mutex even under concurrent dispatch.
+/// lock inside the handler.  Models services where some operations serialize
+/// through a mutex even under concurrent dispatch.
 /// Shows whether concurrent dispatch still helps when the lock is a bottleneck.
 async fn scenario_handler_contention(quick: bool) -> Vec<ScenarioResult> {
     let lock = Arc::new(tokio::sync::Mutex::new(()));
@@ -1273,12 +1272,12 @@ async fn run() {
     };
 
     if cli.gh_bench {
-        eprintln!("=== rpc_driver benchmark (loopback TCP) ===");
+        eprintln!("=== thruput_rpc_driver benchmark (loopback TCP) ===");
         eprintln!("    dispatch: ready inline; suspended handlers spawned");
         eprintln!("{tracing_label}");
         eprintln!();
     } else {
-        println!("=== rpc_driver benchmark (loopback TCP) ===");
+        println!("=== thruput_rpc_driver benchmark (loopback TCP) ===");
         println!("    dispatch: ready inline; suspended handlers spawned");
         println!("{tracing_label}");
         println!();

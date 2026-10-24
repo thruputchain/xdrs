@@ -4,24 +4,18 @@ name = "thruput-rpc-api"
 # boundary shared by rpc_driver and generated protocol bindings, and it
 # releases only when the boundary itself changes. See "Versioning and
 # releases" in the README.
-version = "0.3.3"
+version = "0.4.0"
 edition = "2024"
 rust-version.workspace = true
-authors = ["Groundhog Team"]
+authors = ["Thruput Team"]
 license = "Apache-2.0"
 publish = ["crates-io"]
-description = "Stable API boundary for the Groundhog ONC-RPC stack: sender/handler traits and shared response/error types."
+description = "Stable API boundary for the Thruput ONC-RPC stack: sender/handler traits and shared response/error types."
 repository = "https://github.com/thruputchain/xdrs"
 homepage = "https://github.com/thruputchain/xdrs"
 readme = "../README.md"
 keywords = ["xdr", "rpc"]
-categories = ["rpc"]
-
-# Published as thruput-rpc-api (crates.io already has an `rpc-api`, which it
-# treats as the same name as `rpc_api`). The library keeps its name, so
-# `use rpc_api::...` is unchanged.
-[lib]
-name = "rpc_api"
+categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 async-trait = "0.1.89"

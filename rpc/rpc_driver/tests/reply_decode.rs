@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use rpc_driver::{CallBuf, ProgVers, RpcError, RpcHandler, RpcSender, RpcServer, ServiceMap};
+use thruput_rpc_driver::{
+    CallBuf, ProgVers, RpcError, RpcHandler, RpcSender, RpcServer, ServiceMap,
+};
 use tokio::sync::Notify;
 
 const PROG: ProgVers = ProgVers::new(901, 1);
@@ -54,7 +56,7 @@ impl RpcHandler for Echo {
 }
 
 async fn setup() -> (
-    Arc<rpc_driver::ClientConnection>,
+    Arc<thruput_rpc_driver::ClientConnection>,
     Arc<Notify>,
     Arc<Notify>,
     tokio::task::JoinHandle<Result<(), std::io::Error>>,
@@ -69,11 +71,11 @@ async fn setup() -> (
         release: release.clone(),
     }));
     let server = RpcServer::new(listener, services).start().await;
-    let client = Arc::new(rpc_driver::connect_client(&addr).await.unwrap());
+    let client = Arc::new(thruput_rpc_driver::connect_client(&addr).await.unwrap());
     (client, entered, release, server)
 }
 
-fn request(client: &rpc_driver::ClientConnection) -> CallBuf {
+fn request(client: &thruput_rpc_driver::ClientConnection) -> CallBuf {
     let mut call = client.call_buf();
     call.extend_from_slice(b"reply");
     call

@@ -83,7 +83,7 @@ fn main() {
 }
 
 async fn records(payload_size: usize, count: usize) -> serde_json::Value {
-    use rpc_driver::tcp_connection::{accept, connect};
+    use thruput_rpc_driver::tcp_connection::{accept, connect};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let (client, server) = tokio::join!(
         connect(listener.local_addr().unwrap(), 1 << 20, 65536),

@@ -1,6 +1,6 @@
 //! The wire-level vocabulary of a chunked RPC: where a record sits in its
 //! run, and how a chunked record comes apart into key, position and part.
-//! Reassembling a run is the driver's job (`rpc_driver::ChunkRunAssembler`);
+//! Reassembling a run is the driver's job (`thruput_rpc_driver::ChunkRunAssembler`);
 //! this crate holds only what a protocol crate needs to describe its chunked
 //! records, so generated bindings keep their single dependency on it.
 
@@ -29,7 +29,7 @@ impl ChunkPosition {
 }
 
 /// A wire record that is one chunk of a run: it names the message it is
-/// part of (its key, such as a block height), its position in the run, and
+/// part of (its key, such as a batch number), its position in the run, and
 /// carries its part of the message's items.
 ///
 /// Protocol crates implement this for each chunked record they define, so a
@@ -38,28 +38,28 @@ impl ChunkPosition {
 /// no transport dependency to implement it.
 ///
 /// ```
-/// use rpc_api::{ChunkPosition, ChunkRecord};
+/// use thruput_rpc_api::{ChunkPosition, ChunkRecord};
 ///
 /// // The shape a chunked wire record takes: the message it belongs to, its
 /// // position in the run, and its slice of the items.
-/// struct DeltaChunk {
-///     block: i64,
+/// struct UpdateChunk {
+///     batch: i64,
 ///     chunk_index: u32,
 ///     chunk_count: u32,
-///     deltas: Vec<i64>,
+///     updates: Vec<i64>,
 /// }
 ///
-/// impl ChunkRecord for DeltaChunk {
+/// impl ChunkRecord for UpdateChunk {
 ///     type Key = i64;
 ///     type Part = Vec<i64>;
 ///
 ///     fn into_chunk(self) -> (i64, ChunkPosition, Vec<i64>) {
 ///         let position = ChunkPosition::new(self.chunk_index, self.chunk_count);
-///         (self.block, position, self.deltas)
+///         (self.batch, position, self.updates)
 ///     }
 /// }
 ///
-/// let chunk = DeltaChunk { block: 7, chunk_index: 1, chunk_count: 2, deltas: vec![3] };
+/// let chunk = UpdateChunk { batch: 7, chunk_index: 1, chunk_count: 2, updates: vec![3] };
 /// assert_eq!(chunk.into_chunk(), (7, ChunkPosition::new(1, 2), vec![3]));
 /// ```
 pub trait ChunkRecord {

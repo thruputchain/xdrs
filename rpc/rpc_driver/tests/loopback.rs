@@ -5,8 +5,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use rpc_driver::loopback::{LoopbackLink, LoopbackSender};
-use rpc_driver::{CallBuf, ProgVers, RpcError, RpcSender, ServiceMap, handler::RpcHandler};
+use thruput_rpc_driver::loopback::{LoopbackLink, LoopbackSender};
+use thruput_rpc_driver::{CallBuf, ProgVers, RpcError, RpcSender, ServiceMap, handler::RpcHandler};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -70,7 +70,7 @@ struct CallbackService;
 #[async_trait]
 impl RpcHandler for CallbackService {
     async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let peer = rpc_driver::peer();
+        let peer = thruput_rpc_driver::peer();
         let reply = peer.send_call(ECHO, 1, call_with(&*peer, data)).await?;
         Ok(reply.to_vec())
     }

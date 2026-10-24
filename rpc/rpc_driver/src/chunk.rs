@@ -12,46 +12,46 @@
 //! A server hands every record it receives to a [`ChunkRunAssembler`] and
 //! acts on the [`ChunkRun`] it returns once the run is complete, reading its
 //! parts as one sequence through a [`ChunkedVector`]. A protocol crate
-//! implements [`ChunkRecord`] (from `rpc_api`, so it needs no transport
+//! implements [`ChunkRecord`] (from `thruput_rpc_api`, so it needs no transport
 //! dependency) for each of its chunked wire records, and a handler passes
 //! the record it was called with straight to
 //! [`ChunkRunAssembler::push_record`]:
 //!
 //! ```
-//! use rpc_driver::{ChunkPosition, ChunkRecord, ChunkRunAssembler, ProgramError};
+//! use thruput_rpc_driver::{ChunkPosition, ChunkRecord, ChunkRunAssembler, ProgramError};
 //!
 //! // The shape a chunked wire record takes: the message it belongs to, its
 //! // position in the run, and its slice of the items.
-//! struct DeltaChunk {
-//!     block: i64,
+//! struct UpdateChunk {
+//!     batch: i64,
 //!     chunk_index: u32,
 //!     chunk_count: u32,
-//!     deltas: Vec<i64>,
+//!     updates: Vec<i64>,
 //! }
 //!
-//! impl ChunkRecord for DeltaChunk {
+//! impl ChunkRecord for UpdateChunk {
 //!     type Key = i64;
 //!     type Part = Vec<i64>;
 //!
 //!     fn into_chunk(self) -> (i64, ChunkPosition, Vec<i64>) {
 //!         let position = ChunkPosition::new(self.chunk_index, self.chunk_count);
-//!         (self.block, position, self.deltas)
+//!         (self.batch, position, self.updates)
 //!     }
 //! }
 //!
 //! struct Server {
-//!     transfers: ChunkRunAssembler<i64, Vec<i64>>,
+//!     batches: ChunkRunAssembler<i64, Vec<i64>>,
 //! }
 //!
 //! impl Server {
-//!     fn hogs_transferred_chunk(&self, chunk: DeltaChunk) -> Result<(), ProgramError> {
+//!     fn updates_chunk(&self, chunk: UpdateChunk) -> Result<(), ProgramError> {
 //!         // A chunk that breaks its run's framing is a sender bug; the error
 //!         // converts into the ProgramError a handler returns.
-//!         if let Some(run) = self.transfers.push_record(chunk)? {
-//!             let block: i64 = run.key;
+//!         if let Some(run) = self.batches.push_record(chunk)? {
+//!             let batch: i64 = run.key;
 //!             let total: i64 = run.parts.iter().sum();
-//!             for delta in &run.parts {
-//!                 // apply the block's delta ...
+//!             for update in &run.parts {
+//!                 // apply the batch's update ...
 //!             }
 //!         }
 //!         Ok(())
@@ -66,8 +66,8 @@ use std::iter::FusedIterator;
 use std::ops::Index;
 use std::sync::{Mutex, PoisonError};
 
-use rpc_api::ProgramError;
-pub use rpc_api::{ChunkPosition, ChunkRecord};
+use thruput_rpc_api::ProgramError;
+pub use thruput_rpc_api::{ChunkPosition, ChunkRecord};
 use xdrs::{StaticIfNoAlloc, VecM};
 
 /// One chunk's payload: a vector of items, as a variable-length XDR array
@@ -117,7 +117,7 @@ impl<T: StaticIfNoAlloc, const MAX: u32> ChunkPart for VecM<T, MAX> {
 /// [`into_chunks`](Self::into_chunks) gives them back as they came.
 ///
 /// ```
-/// use rpc_driver::ChunkedVector;
+/// use thruput_rpc_driver::ChunkedVector;
 ///
 /// let chunked = ChunkedVector::new(vec![vec![1, 2], vec![], vec![3]]);
 /// assert_eq!(chunked.len(), 3);
@@ -387,7 +387,7 @@ impl From<ChunkRunError> for ProgramError {
 
 /// Reassembles messages a sender split into runs of chunks (see
 /// [`ChunkPosition`]) whose chunks may arrive in any order. `K` identifies
-/// the message a run carries, such as a block height, and `P` is one chunk's
+/// the message a run carries, such as a batch number, and `P` is one chunk's
 /// payload. Runs of several keys may be pending at once, each completing on
 /// its own, and [`push`] may be called from any thread: it takes a mutex and
 /// never blocks on anything else, so a handler can call it inline.
@@ -403,7 +403,7 @@ impl From<ChunkRunError> for ProgramError {
 /// when that has happened and drops the assembler with the connection.
 ///
 /// ```
-/// use rpc_driver::{ChunkPosition, ChunkRunAssembler};
+/// use thruput_rpc_driver::{ChunkPosition, ChunkRunAssembler};
 ///
 /// let assembler: ChunkRunAssembler<u64, Vec<u32>> = ChunkRunAssembler::new();
 /// // The second chunk of key 7's run arrives first.

@@ -10,7 +10,7 @@ publish = false
 reply-decode = []
 
 [dependencies]
-rpc_driver = { workspace = true }
+thruput-rpc-driver = { workspace = true }
 tokio = { version = "1.47.1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

@@ -21,11 +21,12 @@ struct Args {
     duration: u64,
 
     /// Connect to an existing remote server instead of spawning one locally.
-    /// Format: host:port (e.g. 10.0.1.5:9876)
+    /// Format: host:port (e.g. 192.0.2.10:9876)
     #[arg(long, global = true)]
     server_addr: Option<String>,
 
-    /// Pool type: "fixed" (FixedSerialPool), "dynamic" (DynamicPool), "cpu" (CpuSetPool)
+    /// Pool type: "fixed" (FixedSerialPool), "dynamic" (DynamicPool), "cpu" (CpuSetPool),
+    /// "multiplex" (MultiplexPool)
     #[arg(long, global = true)]
     pool: Option<String>,
 
@@ -54,8 +55,8 @@ impl Args {
 
 #[derive(Subcommand)]
 enum Scenario {
-    /// Run all hogd service pairings simultaneously against one server.
-    /// Models the full production topology: coordinator + gateways + executors + db + auth.
+    /// Run every service profile simultaneously against one server:
+    /// coordinator + gateways + executors + db-shards + auth.
     Realistic {
         /// Number of gateway clients (default 3)
         #[arg(long, default_value = "3")]

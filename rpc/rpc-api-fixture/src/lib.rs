@@ -1,17 +1,17 @@
 #![warn(missing_docs)]
 
 //! Consumer fixture: a hand-written copy of the shape x23c emits for
-//! protocol bindings, written against `rpc_api` instead of `rpc_driver`.
+//! protocol bindings, written against `thruput_rpc_api` instead of `thruput_rpc_driver`.
 //!
-//! The lib target depends on `rpc_api` only — compiling it proves that
-//! generated clients and dispatchers need no direct `rpc_driver`
+//! The lib target depends on `thruput_rpc_api` only — compiling it proves that
+//! generated clients and dispatchers need no direct `thruput_rpc_driver`
 //! dependency. The integration tests (see `tests/`) wire this fixture
-//! through a real `rpc_driver` server and client to prove both sides share
-//! one type identity through the `rpc_api` boundary.
+//! through a real `thruput_rpc_driver` server and client to prove both sides share
+//! one type identity through the `thruput_rpc_api` boundary.
 
 use std::sync::Arc;
 
-use rpc_api::{ProgVers, ProgramError, RpcError, RpcHandler, RpcSender};
+use thruput_rpc_api::{ProgVers, ProgramError, RpcError, RpcHandler, RpcSender};
 
 /// Program number for the fixture echo service.
 pub const ECHO_PROG: u32 = 3123125;

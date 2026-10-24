@@ -16,8 +16,8 @@
 //! ```
 //! use std::sync::Arc;
 //! use std::time::Duration;
-//! use rpc_driver::{ProgVers, RpcSender, ServiceMap, loopback::LoopbackLink};
-//! # use rpc_driver::{RpcError, handler::RpcHandler};
+//! use thruput_rpc_driver::{ProgVers, RpcSender, ServiceMap, loopback::LoopbackLink};
+//! # use thruput_rpc_driver::{RpcError, handler::RpcHandler};
 //! # struct Echo;
 //! # #[async_trait::async_trait]
 //! # impl RpcHandler for Echo {

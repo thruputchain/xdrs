@@ -1,13 +1,18 @@
 # rpc-smoke
 
-Multi-connection smoke test for `rpc_driver`. Validates concurrent dispatch under realistic hogd service topology workloads.
+Multi-connection smoke and load test for `rpc_driver`. The harness starts a
+server (or targets a remote one) and drives it from one or more client
+processes, each running a handler profile (echo, sleep, mutex contention, CPU
+spin) through one of the connection pools. The `realistic` scenario runs every
+service profile at once for a mixed load; the other scenarios isolate
+connection scaling, multi-process throughput, or a single profile.
 
 ## Quick Start
 
 ```sh
 cargo build --release -p rpc-smoke
 
-# Run all hogd pairings (coordinator + gateways + executors + db-shards + auth)
+# Every built-in service profile at once against one server
 cargo run --release -p rpc-smoke --bin rpc-smoke -- realistic --duration 10
 
 # Multi-process throughput test
@@ -18,17 +23,37 @@ cargo run --release -p rpc-smoke --bin rpc-smoke -- throughput --clients 1,4,8,1
 
 | Binary | Purpose |
 |---|---|
-| `rpc-smoke-server` | RPC server with configurable handler profiles (echo, sleep, mutex, CPU spin) |
-| `rpc-smoke-client` | Connects via FixedSerialPool, DynamicPool, or CpuSetPool; drives RPCs; outputs JSON metrics |
-| `rpc-smoke` | Harness that orchestrates server + N client processes |
+| `rpc-smoke-server` | RPC server that simulates each request's handler profile (echo, sleep, mutex, CPU spin) |
+| `rpc-smoke-client` | Drives one profile's RPCs through a `FixedSerialPool`, `DynamicPool`, `CpuSetPool`, or `MultiplexPool`; outputs JSON metrics |
+| `rpc-smoke` | Harness that orchestrates a server and N client processes |
+| `rpc-bench-client` | Fixed-worker end-to-end client used by `rpc/scripts/benchmark.py` and `evaluate_runtimes.py` |
+
+## Profiles
+
+A profile fixes a client's default connection count, its request payload
+size, and the handler work the server simulates for each request. The service
+names describe the load shape a profile stands for in a multi-process
+deployment; nothing else depends on them.
+
+| Profile | Connections | Payload | Server handler |
+|---|---|---|---|
+| `coordinator` | 20 | 1500 B | 1 ms sleep, then 1 ms holding a shared mutex |
+| `gateway` | 15 | 800 B | 1 ms sleep, then 1 ms holding a shared mutex |
+| `executor` | 10 | 200 B | 500 µs CPU spin (on the blocking pool) |
+| `db-shard` | 1 | 1000 B | 2 ms sleep |
+| `auth` | 1 | 500 B | 200 µs CPU spin (on the blocking pool) |
+| `echo` | 1 | 64 B | Echo |
+| `cpu-prefix-ready` | 1 | 64 B | 25 µs CPU spin inline, completing without suspending |
+
+An unrecognized profile name runs as a 64-byte echo profile on one connection.
 
 ## Client Options
 
 | Flag | Default | Description |
 |---|---|---|
 | `--addr` | (required) | Server address (host:port) |
-| `--profile` | (required) | Profile name: coordinator, gateway, executor, db-shard, auth, echo, cpu-prefix-ready |
-| `--connections` | profile default | Connection count (FixedSerialPool pool size, DynamicPool max) |
+| `--profile` | (required) | Profile name (see [Profiles](#profiles)) |
+| `--connections` | profile default | Connection count: the pool size, or `DynamicPool`'s maximum; `CpuSetPool` opens one per LLC instead |
 | `--duration` | 5 | Test duration in seconds |
 | `--max-inflight` | 100 | Max concurrent in-flight RPCs |
 | `--pool` | fixed | Pool type: `fixed`, `dynamic`, `cpu`, or `multiplex` |
@@ -40,12 +65,12 @@ needed. Configure application load with the client's `--max-inflight` option.
 
 ## Pool Types
 
-| Pool | Per-conn concurrency | Routing | Models |
+| Pool | Per-conn concurrency | Routing | Comparable x23 client |
 |---|---|---|---|
-| `fixed` | 1 in-flight (serial) | FIFO via channel | x23 sync RPC (executor→DB) |
-| `dynamic` | Many in-flight | Min-pending load balance | x23 async RPC (coordinator→mempool) |
-| `cpu` | Many in-flight | LLC-affine (sched_getcpu) | x23 RpcMulticlient / PerCpuSet |
-| `multiplex` | Many in-flight | Least in flight, fixed set | x23 async RPC over N connections |
+| `fixed` | 1 in-flight (serial) | FIFO via channel | Sync RPC (`SRpcMulticlient`) |
+| `dynamic` | Many in-flight | Min-pending load balance | Async RPC (`RpcMulticlient`) |
+| `cpu` | Many in-flight | LLC-affine (sched_getcpu) | `RpcMulticlient` / `PerCpuSet` |
+| `multiplex` | Many in-flight | Least in flight, fixed set | Async RPC over N connections |
 
 ## Harness Options
 
@@ -56,15 +81,16 @@ needed. Configure application load with the client's `--max-inflight` option.
 | `--pool` | (none = fixed) | Pool type for all clients: `fixed`, `dynamic`, `cpu`, or `multiplex` |
 | `--tracing` | (none) | Enable tracing subscriber on server and client (info, debug) |
 | `--json` | false | Emit machine-readable metrics, including dispatch mode and completion counts |
+| `--skip-build` | false | Use the already-built sibling binaries (for controlled comparisons) |
 
 ## Harness Scenarios
 
-| Scenario | What it tests |
-|---|---|
-| `realistic` | All hogd pairings simultaneously (110 connections, 13 processes) |
-| `scaling` | Single-client echo with increasing connection count |
-| `throughput` | Multi-process echo to find server-side scaling ceiling |
-| `single` | One named profile |
+| Scenario | What it tests | Options (default) |
+|---|---|---|
+| `realistic` | Every service profile at once: 1 coordinator, the gateways, 4 executors, 4 db-shards, and 1 auth client (13 client processes, 110 connections at the defaults) | `--gateways` (3) |
+| `scaling` | Single-client echo with increasing connection count | `--counts` (10,50,100,200,500) |
+| `throughput` | Multi-process echo to find the server-side scaling ceiling | `--clients` (1,2,4,8), `--connections-per-client` (10), `--max-inflight` (1000) |
+| `single` | One named profile | `--connections`, `--max-inflight` (profile and client defaults) |
 
 Server RSS is reported after each run for leak detection.
 
@@ -94,7 +120,7 @@ Key subscriber decisions (see `src/server.rs` inline docs):
 Example output at DEBUG level:
 
 ```
-rpc_connection{peer=10.0.0.1:4567 role="server"}:rpc_call{xid=42 prog=100 vers=1 proc=1}: close time.busy=4.2us time.idle=515us
+rpc_connection{peer=192.0.2.1:4567 role="server"}:rpc_call{xid=42 prog=100 vers=1 proc=1}: close time.busy=4.2us time.idle=515us
 ```
 
 Performance impact: INFO adds <1% overhead; DEBUG adds ~5% on realistic workloads.
@@ -119,7 +145,7 @@ Run every scenario × every pool type. This is the complete benchmark suite.
 SERVER=A:9876
 DUR=30
 
-for POOL in fixed dynamic cpu; do
+for POOL in fixed dynamic cpu multiplex; do
   echo "=== Pool: $POOL ==="
 
   # 1. Correctness — realistic smoke test
@@ -136,7 +162,7 @@ for POOL in fixed dynamic cpu; do
 done
 ```
 
-This produces a 3×3 matrix (3 scenarios × 3 pools) that directly answers:
+This produces a 3×4 matrix (3 scenarios × 4 pools) that directly answers:
 
 | Question | Scenario | Compare across |
 |---|---|---|
@@ -153,7 +179,7 @@ Run these separately if the full matrix is too long, or to drill into specific q
 Do CPU-spin and mutex-contention handlers degrade under load?
 
 ```sh
-for POOL in fixed dynamic cpu; do
+for POOL in fixed dynamic cpu multiplex; do
   rpc-smoke single --server-addr $SERVER --pool $POOL executor --duration $DUR
   rpc-smoke single --server-addr $SERVER --pool $POOL coordinator --duration $DUR
 done
@@ -165,7 +191,7 @@ Any memory leaks, latency drift, or stalls over minutes?
 
 ```sh
 # Realistic workload, 5 minutes per pool:
-for POOL in fixed dynamic cpu; do
+for POOL in fixed dynamic cpu multiplex; do
   rpc-smoke realistic --server-addr $SERVER --pool $POOL --duration 300
 done
 
@@ -175,26 +201,28 @@ rpc-smoke throughput --server-addr $SERVER --pool dynamic \
     --max-inflight 2000 --duration 300
 ```
 
-### How the pool types map to x23/hogd patterns
+### How the pool types compare to x23's RPC clients
 
-x23 has two RPC modes, each used by different service pairings:
+x23, the C++ ONC-RPC stack whose connection patterns these pools follow, has
+two client modes:
 
-- **Sync RPC** (`SRpcMulticlient`): 1 in-flight per connection, more connections.
-  Used by executor→DB. Our **FixedSerialPool** models this — serial dispatch per
-  connection, throughput scales with connection count.
+- **Sync RPC** (`SRpcMulticlient`): 1 in-flight per connection; throughput
+  comes from opening more connections. **FixedSerialPool** works the same way:
+  serial dispatch per connection, throughput scales with connection count.
 
-- **Async RPC** (`RpcMulticlient` + `PerCpuSet`): many in-flight per connection,
-  one connection per LLC, XID-multiplexed. Used by coordinator→mempool and
-  anywhere x23 needs saturation. Our **DynamicPool** and **CpuSetPool** model
-  this — concurrent in-flight per connection, throughput comes from
-  multiplexing rather than connection count.
+- **Async RPC** (`RpcMulticlient` + `PerCpuSet`): many in-flight per
+  connection, one connection per LLC, XID-multiplexed. **DynamicPool**,
+  **CpuSetPool**, and **MultiplexPool** work this way: many calls in flight per
+  connection, so throughput comes from multiplexing rather than connection
+  count.
 
-x23 achieves millions of RPCs/sec via thread-per-core architecture: each of 64
-cores runs its own epoll+coroutine loop with zero cross-thread synchronization.
-Our server uses tokio's work-stealing scheduler instead, which is simpler but
-adds overhead from task migration and shared queues. **We expect the server to
-be the bottleneck** — the multi-process throughput test is the key measurement:
-it isolates server-side scaling by throwing independent client processes at it.
+x23 reaches millions of RPCs/sec with a thread-per-core architecture: each core
+runs its own epoll+coroutine loop with no cross-thread synchronization. This
+server uses tokio's work-stealing scheduler instead, which is simpler but adds
+overhead from task migration and shared queues. **Expect the server to be the
+bottleneck**: the multi-process throughput test is the key measurement, since
+it isolates server-side scaling by driving the server from independent client
+processes.
 
 ### What to look for
 
@@ -241,8 +269,8 @@ Three repetitions alternate main/candidate ordering. `--quick` is for harness
 validation only and cannot be published as performance evidence.
 
 The metrics workflow's `full_evaluation` manual input runs this comparison on a
-reserved cluster host and publishes it to `metrics_history` alongside normal
-metrics. These are benchmark options, not additional RPC driver modes.
+reserved cluster host and records it alongside the normal metrics. These are
+benchmark options, not additional RPC driver modes.
 
 The full evaluation also runs the smoke harness's realistic service mix, scaling
 sweep (10–500 connections), multi-process throughput sweep, CPU-prefix handler,
