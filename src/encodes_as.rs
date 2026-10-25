@@ -71,8 +71,8 @@ impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for alloc::sync::Arc<U> {
 
 impl<X: StaticIfNoAlloc, U: EncodesAs<X>, const N: u32> EncodesAs<VecM<X, N>> for [U] {}
 
-// Identity impls. These must track the `WriteXDR` impls in `write_xdr`,
-// `int128` and `heapless`, leaving out the pointer types forwarded above.
+// Identity impls. These must track the `WriteXDR` impls in `write_xdr`, the
+// `int128` module and `heapless`, leaving out the pointer types forwarded above.
 
 macro_rules! encodes_as_self {
     ( $( $t:ty ),* $(,)? ) => { $(
@@ -84,7 +84,6 @@ encodes_as_self! {
     i16, i32, i64, u16, u32, u64, bool, f32, f64, str, (), core::convert::Infallible,
 }
 
-#[cfg(feature = "int128")]
 encodes_as_self! { i128, u128 }
 
 #[cfg(feature = "alloc")]

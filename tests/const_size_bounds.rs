@@ -247,16 +247,13 @@ const _: () = assert!(txs_max::<Node<'static>>().is_none());
 
 // -- int128 --
 
-#[cfg(feature = "int128")]
 #[derive(xdrs::ConstWriteXDR, xdrs::ConstXDRSize)]
 struct Wide {
     a: i128,
     b: u128,
 }
 
-#[cfg(feature = "int128")]
 const _: () = assert!(matches!(cxs_max::<Wide>(), Some(36)));
-#[cfg(feature = "int128")]
 const _: () = assert!(matches!(txs_max::<Wide>(), Some(32)));
 
 #[test]
