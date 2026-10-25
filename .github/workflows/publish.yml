@@ -20,12 +20,15 @@
 # dispatching it again on the tagged commit.
 #
 # Authentication: crates.io trusted publishing (GitHub OIDC) for existing
-# crates; see crates-io-publish's README in thruputchain/actions. Creating a
-# crate needs the CRATESIO_CREATE_PACKAGE_TOKEN secret, a crates.io API token
-# with the scopes publish-new, trusted-publishing and change-owners. The
-# publish step registers this workflow as each new crate's trusted publisher
-# and adds CRATE_OWNERS as its owners, so remove the secret and revoke the
-# token once every crate exists.
+# crates; see crates-io-publish's README in thruputchain/actions. The job runs
+# in the `release` environment, and every crate's trusted publisher requires
+# it, so only runs that environment's protection rules admit can publish.
+# Creating a crate needs the CRATESIO_CREATE_PACKAGE_TOKEN secret, a crates.io
+# API token with the scopes publish-new, trusted-publishing and
+# change-owners; keep it a secret of `release`, not of the repository. The
+# publish step registers this workflow, in that environment, as each new
+# crate's trusted publisher and adds CRATE_OWNERS as its owners, so remove
+# the secret and revoke the token once every crate exists.
 #
 # Dispatch with dry_run for the dry run and the checks, with no tagging or
 # publishing.
@@ -67,6 +70,7 @@ jobs:
     permissions:
       contents: write # pushes the release tags
       id-token: write # crates.io trusted publishing
+    environment: release
     runs-on: namespace-profile-hogd-linux-2604
 
     steps:
