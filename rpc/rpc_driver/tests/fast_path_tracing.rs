@@ -8,10 +8,9 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::{
-    CallBuf, ConnectionConfig, ProgVers, RpcError, RpcServer, connect_client_with_config,
-    handler::RpcHandler, handler::ServiceMap,
+    CallBuf, ConnectionConfig, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
+    connect_client_with_config, handler::RpcHandler, handler::ServiceMap,
 };
 use tracing::field::{Field, Visit};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
@@ -28,15 +27,15 @@ fn call_with(payload: &[u8]) -> CallBuf {
 /// Proc 0 never awaits; proc 1 yields first.
 struct MixedService;
 
-#[async_trait]
 impl RpcHandler for MixedService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
         match proc {
-            0 => Ok(data.to_vec()),
-            1 => {
+            0 => Ok(Box::pin(async move { Ok(reply) })),
+            1 => Ok(Box::pin(async move {
                 tokio::task::yield_now().await;
-                Ok(data.to_vec())
-            }
+                Ok(reply)
+            })),
             _ => Err(RpcError::InvalidProcedure),
         }
     }

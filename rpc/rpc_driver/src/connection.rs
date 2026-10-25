@@ -16,6 +16,7 @@ use crate::{ProgVers, RpcError, rpc_msg, tcp_connection::WriteHalf};
 const MAX_BATCH: usize = 64;
 
 /// XDR header is ~40 bytes (xid + msg_type + rpcvers + prog + vers + proc + 2x opaque_auth).
+#[cfg(test)]
 const XDR_HEADER_ESTIMATE: usize = 48;
 
 /// Maximum cached record buffers per thread.
@@ -456,6 +457,7 @@ fn closed_error() -> io::Error {
     io::Error::new(io::ErrorKind::BrokenPipe, "writer closed")
 }
 
+#[cfg(test)]
 /// Frame an XDR-encoded RPC header + payload into a single-part record.
 ///
 /// Layout: `[4-byte length with high bit set | XDR header | payload]`

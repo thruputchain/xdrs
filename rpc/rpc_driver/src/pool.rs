@@ -1938,8 +1938,7 @@ mod tests {
     }
 
     use crate::RpcServer;
-    use crate::handler::{RpcHandler, ServiceMap};
-    use async_trait::async_trait;
+    use crate::handler::{ReplyBuf, RpcFuture, RpcHandler, ServiceMap};
     use std::sync::atomic::AtomicUsize;
     use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
@@ -1953,13 +1952,18 @@ mod tests {
     /// Echo service that returns the input data unchanged.
     struct EchoService;
 
-    #[async_trait]
     impl RpcHandler for EchoService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+        ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
-            Ok(data.to_vec())
+            let reply = reply.with(data);
+            Ok(Box::pin(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -1983,14 +1987,21 @@ mod tests {
         release: Arc<Semaphore>,
     }
 
-    #[async_trait]
     impl RpcHandler for SlowEchoService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+        ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
-            tokio::time::sleep(self.delay).await;
-            Ok(data.to_vec())
+            let reply = reply.with(data);
+            Ok(Box::pin(async move {
+                tokio::time::sleep(self.delay).await;
+                Ok(reply)
+            }))
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -1998,20 +2009,26 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl RpcHandler for CancellationEchoService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+        ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
             self.calls.lock().unwrap().push(data.to_vec());
-            if data == b"blocked" {
-                self.blocked_started.notify_one();
-                self.blocked_release.notified().await;
-                Ok(data.to_vec())
-            } else {
-                Ok(data.to_vec())
-            }
+            let blocked = data == b"blocked";
+            let reply = reply.with(data);
+            Ok(Box::pin(async move {
+                if blocked {
+                    self.blocked_started.notify_one();
+                    self.blocked_release.notified().await;
+                }
+                Ok(reply)
+            }))
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -2019,21 +2036,28 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl RpcHandler for HoldingEchoService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+        ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
-            self.started
-                .send(())
-                .expect("balancing test should still be waiting for calls");
-            self.release
-                .acquire()
-                .await
-                .expect("balancing test release semaphore should remain open")
-                .forget();
-            Ok(data.to_vec())
+            let reply = reply.with(data);
+            Ok(Box::pin(async move {
+                self.started
+                    .send(())
+                    .expect("balancing test should still be waiting for calls");
+                self.release
+                    .acquire()
+                    .await
+                    .expect("balancing test release semaphore should remain open")
+                    .forget();
+                Ok(reply)
+            }))
         }
 
         fn prog_vers(&self) -> ProgVers {
