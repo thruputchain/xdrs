@@ -170,6 +170,26 @@ fn enum_bool_default_variant() {
     assert!(xdrs::cxs::decode::<BoolResult>(&hex!("0205")).is_err());
 }
 
+#[test]
+fn enum_u32_default_variant() {
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum U32Default {
+        Known = 0,
+        #[xdr(default_variant)]
+        Other(u32),
+    }
+
+    // Values whose u32 and i32 CXS encodings differ round-trip.
+    for d in [1u32, 32, 0x7fff_ffff, 0x8000_0000, u32::MAX] {
+        let val = U32Default::Other(d);
+        let cxs = xdrs::cxs::encode(&val).unwrap();
+        assert_eq!(xdrs::cxs::decode::<U32Default>(&cxs).unwrap(), val, "{d}");
+        let txs = xdrs::txs::encode(&val).unwrap();
+        assert_eq!(xdrs::txs::decode::<U32Default>(&txs).unwrap(), val, "{d}");
+    }
+}
+
 // We don't support enums with mixed implicit/explicit variants
 // (except that a default arm is allowed).
 //

@@ -46,8 +46,10 @@ impl XDRDiscriminant for u32 {
         *self as i32
     }
 
+    // Writers emit every discriminant with write_i32, which CXS encodes
+    // differently from write_u32, so read it back the same way.
     fn read_discriminant<'r, R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        r.read_u32()
+        r.read_i32().map(|d| d as u32)
     }
 }
 
