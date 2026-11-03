@@ -1537,6 +1537,45 @@ fn default_variant_named_payload_roundtrips() {
     assert_eq!(txs_decoded, DPN_VAL);
 }
 
+// A bool discriminant in the default variant goes through the same const
+// encoder, cast to i32.
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[allow(dead_code)]
+enum DefaultBoolDiscrim {
+    Yes {
+        value: u32,
+    } = 1,
+
+    #[xdr(default_variant)]
+    No {
+        ok: bool,
+        code: u32,
+    },
+}
+
+const DBD_VAL: DefaultBoolDiscrim = DefaultBoolDiscrim::No { ok: false, code: 5 };
+
+const DBD_CXS: [u8; DBD_VAL.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ DBD_VAL.const_cxs_size() }>::new();
+    DBD_VAL.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const DBD_TXS: [u8; DBD_VAL.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ DBD_VAL.const_txs_size() }>::new();
+    DBD_VAL.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn default_variant_bool_discriminant_const_matches_runtime() {
+    assert_eq!(&DBD_CXS, cxs_runtime_encode(&DBD_VAL).as_slice());
+    assert_eq!(&DBD_TXS, txs_runtime_encode(&DBD_VAL).as_slice());
+    let txs_decoded: DefaultBoolDiscrim = xdrs::txs::decode(&DBD_TXS).unwrap();
+    assert_eq!(txs_decoded, DBD_VAL);
+}
+
 // -- Derive macro tests: VecM / BytesM / StringM containers --
 //
 // With the `alloc` feature, container values cannot be used inside const

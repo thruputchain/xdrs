@@ -114,10 +114,12 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
 }
 
 /// A variant marked `#[xdr(default_variant)]` (which must have no explicit
-/// discriminant) becomes the XDR union's default arm.  Its first `i32`
-/// field stores the wire discriminant.
+/// discriminant) becomes the XDR union's default arm.  Its first field
+/// stores the wire discriminant; its type implements `XDRDiscriminant`
+/// (usually `i32`, or `bool` for a bool-switched union) and decides which
+/// wire values the reader accepts.
 ///
-/// The writer emits the stored `i32` verbatim and does **not** check
+/// The writer emits the stored discriminant verbatim and does **not** check
 /// whether it collides with a concrete variant's discriminant.  If a
 /// variant `Default(d, ..)` is encoded where `d` matches a concrete arm,
 /// the reader will decode it as that concrete variant — not as `Default`.
@@ -143,15 +145,6 @@ pub fn enum_is_fieldless(e: &syn::DataEnum) -> bool {
 
 pub fn find_default_variant(item: &syn::DataEnum) -> Option<&syn::Variant> {
     item.variants.iter().find(|v| variant_is_default(v))
-}
-
-fn first_field_is_i32(variant: &syn::Variant) -> bool {
-    variant
-        .fields
-        .iter()
-        .next()
-        .map(|f| matches!(&f.ty, syn::Type::Path(p) if p.path.is_ident("i32")))
-        .unwrap_or(false)
 }
 
 pub fn has_xdr_discrim_type(input: &syn::DeriveInput) -> bool {
@@ -201,7 +194,8 @@ pub fn check_variants(
             "derive XDR: enum discriminants must be all implicit or \
              all explicit, and may optionally also include a default \
              variant (with no explicit discriminant) marked \
-             `#[xdr(default_variant)]`, whose first field must be i32",
+             `#[xdr(default_variant)]`, whose first field holds the \
+             discriminant",
         )
     } else if let Some(dv) = default_variant {
         // RFC 4506 requires the default arm of a union to be trailing.
@@ -216,14 +210,9 @@ pub fn check_variants(
         } else if dv.fields.is_empty() {
             err(
                 &dv.ident,
-                "derive XDR: Default variant must have at least one i32 field \
-                 to hold the unmatched discriminant value",
-            )
-        } else if !first_field_is_i32(dv) {
-            err(
-                &dv.ident,
-                "derive XDR: Default variant's first field must be i32 \
-                 (it holds the unmatched discriminant value)",
+                "derive XDR: Default variant must have at least one field \
+                 (implementing XDRDiscriminant, e.g. i32) to hold the \
+                 unmatched discriminant value",
             )
         } else {
             Ok(())

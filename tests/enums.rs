@@ -136,6 +136,40 @@ fn enum_default_variant_with_payload_roundtrip() {
     assert_eq!(cxs_decoded, original);
 }
 
+#[test]
+fn enum_bool_default_variant() {
+    // union switch (bool ok) { case TRUE: unsigned value; default: unsigned code; }
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum BoolResult {
+        Ok {
+            value: u32,
+        } = 1,
+        #[xdr(default_variant)]
+        Err {
+            ok: bool,
+            code: u32,
+        },
+    }
+
+    TXS::check_codec(&BoolResult::Ok { value: 7 }, &hex!("0000000100000007"));
+    CXS::check_codec(&BoolResult::Ok { value: 7 }, &hex!("0107"));
+
+    // FALSE, the one value no case names, lands in the default arm.
+    let val = BoolResult::Err { ok: false, code: 5 };
+    TXS::check_codec(&val, &hex!("0000000000000005"));
+    CXS::check_codec(&val, &hex!("0005"));
+
+    // A bool discriminant is validated before the default arm can absorb it.
+    for bytes in [hex!("0000000200000005"), hex!("ffffffff00000005")] {
+        let err = xdrs::txs::decode::<BoolResult>(&bytes).unwrap_err();
+        #[cfg(feature = "detailed-errors")]
+        assert!(matches!(err, xdrs::ReadError::BadBool), "{err:?}");
+        let _ = err;
+    }
+    assert!(xdrs::cxs::decode::<BoolResult>(&hex!("0205")).is_err());
+}
+
 // We don't support enums with mixed implicit/explicit variants
 // (except that a default arm is allowed).
 //

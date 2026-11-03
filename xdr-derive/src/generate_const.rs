@@ -1068,7 +1068,7 @@ fn const_write_variant(
     let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
         quote! { #d }
     } else if is_default_arm {
-        quote! { *_self_0 }
+        default_discriminant_i32(v)
     } else {
         quote! { #variant_idx }
     };
@@ -1121,7 +1121,7 @@ fn const_size_variant(
     let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
         quote! { #d }
     } else if is_default_arm {
-        quote! { *_self_0 }
+        default_discriminant_i32(v)
     } else {
         quote! { #variant_idx }
     };
@@ -1508,4 +1508,20 @@ fn is_phantom_data(ty: &syn::Type) -> bool {
 
 fn is_infallible(ty: &syn::Type) -> bool {
     path_segment(ty, "Infallible").is_some()
+}
+
+/// The wire discriminant held by a default variant's first field, as an
+/// `i32` usable in a `const fn`.  Trait methods cannot be called there, so
+/// a non-`i32` field (such as `bool`) is cast; its type must support `as i32`.
+fn default_discriminant_i32(v: &syn::Variant) -> TokenStream {
+    let is_i32 = v
+        .fields
+        .iter()
+        .next()
+        .is_some_and(|f| matches!(&f.ty, syn::Type::Path(p) if p.path.is_ident("i32")));
+    if is_i32 {
+        quote! { *_self_0 }
+    } else {
+        quote! { (*_self_0 as i32) }
+    }
 }

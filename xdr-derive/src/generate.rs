@@ -286,7 +286,7 @@ fn discriminant_arm(
         quote! { #d }
     } else if is_default_arm {
         // Use the default-arm value as the discriminant
-        quote! { *_self_0 }
+        quote! { __xdrs::XDRDiscriminant::discriminant(_self_0) }
     } else {
         // Use the zero-based index
         quote! { #variant_idx }
@@ -596,10 +596,24 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
         quote! {}
     };
 
+    // A default variant's first field holds the discriminant, so its type
+    // decides how the discriminant is read: a bool rejects anything but 0
+    // and 1 before the default arm can absorb it.
+    let read_discrim = match default_variant.and_then(|v| v.fields.iter().next()) {
+        Some(field) => {
+            let discrim_ty = &field.ty;
+            quote! {
+                let d_val = <#discrim_ty as __xdrs::XDRDiscriminant>::read_discriminant(r)?;
+                let d = <#discrim_ty as __xdrs::XDRDiscriminant>::discriminant(&d_val);
+            }
+        }
+        None => quote! { let d = r.read_i32()?; },
+    };
+
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
             fn read_xdr<R: __xdrs::Reader<'_r>>(r: &mut R) -> __xdrs::ReadResult<Self> {
-                let d = r.read_i32()?;
+                #read_discrim
 
                 match d {
                     #(#read_variants)*
@@ -669,7 +683,7 @@ fn init_fields(fields: &syn::Fields, is_default: bool) -> TokenStream {
 
         let init_val = if is_default && i == 0 {
             // Field 0 is the discriminant
-            quote! { d }
+            quote! { d_val }
         } else {
             quote! { #bind }
         };
