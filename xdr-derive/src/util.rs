@@ -113,9 +113,8 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
     v.fields.is_empty()
 }
 
-/// A variant marked `#[xdr(default_variant)]` (which must have no explicit
-/// discriminant) becomes the XDR union's default arm.  Its first `i32`
-/// field stores the wire discriminant.
+/// A variant marked `#[xdr(default_variant)]` becomes the XDR union's
+/// default arm.  Its first `i32` field stores the wire discriminant.
 ///
 /// The variant's own Rust discriminant (its in-memory tag) is not used on
 /// the wire, but the enum's tags must still be distinct.  Left implicit, it
@@ -201,8 +200,8 @@ pub fn check_variants(
             input,
             "derive XDR: enum discriminants must be all implicit or \
              all explicit, and may optionally also include a default \
-             variant (with no explicit discriminant) marked \
-             `#[xdr(default_variant)]`, whose first field must be i32",
+             variant marked `#[xdr(default_variant)]`, whose first field \
+             must be i32",
         )
     } else if let Some(dv) = default_variant {
         // RFC 4506 requires the default arm of a union to be trailing.
