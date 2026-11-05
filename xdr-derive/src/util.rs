@@ -120,8 +120,7 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
 /// The variant's own Rust discriminant (its in-memory tag) is not used on
 /// the wire, but the enum's tags must still be distinct.  Left implicit, it
 /// is the previous variant's plus one, which can collide with a concrete
-/// arm; give it an explicit one, such as
-/// `xdrs::unused_discriminant(&[...])`, to avoid that.
+/// arm; give it an explicit one that no concrete arm uses to avoid that.
 ///
 /// The writer emits the stored `i32` verbatim and does **not** check
 /// whether it collides with a concrete variant's discriminant.  If a

@@ -1546,7 +1546,7 @@ enum DefaultTagged {
     Bad = -1,
 
     #[xdr(default_variant)]
-    Unknown(i32, u32) = xdrs::unused_discriminant(&[0, -1]),
+    Unknown(i32, u32) = 1,
 }
 
 const DT_VAL: DefaultTagged = DefaultTagged::Unknown(7, 9);

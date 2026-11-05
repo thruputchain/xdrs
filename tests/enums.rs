@@ -147,7 +147,7 @@ fn enum_default_variant_explicit_tag() {
         } = 0,
         Bad = -1,
         #[xdr(default_variant)]
-        Other(i32) = xdrs::unused_discriminant(&[0, -1]),
+        Other(i32) = 1,
     }
 
     TXS::check_codec(&Reply::Ok { n: 3 }, &hex!("0000000000000003"));
