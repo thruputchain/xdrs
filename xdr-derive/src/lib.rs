@@ -274,6 +274,19 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
 ///   another crate. Without this attribute, the union is described as
 ///   before.
 ///
+///   `T` must implement `SwitchType` even when the union's only arm is
+///   `default:`, so a type that can't switch a union is rejected:
+///
+///   ```rust,compile_fail
+///   #[derive(xdrs::XDR)]
+///   #[xdr(discriminant = "i64")]
+///   #[repr(i32)]
+///   pub enum OnlyDefault {
+///       #[xdr(default_variant)]
+///       Other(i64),
+///   }
+///   ```
+///
 ///   `discriminant` may not be combined with `discrim_type`, which names the
 ///   switch type of a union without one:
 ///

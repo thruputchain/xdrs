@@ -305,14 +305,16 @@ fn union_typedef(
         // The switch type describes itself and labels each case, so that
         // rustc, not this macro, decides what it is.
         Some(switch_ty) => {
-            let typespec = quote! { <#switch_ty as __xdrs::HasTypeSpec>::type_spec() };
-            let specs = item
+            let typespec = quote! { __xdrs::switch_type_spec::<#switch_ty>() };
+            let specs: Vec<TokenStream> = item
                 .variants
                 .iter()
                 .enumerate()
-                .filter(|(_, v)| !variant_is_default(v))
                 .map(|(i, v)| switch_case_spec(i, v, switch_ty))
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect();
             (typespec, specs)
         }
         None => {
@@ -365,25 +367,30 @@ fn variant_case_spec(variant: &syn::Variant) -> Result<Option<TokenStream>> {
 
 /// A case of a union switched on `switch_ty`: the case label is the value of
 /// `switch_ty` whose tag is the variant's discriminant, or its index if the
-/// discriminants are implicit, as the encoding derives use.
+/// discriminants are implicit, as the encoding derives use.  `None` for the
+/// default variant, which is the `default:` arm rather than a case.
 fn switch_case_spec(
     index: usize,
     variant: &syn::Variant,
     switch_ty: &syn::Type,
-) -> Result<TokenStream> {
+) -> Result<Option<TokenStream>> {
+    if variant_is_default(variant) {
+        return Ok(None);
+    }
+
     let index = index as i32;
     let tag = match variant.discriminant.as_ref() {
-        Some((_, d)) => quote! { #d },
+        Some((_, expr)) => quote! { #expr },
         None => quote! { #index },
     };
     let decl = variant_fields_decl(variant)?;
 
-    Ok(quote! {
-        __xdrs::CaseSpec {
-            cases: __xdrs::vec![<#switch_ty as __xdrs::SwitchType>::case_label(#tag)],
-            decl: #decl,
-        }
-    })
+    Ok(Some(quote! {
+        __xdrs::case_spec(
+            <#switch_ty as __xdrs::SwitchType>::case_label(#tag),
+            #decl,
+        )
+    }))
 }
 
 fn variant_fields_decl(variant: &syn::Variant) -> Result<TokenStream> {

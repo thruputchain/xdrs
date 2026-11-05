@@ -5,7 +5,8 @@
 use xdr_repr::*;
 use xdrs::*;
 
-/// The switch declaration and the case labels of a union's definition.
+/// The switch declaration and the case labels of a union's definition, and
+/// whether it has a `default:` arm.
 fn switch_of(def: TypeDef) -> (Declaration, Vec<Vec<Value>>, bool) {
     let TypeDef::Union(_, body) = def else {
         panic!("not a union: {def:?}");
@@ -29,8 +30,8 @@ pub mod unsigned {
     #[repr(i32)]
     pub enum Unsigned {
         Small(i32) = 32,
-        Big { flag: bool } = 2147483648u32 as i32,
-        Max = 4294967295u32 as i32,
+        Big { flag: bool } = 2_147_483_648u32 as i32,
+        Max = 4_294_967_295u32 as i32,
     }
 
     #[test]
@@ -75,6 +76,30 @@ pub mod unsigned {
         let small = cxs::encode(&Unsigned::Small(-1)).unwrap();
         let tag = cxs::encode(&32u32).unwrap();
         assert_eq!(&small[..tag.len()], &tag[..]);
+    }
+}
+
+// A union whose only arm is `default:` still declares its switch type.
+pub mod only_default {
+    use super::*;
+
+    #[derive(XDR, ReadXDR, WriteXDR)]
+    #[xdr(discriminant = "u32")]
+    #[repr(i32)]
+    pub enum OnlyDefault {
+        #[xdr(default_variant)]
+        Other(u32, i32),
+    }
+
+    check_format! { spec
+        OnlyDefault::spec()
+        =>
+            "union OnlyDefault switch (unsigned int which)"
+            "{"
+            "default:"
+            "	int other;"
+            "};"
+            ""
     }
 }
 
@@ -337,7 +362,7 @@ pub mod alias {
     #[repr(i32)]
     pub enum ByIndex {
         First(i32) = 0,
-        Last(i32) = 4294967295u32 as i32,
+        Last(i32) = 4_294_967_295u32 as i32,
     }
 
     #[test]
@@ -392,7 +417,7 @@ pub mod fieldless {
     #[repr(i32)]
     pub enum Voids {
         A = 1,
-        B = 4294967294u32 as i32,
+        B = 4_294_967_294u32 as i32,
     }
 
     check_format! { spec

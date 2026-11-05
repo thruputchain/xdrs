@@ -168,9 +168,20 @@ impl SwitchType for bool {
         match tag {
             0 => Value::Ident(ident("FALSE")),
             1 => Value::Ident(ident("TRUE")),
-            _ => panic!("XDR bool switch: discriminant {tag} is neither FALSE (0) nor TRUE (1)"),
+            _ => panic!(
+                "XDR union switch type bool: discriminant {tag} is neither FALSE (0) nor TRUE (1)"
+            ),
         }
     }
+}
+
+/// Returns the type specification of a union's switch type.
+///
+/// `derive(XDR)` declares a switch with this rather than
+/// [`HasTypeSpec::type_spec`], so that `T` must implement [`SwitchType`]
+/// even in a union whose only arm is `default:`, which labels no case.
+pub fn switch_type_spec<T: SwitchType>() -> TypeSpec {
+    T::type_spec()
 }
 
 /// An enum switches a union through its own definition: the arm's label is
