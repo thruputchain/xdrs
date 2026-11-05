@@ -17,10 +17,12 @@ struct Attrs {
     // The name of the discriminant variable, if not "which"
     discrim_var: Option<String>,
 
-    // A union's switch type, read by the encoding derives; accepted here so
-    // that derive(XDR) does not reject it.
+    // A union's switch type, which must implement `SwitchType`.  When given,
+    // the union is declared as switched on that type, with case labels that
+    // the type supplies, instead of on a generated `{Name}Type` enum.
+    // (Renamed because `FromVariant` reserves a field named `discriminant`.)
     #[darling(rename = "discriminant")]
-    _discriminant: Option<syn::Type>,
+    switch_ty: Option<syn::Type>,
 }
 
 #[derive(Clone, Debug, Default, FromDeriveInput)]
@@ -143,7 +145,18 @@ fn from_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
 
     let attrs = Attrs::from_derive_input(input)?;
 
-    if enum_is_fieldless(item) {
+    if attrs.switch_ty.is_some() && attrs.discrim_type.is_some() {
+        return err(
+            input,
+            "derive XDR: `discriminant` and `discrim_type` may not be combined: \
+             `discriminant` names the union's switch type itself, and the \
+             schema describes the switch as that type",
+        );
+    }
+
+    // A fieldless enum is an XDR enum, unless it names a switch type, which
+    // makes it a union whose arms are all void.
+    if enum_is_fieldless(item) && attrs.switch_ty.is_none() {
         from_enum_fieldless(input, item, &attrs)
     } else {
         from_enum_with_fields(input, item, &attrs)
@@ -203,7 +216,7 @@ fn from_enum_with_fields(
     // which, instead of generating again, we can get via the above HasTypeDef impl:
     let mut spec_definitions = vec![quote! { Self::def() }];
 
-    if attrs.discrim_type.is_none() {
+    if attrs.discrim_type.is_none() && attrs.switch_ty.is_none() {
         // No existing discriminant type was provided, so we also define
         // an XDR enumeration to serve as the discriminant
 
@@ -286,20 +299,38 @@ fn union_typedef(
         .clone()
         .unwrap_or_else(|| input.ident.to_string());
 
-    // The discriminant type name is based on the Rust type name, not the custom XDR name
-    let rust_enum_name = input.ident.to_string();
-    let discrim_type_name = attrs.discrim_type_name(&rust_enum_name);
-    let discrim_typespec = quote! { __xdrs::named_type(#discrim_type_name) };
     let discrim_var = attrs.discrim_var_name();
 
-    let specs: Vec<TokenStream> = item
-        .variants
-        .iter()
-        .map(variant_case_spec)
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect();
+    let (discrim_typespec, specs) = match &attrs.switch_ty {
+        // The switch type describes itself and labels each case, so that
+        // rustc, not this macro, decides what it is.
+        Some(switch_ty) => {
+            let typespec = quote! { <#switch_ty as __xdrs::HasTypeSpec>::type_spec() };
+            let specs = item
+                .variants
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| !variant_is_default(v))
+                .map(|(i, v)| switch_case_spec(i, v, switch_ty))
+                .collect::<Result<Vec<_>>>()?;
+            (typespec, specs)
+        }
+        None => {
+            // The discriminant type name is based on the Rust type name, not the custom XDR name
+            let rust_enum_name = input.ident.to_string();
+            let discrim_type_name = attrs.discrim_type_name(&rust_enum_name);
+            let typespec = quote! { __xdrs::named_type(#discrim_type_name) };
+            let specs = item
+                .variants
+                .iter()
+                .map(variant_case_spec)
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect();
+            (typespec, specs)
+        }
+    };
     let case_specs = quote! { __xdrs::vec![#(#specs),*] };
     let default_variant = find_default_variant(item);
     let default_decl = match default_variant {
@@ -330,6 +361,29 @@ fn variant_case_spec(variant: &syn::Variant) -> Result<Option<TokenStream>> {
     Ok(Some(quote! {
         __xdrs::single_case_spec(#variant_name, #decl)
     }))
+}
+
+/// A case of a union switched on `switch_ty`: the case label is the value of
+/// `switch_ty` whose tag is the variant's discriminant, or its index if the
+/// discriminants are implicit, as the encoding derives use.
+fn switch_case_spec(
+    index: usize,
+    variant: &syn::Variant,
+    switch_ty: &syn::Type,
+) -> Result<TokenStream> {
+    let index = index as i32;
+    let tag = match variant.discriminant.as_ref() {
+        Some((_, d)) => quote! { #d },
+        None => quote! { #index },
+    };
+    let decl = variant_fields_decl(variant)?;
+
+    Ok(quote! {
+        __xdrs::CaseSpec {
+            cases: __xdrs::vec![<#switch_ty as __xdrs::SwitchType>::case_label(#tag)],
+            decl: #decl,
+        }
+    })
 }
 
 fn variant_fields_decl(variant: &syn::Variant) -> Result<TokenStream> {
