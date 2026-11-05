@@ -136,6 +136,29 @@ fn enum_default_variant_with_payload_roundtrip() {
     assert_eq!(cxs_decoded, original);
 }
 
+#[test]
+fn enum_default_variant_explicit_tag() {
+    // Left implicit, `Other`'s tag would be Bad + 1 = 0, colliding with Ok.
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum Reply {
+        Ok {
+            n: u32,
+        } = 0,
+        Bad = -1,
+        #[xdr(default_variant)]
+        Other(i32) = 1,
+    }
+
+    TXS::check_codec(&Reply::Ok { n: 3 }, &hex!("0000000000000003"));
+    TXS::check_codec(&Reply::Bad, &hex!("ffffffff"));
+    CXS::check_codec(&Reply::Bad, &hex!("3e"));
+    // The default arm still holds the wire value, not its tag.
+    let other = Reply::Other(5);
+    TXS::check_codec(&other, &hex!("00000005"));
+    CXS::check_codec(&other, &hex!("05"));
+}
+
 // We don't support enums with mixed implicit/explicit variants
 // (except that a default arm is allowed).
 //

@@ -274,11 +274,11 @@ fn trait_max_variant_expr(index: usize, v: &syn::Variant, fmt: Format) -> Result
     let trait_path = fmt.trait_path();
 
     let variant_idx = index as i32;
-    let discrim_bound = if let Some((_, d)) = v.discriminant.as_ref() {
-        quote! { #mod_path::size_i32(#d) }
-    } else if is_default_arm {
+    let discrim_bound = if is_default_arm {
         // The default arm's discriminant is a runtime value.
         quote! { #mod_path::max_size_i32() }
+    } else if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #mod_path::size_i32(#d) }
     } else {
         quote! { #mod_path::size_i32(#variant_idx) }
     };
@@ -1065,10 +1065,10 @@ fn const_write_variant(
     let var_bindings = const_var_bindings(&v.fields);
 
     let variant_idx = index as i32;
-    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
-        quote! { #d }
-    } else if is_default_arm {
+    let discriminant = if is_default_arm {
         quote! { *_self_0 }
+    } else if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #d }
     } else {
         quote! { #variant_idx }
     };
@@ -1118,10 +1118,10 @@ fn const_size_variant(
     };
 
     let variant_idx = index as i32;
-    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
-        quote! { #d }
-    } else if is_default_arm {
+    let discriminant = if is_default_arm {
         quote! { *_self_0 }
+    } else if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #d }
     } else {
         quote! { #variant_idx }
     };
