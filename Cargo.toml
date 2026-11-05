@@ -120,7 +120,6 @@ default = ["detailed-errors"]
 detailed-errors = [] # retain precise ReadError variants and diagnostic payloads
 permissive = [] # relax wire validation: CXS minimal integer encoding + TXS non-zero padding
 alloc = ["xdr-common/alloc"] # enable allocating interfaces
-int128 = [] # no-op: i128/u128 de/serialization is always on; kept for compatibility
 serde = ["xdr-common/serde"] # serde support for xdr-common types
 schemars = ["xdr-common/schemars"] # schemars JsonSchema support for xdr-common types
 
