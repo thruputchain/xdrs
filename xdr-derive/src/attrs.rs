@@ -22,6 +22,10 @@ pub struct InputAttrs {
     pub into_type: Option<syn::Type>,
     pub from_type: Option<syn::Type>,
     pub via: Option<syn::Type>,
+
+    /// A union's switch type, which decides how its discriminant is
+    /// encoded: `#[xdr(discriminant = "u32")]`.  `i32` if not given.
+    pub discriminant: Option<syn::Type>,
 }
 
 #[derive(Clone, Debug, Default, FromField)]
@@ -45,6 +49,13 @@ pub struct VariantAttrs {
 }
 
 impl InputAttrs {
+    /// The union's switch type: the `discriminant` attribute, or `i32`.
+    pub fn discriminant_type(&self) -> syn::Type {
+        self.discriminant
+            .clone()
+            .unwrap_or_else(|| syn::parse_quote!(i32))
+    }
+
     pub fn crate_path(&self) -> syn::Path {
         self.krate
             .clone()
@@ -96,4 +107,15 @@ impl FieldAttrs {
 
         Ok(())
     }
+}
+
+/// The encoding of a union's discriminant, `<T as XDRDiscriminant>::ENCODING`
+/// for its switch type `T`, with `trait_path` naming `XDRDiscriminant`.
+/// rustc resolves `T`, so it may be a type alias from anywhere.
+pub fn discriminant_encoding(
+    input: &syn::DeriveInput,
+    trait_path: proc_macro2::TokenStream,
+) -> Result<proc_macro2::TokenStream> {
+    let ty = InputAttrs::from_derive_input(input)?.discriminant_type();
+    Ok(quote::quote! { <#ty as #trait_path>::ENCODING })
 }

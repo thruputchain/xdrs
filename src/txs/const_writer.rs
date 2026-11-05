@@ -5,6 +5,8 @@
 //! that compute the encoded size of each primitive type and `max_size_*`
 //! functions that compute worst-case size bounds over all values.
 
+use crate::discrim::DiscriminantEncoding;
+
 /// A const-compatible writer for TXS (Traditional XDR Serialization).
 ///
 /// All methods panic on buffer overflow. In a `const` context, this
@@ -67,6 +69,16 @@ impl<const N: usize> ConstWriter<N> {
     }
 
     // -- integer writes --
+
+    /// Writes a union's `i32` tag `d` as a discriminant encoded as
+    /// `encoding`.
+    pub const fn write_discriminant(&mut self, d: i32, encoding: DiscriminantEncoding) {
+        match encoding {
+            DiscriminantEncoding::Signed => self.write_i32(d),
+            DiscriminantEncoding::Unsigned => self.write_u32(d as u32),
+            DiscriminantEncoding::Bool => self.write_bool(d != 0),
+        }
+    }
 
     /// Writes a signed 32-bit integer in big-endian format (4 bytes).
     pub const fn write_i32(&mut self, n: i32) {
@@ -248,6 +260,25 @@ pub const fn size_opaque_variable(len: usize) -> usize {
 // `#[derive(ConstXDRSize)]` to fold `ConstMaxSize::MAX_SIZE` bounds.
 // TXS is fixed-width, so most maximums equal the exact encoded size.
 // `None` means unbounded, or a bound that overflows `usize` on this target.
+
+/// Returns the size of a union discriminant with tag `d`, encoded as
+/// `encoding`.
+pub const fn size_discriminant(d: i32, encoding: DiscriminantEncoding) -> usize {
+    match encoding {
+        DiscriminantEncoding::Signed => size_i32(d),
+        DiscriminantEncoding::Unsigned => size_u32(d as u32),
+        DiscriminantEncoding::Bool => size_bool(d != 0),
+    }
+}
+
+/// Returns the largest size of a union discriminant encoded as `encoding`.
+pub const fn max_size_discriminant(encoding: DiscriminantEncoding) -> usize {
+    match encoding {
+        DiscriminantEncoding::Signed => max_size_i32(),
+        DiscriminantEncoding::Unsigned => max_size_u32(),
+        DiscriminantEncoding::Bool => max_size_bool(),
+    }
+}
 
 /// Worst-case TXS encoded size of a boolean (always 4).
 pub const fn max_size_bool() -> usize {

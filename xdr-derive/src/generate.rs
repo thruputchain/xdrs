@@ -205,13 +205,15 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
         .map(|v| payload_arm(v, input, Mode::Unchecked))
         .collect::<Result<Vec<_>>>()?;
 
+    let encoding = discriminant_encoding(input, quote! { __xdrs::XDRDiscriminant })?;
+
     Ok(quote! {
         impl #impl_generics __xdrs::WriteXDR for #ty_ident #ty_generics #where_clause {
             fn write_xdr<F, W: __xdrs::Writer<F>>(&self, __write_xdr_writer: &mut W) -> __xdrs::WriteResult<()> {
                 let __xdr_discriminant: i32 = match self {
                     #(#discriminant_arms)*
                 };
-                __write_xdr_writer.write_i32(__xdr_discriminant)?;
+                __write_xdr_writer.write_discriminant(__xdr_discriminant, #encoding)?;
 
                 match self {
                     #(#payload_variants)*
@@ -225,7 +227,7 @@ fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStr
                     let __xdr_discriminant: i32 = match self {
                         #(#discriminant_arms)*
                     };
-                    __write_xdr_writer.write_i32(__xdr_discriminant);
+                    __write_xdr_writer.write_discriminant(__xdr_discriminant, #encoding);
 
                     match self {
                         #(#payload_variants_unchecked)*
@@ -575,6 +577,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
     let default_variant = find_default_variant(item);
+    let discrim_ty = InputAttrs::from_derive_input(input)?.discriminant_type();
 
     let ty_ident = &input.ident;
     let (_, ty_generics, where_clause) = input.generics.split_for_impl();
@@ -585,7 +588,7 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| read_variant(i, v, input))
+        .map(|(i, v)| read_variant(i, v, input, &discrim_ty))
         .collect::<Result<Vec<_>>>()?;
 
     let catch_bad_index = if default_variant.is_none() {
@@ -594,19 +597,10 @@ fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStre
         quote! {}
     };
 
-    // A default variant's first field holds the discriminant, so its type
-    // decides how the discriminant is read: a bool rejects anything but 0
-    // and 1 before the default arm can absorb it.
-    let read_discrim = match default_variant.and_then(|v| v.fields.iter().next()) {
-        Some(field) => {
-            let discrim_ty = &field.ty;
-            quote! {
-                let d_val = <#discrim_ty as __xdrs::XDRDiscriminant>::read_discriminant(r)?;
-                let d = <#discrim_ty as __xdrs::XDRDiscriminant>::discriminant(&d_val);
-            }
-        }
-        None => quote! { let d = r.read_i32()?; },
-    };
+    // The switch type decides how the discriminant is read: a bool rejects
+    // anything but 0 and 1 before the default arm can absorb it.
+    let encoding = discriminant_encoding(input, quote! { __xdrs::XDRDiscriminant })?;
+    let read_discrim = quote! { let d = r.read_discriminant(#encoding)?; };
 
     Ok(quote! {
         impl #impl_generics __xdrs::ReadXDR<'_r> for #ty_ident #ty_generics #where_clause {
@@ -626,6 +620,7 @@ fn read_variant(
     index_u: usize,
     variant: &syn::Variant,
     input: &syn::DeriveInput,
+    discrim_ty: &syn::Type,
 ) -> Result<TokenStream> {
     let index = index_u as i32;
     let is_default = variant_is_default(variant);
@@ -665,7 +660,7 @@ fn read_variant(
             }
         })
         .collect::<Result<Vec<_>>>()?;
-    let init_fields = init_fields(&variant.fields, is_default);
+    let init_fields = init_fields(&variant.fields, is_default, discrim_ty);
 
     Ok(quote! {
         #var_match => {
@@ -675,13 +670,13 @@ fn read_variant(
     })
 }
 
-fn init_fields(fields: &syn::Fields, is_default: bool) -> TokenStream {
+fn init_fields(fields: &syn::Fields, is_default: bool, discrim_ty: &syn::Type) -> TokenStream {
     let init_fields = token_reduce(fields, |i, field| {
         let bind = tmp_binding(i);
 
         let init_val = if is_default && i == 0 {
-            // Field 0 is the discriminant
-            quote! { d_val }
+            // Field 0 is the discriminant, of the union's switch type
+            quote! { <#discrim_ty as __xdrs::XDRDiscriminant>::from_discriminant(d) }
         } else {
             quote! { #bind }
         };

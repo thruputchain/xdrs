@@ -1,64 +1,77 @@
-//! The [`XDRDiscriminant`] trait, for types that act as [XDR][RFC-4506]
-//! union discriminants.
+//! The [`XDRDiscriminant`] trait, for types that switch an [XDR][RFC-4506]
+//! union.
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
-use crate::serialize::reader::{ReadResult, Reader};
+/// How a union discriminant is encoded on the wire, which the union's
+/// switch type decides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DiscriminantEncoding {
+    /// An `int`, or an enum, whose values are `int`s.
+    Signed,
+    /// An `unsigned int`.
+    Unsigned,
+    /// A `bool`: reading rejects anything but 0 and 1.
+    Bool,
+}
 
-/// Trait for types that have an XDR discriminant value.
+/// A type that can switch an [XDR][RFC-4506] union: `i32`, `u32`, `bool`, or
+/// an enum.
 ///
-/// The discriminant is used in [XDR][RFC-4506] unions and variants (as defined in RFC 4506)
-/// to identify which variant is present in the serialized data.
-///
-/// A union's `#[xdr(default_variant)]` stores the discriminant in its first
-/// field, whose type must implement this trait. The derived reader decodes
-/// the discriminant with [`read_discriminant`](Self::read_discriminant), so
-/// the field type decides which wire values are valid: a `bool`
-/// discriminant accepts only 0 and 1, even in the default arm.
+/// A derived union holds its discriminant as the `i32` tag of its
+/// `#[repr(i32)]` enum.  Its switch type, named with
+/// `#[xdr(discriminant = "...")]` (by default `i32`), decides how that tag
+/// is encoded, and the type of a `#[xdr(default_variant)]`'s first field.
 ///
 /// [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 pub trait XDRDiscriminant {
-    /// Returns the discriminant value for this type.
-    ///
-    /// This value is used when serializing/deserializing XDR union types
-    /// to identify which variant is being encoded or decoded.
+    /// How a discriminant of this type is encoded.  A constant rather than a
+    /// method, so that the const writers can use it too.
+    const ENCODING: DiscriminantEncoding;
+
+    /// Returns this value as a union's `i32` tag.  An unsigned value keeps
+    /// its bit pattern.
     fn discriminant(&self) -> i32;
 
-    /// Reads a discriminant of this type from the wire, rejecting values
-    /// the type cannot represent.
-    fn read_discriminant<'r, R: Reader<'r>>(r: &mut R) -> ReadResult<Self>
+    /// Returns the value whose tag is `d`; the inverse of
+    /// [`discriminant`](Self::discriminant).
+    fn from_discriminant(d: i32) -> Self
     where
         Self: Sized;
 }
 
 impl XDRDiscriminant for i32 {
+    const ENCODING: DiscriminantEncoding = DiscriminantEncoding::Signed;
+
     fn discriminant(&self) -> i32 {
         *self
     }
 
-    fn read_discriminant<'r, R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        r.read_i32()
+    fn from_discriminant(d: i32) -> Self {
+        d
     }
 }
 
 impl XDRDiscriminant for u32 {
+    const ENCODING: DiscriminantEncoding = DiscriminantEncoding::Unsigned;
+
     fn discriminant(&self) -> i32 {
         *self as i32
     }
 
-    // Writers emit every discriminant with write_i32, which CXS encodes
-    // differently from write_u32, so read it back the same way.
-    fn read_discriminant<'r, R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        r.read_i32().map(|d| d as u32)
+    fn from_discriminant(d: i32) -> Self {
+        d as u32
     }
 }
 
 impl XDRDiscriminant for bool {
+    const ENCODING: DiscriminantEncoding = DiscriminantEncoding::Bool;
+
     fn discriminant(&self) -> i32 {
         i32::from(*self)
     }
 
-    fn read_discriminant<'r, R: Reader<'r>>(r: &mut R) -> ReadResult<Self> {
-        r.read_bool()
+    fn from_discriminant(d: i32) -> Self {
+        d != 0
     }
 }

@@ -8,6 +8,8 @@
 //!
 //! [RFC-4506]: https://datatracker.ietf.org/doc/html/rfc4506
 
+use crate::discrim::DiscriminantEncoding;
+
 /// Errors that can occur when writing XDR data.
 #[derive(Copy, Clone, Debug)]
 pub enum WriteError {
@@ -81,6 +83,16 @@ pub trait Writer<F> {
 
     /// Writes a boolean value.
     fn write_bool(&mut self, b: bool) -> WriteResult<()>;
+
+    /// Writes a union's `i32` tag `d` as a discriminant encoded as
+    /// `encoding`.
+    fn write_discriminant(&mut self, d: i32, encoding: DiscriminantEncoding) -> WriteResult<()> {
+        match encoding {
+            DiscriminantEncoding::Signed => self.write_i32(d),
+            DiscriminantEncoding::Unsigned => self.write_u32(d as u32),
+            DiscriminantEncoding::Bool => self.write_bool(d != 0),
+        }
+    }
 
     /// Writes a 32-bit IEEE 754 floating-point value.
     fn write_f32(&mut self, n: f32) -> WriteResult<()>;

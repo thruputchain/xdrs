@@ -16,6 +16,11 @@ struct Attrs {
 
     // The name of the discriminant variable, if not "which"
     discrim_var: Option<String>,
+
+    // A union's switch type, read by the encoding derives; accepted here so
+    // that derive(XDR) does not reject it.
+    #[darling(rename = "discriminant")]
+    _discriminant: Option<syn::Type>,
 }
 
 #[derive(Clone, Debug, Default, FromDeriveInput)]

@@ -43,7 +43,9 @@ The changes from TXS in detail:
   the new encoding for XDR _Unsigned Integer_.
 
 - XDR _Discriminated Union_ : same as TXS, but the discriminant uses the new
-  integer encoding
+  integer encoding of its declared type: _Integer_, _Unsigned Integer_,
+  _Enumeration_ (as _Integer_) or _Bool_.  A union switched on `unsigned int`
+  therefore encodes its discriminant as an _Unsigned Integer_.
 
 Serialization of these XDR types is also changed, according to their equivalent
 representations:
