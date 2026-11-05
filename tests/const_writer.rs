@@ -765,7 +765,6 @@ fn newtype_in_composites() {
 
 // -- i128/u128 tests --
 
-#[cfg(feature = "int128")]
 mod int128_const {
     use super::*;
 

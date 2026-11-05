@@ -206,12 +206,9 @@ impl<T: HasTypeDef> SwitchType for T {
     }
 }
 
-// 128-bit integer types using the alternate XDR encoding.
-// When the `int128` feature is enabled, `i128` and `u128` are represented
-// as named types referring to double-u64 structures defined outside this package.
-#[cfg(feature = "int128")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
-// These refer to double-u64 structures defined outside this package
+// 128-bit integer types using the alternate XDR encoding. `i128` and `u128`
+// are represented as named types referring to double-u64 structures defined
+// outside this package.
 impl_has_type_spec! {
     i128 => <(i64, u64)>::type_spec(),
     u128 => <(u64, u64)>::type_spec()
@@ -250,9 +247,7 @@ impl_declare_named! {
     f64 => TypeSpec::Double,
 }
 
-#[cfg(feature = "int128")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
-// These refer to double-u64 structures defined outside this package
+// These refer to double-u64 structures defined outside this package.
 impl_declare_named! {
     i128 => <(i64, u64)>::type_spec(),
     u128 => <(u64, u64)>::type_spec(),
@@ -287,8 +282,6 @@ impl_refs! {
     i32, u32, i64, u64, bool, f32, f64,
 }
 
-#[cfg(feature = "int128")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 impl_refs! {
     i128, u128,
 }

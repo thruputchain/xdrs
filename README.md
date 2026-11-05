@@ -25,7 +25,8 @@ The library is `no_std`. Optional features:
   `BufWriter`s, owned `encode()` functions)
 - `permissive`: accept non-minimal CXS integer encodings and non-zero
   TXS padding when decoding
-- `int128`: `i128`/`u128` support
+- `int128`: no-op, kept for compatibility (`i128`/`u128` support is
+  always on)
 - `derive`: derive macros `ReadXDR`, `WriteXDR`, `XDR`, and
   `ConstWriteXDR` (crate `xdr_derive`)
 - `repr`: datatypes representing XDR specifications (crate `xdr_repr`;
