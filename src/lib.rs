@@ -56,8 +56,7 @@
 //!
 //! `i128` and `u128` are supported unconditionally as an extension to the
 //! XDR specification. They are encoded as two 64-bit integers (high bits and
-//! low bits). The `int128` feature is a no-op kept for compatibility with
-//! manifests that still request it.
+//! low bits).
 //!
 //! ### Optional dependencies
 //!
