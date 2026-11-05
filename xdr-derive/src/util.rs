@@ -117,6 +117,12 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
 /// discriminant) becomes the XDR union's default arm.  Its first `i32`
 /// field stores the wire discriminant.
 ///
+/// The variant's own Rust discriminant (its in-memory tag) is not used on
+/// the wire, but the enum's tags must still be distinct.  Left implicit, it
+/// is the previous variant's plus one, which can collide with a concrete
+/// arm; give it an explicit one, such as
+/// `xdrs::unused_discriminant(&[...])`, to avoid that.
+///
 /// The writer emits the stored `i32` verbatim and does **not** check
 /// whether it collides with a concrete variant's discriminant.  If a
 /// variant `Default(d, ..)` is encoded where `d` matches a concrete arm,
@@ -125,16 +131,7 @@ pub fn variant_is_fieldless(v: &syn::Variant) -> bool {
 pub fn variant_is_default(v: &syn::Variant) -> bool {
     let attrs = VariantAttrs::from_variant(v).unwrap();
 
-    if attrs.default_variant {
-        assert!(
-            v.discriminant.is_none(),
-            "variant `{}`: A default variant may not specify a discriminant",
-            v.ident,
-        );
-        true
-    } else {
-        false
-    }
+    attrs.default_variant
 }
 
 pub fn enum_is_fieldless(e: &syn::DataEnum) -> bool {
@@ -182,7 +179,12 @@ pub fn check_variants(
     let default_variant = item.variants.iter().find(|v| variant_is_default(v));
 
     let n_variants = variants.iter().count();
-    let n_explicit = variants.iter().filter(|v| v.discriminant.is_some()).count();
+    // A default variant's own discriminant is only its in-memory tag, so it
+    // does not count toward the implicit/explicit rule.
+    let n_explicit = variants
+        .iter()
+        .filter(|v| v.discriminant.is_some() && !variant_is_default(v))
+        .count();
     let n_default = if default_variant.is_some() { 1 } else { 0 };
     let n_implicit = n_variants - n_explicit - n_default;
 

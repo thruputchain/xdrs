@@ -1537,6 +1537,40 @@ fn default_variant_named_payload_roundtrips() {
     assert_eq!(txs_decoded, DPN_VAL);
 }
 
+// A default variant with an explicit tag still writes its stored value.
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[allow(dead_code)]
+enum DefaultTagged {
+    Known = 0,
+    Bad = -1,
+
+    #[xdr(default_variant)]
+    Unknown(i32, u32) = xdrs::unused_discriminant(&[0, -1]),
+}
+
+const DT_VAL: DefaultTagged = DefaultTagged::Unknown(7, 9);
+
+const DT_CXS: [u8; DT_VAL.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ DT_VAL.const_cxs_size() }>::new();
+    DT_VAL.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const DT_TXS: [u8; DT_VAL.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ DT_VAL.const_txs_size() }>::new();
+    DT_VAL.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn default_variant_explicit_tag_const_matches_runtime() {
+    assert_eq!(&DT_CXS, cxs_runtime_encode(&DT_VAL).as_slice());
+    assert_eq!(&DT_TXS, txs_runtime_encode(&DT_VAL).as_slice());
+    let txs_decoded: DefaultTagged = xdrs::txs::decode(&DT_TXS).unwrap();
+    assert_eq!(txs_decoded, DT_VAL);
+}
+
 // -- Derive macro tests: VecM / BytesM / StringM containers --
 //
 // With the `alloc` feature, container values cannot be used inside const
