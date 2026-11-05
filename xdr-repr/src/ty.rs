@@ -123,6 +123,89 @@ impl_has_type_spec! {
     f64 => TypeSpec::Double,
 }
 
+/// Types that can switch an XDR union in a specification: `int`,
+/// `unsigned int`, `bool`, or an enum.
+///
+/// A derived union names its switch type with
+/// `#[xdr(discriminant = "T")]`.  `derive(XDR)` then declares the switch as
+/// `<T as HasTypeSpec>::type_spec()` and labels each arm with
+/// `T::case_label(tag)`, where `tag` is the variant's `i32` discriminant.
+/// The compiler resolves `T`, so it may be a type alias or come from
+/// another crate.
+///
+/// - `i32` labels an arm with the tag itself.
+/// - `u32` labels it with the tag reinterpreted as unsigned, so a tag of
+///   `4294967295 as u32 as i32` is labelled `4294967295`.
+/// - `bool` labels tag 0 `FALSE` and tag 1 `TRUE`.
+/// - A type whose [`HasTypeDef`] is an enum labels it with the name of the
+///   enum member whose value is the tag, as the enum's own definition
+///   spells it.
+pub trait SwitchType: HasTypeSpec {
+    /// Returns the case label of the union arm whose discriminant, held as
+    /// an `i32` tag, is `tag`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no value of this type has the tag `tag`.
+    fn case_label(tag: i32) -> Value;
+}
+
+impl SwitchType for i32 {
+    fn case_label(tag: i32) -> Value {
+        Value::Const(Constant::Signed(tag))
+    }
+}
+
+impl SwitchType for u32 {
+    fn case_label(tag: i32) -> Value {
+        // The tag keeps the unsigned value's bit pattern.
+        Value::Const(Constant::Unsigned(tag as u32))
+    }
+}
+
+impl SwitchType for bool {
+    fn case_label(tag: i32) -> Value {
+        match tag {
+            0 => Value::Ident(ident("FALSE")),
+            1 => Value::Ident(ident("TRUE")),
+            _ => panic!(
+                "XDR union switch type bool: discriminant {tag} is neither FALSE (0) nor TRUE (1)"
+            ),
+        }
+    }
+}
+
+/// Returns the type specification of a union's switch type.
+///
+/// `derive(XDR)` declares a switch with this rather than
+/// [`HasTypeSpec::type_spec`], so that `T` must implement [`SwitchType`]
+/// even in a union whose only arm is `default:`, which labels no case.
+pub fn switch_type_spec<T: SwitchType>() -> TypeSpec {
+    T::type_spec()
+}
+
+/// An enum switches a union through its own definition: the arm's label is
+/// the member whose value is the tag.
+impl<T: HasTypeDef> SwitchType for T {
+    fn case_label(tag: i32) -> Value {
+        let TypeDef::Enum(name, EnumBody(members)) = T::type_def() else {
+            panic!("XDR union switch type {} is not an enum", T::type_ident().0);
+        };
+        let member = members.iter().find(|(_, value)| match value {
+            Value::Const(Constant::Signed(n)) => *n == tag,
+            Value::Const(Constant::Unsigned(n)) => *n == tag as u32,
+            Value::Ident(_) => false,
+        });
+        match member {
+            Some((member, _)) => Value::Ident(member.clone()),
+            None => panic!(
+                "XDR union switch type {}: no enum member has the literal value {tag}",
+                name.0
+            ),
+        }
+    }
+}
+
 // 128-bit integer types using the alternate XDR encoding. `i128` and `u128`
 // are represented as named types referring to double-u64 structures defined
 // outside this package.
