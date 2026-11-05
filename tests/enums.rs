@@ -190,6 +190,51 @@ fn enum_u32_default_variant() {
     }
 }
 
+#[test]
+fn enum_default_variant_explicit_tag() {
+    // Left implicit, `Other`'s tag would be Bad + 1 = 0, colliding with Ok.
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum Reply {
+        Ok {
+            n: u32,
+        } = 0,
+        Bad = -1,
+        #[xdr(default_variant)]
+        Other(i32) = 1,
+    }
+
+    TXS::check_codec(&Reply::Ok { n: 3 }, &hex!("0000000000000003"));
+    TXS::check_codec(&Reply::Bad, &hex!("ffffffff"));
+    CXS::check_codec(&Reply::Bad, &hex!("3e"));
+    // The default arm still holds the wire value, not its tag.
+    let other = Reply::Other(5);
+    TXS::check_codec(&other, &hex!("00000005"));
+    CXS::check_codec(&other, &hex!("05"));
+}
+
+#[test]
+fn enum_bool_default_variant_explicit_tag() {
+    // A default variant with both a bool discriminant field and an explicit
+    // tag, as x23c generates for a bool-switched union's default arm.
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum Tagged {
+        Yes {
+            v: u32,
+        } = 1,
+        #[xdr(default_variant)]
+        No {
+            ok: bool,
+        } = i32::MIN,
+    }
+
+    TXS::check_codec(&Tagged::Yes { v: 3 }, &hex!("0000000100000003"));
+    TXS::check_codec(&Tagged::No { ok: false }, &hex!("00000000"));
+    CXS::check_codec(&Tagged::No { ok: false }, &hex!("00"));
+    assert!(xdrs::txs::decode::<Tagged>(&hex!("00000002")).is_err());
+}
+
 // We don't support enums with mixed implicit/explicit variants
 // (except that a default arm is allowed).
 //

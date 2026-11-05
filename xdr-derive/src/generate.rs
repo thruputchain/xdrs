@@ -279,14 +279,12 @@ fn discriminant_arm(
     let var_bindings = var_bindings(&v.fields);
 
     let variant_idx = index as i32;
-    let discriminant = if let Some((_, d)) = v.discriminant.as_ref() {
-        // An explicit-discriminant variant should never be considered a default arm
-        assert!(!is_default_arm);
-
-        quote! { #d }
-    } else if is_default_arm {
-        // Use the default-arm value as the discriminant
+    let discriminant = if is_default_arm {
+        // Use the default-arm value as the discriminant; the variant's own
+        // Rust discriminant, if any, is only its in-memory tag.
         quote! { __xdrs::XDRDiscriminant::discriminant(_self_0) }
+    } else if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #d }
     } else {
         // Use the zero-based index
         quote! { #variant_idx }

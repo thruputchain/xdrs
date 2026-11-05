@@ -129,6 +129,22 @@ const _: () = assert!(matches!(cxs_max::<WithDefault>(), Some(5)));
 // TXS: max(4 + 4, 4).
 const _: () = assert!(matches!(txs_max::<WithDefault>(), Some(8)));
 
+// An explicit tag on the default arm is only its in-memory tag: the bound is
+// still its runtime i32, so CXS worst case 5 (with the tag 1 it would be 4,
+// from Known).
+#[derive(xdrs::ConstWriteXDR, xdrs::ConstXDRSize)]
+#[repr(i32)]
+enum WithTaggedDefault {
+    Known(u16) = 0,
+    Bad = -1,
+    #[xdr(default_variant)]
+    Other(i32) = 1,
+}
+
+const _: () = assert!(matches!(cxs_max::<WithTaggedDefault>(), Some(5)));
+// TXS: max(4 + 4, 4, 4).
+const _: () = assert!(matches!(txs_max::<WithTaggedDefault>(), Some(8)));
+
 // -- Bounded byte containers keep exact bounds --
 
 #[derive(xdrs::ConstWriteXDR, xdrs::ConstXDRSize)]

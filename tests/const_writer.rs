@@ -1576,6 +1576,44 @@ fn default_variant_bool_discriminant_const_matches_runtime() {
     assert_eq!(txs_decoded, DBD_VAL);
 }
 
+// A default variant with an explicit tag still sizes and writes its stored
+// value: i32::MAX takes 5 bytes in CXS, where the tag 1 would take 1.
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[allow(dead_code)]
+enum DefaultTagged {
+    Known = 0,
+    Bad = -1,
+
+    #[xdr(default_variant)]
+    Unknown(i32, u32) = 1,
+}
+
+const DT_VAL: DefaultTagged = DefaultTagged::Unknown(i32::MAX, 9);
+
+const DT_CXS: [u8; DT_VAL.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ DT_VAL.const_cxs_size() }>::new();
+    DT_VAL.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const DT_TXS: [u8; DT_VAL.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ DT_VAL.const_txs_size() }>::new();
+    DT_VAL.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn default_variant_explicit_tag_const_matches_runtime() {
+    assert_eq!(&DT_CXS, cxs_runtime_encode(&DT_VAL).as_slice());
+    assert_eq!(&DT_TXS, txs_runtime_encode(&DT_VAL).as_slice());
+    assert_eq!(DT_VAL.const_cxs_size(), 5 + 1);
+    let txs_decoded: DefaultTagged = xdrs::txs::decode(&DT_TXS).unwrap();
+    assert_eq!(txs_decoded, DT_VAL);
+    let cxs_decoded: DefaultTagged = xdrs::cxs::decode(&DT_CXS).unwrap();
+    assert_eq!(cxs_decoded, DT_VAL);
+}
+
 // -- Derive macro tests: VecM / BytesM / StringM containers --
 //
 // With the `alloc` feature, container values cannot be used inside const
