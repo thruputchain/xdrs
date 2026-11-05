@@ -137,6 +137,67 @@ fn enum_default_variant_with_payload_roundtrip() {
 }
 
 #[test]
+fn enum_bool_default_variant() {
+    // union switch (bool ok) { case TRUE: unsigned value; default: unsigned code; }
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    #[xdr(discriminant = "bool")]
+    enum BoolResult {
+        Ok {
+            value: u32,
+        } = 1,
+        #[xdr(default_variant)]
+        Err {
+            ok: bool,
+            code: u32,
+        },
+    }
+
+    TXS::check_codec(&BoolResult::Ok { value: 7 }, &hex!("0000000100000007"));
+    CXS::check_codec(&BoolResult::Ok { value: 7 }, &hex!("0107"));
+
+    // FALSE, the one value no case names, lands in the default arm.
+    let val = BoolResult::Err { ok: false, code: 5 };
+    TXS::check_codec(&val, &hex!("0000000000000005"));
+    CXS::check_codec(&val, &hex!("0005"));
+
+    // A bool discriminant is validated before the default arm can absorb it.
+    for bytes in [hex!("0000000200000005"), hex!("ffffffff00000005")] {
+        let err = xdrs::txs::decode::<BoolResult>(&bytes).unwrap_err();
+        #[cfg(feature = "detailed-errors")]
+        assert!(matches!(err, xdrs::ReadError::BadBool), "{err:?}");
+        let _ = err;
+    }
+    assert!(xdrs::cxs::decode::<BoolResult>(&hex!("0205")).is_err());
+}
+
+#[test]
+fn enum_u32_default_variant() {
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    #[xdr(discriminant = "u32")]
+    enum U32Default {
+        Known = 0,
+        #[xdr(default_variant)]
+        Other(u32),
+    }
+
+    // The stored value is encoded as an unsigned int, as C++ does.
+    CXS::check_codec(&U32Default::Other(32), &hex!("20"));
+    CXS::check_codec(&U32Default::Other(0x8000_0000), &hex!("bf00000080"));
+    TXS::check_codec(&U32Default::Other(u32::MAX), &hex!("ffffffff"));
+
+    // Values whose u32 and i32 CXS encodings differ round-trip.
+    for d in [1u32, 32, 0x7fff_ffff, 0x8000_0000, u32::MAX] {
+        let val = U32Default::Other(d);
+        let cxs = xdrs::cxs::encode(&val).unwrap();
+        assert_eq!(xdrs::cxs::decode::<U32Default>(&cxs).unwrap(), val, "{d}");
+        let txs = xdrs::txs::encode(&val).unwrap();
+        assert_eq!(xdrs::txs::decode::<U32Default>(&txs).unwrap(), val, "{d}");
+    }
+}
+
+#[test]
 fn enum_default_variant_explicit_tag() {
     // Left implicit, `Other`'s tag would be Bad + 1 = 0, colliding with Ok.
     #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
@@ -157,6 +218,78 @@ fn enum_default_variant_explicit_tag() {
     let other = Reply::Other(5);
     TXS::check_codec(&other, &hex!("00000005"));
     CXS::check_codec(&other, &hex!("05"));
+}
+
+#[test]
+fn enum_bool_default_variant_explicit_tag() {
+    // A default variant with both a bool discriminant field and an explicit
+    // tag, as x23c generates for a bool-switched union's default arm.
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    #[xdr(discriminant = "bool")]
+    enum Tagged {
+        Yes {
+            v: u32,
+        } = 1,
+        #[xdr(default_variant)]
+        No {
+            ok: bool,
+        } = i32::MIN,
+    }
+
+    TXS::check_codec(&Tagged::Yes { v: 3 }, &hex!("0000000100000003"));
+    TXS::check_codec(&Tagged::No { ok: false }, &hex!("00000000"));
+    CXS::check_codec(&Tagged::No { ok: false }, &hex!("00"));
+    assert!(xdrs::txs::decode::<Tagged>(&hex!("00000002")).is_err());
+}
+
+#[test]
+fn enum_unsigned_discriminant_matches_cxx() {
+    // union switch (unsigned int k) { case 32: int v; case 5: void;
+    //                                 case 0x80000000: void; }
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    #[xdr(discriminant = "u32")]
+    enum Unsigned {
+        A(i32) = 32,
+        B = 5,
+        C = 0x8000_0000u32 as i32,
+    }
+
+    // The CXS bytes x23's C++ serializer writes for this union.
+    CXS::check_codec(&Unsigned::A(1), &hex!("2001"));
+    CXS::check_codec(&Unsigned::B, &hex!("05"));
+    CXS::check_codec(&Unsigned::C, &hex!("bf00000080"));
+    // TXS encodes signed and unsigned ints alike.
+    TXS::check_codec(&Unsigned::A(1), &hex!("0000002000000001"));
+    TXS::check_codec(&Unsigned::C, &hex!("80000000"));
+
+    // The same union switched on int keeps the signed encoding.
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    enum Signed {
+        A(i32) = 32,
+    }
+    CXS::check_codec(&Signed::A(1), &hex!("3f2001"));
+}
+
+#[test]
+fn enum_discriminant_through_type_alias() {
+    // The switch type may be an alias, even one from another crate: rustc
+    // resolves it.
+    type Index = u32;
+
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    #[xdr(discriminant = "Index")]
+    enum ByIndex {
+        A = 32,
+        #[xdr(default_variant)]
+        Other(Index),
+    }
+
+    CXS::check_codec(&ByIndex::A, &hex!("20"));
+    CXS::check_codec(&ByIndex::Other(33), &hex!("21"));
 }
 
 // We don't support enums with mixed implicit/explicit variants

@@ -13,6 +13,8 @@ use alloc::vec::Vec;
 
 use core::mem::MaybeUninit as MU;
 
+use crate::discrim::DiscriminantEncoding;
+
 /// A reader that can produce XDR values, some borrowed with lifetime `'r`.
 ///
 /// This trait provides methods for reading XDR primitive types from an
@@ -67,6 +69,16 @@ pub unsafe trait Reader<'r>: Sized {
             0 => Ok(false),
             1 => Ok(true),
             _ => Err(ReadError::bad_bool()),
+        }
+    }
+
+    /// Reads a union discriminant encoded as `encoding`, returning the
+    /// union's `i32` tag.
+    fn read_discriminant(&mut self, encoding: DiscriminantEncoding) -> ReadResult<i32> {
+        match encoding {
+            DiscriminantEncoding::Signed => self.read_i32(),
+            DiscriminantEncoding::Unsigned => self.read_u32().map(|d| d as i32),
+            DiscriminantEncoding::Bool => self.read_bool().map(i32::from),
         }
     }
 

@@ -145,6 +145,25 @@ const _: () = assert!(matches!(cxs_max::<WithTaggedDefault>(), Some(5)));
 // TXS: max(4 + 4, 4, 4).
 const _: () = assert!(matches!(txs_max::<WithTaggedDefault>(), Some(8)));
 
+// The bound follows the switch type's encoding: 32 takes 1 byte as a CXS
+// unsigned int and 2 as a signed one.
+#[derive(xdrs::ConstWriteXDR, xdrs::ConstXDRSize)]
+#[repr(i32)]
+#[xdr(discriminant = "u32")]
+enum UnsignedSmall {
+    A = 32,
+}
+
+#[derive(xdrs::ConstWriteXDR, xdrs::ConstXDRSize)]
+#[repr(i32)]
+enum SignedSmall {
+    A = 32,
+}
+
+const _: () = assert!(matches!(cxs_max::<UnsignedSmall>(), Some(1)));
+const _: () = assert!(matches!(cxs_max::<SignedSmall>(), Some(2)));
+const _: () = assert!(matches!(txs_max::<UnsignedSmall>(), Some(4)));
+
 // -- Bounded byte containers keep exact bounds --
 
 #[derive(xdrs::ConstWriteXDR, xdrs::ConstXDRSize)]

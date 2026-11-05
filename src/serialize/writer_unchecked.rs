@@ -13,6 +13,8 @@
 //! `WriteResult` plumbing and per-write bounds checks of
 //! [`Writer`](crate::serialize::writer::Writer) are unwanted overhead.
 
+use crate::discrim::DiscriminantEncoding;
+
 /// Something that can write XDR values to a serialization format, without
 /// runtime checks.
 ///
@@ -114,6 +116,23 @@ pub trait WriterUnchecked<F> {
     ///
     /// The underlying buffer must have space for the encoded form.
     unsafe fn write_bool(&mut self, b: bool);
+
+    /// Writes a union's `i32` tag `d` as a discriminant encoded as
+    /// `encoding`.
+    ///
+    /// # Safety
+    ///
+    /// The underlying buffer must have space for the encoded form.
+    unsafe fn write_discriminant(&mut self, d: i32, encoding: DiscriminantEncoding) {
+        // SAFETY: forwarded caller contract.
+        unsafe {
+            match encoding {
+                DiscriminantEncoding::Signed => self.write_i32(d),
+                DiscriminantEncoding::Unsigned => self.write_u32(d as u32),
+                DiscriminantEncoding::Bool => self.write_bool(d != 0),
+            }
+        }
+    }
 
     /// Writes a 32-bit IEEE 754 floating-point value.
     ///

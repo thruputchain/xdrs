@@ -1537,6 +1537,46 @@ fn default_variant_named_payload_roundtrips() {
     assert_eq!(txs_decoded, DPN_VAL);
 }
 
+// A bool discriminant in the default variant goes through the same const
+// encoder, cast to i32.
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[xdr(discriminant = "bool")]
+#[allow(dead_code)]
+enum DefaultBoolDiscrim {
+    Yes {
+        value: u32,
+    } = 1,
+
+    #[xdr(default_variant)]
+    No {
+        ok: bool,
+        code: u32,
+    },
+}
+
+const DBD_VAL: DefaultBoolDiscrim = DefaultBoolDiscrim::No { ok: false, code: 5 };
+
+const DBD_CXS: [u8; DBD_VAL.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ DBD_VAL.const_cxs_size() }>::new();
+    DBD_VAL.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const DBD_TXS: [u8; DBD_VAL.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ DBD_VAL.const_txs_size() }>::new();
+    DBD_VAL.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn default_variant_bool_discriminant_const_matches_runtime() {
+    assert_eq!(&DBD_CXS, cxs_runtime_encode(&DBD_VAL).as_slice());
+    assert_eq!(&DBD_TXS, txs_runtime_encode(&DBD_VAL).as_slice());
+    let txs_decoded: DefaultBoolDiscrim = xdrs::txs::decode(&DBD_TXS).unwrap();
+    assert_eq!(txs_decoded, DBD_VAL);
+}
+
 // A default variant with an explicit tag still sizes and writes its stored
 // value: i32::MAX takes 5 bytes in CXS, where the tag 1 would take 1.
 #[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
@@ -1573,6 +1613,43 @@ fn default_variant_explicit_tag_const_matches_runtime() {
     assert_eq!(txs_decoded, DT_VAL);
     let cxs_decoded: DefaultTagged = xdrs::cxs::decode(&DT_CXS).unwrap();
     assert_eq!(cxs_decoded, DT_VAL);
+}
+
+// An unsigned switch type goes through the const encoder unsigned too.
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[xdr(discriminant = "u32")]
+#[allow(dead_code)]
+enum UnsignedDiscrim {
+    A(i32) = 32,
+    #[xdr(default_variant)]
+    Other(u32),
+}
+
+const UD_CASE: UnsignedDiscrim = UnsignedDiscrim::A(1);
+const UD_OTHER: UnsignedDiscrim = UnsignedDiscrim::Other(0x8000_0000);
+
+const UD_CASE_CXS: [u8; UD_CASE.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ UD_CASE.const_cxs_size() }>::new();
+    UD_CASE.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const UD_OTHER_CXS: [u8; UD_OTHER.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ UD_OTHER.const_cxs_size() }>::new();
+    UD_OTHER.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn unsigned_discriminant_const_matches_runtime() {
+    // The bytes C++ writes for these values.
+    assert_eq!(UD_CASE_CXS, [0x20, 0x01]);
+    assert_eq!(UD_OTHER_CXS, [0xbf, 0x00, 0x00, 0x00, 0x80]);
+    assert_eq!(&UD_CASE_CXS, cxs_runtime_encode(&UD_CASE).as_slice());
+    assert_eq!(&UD_OTHER_CXS, cxs_runtime_encode(&UD_OTHER).as_slice());
+    let decoded: UnsignedDiscrim = xdrs::cxs::decode(&UD_OTHER_CXS).unwrap();
+    assert_eq!(decoded, UD_OTHER);
 }
 
 // -- Derive macro tests: VecM / BytesM / StringM containers --

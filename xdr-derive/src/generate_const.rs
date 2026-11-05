@@ -1,3 +1,4 @@
+use crate::attrs::discriminant_encoding;
 use crate::util::*;
 use darling::*;
 use proc_macro2::TokenStream;
@@ -206,8 +207,10 @@ fn max_size_impl_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<
     check_enum_repr(input)?;
     check_variants(input, item, has_xdr_discrim_type(input))?;
 
-    let cxs_bound = trait_max_variants_expr(item, Format::Cxs)?;
-    let txs_bound = trait_max_variants_expr(item, Format::Txs)?;
+    let krate = Attrs::from_derive_input(input)?.crate_path();
+    let encoding = discriminant_encoding(input, quote! { #krate::XDRDiscriminant })?;
+    let cxs_bound = trait_max_variants_expr(item, Format::Cxs, &encoding)?;
+    let txs_bound = trait_max_variants_expr(item, Format::Txs, &encoding)?;
     Ok(max_size_impls(input, cxs_bound, txs_bound))
 }
 
@@ -249,13 +252,17 @@ fn trait_max_fields_expr(fields: &syn::Fields, fmt: Format) -> Result<TokenStrea
 /// Folds the worst-case size bound of an enum: the maximum over its variants
 /// of (discriminant size + field bounds). Uninhabited enums bound to
 /// `Some(0)`; a single unbounded variant makes the whole bound `None`.
-fn trait_max_variants_expr(item: &syn::DataEnum, fmt: Format) -> Result<TokenStream> {
+fn trait_max_variants_expr(
+    item: &syn::DataEnum,
+    fmt: Format,
+    encoding: &TokenStream,
+) -> Result<TokenStream> {
     let mod_path = fmt.const_writer_path();
     let variant_bounds = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| trait_max_variant_expr(i, v, fmt))
+        .map(|(i, v)| trait_max_variant_expr(i, v, fmt, encoding))
         .collect::<Result<Vec<_>>>()?;
 
     let mut bounds = variant_bounds.into_iter();
@@ -268,7 +275,12 @@ fn trait_max_variants_expr(item: &syn::DataEnum, fmt: Format) -> Result<TokenStr
     Ok(acc)
 }
 
-fn trait_max_variant_expr(index: usize, v: &syn::Variant, fmt: Format) -> Result<TokenStream> {
+fn trait_max_variant_expr(
+    index: usize,
+    v: &syn::Variant,
+    fmt: Format,
+    encoding: &TokenStream,
+) -> Result<TokenStream> {
     let is_default_arm = variant_is_default(v);
     let mod_path = fmt.const_writer_path();
     let trait_path = fmt.trait_path();
@@ -276,11 +288,11 @@ fn trait_max_variant_expr(index: usize, v: &syn::Variant, fmt: Format) -> Result
     let variant_idx = index as i32;
     let discrim_bound = if is_default_arm {
         // The default arm's discriminant is a runtime value.
-        quote! { #mod_path::max_size_i32() }
+        quote! { #mod_path::max_size_discriminant(#encoding) }
     } else if let Some((_, d)) = v.discriminant.as_ref() {
-        quote! { #mod_path::size_i32(#d) }
+        quote! { #mod_path::size_discriminant(#d, #encoding) }
     } else {
-        quote! { #mod_path::size_i32(#variant_idx) }
+        quote! { #mod_path::size_discriminant(#variant_idx, #encoding) }
     };
 
     let mut acc = quote! { ::core::option::Option::Some(#discrim_bound) };
@@ -658,33 +670,35 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let krate = Attrs::from_derive_input(input)?.crate_path();
+    let encoding = discriminant_encoding(input, quote! { #krate::XDRDiscriminant })?;
 
     let cxs_arms = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| const_write_variant(i, v, input, Format::Cxs))
+        .map(|(i, v)| const_write_variant(i, v, input, Format::Cxs, &encoding))
         .collect::<Result<Vec<_>>>()?;
 
     let txs_arms = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| const_write_variant(i, v, input, Format::Txs))
+        .map(|(i, v)| const_write_variant(i, v, input, Format::Txs, &encoding))
         .collect::<Result<Vec<_>>>()?;
 
     let cxs_size_arms = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| const_size_variant(i, v, input, Format::Cxs))
+        .map(|(i, v)| const_size_variant(i, v, input, Format::Cxs, &encoding))
         .collect::<Result<Vec<_>>>()?;
 
     let txs_size_arms = item
         .variants
         .iter()
         .enumerate()
-        .map(|(i, v)| const_size_variant(i, v, input, Format::Txs))
+        .map(|(i, v)| const_size_variant(i, v, input, Format::Txs, &encoding))
         .collect::<Result<Vec<_>>>()?;
 
     let buf = fresh_buf_size_ident(&input.generics);
@@ -984,8 +998,9 @@ mod tests {
 
         let toks = normalize_tokens(&super::const_xdr_size(&input).unwrap().to_string());
         assert!(toks.contains("max_size_max("));
-        assert!(toks.contains("size_i32(7)"));
-        assert!(toks.contains("size_i32(9)"));
+        // Each case's discriminant is sized by the switch type, i32 by default.
+        assert!(toks.contains("size_discriminant(7,<i32as::xdrs::XDRDiscriminant>::ENCODING)"));
+        assert!(toks.contains("size_discriminant(9,<i32as::xdrs::XDRDiscriminant>::ENCODING)"));
         assert!(toks.contains("<u64ascxs::ConstMaxSize>::MAX_SIZE"));
     }
 
@@ -1001,7 +1016,7 @@ mod tests {
         };
 
         let toks = normalize_tokens(&super::const_xdr_size(&input).unwrap().to_string());
-        assert!(toks.contains("max_size_i32()"));
+        assert!(toks.contains("max_size_discriminant(<i32as::xdrs::XDRDiscriminant>::ENCODING)"));
         // The default arm's first field holds the discriminant; it must not
         // be folded again as a payload field.
         assert!(!toks.contains("<i32ascxs::ConstMaxSize>::MAX_SIZE"));
@@ -1058,6 +1073,7 @@ fn const_write_variant(
     v: &syn::Variant,
     input: &syn::DeriveInput,
     fmt: Format,
+    encoding: &TokenStream,
 ) -> Result<TokenStream> {
     let is_default_arm = variant_is_default(v);
     let var_ident = &v.ident;
@@ -1066,14 +1082,14 @@ fn const_write_variant(
 
     let variant_idx = index as i32;
     let discriminant = if is_default_arm {
-        quote! { *_self_0 }
+        default_discriminant_i32(v)
     } else if let Some((_, d)) = v.discriminant.as_ref() {
         quote! { #d }
     } else {
         quote! { #variant_idx }
     };
 
-    let write_discrim = quote! { w.write_i32(#discriminant); };
+    let write_discrim = quote! { w.write_discriminant(#discriminant, #encoding); };
 
     let field_writes: Vec<_> = v
         .fields
@@ -1106,6 +1122,7 @@ fn const_size_variant(
     v: &syn::Variant,
     input: &syn::DeriveInput,
     fmt: Format,
+    encoding: &TokenStream,
 ) -> Result<TokenStream> {
     let is_default_arm = variant_is_default(v);
     let var_ident = &v.ident;
@@ -1119,14 +1136,14 @@ fn const_size_variant(
 
     let variant_idx = index as i32;
     let discriminant = if is_default_arm {
-        quote! { *_self_0 }
+        default_discriminant_i32(v)
     } else if let Some((_, d)) = v.discriminant.as_ref() {
         quote! { #d }
     } else {
         quote! { #variant_idx }
     };
 
-    let discrim_size = quote! { #mod_path::size_i32(#discriminant) };
+    let discrim_size = quote! { #mod_path::size_discriminant(#discriminant, #encoding) };
 
     let field_sizes: Vec<_> = v
         .fields
@@ -1508,4 +1525,22 @@ fn is_phantom_data(ty: &syn::Type) -> bool {
 
 fn is_infallible(ty: &syn::Type) -> bool {
     path_segment(ty, "Infallible").is_some()
+}
+
+/// The union's `i32` tag held by a default variant's first field, usable in
+/// a `const fn`.  Trait methods cannot be called there, so a field of any
+/// other switch type (`u32`, `bool`, or an alias of one) is cast with
+/// `as i32`; an enum newtype cannot be, so the const writers do not support
+/// a default arm switched on one.
+fn default_discriminant_i32(v: &syn::Variant) -> TokenStream {
+    let is_i32 = v
+        .fields
+        .iter()
+        .next()
+        .is_some_and(|f| matches!(&f.ty, syn::Type::Path(p) if p.path.is_ident("i32")));
+    if is_i32 {
+        quote! { *_self_0 }
+    } else {
+        quote! { (*_self_0 as i32) }
+    }
 }
