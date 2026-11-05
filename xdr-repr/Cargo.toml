@@ -32,7 +32,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = []
 heapless = ["dep:heapless"] # schema traits for types from the `heapless` package
 ns = [] # C++-like namespaces for XDR specs
-int128 = []
+int128 = [] # no-op: i128/u128 type specs are always available; kept for compatibility
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

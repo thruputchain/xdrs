@@ -13,7 +13,7 @@ rustup toolchain install \
     --no-self-update
 
 # check the root library without alloc
-cargo test --locked -F int128
+cargo test --locked
 
 # run the same malformed-input corpus with compact ReadError diagnostics
 cargo test --locked --no-default-features
@@ -21,13 +21,10 @@ cargo test --locked --no-default-features --features derive --test read_errors
 
 # check derive macros without alloc (const writers for VecM/BytesM/StringM
 # are only exercised with non-empty static data in no-alloc builds)
-cargo test --locked -F derive,int128
+cargo test --locked -F derive
 
 # check feature "permissive"
-cargo test --locked -F permissive,int128 --test ints
-
-# check feature "int128"
-cargo test --locked -F int128 --test ints
+cargo test --locked -F permissive --test ints
 
 # check everything else
 cargo test --locked --workspace --all-features
@@ -56,8 +53,8 @@ RUSTDOCFLAGS="--cfg docsrs" \
     cargo +"${XDRS_NIGHTLY_TOOLCHAIN}" doc --locked --workspace --all-features --no-deps
 
 # Test Documentation Examples
-cargo test --locked --doc -p thruput-xdr-repr --features "ns,int128"
-cargo test --locked --doc --features "alloc,derive,repr,ns,int128"
+cargo test --locked --doc -p thruput-xdr-repr --features "ns"
+cargo test --locked --doc --features "alloc,derive,repr,ns"
 
 cargo clippy --locked --workspace --all-features
 

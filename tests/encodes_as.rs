@@ -225,11 +225,8 @@ fn every_write_xdr_type_stands_in_for_itself() {
     is_self::<Batch>();
     is_self::<Wrap<Tx>>();
 
-    #[cfg(feature = "int128")]
-    {
-        is_self::<i128>();
-        is_self::<u128>();
-    }
+    is_self::<i128>();
+    is_self::<u128>();
 
     #[cfg(feature = "heapless")]
     {

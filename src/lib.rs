@@ -54,9 +54,10 @@
 //!
 //! ### Extended types
 //!
-//! - **`int128`**: Enables convenient extensions to the XDR specification:
-//!   support for `i128` and `u128`. These types are encoded as two 64-bit
-//!   integers (high bits and low bits).
+//! `i128` and `u128` are supported unconditionally as an extension to the
+//! XDR specification. They are encoded as two 64-bit integers (high bits and
+//! low bits). The `int128` feature is a no-op kept for compatibility with
+//! manifests that still request it.
 //!
 //! ### Optional dependencies
 //!
@@ -139,8 +140,6 @@ pub use xdr_derive::{ConstWriteXDR, ConstXDRSize, ReadXDR, WriteXDR};
 #[cfg_attr(docsrs, doc(cfg(all(feature = "derive", feature = "repr"))))]
 pub use xdr_derive::XDR;
 
-#[cfg(feature = "int128")]
-#[cfg_attr(docsrs, doc(cfg(feature = "int128")))]
 mod int128;
 
 pub use xdr_common::*;
