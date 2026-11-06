@@ -1080,31 +1080,25 @@ fn const_write_variant(
     let ty_ident = &input.ident;
     let var_bindings = const_var_bindings(&v.fields);
 
-    let variant_idx = index as i32;
-    let discriminant = if is_default_arm {
-        default_discriminant_i32(v)
-    } else if let Some((_, d)) = v.discriminant.as_ref() {
-        quote! { #d }
+    // A default arm's discriminant is its first field, written below like any
+    // other field; see `variant_discriminant`.
+    let write_discrim = if is_default_arm {
+        quote! {}
     } else {
-        quote! { #variant_idx }
+        let discriminant = variant_discriminant(index, v);
+        quote! { w.write_discriminant(#discriminant, #encoding); }
     };
-
-    let write_discrim = quote! { w.write_discriminant(#discriminant, #encoding); };
 
     let field_writes: Vec<_> = v
         .fields
         .iter()
         .enumerate()
         .map(|(i, field)| {
-            if is_default_arm && i == 0 {
-                Ok(quote! {})
-            } else {
-                let attrs = Attrs::from_field(field)?;
-                attrs.check_no_conversion(field)?;
-                let bind = tmp_binding(i);
-                let ty = &field.ty;
-                const_write_binding_expr(&bind, ty, fmt)
-            }
+            let attrs = Attrs::from_field(field)?;
+            attrs.check_no_conversion(field)?;
+            let bind = tmp_binding(i);
+            let ty = &field.ty;
+            const_write_binding_expr(&bind, ty, fmt)
         })
         .collect::<Result<Vec<_>>>()?;
     let write_fields = quote! { #(#field_writes)* };
@@ -1134,31 +1128,25 @@ fn const_size_variant(
         Format::Txs => quote! { txs::const_writer },
     };
 
-    let variant_idx = index as i32;
-    let discriminant = if is_default_arm {
-        default_discriminant_i32(v)
-    } else if let Some((_, d)) = v.discriminant.as_ref() {
-        quote! { #d }
+    // As in `const_write_variant`, a default arm's discriminant is sized as
+    // its first field.
+    let discrim_size = if is_default_arm {
+        quote! { 0 }
     } else {
-        quote! { #variant_idx }
+        let discriminant = variant_discriminant(index, v);
+        quote! { #mod_path::size_discriminant(#discriminant, #encoding) }
     };
-
-    let discrim_size = quote! { #mod_path::size_discriminant(#discriminant, #encoding) };
 
     let field_sizes: Vec<_> = v
         .fields
         .iter()
         .enumerate()
         .map(|(i, field)| {
-            if is_default_arm && i == 0 {
-                Ok(quote! { 0 })
-            } else {
-                let attrs = Attrs::from_field(field)?;
-                attrs.check_no_conversion(field)?;
-                let bind = tmp_binding(i);
-                let ty = &field.ty;
-                const_size_binding_expr(&bind, ty, fmt)
-            }
+            let attrs = Attrs::from_field(field)?;
+            attrs.check_no_conversion(field)?;
+            let bind = tmp_binding(i);
+            let ty = &field.ty;
+            const_size_binding_expr(&bind, ty, fmt)
         })
         .collect::<Result<Vec<_>>>()?;
     let fields_size = if field_sizes.is_empty() {
@@ -1527,20 +1515,21 @@ fn is_infallible(ty: &syn::Type) -> bool {
     path_segment(ty, "Infallible").is_some()
 }
 
-/// The union's `i32` tag held by a default variant's first field, usable in
-/// a `const fn`.  Trait methods cannot be called there, so a field of any
-/// other switch type (`u32`, `bool`, or an alias of one) is cast with
-/// `as i32`; an enum newtype cannot be, so the const writers do not support
-/// a default arm switched on one.
-fn default_discriminant_i32(v: &syn::Variant) -> TokenStream {
-    let is_i32 = v
-        .fields
-        .iter()
-        .next()
-        .is_some_and(|f| matches!(&f.ty, syn::Type::Path(p) if p.path.is_ident("i32")));
-    if is_i32 {
-        quote! { *_self_0 }
+/// The `i32` discriminant of a variant that isn't the default arm: its
+/// explicit value, or else its index.
+///
+/// A default arm has no discriminant of its own. Its first field holds the
+/// wire discriminant as a value of the switch type, so the const writers
+/// write and size that field like any other: a primitive through its writer
+/// method, any other type through its own `const_write_*` and `const_*_size`.
+/// That gives the bytes `write_discriminant` would for the switch type's
+/// encoding, since a switch type encodes as itself. A `const fn` can't call
+/// `XDRDiscriminant::discriminant` to get the `i32` instead.
+fn variant_discriminant(index: usize, v: &syn::Variant) -> TokenStream {
+    if let Some((_, d)) = v.discriminant.as_ref() {
+        quote! { #d }
     } else {
-        quote! { (*_self_0 as i32) }
+        let variant_idx = index as i32;
+        quote! { #variant_idx }
     }
 }
