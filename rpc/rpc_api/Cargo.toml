@@ -4,7 +4,7 @@ name = "thruput-rpc-api"
 # boundary shared by rpc_driver and generated protocol bindings, and it
 # releases only when the boundary itself changes. See "Versioning and
 # releases" in the README.
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version.workspace = true
 authors = ["Thruput Team"]

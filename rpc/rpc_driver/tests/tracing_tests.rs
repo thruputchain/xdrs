@@ -4,10 +4,9 @@ use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::{
-    CallBuf, ProgVers, RpcError, RpcServer, connect_client, handler::RpcHandler,
-    handler::ServiceMap,
+    CallBuf, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer, connect_client,
+    handler::RpcHandler, handler::ServiceMap,
 };
 use tokio::net::TcpListener;
 use tracing_subscriber::fmt::format::FmtSpan;
@@ -76,14 +75,14 @@ async fn wait_for(buf: &CaptureBuffer, needle: &str) {
 
 struct EchoService;
 
-#[async_trait]
 impl RpcHandler for EchoService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        match proc {
-            0 => Ok(vec![]),
-            1 => Ok(data.to_vec()),
-            _ => Err(RpcError::InvalidProcedure),
-        }
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = match proc {
+            0 => reply,
+            1 => reply.with(data),
+            _ => return Err(RpcError::InvalidProcedure),
+        };
+        Ok(Box::pin(async move { Ok(reply) }))
     }
 
     fn prog_vers(&self) -> ProgVers {

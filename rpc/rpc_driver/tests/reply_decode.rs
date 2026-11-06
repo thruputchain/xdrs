@@ -2,9 +2,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::{
-    CallBuf, ProgVers, RpcError, RpcHandler, RpcSender, RpcServer, ServiceMap,
+    CallBuf, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcHandler, RpcSender, RpcServer, ServiceMap,
 };
 use tokio::sync::Notify;
 
@@ -38,20 +37,27 @@ struct Echo {
     release: Arc<Notify>,
 }
 
-#[async_trait]
 impl RpcHandler for Echo {
     fn prog_vers(&self) -> ProgVers {
         PROG
     }
-    async fn dispatch(&self, proc: u32, bytes: &[u8]) -> Result<Vec<u8>, RpcError> {
-        if proc == 1 {
-            self.entered.notify_one();
-            self.release.notified().await;
-        }
-        if proc == 2 {
-            return Err(RpcError::InvalidProcedure);
-        }
-        Ok(bytes.to_vec())
+    fn dispatch(
+        &self,
+        proc: u32,
+        bytes: &[u8],
+        reply: ReplyBuf,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(bytes);
+        Ok(Box::pin(async move {
+            if proc == 1 {
+                self.entered.notify_one();
+                self.release.notified().await;
+            }
+            if proc == 2 {
+                return Err(RpcError::InvalidProcedure);
+            }
+            Ok(reply)
+        }))
     }
 }
 

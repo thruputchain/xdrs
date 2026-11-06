@@ -4,9 +4,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
 use thruput_rpc_driver::loopback::{LoopbackLink, LoopbackSender};
-use thruput_rpc_driver::{CallBuf, ProgVers, RpcError, RpcSender, ServiceMap, handler::RpcHandler};
+use thruput_rpc_driver::{
+    CallBuf, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcSender, ServiceMap, handler::RpcHandler,
+};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 
@@ -15,12 +16,14 @@ const ECHO: ProgVers = ProgVers::new(100, 1);
 /// Echoes on proc 1; proc 2 fails with an error that has no wire encoding.
 struct EchoService;
 
-#[async_trait]
 impl RpcHandler for EchoService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
-            1 => Ok(data.to_vec()),
-            2 => Err(RpcError::PoolClosed),
+            1 => {
+                let reply = reply.with(data);
+                Ok(Box::pin(async move { Ok(reply) }))
+            }
+            2 => Ok(Box::pin(async { Err(RpcError::PoolClosed) })),
             _ => Err(RpcError::InvalidProcedure),
         }
     }
@@ -43,11 +46,10 @@ struct RecordingService {
     entered: mpsc::UnboundedSender<(u32, Vec<u8>)>,
 }
 
-#[async_trait]
 impl RpcHandler for RecordingService {
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         let _ = self.entered.send((proc, data.to_vec()));
-        Ok(Vec::new())
+        Ok(Box::pin(async move { Ok(reply) }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -67,12 +69,19 @@ const CALLBACK: ProgVers = ProgVers::new(300, 1);
 /// Answers by echoing its input through the peer's echo service.
 struct CallbackService;
 
-#[async_trait]
 impl RpcHandler for CallbackService {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let peer = thruput_rpc_driver::peer();
-        let reply = peer.send_call(ECHO, 1, call_with(&*peer, data)).await?;
-        Ok(reply.to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: ReplyBuf,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let data = data.to_vec();
+        Ok(Box::pin(async move {
+            let peer = thruput_rpc_driver::peer();
+            let echoed = peer.send_call(ECHO, 1, call_with(&*peer, &data)).await?;
+            Ok(reply.with(&echoed))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -91,10 +100,14 @@ const PANICKER: ProgVers = ProgVers::new(400, 1);
 /// Panics on every call.
 struct PanickingService;
 
-#[async_trait]
 impl RpcHandler for PanickingService {
-    async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        panic!("handler bug");
+    fn dispatch(
+        &self,
+        _proc: u32,
+        _data: &[u8],
+        _reply: ReplyBuf,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        Ok(Box::pin(async { panic!("handler bug") }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -110,16 +123,22 @@ struct PoisoningService {
     link: Arc<Mutex<Option<LoopbackLink>>>,
 }
 
-#[async_trait]
 impl RpcHandler for PoisoningService {
-    async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        self.link
-            .lock()
-            .unwrap()
-            .as_ref()
-            .expect("link installed")
-            .poison();
-        Ok(b"too late".to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        _data: &[u8],
+        reply: ReplyBuf,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        Ok(Box::pin(async move {
+            self.link
+                .lock()
+                .unwrap()
+                .as_ref()
+                .expect("link installed")
+                .poison();
+            Ok(reply.with(b"too late"))
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -143,12 +162,18 @@ impl Drop for PanicOnDrop {
 /// Parks forever holding a value whose destructor panics.
 struct SuspendingService;
 
-#[async_trait]
 impl RpcHandler for SuspendingService {
-    async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let _guard = PanicOnDrop;
-        std::future::pending::<()>().await;
-        Ok(Vec::new())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        _data: &[u8],
+        reply: ReplyBuf,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        Ok(Box::pin(async move {
+            let _guard = PanicOnDrop;
+            std::future::pending::<()>().await;
+            Ok(reply)
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -437,14 +462,21 @@ impl Drop for SetOnDrop {
     }
 }
 
-#[async_trait]
 impl RpcHandler for GatedService {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-        let guard = SetOnDrop(self.dropped.clone());
-        let _ = self.entered.send(());
-        self.permits.acquire().await.unwrap().forget();
-        std::mem::forget(guard);
-        Ok(data.to_vec())
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: ReplyBuf,
+    ) -> Result<RpcFuture<'_>, RpcError> {
+        let reply = reply.with(data);
+        Ok(Box::pin(async move {
+            let guard = SetOnDrop(self.dropped.clone());
+            let _ = self.entered.send(());
+            self.permits.acquire().await.unwrap().forget();
+            std::mem::forget(guard);
+            Ok(reply)
+        }))
     }
 
     fn prog_vers(&self) -> ProgVers {
@@ -582,4 +614,45 @@ async fn concurrent_calls_on_a_multi_thread_runtime_each_get_their_reply() {
     for call in calls {
         call.await.unwrap();
     }
+}
+
+const SYNC_FAILING: ProgVers = ProgVers::new(800, 1);
+
+/// Fails in `dispatch` itself, before any future exists: proc 1 panics,
+/// proc 2 rejects its arguments. Proc 0 echoes.
+struct SyncFailureService;
+
+impl RpcHandler for SyncFailureService {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
+        match proc {
+            0 => {
+                let reply = reply.with(data);
+                Ok(Box::pin(async move { Ok(reply) }))
+            }
+            1 => panic!("intentional panic while decoding"),
+            2 => Err(RpcError::GarbageArguments),
+            _ => Err(RpcError::InvalidProcedure),
+        }
+    }
+
+    fn prog_vers(&self) -> ProgVers {
+        SYNC_FAILING
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn failures_in_dispatch_itself_reach_the_caller_and_the_link_survives() {
+    let mut services = ServiceMap::new();
+    services.add_service(Box::new(SyncFailureService));
+    let (_link, client) = client_to(services);
+
+    let panicked = client.send_call(SYNC_FAILING, 1, client.call_buf()).await;
+    assert_eq!(panicked, Err(RpcError::SystemError));
+    let garbage = client.send_call(SYNC_FAILING, 2, client.call_buf()).await;
+    assert_eq!(garbage, Err(RpcError::GarbageArguments));
+    let reply = client
+        .send_call(SYNC_FAILING, 0, call_with(&client, b"still up"))
+        .await
+        .unwrap();
+    assert_eq!(reply, b"still up");
 }

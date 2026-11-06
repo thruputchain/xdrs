@@ -3,12 +3,13 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::Instrument;
 
+#[cfg(test)]
+use crate::rpc_error::DEFAULT_OPAQUE_AUTH;
 use crate::{
-    ProgVers,
+    ProgVers, RpcError,
     connection::{ConnectionHandle, RpcSender},
     context::with_peer,
-    handler::ServiceMap,
-    rpc_error::DEFAULT_OPAQUE_AUTH,
+    handler::{ReplyBuf, RpcFuture, ServiceMap},
     rpc_msg,
     tcp_connection::ReadHalf,
 };
@@ -99,15 +100,6 @@ fn send_response(
     client_cbs
         .send_reply(result?)
         .map_err(ReadTaskError::WriteError)
-}
-
-/// Copy into reusable storage when available. Suspended handlers and caller
-/// replies need owned data that outlives the socket read buffer.
-#[inline]
-fn copy_record(bytes: &[u8]) -> Vec<u8> {
-    let mut buf = crate::connection::take_buffer();
-    buf.extend_from_slice(bytes);
-    buf
 }
 
 /// The CALL header fields dispatch needs.
@@ -265,40 +257,86 @@ pub(crate) mod dispatch {
 
     // -- Handler futures -----------------------------------------------------
 
-    /// The handler future for one CALL, owning everything it touches.
-    ///
-    /// The record is moved in rather than borrowed, so the future is `'static`
-    /// and can be polled on the read loop and then — if it suspends — moved
-    /// into a task. `Box::pin` gives it a stable address across that move;
-    /// the inner `async_trait` dispatch allocates its own box on first poll
-    /// either way, so the ready path trades a task allocation for this one.
-    type HandlerFuture =
-        Pin<Box<dyn Future<Output = Result<HandlerResult, Panic>> + Send + 'static>>;
     type HandlerResult = Result<Vec<u8>, ReadTaskError>;
+    type InvocationResult = Result<ReplyBuf, RpcError>;
     type Panic = Box<dyn std::any::Any + Send>;
 
-    /// Build the `'static` handler future for one CALL. It runs in the peer
-    /// scope of whoever polls it: the read loop's, or its own task's once it
-    /// suspends.
-    fn handler_future(
-        service_map: &Arc<ServiceMap>,
-        record: Vec<u8>,
+    /// Owns one CALL's handler future, which is boxed and so never moves
+    /// when this guard moves into a task.
+    pub(super) struct HandlerFuture {
+        future: Option<RpcFuture<'static>>,
         xid: u32,
-        vers: ProgVers,
-        rpcvers: u32,
-        proc: u32,
-    ) -> HandlerFuture {
-        let svc = service_map.clone();
-        Box::pin(CatchUnwind(async move {
-            let result = svc.dispatch(rpcvers, vers, proc, &record).await;
-            // The handler no longer borrows its input. Reuse that allocation
-            // for the wire reply instead of discarding it and taking another
-            // buffer from the cache.
-            match result {
-                Ok(response) => prepare_success_response(record, xid, &response),
-                Err(e) => Ok(crate::rpc_error::to_error_record(&e, xid)),
+    }
+
+    /// Detach an invocation from its borrow of the service map.
+    ///
+    /// The read loop holds the map for every inline poll and drop, and a
+    /// suspended handler's task owns a reference to it in [`Detached`], so
+    /// the map outlives the future without a per-call reference count.
+    fn detach(future: RpcFuture<'_>) -> RpcFuture<'static> {
+        // SAFETY: see above; only the lifetime changes.
+        unsafe { std::mem::transmute(future) }
+    }
+
+    impl HandlerFuture {
+        /// Decode and probe under one unwind boundary. Only an invocation
+        /// that suspends survives this call.
+        fn start(
+            xid: u32,
+            dispatch: impl FnOnce() -> Result<RpcFuture<'static>, RpcError>,
+            cx: &mut Context<'_>,
+        ) -> (Self, Poll<HandlerResult>) {
+            let mut handler = Self { future: None, xid };
+            let result = std::panic::catch_unwind(AssertUnwindSafe(|| match dispatch() {
+                Ok(future) => Pin::new(handler.future.insert(future)).poll(cx),
+                Err(error) => Poll::Ready(Err(error)),
+            }));
+            let result = handler.finish_poll(result);
+            (handler, result)
+        }
+
+        fn finish_poll(
+            &mut self,
+            result: Result<Poll<InvocationResult>, Panic>,
+        ) -> Poll<HandlerResult> {
+            let result = match result {
+                Ok(Poll::Pending) => return Poll::Pending,
+                Ok(Poll::Ready(result)) => Ok(result),
+                Err(panic) => Err(panic),
+            };
+            let response = handler_outcome(result, self.xid);
+            // Drop while still in the peer/span context. A destructor panic
+            // overrides a successful result, just as a polling panic does.
+            if let Some(future) = self.future.take()
+                && drop_handler(future, self.xid)
+            {
+                return Poll::Ready(Ok(crate::rpc_error::to_error_record(
+                    &crate::RpcError::SystemError,
+                    self.xid,
+                )));
             }
-        }))
+            Poll::Ready(response)
+        }
+    }
+
+    impl Future for HandlerFuture {
+        type Output = HandlerResult;
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                Pin::new(self.future.as_mut().expect("polled after completion")).poll(cx)
+            }));
+            self.finish_poll(result)
+        }
+    }
+
+    impl Drop for HandlerFuture {
+        fn drop(&mut self) {
+            // Cancellation and admission rejection also run user destructors.
+            if let Some(future) = self.future.take() {
+                drop_handler(future, self.xid);
+            }
+        }
     }
 
     fn discard_panic_payload(panic: Panic, xid: u32, context: &'static str) {
@@ -310,10 +348,15 @@ pub(crate) mod dispatch {
         }
     }
 
-    /// Collapse a handler panic into a `SystemError` reply.
-    pub(super) fn handler_outcome(result: Result<HandlerResult, Panic>, xid: u32) -> HandlerResult {
+    /// Frame a handler's reply, or collapse its error or panic into an
+    /// error reply.
+    pub(super) fn handler_outcome(
+        result: Result<InvocationResult, Panic>,
+        xid: u32,
+    ) -> HandlerResult {
         match result {
-            Ok(r) => r,
+            Ok(Ok(reply)) => frame_reply(reply, xid),
+            Ok(Err(error)) => Ok(crate::rpc_error::to_error_record(&error, xid)),
             Err(panic) => {
                 tracing::error!(xid, "handler panicked");
                 discard_panic_payload(panic, xid, "handler panic");
@@ -325,7 +368,7 @@ pub(crate) mod dispatch {
         }
     }
 
-    pub(super) fn drop_handler(handler: HandlerFuture, xid: u32) -> bool {
+    pub(super) fn drop_handler(handler: RpcFuture<'_>, xid: u32) -> bool {
         match std::panic::catch_unwind(AssertUnwindSafe(|| drop(handler))) {
             Ok(()) => false,
             Err(panic) => {
@@ -379,15 +422,30 @@ pub(crate) mod dispatch {
         }
     }
 
-    /// Counts one suspended handler task until the task is gone, whether it
-    /// finished, was cancelled, or was dropped before its first poll.
-    struct Running(Arc<Suspended>);
+    /// A suspended handler's task, owning the service map its future
+    /// borrows. Counted until the task is gone, whether it finished, was
+    /// cancelled, or was dropped before its first poll. Fields drop in
+    /// declaration order, so the handler goes before the map.
+    struct Detached<F> {
+        future: F,
+        _services: Arc<ServiceMap>,
+        suspended: Arc<Suspended>,
+    }
 
-    impl Drop for Running {
+    impl<F> Drop for Detached<F> {
         fn drop(&mut self) {
-            self.0
+            self.suspended
                 .running
                 .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    impl<F: Future> Future for Detached<F> {
+        type Output = F::Output;
+
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<F::Output> {
+            // SAFETY: structural pin projection; `future` is never moved.
+            unsafe { self.map_unchecked_mut(|d| &mut d.future) }.poll(cx)
         }
     }
 
@@ -505,47 +563,35 @@ pub(crate) mod dispatch {
                 ready = tracing::field::Empty,
             );
 
-            // The handler future must own its record so it can outlive the
-            // read buffer if it suspends.
-            let mut handler = handler_future(
-                service_map,
-                copy_record(&record[payload_offset..]),
-                xid,
-                vers,
-                call.rpcvers,
-                proc,
-            );
-
-            // Probe poll. Synchronous, so a plain span guard is correct —
-            // nothing is awaited while it is held.
+            // Decode straight from the receive buffer, then probe the owned
+            // invocation. Both run in the read loop's peer scope.
             //
-            // The no-op waker is safe because a `Pending` handler is
-            // either cancelled by the cap or polled again by the task below. The `Future`
-            // contract requires a future to re-register the waker it is
-            // given on each poll. Any wake that lands between the two
-            // polls is therefore observed as readiness by the second poll.
-            let probe = {
+            // The no-op waker is safe because a `Pending` handler is either
+            // cancelled by the cap or polled again by the task below, and the
+            // `Future` contract requires it to re-register the waker it is
+            // given on each poll.
+            let (handler, probe) = {
                 let _enter = span.enter();
-                handler
-                    .as_mut()
-                    .poll(&mut Context::from_waker(Waker::noop()))
+                HandlerFuture::start(
+                    xid,
+                    || {
+                        service_map
+                            .dispatch(
+                                call.rpcvers,
+                                vers,
+                                proc,
+                                &record[payload_offset..],
+                                ReplyBuf::from_spare(crate::connection::take_buffer()),
+                            )
+                            .map(detach)
+                    },
+                    &mut Context::from_waker(Waker::noop()),
+                )
             };
 
             if let Poll::Ready(result) = probe {
                 ready_calls += 1;
                 span.record("ready", true);
-                let result = {
-                    let _enter = span.enter();
-                    let result = handler_outcome(result, xid);
-                    if drop_handler(handler, xid) {
-                        Ok(crate::rpc_error::to_error_record(
-                            &crate::RpcError::SystemError,
-                            xid,
-                        ))
-                    } else {
-                        result
-                    }
-                };
                 let enqueued = {
                     let _enter = span.enter();
                     send_response(client_cbs, result)
@@ -562,7 +608,10 @@ pub(crate) mod dispatch {
             if let Some(limit) = client_cbs.max_suspended_handlers
                 && suspended.running.load(std::sync::atomic::Ordering::Relaxed) >= limit
             {
-                drop_handler(handler, xid);
+                {
+                    let _enter = span.enter();
+                    drop(handler);
+                }
                 if let Err(e) = send_response(
                     client_cbs,
                     Ok(crate::rpc_error::to_error_record(
@@ -580,17 +629,21 @@ pub(crate) mod dispatch {
             // installs the peer itself.
             let sender: Arc<dyn RpcSender> = client_cbs.clone();
             let work = with_peer(sender, async move {
-                let result = handler_outcome(handler.await, xid);
+                let result = handler.await;
                 if let Err(e) = send_response(&cbs, result) {
                     tracing::error!(xid, error = %e, "response write failed");
                     let _shutdown = cbs.begin_poison();
                 }
             });
+            let task_suspended = suspended.clone();
             suspended
                 .running
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let running = Running(suspended.clone());
-            tokio::spawn(async move { running.0.until_closed(work).await }.instrument(span));
+            tokio::spawn(Detached {
+                future: async move { task_suspended.until_closed(work).await }.instrument(span),
+                _services: service_map.clone(),
+                suspended: suspended.clone(),
+            });
         };
 
         tracing::debug!(ready_calls, suspended_calls, "read loop exiting");
@@ -613,7 +666,45 @@ pub async fn launch_read_task(
 // Response serialization helpers
 // ---------------------------------------------------------------------------
 
-#[inline(always)]
+/// Frame a successful reply in place.
+///
+/// Fills the prefix a [`ReplyBuf`] reserves with the
+/// record mark and the RFC 5531 accepted-SUCCESS header (`AUTH_NONE`
+/// verifier), and returns the buffer as the complete single-part record.
+/// The payload is neither copied nor moved.
+#[inline]
+fn frame_reply(reply: ReplyBuf, xid: u32) -> Result<Vec<u8>, ReadTaskError> {
+    const REPLY_HEADER_WORDS: usize = 6;
+    const { assert!(ReplyBuf::PREFIX_LEN == 4 + 4 * REPLY_HEADER_WORDS) };
+
+    let mut record = reply.into_vec();
+    let body_len = record.len() - 4;
+    let Some(msg_len) = u32::try_from(body_len)
+        .ok()
+        .filter(|&len| len <= 0x7FFF_FFFF)
+    else {
+        tracing::warn!(results_len = body_len, "message too large");
+        return Err(ReadTaskError::Shutdown);
+    };
+    let words: [u32; 1 + REPLY_HEADER_WORDS] = [
+        msg_len | 0x8000_0000,
+        xid,
+        rpc_msg::msg_type::REPLY.0 as u32,
+        rpc_msg::reply_stat::MSG_ACCEPTED.0 as u32,
+        rpc_msg::auth_flavor::AUTH_NONE.0 as u32, // verf.flavor
+        0,                                        // verf.body length
+        rpc_msg::accept_stat::SUCCESS.0 as u32,
+    ];
+    for (slot, word) in record[..ReplyBuf::PREFIX_LEN]
+        .chunks_exact_mut(4)
+        .zip(words)
+    {
+        slot.copy_from_slice(&word.to_be_bytes());
+    }
+    Ok(record)
+}
+
+#[cfg(test)]
 fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
     rpc_msg::rpc_msg {
         xid,
@@ -628,7 +719,7 @@ fn get_success_header(xid: u32) -> rpc_msg::rpc_msg {
     }
 }
 
-#[inline]
+#[cfg(test)]
 fn prepare_success_response(
     buf: Vec<u8>,
     xid: u32,
@@ -649,11 +740,16 @@ mod tests {
         entered: tokio::sync::mpsc::UnboundedSender<u32>,
     }
 
-    #[async_trait::async_trait]
     impl crate::handler::RpcHandler for ReadyTestService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, crate::RpcError> {
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+        ) -> Result<RpcFuture<'_>, RpcError> {
             self.entered.send(proc).unwrap();
-            Ok(data.to_vec())
+            let reply = reply.with(data);
+            Ok(Box::pin(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> crate::ProgVers {
@@ -905,13 +1001,20 @@ mod tests {
         use tokio::io::AsyncWriteExt;
 
         struct YieldingService;
-        #[async_trait::async_trait]
         impl crate::handler::RpcHandler for YieldingService {
-            async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, crate::RpcError> {
-                if proc == 1 {
-                    tokio::task::yield_now().await;
-                }
-                Ok(data.to_vec())
+            fn dispatch(
+                &self,
+                proc: u32,
+                data: &[u8],
+                reply: ReplyBuf,
+            ) -> Result<RpcFuture<'_>, RpcError> {
+                let reply = reply.with(data);
+                Ok(Box::pin(async move {
+                    if proc == 1 {
+                        tokio::task::yield_now().await;
+                    }
+                    Ok(reply)
+                }))
             }
             fn prog_vers(&self) -> ProgVers {
                 ProgVers::new(1, 1)
@@ -969,11 +1072,17 @@ mod tests {
         }
 
         struct StuckService(std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>);
-        #[async_trait::async_trait]
         impl crate::handler::RpcHandler for StuckService {
-            async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, crate::RpcError> {
-                let _flag = DropFlag(self.0.lock().unwrap().take());
-                std::future::pending().await
+            fn dispatch(
+                &self,
+                _proc: u32,
+                _data: &[u8],
+                _reply: ReplyBuf,
+            ) -> Result<RpcFuture<'_>, RpcError> {
+                Ok(Box::pin(async move {
+                    let _flag = DropFlag(self.0.lock().unwrap().take());
+                    std::future::pending().await
+                }))
             }
             fn prog_vers(&self) -> ProgVers {
                 ProgVers::new(1, 1)
@@ -1032,13 +1141,13 @@ mod tests {
     fn ready_handler_destructor_cannot_unwind_dispatch() {
         struct ReadyPanicOnDrop;
         impl std::future::Future for ReadyPanicOnDrop {
-            type Output = Result<Result<Vec<u8>, ReadTaskError>, Box<dyn std::any::Any + Send>>;
+            type Output = Result<ReplyBuf, RpcError>;
 
             fn poll(
                 self: std::pin::Pin<&mut Self>,
                 _cx: &mut std::task::Context<'_>,
             ) -> std::task::Poll<Self::Output> {
-                std::task::Poll::Ready(Ok(Ok(Vec::new())))
+                std::task::Poll::Ready(Ok(ReplyBuf::new()))
             }
         }
         impl Drop for ReadyPanicOnDrop {
@@ -1047,17 +1156,7 @@ mod tests {
             }
         }
 
-        type TestHandlerFuture = std::pin::Pin<
-            Box<
-                dyn std::future::Future<
-                        Output = Result<
-                            Result<Vec<u8>, ReadTaskError>,
-                            Box<dyn std::any::Any + Send>,
-                        >,
-                    > + Send,
-            >,
-        >;
-        let handler: TestHandlerFuture = Box::pin(ReadyPanicOnDrop);
+        let handler: RpcFuture<'_> = Box::pin(ReadyPanicOnDrop);
         assert!(dispatch::drop_handler(handler, 8));
     }
 }
