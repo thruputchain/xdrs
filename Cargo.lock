@@ -918,6 +918,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "thruput-xdr-codegen"
+version = "0.18.0"
+
+[[package]]
 name = "thruput-xdr-common"
 version = "0.18.0"
 dependencies = [
