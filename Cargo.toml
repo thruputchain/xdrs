@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "xdr-codegen",
     "xdr-common",
     "xdr-derive",
     "xdr-repr",
