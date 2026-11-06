@@ -155,11 +155,65 @@ use proc_macro::TokenStream;
 ///   default arm. The variant must be the trailing variant and must not
 ///   specify a discriminant, and its first field must be `i32`, which stores
 ///   the wire discriminant and is emitted verbatim when encoding.
+/// - `#[xdr(discriminant = "T")]` - On an enum: the union's switch type, which
+///   decides how the discriminant is encoded. `T` must implement
+///   `XDRDiscriminant`, as `i32` (the default), `u32` and `bool` do.
 /// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
 /// # Limitations
 ///
+/// - **An XDR enum cannot switch a union.** Nothing implements
+///   `XDRDiscriminant` for an enum, whether it is an open newtype over `i32`,
+///   as x23c emits XDR enums:
+///
+///   ```rust,compile_fail,E0277
+///   use xdrs::{ReadXDR, WriteXDR};
+///
+///   #[derive(Clone, Copy, Debug, PartialEq, Eq, ReadXDR, WriteXDR)]
+///   #[repr(transparent)]
+///   pub struct Color(pub i32);
+///
+///   impl Color {
+///       pub const RED: Self = Self(0);
+///       pub const BLUE: Self = Self(2);
+///   }
+///
+///   // error[E0277]: the trait bound `Color: XDRDiscriminant` is not satisfied
+///   #[derive(Debug, PartialEq, ReadXDR, WriteXDR)]
+///   #[xdr(discriminant = "Color")]
+///   #[repr(i32)]
+///   pub enum Paint {
+///       Red { depth: u32 } = Color::RED.0,
+///       Blue = Color::BLUE.0,
+///       #[xdr(default_variant)]
+///       Other { which: Color } = 100,
+///   }
+///   ```
+///
+///   or a fieldless `#[repr(i32)]` enum:
+///
+///   ```rust,compile_fail,E0277
+///   use xdrs::{ReadXDR, WriteXDR};
+///
+///   #[derive(Clone, Copy, Debug, PartialEq, Eq, ReadXDR, WriteXDR)]
+///   #[repr(i32)]
+///   pub enum Color {
+///       Red = 0,
+///       Blue = 2,
+///   }
+///
+///   // error[E0277]: the trait bound `Color: XDRDiscriminant` is not satisfied
+///   #[derive(Debug, PartialEq, ReadXDR, WriteXDR)]
+///   #[xdr(discriminant = "Color")]
+///   #[repr(i32)]
+///   pub enum Paint {
+///       Red { depth: u32 } = Color::Red as i32,
+///       Blue = Color::Blue as i32,
+///   }
+///   ```
+///
+///   The same unions switched on `i32` compile.
 /// - **No recursive types.** XDR encoding is not self-describing; a recursive
 ///   type will loop at runtime. The macro does not detect or reject recursion.
 ///   In particular, `#[xdr(into_type = "Self")]` is an infinite loop — the
