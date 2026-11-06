@@ -474,3 +474,173 @@ mod external_discrim {
         CXS::check_codec(&failed, &hex!("0b03"));
     }
 }
+
+// Switch an XDR enum on an open newtype
+#[test]
+fn enum_switch_open_newtype() {
+    // An XDR enum as x23c emits it: an open newtype over i32.
+    #[derive(
+        Clone, Copy, Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR, xdrs::XDRDiscriminant,
+    )]
+    #[repr(transparent)]
+    struct Color(i32);
+
+    impl Color {
+        const RED: Self = Self(0);
+        const BLUE: Self = Self(2);
+    }
+
+    // union Paint switch (Color which) {
+    //   case RED: unsigned depth;
+    //   case BLUE: void;
+    //   default: void;
+    // }
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    #[xdr(discriminant = "Color")]
+    enum Paint {
+        Red {
+            depth: u32,
+        } = Color::RED.0,
+        Blue = Color::BLUE.0,
+        #[xdr(default_variant)]
+        Other {
+            which: Color,
+        } = 100,
+    }
+
+    TXS::check_codec(&Paint::Red { depth: 3 }, &hex!("0000000000000003"));
+    CXS::check_codec(&Paint::Red { depth: 3 }, &hex!("0003"));
+    TXS::check_codec(&Paint::Blue, &hex!("00000002"));
+
+    // The enum is open, so the default arm holds members this code does not
+    // know, and encodes them as an int.
+    TXS::check_codec(&Paint::Other { which: Color(7) }, &hex!("00000007"));
+    CXS::check_codec(&Paint::Other { which: Color(7) }, &hex!("07"));
+    TXS::check_codec(&Paint::Other { which: Color(-1) }, &hex!("ffffffff"));
+    CXS::check_codec(&Paint::Other { which: Color(-1) }, &hex!("3e"));
+}
+
+// Switch an XDR enum on a ("closed") Rust enum
+#[test]
+fn enum_switch_closed_enum() {
+    #[derive(
+        Clone, Copy, Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR, xdrs::XDRDiscriminant,
+    )]
+    #[repr(i32)]
+    enum Color {
+        Red = 0,
+        Green = 1,
+        Blue = -2,
+    }
+
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    #[xdr(discriminant = "Color")]
+    enum Paint {
+        Red {
+            depth: u32,
+        } = Color::Red as i32,
+        Blue = Color::Blue as i32,
+        #[xdr(default_variant)]
+        Other {
+            which: Color,
+        } = 100,
+    }
+
+    TXS::check_codec(&Paint::Red { depth: 3 }, &hex!("0000000000000003"));
+    TXS::check_codec(&Paint::Blue, &hex!("fffffffe"));
+    CXS::check_codec(&Paint::Blue, &hex!("3d"));
+
+    // A member no case names lands in the default arm.
+    TXS::check_codec(
+        &Paint::Other {
+            which: Color::Green,
+        },
+        &hex!("00000001"),
+    );
+    CXS::check_codec(
+        &Paint::Other {
+            which: Color::Green,
+        },
+        &hex!("01"),
+    );
+
+    // A value that is no member of the closed enum is rejected, before the
+    // default arm's payload is read.
+    for bytes in [hex!("00000007"), hex!("ffffffff")] {
+        let err = xdrs::txs::decode::<Paint>(&bytes).unwrap_err();
+        #[cfg(feature = "detailed-errors")]
+        assert!(
+            matches!(err, xdrs::ReadError::BadDiscriminator(_)),
+            "{err:?}"
+        );
+        let _ = err;
+    }
+    assert!(xdrs::cxs::decode::<Paint>(&hex!("07")).is_err());
+}
+
+// Switch an XDR enum without a default on a ("closed") Rust enum
+#[test]
+fn enum_switch_closed_enum_without_default() {
+    #[derive(
+        Clone, Copy, Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR, xdrs::XDRDiscriminant,
+    )]
+    #[repr(i32)]
+    enum Kind {
+        A,
+        B,
+        C,
+    }
+
+    #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
+    #[repr(i32)]
+    #[xdr(discriminant = "Kind")]
+    enum Item {
+        B(u32) = Kind::B as i32,
+        C = Kind::C as i32,
+    }
+
+    TXS::check_codec(&Item::B(9), &hex!("0000000100000009"));
+    TXS::check_codec(&Item::C, &hex!("00000002"));
+    assert!(xdrs::txs::decode::<Item>(&hex!("00000000")).is_err());
+}
+
+#[test]
+fn xdr_discriminant_tags() {
+    use xdrs::XDRDiscriminant;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, xdrs::XDRDiscriminant)]
+    #[repr(i32)]
+    enum Implicit {
+        A,
+        B,
+        C,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, xdrs::XDRDiscriminant)]
+    #[repr(i32)]
+    enum Explicit {
+        Neg = -5,
+        Max = i32::MAX,
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, xdrs::XDRDiscriminant)]
+    struct Open(pub i32);
+
+    assert_eq!(Implicit::C.discriminant(), 2);
+    assert_eq!(Implicit::from_discriminant(1), Some(Implicit::B));
+    assert_eq!(Implicit::from_discriminant(3), None);
+
+    assert_eq!(Explicit::Neg.discriminant(), -5);
+    assert_eq!(Explicit::from_discriminant(i32::MAX), Some(Explicit::Max));
+    assert_eq!(Explicit::from_discriminant(0), None);
+
+    assert_eq!(Open(-7).discriminant(), -7);
+    assert_eq!(Open::from_discriminant(i32::MIN), Some(Open(i32::MIN)));
+
+    // The primitive switch types.
+    assert_eq!(u32::from_discriminant(-1), Some(u32::MAX));
+    assert_eq!(bool::from_discriminant(1), Some(true));
+    assert_eq!(bool::from_discriminant(2), None);
+}

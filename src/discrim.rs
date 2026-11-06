@@ -33,9 +33,13 @@ pub trait XDRDiscriminant {
     /// its bit pattern.
     fn discriminant(&self) -> i32;
 
-    /// Returns the value whose tag is `d`; the inverse of
-    /// [`discriminant`](Self::discriminant).
-    fn from_discriminant(d: i32) -> Self
+    /// Returns the value whose tag is `d`, or `None` if no value of this type
+    /// has that tag; the inverse of [`discriminant`](Self::discriminant).
+    ///
+    /// A derived union's reader calls this for its default arm and rejects
+    /// a `None` as a bad discriminator: a closed enum, for instance, has no
+    /// value for a tag that is not one of its members.
+    fn from_discriminant(d: i32) -> Option<Self>
     where
         Self: Sized;
 }
@@ -47,8 +51,8 @@ impl XDRDiscriminant for i32 {
         *self
     }
 
-    fn from_discriminant(d: i32) -> Self {
-        d
+    fn from_discriminant(d: i32) -> Option<Self> {
+        Some(d)
     }
 }
 
@@ -59,8 +63,8 @@ impl XDRDiscriminant for u32 {
         *self as i32
     }
 
-    fn from_discriminant(d: i32) -> Self {
-        d as u32
+    fn from_discriminant(d: i32) -> Option<Self> {
+        Some(d as u32)
     }
 }
 
@@ -71,7 +75,11 @@ impl XDRDiscriminant for bool {
         i32::from(*self)
     }
 
-    fn from_discriminant(d: i32) -> Self {
-        d != 0
+    fn from_discriminant(d: i32) -> Option<Self> {
+        match d {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
     }
 }

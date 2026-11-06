@@ -134,6 +134,7 @@
 mod attrs;
 mod generate;
 mod generate_const;
+mod generate_discrim;
 mod generate_type;
 mod util;
 
@@ -157,63 +158,13 @@ use proc_macro::TokenStream;
 ///   the wire discriminant and is emitted verbatim when encoding.
 /// - `#[xdr(discriminant = "T")]` - On an enum: the union's switch type, which
 ///   decides how the discriminant is encoded. `T` must implement
-///   `XDRDiscriminant`, as `i32` (the default), `u32` and `bool` do.
+///   `XDRDiscriminant`, as `i32` (the default), `u32` and `bool` do, and an
+///   enum can with [`derive(XDRDiscriminant)`](macro@XDRDiscriminant).
 /// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
 /// # Limitations
 ///
-/// - **An XDR enum cannot switch a union.** Nothing implements
-///   `XDRDiscriminant` for an enum, whether it is an open newtype over `i32`,
-///   as x23c emits XDR enums:
-///
-///   ```rust,compile_fail,E0277
-///   use xdrs::{ReadXDR, WriteXDR};
-///
-///   #[derive(Clone, Copy, Debug, PartialEq, Eq, ReadXDR, WriteXDR)]
-///   #[repr(transparent)]
-///   pub struct Color(pub i32);
-///
-///   impl Color {
-///       pub const RED: Self = Self(0);
-///       pub const BLUE: Self = Self(2);
-///   }
-///
-///   // error[E0277]: the trait bound `Color: XDRDiscriminant` is not satisfied
-///   #[derive(Debug, PartialEq, ReadXDR, WriteXDR)]
-///   #[xdr(discriminant = "Color")]
-///   #[repr(i32)]
-///   pub enum Paint {
-///       Red { depth: u32 } = Color::RED.0,
-///       Blue = Color::BLUE.0,
-///       #[xdr(default_variant)]
-///       Other { which: Color } = 100,
-///   }
-///   ```
-///
-///   or a fieldless `#[repr(i32)]` enum:
-///
-///   ```rust,compile_fail,E0277
-///   use xdrs::{ReadXDR, WriteXDR};
-///
-///   #[derive(Clone, Copy, Debug, PartialEq, Eq, ReadXDR, WriteXDR)]
-///   #[repr(i32)]
-///   pub enum Color {
-///       Red = 0,
-///       Blue = 2,
-///   }
-///
-///   // error[E0277]: the trait bound `Color: XDRDiscriminant` is not satisfied
-///   #[derive(Debug, PartialEq, ReadXDR, WriteXDR)]
-///   #[xdr(discriminant = "Color")]
-///   #[repr(i32)]
-///   pub enum Paint {
-///       Red { depth: u32 } = Color::Red as i32,
-///       Blue = Color::Blue as i32,
-///   }
-///   ```
-///
-///   The same unions switched on `i32` compile.
 /// - **No recursive types.** XDR encoding is not self-describing; a recursive
 ///   type will loop at runtime. The macro does not detect or reject recursion.
 ///   In particular, `#[xdr(into_type = "Self")]` is an infinite loop — the
@@ -292,6 +243,92 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
 
     generate::read_xdr(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derives the `XDRDiscriminant` trait, so that an XDR enum can switch a
+/// union named with `#[xdr(discriminant = "...")]`.
+///
+/// An XDR enum is an `int`, and so is encoded as one. Two shapes are
+/// accepted:
+///
+/// - **A fieldless `#[repr(i32)]` enum**, which is closed: its members are
+///   its variants. A union with a `#[xdr(default_variant)]` rejects, as a bad
+///   discriminator, a wire value that is no member's.
+/// - **A newtype over `i32`**, with the members as associated constants, as
+///   x23c emits XDR enums. It is open: any `i32` is a value, so a default arm
+///   can hold a member this code does not know.
+///
+/// An open enum:
+///
+/// ```rust
+/// use xdrs::{ReadXDR, WriteXDR, XDRDiscriminant};
+///
+/// #[derive(Clone, Copy, Debug, PartialEq, Eq, ReadXDR, WriteXDR, XDRDiscriminant)]
+/// #[repr(transparent)]
+/// pub struct Color(pub i32);
+///
+/// impl Color {
+///     pub const RED: Self = Self(0);
+///     pub const BLUE: Self = Self(2);
+/// }
+///
+/// #[derive(Debug, PartialEq, ReadXDR, WriteXDR)]
+/// #[xdr(discriminant = "Color")]
+/// #[repr(i32)]
+/// pub enum Paint {
+///     Red { depth: u32 } = Color::RED.0,
+///     Blue = Color::BLUE.0,
+///     #[xdr(default_variant)]
+///     Other { which: Color } = 100,
+/// }
+///
+/// let other = Paint::Other { which: Color(7) };
+/// let bytes = xdrs::txs::encode(&other).unwrap();
+/// assert_eq!(xdrs::txs::decode::<Paint>(&bytes).unwrap(), other);
+/// ```
+///
+/// A closed enum:
+///
+/// ```rust
+/// use xdrs::{ReadXDR, WriteXDR, XDRDiscriminant};
+///
+/// #[derive(Clone, Copy, Debug, PartialEq, Eq, ReadXDR, WriteXDR, XDRDiscriminant)]
+/// #[repr(i32)]
+/// pub enum Color {
+///     Red = 0,
+///     Green = 1,
+///     Blue = 2,
+/// }
+///
+/// #[derive(Debug, PartialEq, ReadXDR, WriteXDR)]
+/// #[xdr(discriminant = "Color")]
+/// #[repr(i32)]
+/// pub enum Paint {
+///     Red { depth: u32 } = Color::Red as i32,
+///     Blue = Color::Blue as i32,
+///     #[xdr(default_variant)]
+///     Other { which: Color } = 100,
+/// }
+///
+/// let green = Paint::Other { which: Color::Green };
+/// let bytes = xdrs::txs::encode(&green).unwrap();
+/// assert_eq!(xdrs::txs::decode::<Paint>(&bytes).unwrap(), green);
+///
+/// // 7 is no member of Color.
+/// assert!(xdrs::txs::decode::<Paint>(&[0, 0, 0, 7]).is_err());
+/// ```
+///
+/// # Attributes
+///
+/// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
+///   (useful when re-exporting from another crate).
+#[proc_macro_derive(XDRDiscriminant, attributes(xdr, xdrs))]
+pub fn derive_xdr_discriminant(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    generate_discrim::xdr_discriminant(&input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }

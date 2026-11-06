@@ -641,7 +641,14 @@ fn read_variant(
         .enumerate()
         .map(|(i, field)| {
             if is_default && i == 0 {
-                return Ok(quote! {});
+                // Field 0 holds the discriminant, as a value of the union's
+                // switch type, which may have none with this tag.
+                let bind = tmp_binding(i);
+                return Ok(quote! {
+                    let #bind: #discrim_ty =
+                        <#discrim_ty as __xdrs::XDRDiscriminant>::from_discriminant(d)
+                            .ok_or_else(|| __xdrs::ReadError::bad_discriminator(d))?;
+                });
             }
 
             let attrs = FieldAttrs::from_field(field)?;
@@ -660,7 +667,7 @@ fn read_variant(
             }
         })
         .collect::<Result<Vec<_>>>()?;
-    let init_fields = init_fields(&variant.fields, is_default, discrim_ty);
+    let init_fields = init_fields(&variant.fields);
 
     Ok(quote! {
         #var_match => {
@@ -670,16 +677,9 @@ fn read_variant(
     })
 }
 
-fn init_fields(fields: &syn::Fields, is_default: bool, discrim_ty: &syn::Type) -> TokenStream {
+fn init_fields(fields: &syn::Fields) -> TokenStream {
     let init_fields = token_reduce(fields, |i, field| {
-        let bind = tmp_binding(i);
-
-        let init_val = if is_default && i == 0 {
-            // Field 0 is the discriminant, of the union's switch type
-            quote! { <#discrim_ty as __xdrs::XDRDiscriminant>::from_discriminant(d) }
-        } else {
-            quote! { #bind }
-        };
+        let init_val = tmp_binding(i);
 
         if let Some(ident) = field.ident.as_ref() {
             quote! { #ident: #init_val, }
