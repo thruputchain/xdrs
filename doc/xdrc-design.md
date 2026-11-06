@@ -110,6 +110,15 @@ Out of scope:
 
 ## Costs and risks
 
+- **Licenses differ.** hogd's `x23` tree, which includes x23c and its `.x`
+  test files, is GPL-3 (`x23/COPYING`, copyright David Mazières). This
+  workspace is Apache-2.0. xdrc emulates x23c's behavior and output, and its
+  development consults x23c's source. Whether that makes xdrc a derivative
+  work of x23c has not been settled. One thing is copied from `x23`, by the
+  team's decision: `xdr-codegen/check` contains hogd's
+  `x23/tests/rust_check` fixtures (`check.x`, `plain.x`) and its test
+  `lib.rs`. The corpus test reads other `.x` files in place, from
+  directories named by `XDRC_CORPUS`.
 - **Two parsers for one dialect.** x23c keeps its parser for C++ and TS.
   Because the grammar has been stable, the risk of drift is low. A shared
   corpus of `.x` fixtures that both compilers must accept would keep them
