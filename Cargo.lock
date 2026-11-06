@@ -569,6 +569,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
+dependencies = [
+ "proc-macro2",
+ "syn 3.0.5",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -920,6 +930,12 @@ dependencies = [
 [[package]]
 name = "thruput-xdr-codegen"
 version = "0.18.0"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
+]
 
 [[package]]
 name = "thruput-xdr-common"
@@ -950,6 +966,18 @@ dependencies = [
  "heapless",
  "pretty_assertions",
  "serde_json",
+ "thruput-xdr-common",
+ "thruput-xdrs",
+]
+
+[[package]]
+name = "thruput-xdrc-check"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "schemars",
+ "serde",
+ "thruput-rpc-api",
  "thruput-xdr-common",
  "thruput-xdrs",
 ]

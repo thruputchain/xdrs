@@ -27,6 +27,7 @@ pub mod ast;
 pub mod diag;
 mod lexer;
 mod parser;
+pub mod rust;
 
 use diag::{Diagnostic, Severity};
 

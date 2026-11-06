@@ -1,6 +1,6 @@
 //! Parses every `.x` file in the directories listed, separated by `:`, in
-//! `XDRC_CORPUS`, such as a checkout of thruput-protocol. Without
-//! `XDRC_CORPUS`, the test does nothing.
+//! `XDRC_CORPUS`, such as a checkout of thruput-protocol, and generates Rust
+//! from it. Without `XDRC_CORPUS`, the test does nothing.
 
 use std::path::{Path, PathBuf};
 
@@ -42,6 +42,13 @@ fn corpus_parses() {
             Ok(parsed) => {
                 for w in &parsed.warnings {
                     eprintln!("{}", w.display(&file, &lines));
+                }
+                let options = xdr_codegen::rust::Options::default();
+                if let Err(diags) = xdr_codegen::rust::generate(&parsed.spec, &options) {
+                    failed += 1;
+                    for d in &diags {
+                        eprintln!("{}", d.display(&file, &lines));
+                    }
                 }
             }
             Err(diags) => {

@@ -1,0 +1,21 @@
+[package]
+name = "thruput-xdrc-check"
+description = "Compiles and tests xdrc's Rust output against this workspace's crates"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+default = ["std"]
+std = []
+serde = ["dep:serde", "xdrs/serde"]
+
+[dependencies]
+async-trait = "0.1.89"
+thruput-rpc-api = { path = "../../rpc/rpc_api" }
+schemars = "1"
+serde = { version = "1", features = ["derive"], optional = true }
+xdr-common = { workspace = true }
+xdrs = { workspace = true, features = ["alloc", "derive", "schemars"] }

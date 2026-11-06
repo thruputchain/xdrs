@@ -21,3 +21,9 @@ name = "xdr_codegen"
 unsafe_code = "forbid"
 missing_docs = "warn"
 missing_debug_implementations = "warn"
+
+[dependencies]
+prettyplease = "0.3.0"
+proc-macro2 = { version = "1.0.105", default-features = false }
+quote = { version = "1.0.43", default-features = false }
+syn = { version = "3.0.3", default-features = false, features = ["full", "parsing", "printing"] }
