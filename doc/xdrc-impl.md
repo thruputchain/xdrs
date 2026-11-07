@@ -29,13 +29,14 @@ diagnostic if there was an error. `xdr_codegen::rust::generate` turns a
 ### Tokens
 
 The lexer is a table of regular expressions, `RULES` in `src/lexer.rs`,
-taken from x23c's `lex.ll`. Each rule is compiled with `regex-automata`
-using `MatchKind::All`, so that an anchored search returns its longest
-match, as flex does, rather than its first. At each position the lexer
-takes the longest match among the rules, preferring the earlier rule on a
-tie. `(?m:^)` anchors a rule to the start of a line, like flex's `^`; the
-search sees the text before the position, so the anchor works mid-file.
-The rules, in order:
+taken from x23c's `lex.ll`. As flex does, it compiles all the rules into
+one DFA, using `regex-automata`'s dense DFA with `MatchKind::All`, so that
+each match state lists every rule that matches there. At each position
+`longest_match` walks the DFA until it dies, remembering the last match
+state. The token is that longest match, and its rule is the lowest-numbered
+rule in that state. `(?m:^)` anchors a rule to the start of a line, like
+flex's `^`; the DFA's start state depends on the byte before the position,
+so the anchor works mid-file. The rules, in order:
 
 1. newline
 2. spaces, tabs, carriage returns and form feeds
@@ -48,8 +49,9 @@ The rules, in order:
 9. a number
 10. punctuation
 
-Where no rule matches, a fallback pattern takes the unexpected character
-and what follows it up to the next space, newline or `;`.
+Where no rule matches, a fallback pattern, in a DFA of its own, takes the
+unexpected character and what follows it up to the next space, newline or
+`;`.
 
 Each rule's action lives in `Lexer::apply`. The comment attachment there
 corresponds to the token loop in x23c's `x23c.cc`, not to its scanner.
