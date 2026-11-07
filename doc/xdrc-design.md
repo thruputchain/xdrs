@@ -188,11 +188,13 @@ from x23c's flex rules and matched with `regex-automata` (see below).
   than x23c's `lex.ll`, where each rule is one line and flex does the
   matching. The lexer was therefore rewritten as a table of regular
   expressions with flex's semantics, using `regex-automata`: at each
-  position, the longest match wins, and ties go to the earlier rule.
+  position, the longest match wins, and ties go to the earlier rule. As in
+  flex, the rules are compiled into one DFA, whose match states record which
+  rules match.
   - `regex-automata` is a regex engine, not a parser generator, and it was
     already in the workspace's dependency graph.
-  - Running every rule at every position is slow, but `.x` files are small
-    and speed is not a priority.
+  - Building the DFA takes a moment at startup, which does not matter for
+    a code generator.
 
 Alternatives considered:
 

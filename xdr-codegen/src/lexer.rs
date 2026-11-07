@@ -12,7 +12,11 @@
 
 use std::sync::LazyLock;
 
-use regex_automata::{Anchored, Input, MatchKind, meta::Regex};
+use regex_automata::{
+    Anchored, MatchKind,
+    dfa::{Automaton, StartKind, dense, dense::DFA},
+    util::start,
+};
 
 use crate::diag::{Diagnostic, LineIndex, Span};
 
@@ -164,23 +168,26 @@ const RULES: &[(Rule, &str)] = &[
 /// to the next space, newline or `;`, which the lexer skips.
 const UNEXPECTED: &str = r"(?s:.)[^\n \t;]*";
 
-/// Compiles a rule to match as much as it can, as flex does, rather than
-/// the first alternative that matches.
-fn longest(pattern: &str) -> Regex {
-    Regex::builder()
-        .configure(Regex::config().match_kind(MatchKind::All))
-        .build(pattern)
+/// A DFA that recognizes `patterns`, keeping every pattern that matches in
+/// its match states, so that [`longest_match`] can choose among them.
+fn dfa(patterns: &[&str]) -> DFA<Vec<u32>> {
+    dense::Builder::new()
+        .configure(
+            dense::Config::new()
+                .match_kind(MatchKind::All)
+                .start_kind(StartKind::Anchored),
+        )
+        .build_many(patterns)
         .expect("lexer rules are valid")
 }
 
-static COMPILED: LazyLock<Vec<(Rule, Regex)>> = LazyLock::new(|| {
-    RULES
-        .iter()
-        .map(|&(rule, pattern)| (rule, longest(pattern)))
-        .collect()
+/// All of [`RULES`] as one automaton, as flex builds it.
+static RULES_DFA: LazyLock<DFA<Vec<u32>>> = LazyLock::new(|| {
+    let patterns: Vec<&str> = RULES.iter().map(|&(_, pattern)| pattern).collect();
+    dfa(&patterns)
 });
 
-static COMPILED_UNEXPECTED: LazyLock<Regex> = LazyLock::new(|| longest(UNEXPECTED));
+static UNEXPECTED_DFA: LazyLock<DFA<Vec<u32>>> = LazyLock::new(|| dfa(&[UNEXPECTED]));
 
 /// A token, with the comments attached to it.
 #[derive(Clone, Debug)]
@@ -231,13 +238,9 @@ impl Lexer<'_, '_> {
     fn run(mut self) -> Lexed {
         let mut pos = 0;
         while pos < self.src.len() {
-            // The search sees the text before `pos`, for `^`.
-            let input = Input::new(self.src).range(pos..).anchored(Anchored::Yes);
-            let Some((rule, len)) = longest_match(&input) else {
-                let len = COMPILED_UNEXPECTED
-                    .search(&input)
-                    .expect("matches any character")
-                    .len();
+            let Some((rule, len)) = longest_match(&RULES_DFA, self.src, pos) else {
+                let (_, len) =
+                    longest_match(&UNEXPECTED_DFA, self.src, pos).expect("matches any character");
                 let span = Span::new(pos, pos + len);
                 self.diags.push(Diagnostic::error(
                     span,
@@ -247,7 +250,7 @@ impl Lexer<'_, '_> {
                 continue;
             };
             let span = Span::new(pos, pos + len);
-            self.apply(rule, span);
+            self.apply(RULES[rule].0, span);
             pos += len;
         }
         let end = self.src.len();
@@ -322,16 +325,39 @@ impl Lexer<'_, '_> {
     }
 }
 
-/// The longest match among [`RULES`] at the start of `input`, as the rule
-/// and the length; on a tie, the earlier rule.
-fn longest_match(input: &Input<'_>) -> Option<(Rule, usize)> {
-    let mut best: Option<(Rule, usize)> = None;
-    for (rule, regex) in COMPILED.iter() {
-        if let Some(m) = regex.search(input)
-            && !m.is_empty()
-            && best.is_none_or(|(_, len)| m.len() > len)
-        {
-            best = Some((*rule, m.len()));
+/// The longest non-empty match of `dfa` starting at `pos` in `src`, as the
+/// index of the pattern and the length. On a tie, the pattern with the
+/// lowest index wins.
+fn longest_match(dfa: &DFA<Vec<u32>>, src: &str, pos: usize) -> Option<(usize, usize)> {
+    let src = src.as_bytes();
+    // The byte before `pos` decides whether `(?m:^)` matches.
+    let start = start::Config::new()
+        .anchored(Anchored::Yes)
+        .look_behind(pos.checked_sub(1).map(|i| src[i]));
+    let mut state = dfa
+        .start_state(&start)
+        .expect("the DFA has anchored starts");
+    let mut best = None;
+    for end in pos..=src.len() {
+        // The DFA reports a match one byte late, on the transition past its
+        // end, or on the end-of-input transition.
+        state = match src.get(end) {
+            Some(&b) => dfa.next_state(state, b),
+            None => dfa.next_eoi_state(state),
+        };
+        if dfa.is_dead_state(state) {
+            break;
+        }
+        assert!(
+            !dfa.is_quit_state(state),
+            "the lexer rules use no quit bytes"
+        );
+        if dfa.is_match_state(state) && end > pos {
+            let pattern = (0..dfa.match_len(state))
+                .map(|i| dfa.match_pattern(state, i).as_usize())
+                .min()
+                .expect("a match state has a pattern");
+            best = Some((pattern, end - pos));
         }
     }
     best
