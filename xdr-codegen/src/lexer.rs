@@ -1,25 +1,18 @@
 //! Splits a `.x` file into tokens, attaching comments to them.
 //!
-//! At each position the lexer takes the longest match among its rules,
-//! preferring the earlier rule on a tie:
-//!
-//! 1. a newline
-//! 2. a run of spaces, tabs, carriage returns and form feeds
-//! 3. at the start of a line, a *leading comment*: one or more lines that
-//!    each hold only a `/* */` comment, or one or more lines that each hold
-//!    only a `//` comment, through the final newline
-//! 4. at the start of a line, a `%` literal, through the end of the line
-//! 5. any other comment, a *trailing comment*: `/* ... */`, or `//` through
-//!    the end of the line together with any following lines that start
-//!    with `//` but not `///`
-//! 6. a keyword or identifier
-//! 7. a number, with an optional sign, which may contain `'` and `_`
-//!    separators
-//! 8. a punctuation character
+//! The lexer works like x23c's flex scanner (`lex.ll`): [`RULES`] is a list
+//! of regular expressions, and at each position the lexer takes the longest
+//! match among them, preferring the earlier rule on a tie. So `const` is a
+//! keyword but `constant` an identifier. `(?m:^)` anchors a rule to the
+//! start of a line, like flex's `^`.
 //!
 //! A leading comment is attached to the next token, and a trailing comment
 //! to the previous one. See [`crate::ast`] for how the parser assembles
 //! them into a node's comment.
+
+use std::sync::LazyLock;
+
+use regex_automata::{Anchored, Input, MatchKind, meta::Regex};
 
 use crate::diag::{Diagnostic, LineIndex, Span};
 
@@ -103,32 +96,91 @@ impl Tok {
     }
 }
 
-const KEYWORDS: &[(&str, Tok)] = &[
-    ("const", Tok::Const),
-    ("struct", Tok::Struct),
-    ("union", Tok::Union),
-    ("enum", Tok::Enum),
-    ("typedef", Tok::Typedef),
-    ("program", Tok::Program),
-    ("namespace", Tok::Namespace),
-    ("bool", Tok::Bool),
-    ("unsigned", Tok::Unsigned),
-    ("int", Tok::Int),
-    ("hyper", Tok::Hyper),
-    ("float", Tok::Float),
-    ("double", Tok::Double),
-    ("quadruple", Tok::Quadruple),
-    ("void", Tok::Void),
-    ("version", Tok::Version),
-    ("switch", Tok::Switch),
-    ("case", Tok::Case),
-    ("default", Tok::Default),
-    ("opaque", Tok::Opaque),
-    ("string", Tok::String),
+/// What a rule does with its match.
+#[derive(Clone, Copy, Debug)]
+enum Rule {
+    /// Discard it.
+    Skip,
+    /// Attach it, as a comment, to the next token.
+    Leading,
+    /// Attach it, as a comment, to the previous token.
+    Trailing,
+    /// Report a reserved word.
+    Reserved,
+    /// Emit a [`Tok::Punct`].
+    Punct,
+    /// Emit a token.
+    Tok(Tok),
+}
+
+/// One or more lines that each hold only a `/* */` comment.
+const BLOCK_COMMENTS: &str = r"(?m:^)([ \t]*/\*([^*]|\*+[^*/])*\*+/[ \t]*\n)+";
+/// One or more lines that each hold only a `//` comment.
+const LINE_COMMENTS: &str = r"(?m:^)([ \t]*//.*\n)+";
+/// A `/* */` comment, or a `//` comment continued by following lines that
+/// start with `//` but not `///`. Unlike x23c's rule, which ends in `\*/`,
+/// this one accepts a comment ending in `**/`.
+const COMMENT: &str = r"/\*([^*]|\*+[^*/])*\*+/|//.*(\n[ \t]*//[^/\n].*)*";
+const ID: &str = r"[a-zA-Z_][a-zA-Z_0-9]*";
+const NUM: &str = r"[+-]?([0-9'_]+|0x[0-9a-fA-F'_]+)";
+
+/// The rules, in order of preference on a tie.
+const RULES: &[(Rule, &str)] = &[
+    (Rule::Skip, r"\n"),
+    (Rule::Skip, r"[ \t\r\x0c]+"),
+    (Rule::Leading, BLOCK_COMMENTS),
+    (Rule::Leading, LINE_COMMENTS),
+    (Rule::Tok(Tok::Literal), r"(?m:^)%.*"),
+    (Rule::Trailing, COMMENT),
+    (Rule::Tok(Tok::Const), "const"),
+    (Rule::Tok(Tok::Struct), "struct"),
+    (Rule::Tok(Tok::Union), "union"),
+    (Rule::Tok(Tok::Enum), "enum"),
+    (Rule::Tok(Tok::Typedef), "typedef"),
+    (Rule::Tok(Tok::Program), "program"),
+    (Rule::Tok(Tok::Namespace), "namespace"),
+    (Rule::Tok(Tok::Bool), "bool"),
+    (Rule::Tok(Tok::Unsigned), "unsigned"),
+    (Rule::Tok(Tok::Int), "int"),
+    (Rule::Tok(Tok::Hyper), "hyper"),
+    (Rule::Tok(Tok::Float), "float"),
+    (Rule::Tok(Tok::Double), "double"),
+    (Rule::Tok(Tok::Quadruple), "quadruple"),
+    (Rule::Tok(Tok::Void), "void"),
+    (Rule::Tok(Tok::Version), "version"),
+    (Rule::Tok(Tok::Switch), "switch"),
+    (Rule::Tok(Tok::Case), "case"),
+    (Rule::Tok(Tok::Default), "default"),
+    (Rule::Tok(Tok::Opaque), "opaque"),
+    (Rule::Tok(Tok::String), "string"),
+    // C keywords that RFC 4506 reserves but does not use.
+    (Rule::Reserved, "char|short|inline|sizeof"),
+    (Rule::Tok(Tok::Ident), ID),
+    (Rule::Tok(Tok::Number), NUM),
+    (Rule::Punct, r"[=;{}<>\[\]*,:()]"),
 ];
 
-/// C keywords that RFC 4506 reserves but does not use.
-const RESERVED: &[&str] = &["char", "short", "inline", "sizeof"];
+/// Where no rule matches: the unexpected character and what follows it up
+/// to the next space, newline or `;`, which the lexer skips.
+const UNEXPECTED: &str = r"(?s:.)[^\n \t;]*";
+
+/// Compiles a rule to match as much as it can, as flex does, rather than
+/// the first alternative that matches.
+fn longest(pattern: &str) -> Regex {
+    Regex::builder()
+        .configure(Regex::config().match_kind(MatchKind::All))
+        .build(pattern)
+        .expect("lexer rules are valid")
+}
+
+static COMPILED: LazyLock<Vec<(Rule, Regex)>> = LazyLock::new(|| {
+    RULES
+        .iter()
+        .map(|&(rule, pattern)| (rule, longest(pattern)))
+        .collect()
+});
+
+static COMPILED_UNEXPECTED: LazyLock<Regex> = LazyLock::new(|| longest(UNEXPECTED));
 
 /// A token, with the comments attached to it.
 #[derive(Clone, Debug)]
@@ -152,35 +204,20 @@ pub(crate) struct Lexed {
 
 pub(crate) fn lex(src: &str, diags: &mut Vec<Diagnostic>) -> Lexed {
     Lexer {
-        src: src.as_bytes(),
+        src,
         lines: LineIndex::new(src),
-        pos: 0,
         tokens: Vec::new(),
         leading: String::new(),
         leading_end_line: 0,
         header: String::new(),
         diags,
     }
-    .run(src)
-}
-
-/// What matched at a position, in order of preference on a tie.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Match {
-    Newline,
-    Space,
-    LeadingComment,
-    Literal,
-    TrailingComment,
-    Word,
-    Number,
-    Punct,
+    .run()
 }
 
 struct Lexer<'s, 'd> {
-    src: &'s [u8],
+    src: &'s str,
     lines: LineIndex<'s>,
-    pos: usize,
     tokens: Vec<Token>,
     /// Leading comments not yet attached to a token.
     leading: String,
@@ -191,73 +228,27 @@ struct Lexer<'s, 'd> {
 }
 
 impl Lexer<'_, '_> {
-    fn run(mut self, src: &str) -> Lexed {
-        while self.pos < self.src.len() {
-            let start = self.pos;
-            let Some((m, len)) = self.longest_match() else {
-                // Skip to the next space, newline or `;`.
-                let end = start
-                    + self.src[start..]
-                        .iter()
-                        .position(|b| b" \t\n;".contains(b))
-                        .unwrap_or(self.src.len() - start)
-                        .max(1);
-                let end = (start + 1..=end)
-                    .rev()
-                    .find(|&e| src.is_char_boundary(e))
-                    .unwrap_or(end);
+    fn run(mut self) -> Lexed {
+        let mut pos = 0;
+        while pos < self.src.len() {
+            // The search sees the text before `pos`, for `^`.
+            let input = Input::new(self.src).range(pos..).anchored(Anchored::Yes);
+            let Some((rule, len)) = longest_match(&input) else {
+                let len = COMPILED_UNEXPECTED
+                    .search(&input)
+                    .expect("matches any character")
+                    .len();
+                let span = Span::new(pos, pos + len);
                 self.diags.push(Diagnostic::error(
-                    Span::new(start, end),
-                    format!("unexpected `{}`", &src[start..end]),
+                    span,
+                    format!("unexpected `{}`", &self.src[pos..pos + len]),
                 ));
-                self.pos = end;
+                pos += len;
                 continue;
             };
-            let end = start + len;
-            self.pos = end;
-            let span = Span::new(start, end);
-            let text = &src[start..end];
-            match m {
-                Match::Newline | Match::Space => {}
-                Match::LeadingComment => {
-                    self.take_header(start);
-                    if !self.leading.is_empty() {
-                        self.leading.push('\n');
-                    }
-                    self.leading.push_str(text);
-                    self.leading_end_line = self.lines.line(end);
-                }
-                Match::TrailingComment => {
-                    if let Some(prev) = self.tokens.last_mut() {
-                        let col = self.lines.line_col(start).col;
-                        prev.trailing = format!("{}{text}\n", " ".repeat(col - 1));
-                    } else {
-                        // With no token before it, the comment leads.
-                        self.take_header(start);
-                        if !self.leading.is_empty() {
-                            self.leading.push('\n');
-                        }
-                        self.leading.push_str(text);
-                        self.leading.push('\n');
-                        self.leading_end_line = self.lines.line(end);
-                    }
-                }
-                Match::Literal => self.push(Tok::Literal, span),
-                Match::Number => self.push(Tok::Number, span),
-                Match::Punct => self.push(Tok::Punct(self.src[start]), span),
-                Match::Word => {
-                    if let Some(&(_, kind)) = KEYWORDS.iter().find(|(k, _)| *k == text) {
-                        self.push(kind, span);
-                    } else if RESERVED.contains(&text) {
-                        self.diags.push(Diagnostic::error(
-                            span,
-                            format!("`{text}` is reserved and cannot be used"),
-                        ));
-                    } else {
-                        self.push(Tok::Ident, span);
-                    }
-                }
-            }
+            let span = Span::new(pos, pos + len);
+            self.apply(rule, span);
+            pos += len;
         }
         let end = self.src.len();
         self.push(Tok::Eof, Span::new(end, end));
@@ -265,6 +256,41 @@ impl Lexer<'_, '_> {
             tokens: self.tokens,
             header: self.header,
         }
+    }
+
+    /// Carries out the action of `rule`, which matched `span`.
+    fn apply(&mut self, rule: Rule, span: Span) {
+        let text = &self.src[span.start..span.end];
+        match rule {
+            Rule::Skip => {}
+            Rule::Leading => self.lead(text, span),
+            Rule::Trailing => {
+                if let Some(prev) = self.tokens.last_mut() {
+                    let col = self.lines.line_col(span.start).col;
+                    prev.trailing = format!("{}{text}\n", " ".repeat(col - 1));
+                } else {
+                    // With no token before it, the comment leads.
+                    self.lead(&format!("{text}\n"), span);
+                }
+            }
+            Rule::Reserved => self.diags.push(Diagnostic::error(
+                span,
+                format!("`{text}` is reserved and cannot be used"),
+            )),
+            Rule::Punct => self.push(Tok::Punct(text.as_bytes()[0]), span),
+            Rule::Tok(kind) => self.push(kind, span),
+        }
+    }
+
+    /// Adds `text`, a comment ending with a newline, to the leading
+    /// comments.
+    fn lead(&mut self, text: &str, span: Span) {
+        self.take_header(span.start);
+        if !self.leading.is_empty() {
+            self.leading.push('\n');
+        }
+        self.leading.push_str(text);
+        self.leading_end_line = self.lines.line(span.end);
     }
 
     fn push(&mut self, kind: Tok, span: Span) {
@@ -294,157 +320,19 @@ impl Lexer<'_, '_> {
             self.header.push_str(&core::mem::take(&mut self.leading));
         }
     }
-
-    fn longest_match(&self) -> Option<(Match, usize)> {
-        let p = self.pos;
-        let bol = p == 0 || self.src[p - 1] == b'\n';
-        let candidates = [
-            (Match::Newline, (self.src[p] == b'\n').then_some(1)),
-            (Match::Space, nonzero(self.span_of(p, b" \t\r\x0c"))),
-            (
-                Match::LeadingComment,
-                bol.then(|| self.block_comment_lines(p).max(self.line_comment_lines(p)))
-                    .and_then(nonzero),
-            ),
-            (
-                Match::Literal,
-                (bol && self.src[p] == b'%').then(|| self.to_eol(p) - p),
-            ),
-            (Match::TrailingComment, self.trailing_comment(p)),
-            (Match::Word, self.word(p)),
-            (Match::Number, self.number(p)),
-            (
-                Match::Punct,
-                b"=;{}<>[]*,:()".contains(&self.src[p]).then_some(1),
-            ),
-        ];
-        // The longest match; on a tie, the first.
-        candidates
-            .into_iter()
-            .filter_map(|(m, len)| Some((m, len?)))
-            .fold(None, |best: Option<(Match, usize)>, (m, len)| match best {
-                Some((_, l)) if l >= len => best,
-                _ => Some((m, len)),
-            })
-    }
-
-    /// The number of bytes from `p` in `set`.
-    fn span_of(&self, p: usize, set: &[u8]) -> usize {
-        self.src[p..].iter().take_while(|b| set.contains(b)).count()
-    }
-
-    /// The offset of the newline ending the line at `p`, or the end of the
-    /// file.
-    fn to_eol(&self, p: usize) -> usize {
-        self.src[p..]
-            .iter()
-            .position(|&b| b == b'\n')
-            .map_or(self.src.len(), |i| p + i)
-    }
-
-    /// The end of a `/* */` comment starting at `p`.
-    fn block_comment_end(&self, p: usize) -> Option<usize> {
-        if !self.src[p..].starts_with(b"/*") {
-            return None;
-        }
-        self.src[p + 2..]
-            .windows(2)
-            .position(|w| w == b"*/")
-            .map(|i| p + 2 + i + 2)
-    }
-
-    /// The length of the lines from `p` that each hold only a `/* */`
-    /// comment, through the final newline.
-    fn block_comment_lines(&self, p: usize) -> usize {
-        let mut end = p;
-        loop {
-            let q = end + self.span_of(end, b" \t");
-            let Some(close) = self.block_comment_end(q) else {
-                break;
-            };
-            let after = close + self.span_of(close, b" \t");
-            if self.src.get(after) != Some(&b'\n') {
-                break;
-            }
-            end = after + 1;
-        }
-        end - p
-    }
-
-    /// The length of the lines from `p` that each hold only a `//` comment,
-    /// through the final newline.
-    fn line_comment_lines(&self, p: usize) -> usize {
-        let mut end = p;
-        loop {
-            let q = end + self.span_of(end, b" \t");
-            if !self.src[q..].starts_with(b"//") {
-                break;
-            }
-            let eol = self.to_eol(q);
-            if eol == self.src.len() {
-                break;
-            }
-            end = eol + 1;
-        }
-        end - p
-    }
-
-    /// The length of a comment starting at `p`. A `//` comment continues
-    /// onto following lines that start with `//` but not `///`.
-    fn trailing_comment(&self, p: usize) -> Option<usize> {
-        if let Some(end) = self.block_comment_end(p) {
-            return Some(end - p);
-        }
-        if !self.src[p..].starts_with(b"//") {
-            return None;
-        }
-        let mut end = self.to_eol(p);
-        while end < self.src.len() {
-            let q = end + 1 + self.span_of(end + 1, b" \t");
-            let continues = self.src[q..].starts_with(b"//")
-                && self
-                    .src
-                    .get(q + 2)
-                    .is_some_and(|&b| b != b'/' && b != b'\n');
-            if !continues {
-                break;
-            }
-            end = self.to_eol(q);
-        }
-        Some(end - p)
-    }
-
-    fn word(&self, p: usize) -> Option<usize> {
-        let first = self.src[p];
-        (first.is_ascii_alphabetic() || first == b'_').then(|| {
-            1 + self.src[p + 1..]
-                .iter()
-                .take_while(|b| b.is_ascii_alphanumeric() || **b == b'_')
-                .count()
-        })
-    }
-
-    /// `[+-]?([0-9'_]+|0x[0-9a-fA-F'_]+)`
-    fn number(&self, p: usize) -> Option<usize> {
-        let sign = usize::from(matches!(self.src[p], b'+' | b'-'));
-        let q = p + sign;
-        let dec = self.src[q..]
-            .iter()
-            .take_while(|b| b.is_ascii_digit() || **b == b'\'' || **b == b'_')
-            .count();
-        let hex = if self.src[q..].starts_with(b"0x") {
-            self.src[q + 2..]
-                .iter()
-                .take_while(|b| b.is_ascii_hexdigit() || **b == b'\'' || **b == b'_')
-                .count()
-        } else {
-            0
-        };
-        let len = if hex > 0 { (2 + hex).max(dec) } else { dec };
-        (len > 0).then_some(sign + len)
-    }
 }
 
-fn nonzero(n: usize) -> Option<usize> {
-    (n > 0).then_some(n)
+/// The longest match among [`RULES`] at the start of `input`, as the rule
+/// and the length; on a tie, the earlier rule.
+fn longest_match(input: &Input<'_>) -> Option<(Rule, usize)> {
+    let mut best: Option<(Rule, usize)> = None;
+    for (rule, regex) in COMPILED.iter() {
+        if let Some(m) = regex.search(input)
+            && !m.is_empty()
+            && best.is_none_or(|(_, len)| m.len() > len)
+        {
+            best = Some((*rule, m.len()));
+        }
+    }
+    best
 }

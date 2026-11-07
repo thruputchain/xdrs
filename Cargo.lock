@@ -934,6 +934,7 @@ dependencies = [
  "prettyplease",
  "proc-macro2",
  "quote",
+ "regex-automata",
  "syn 3.0.5",
 ]
 

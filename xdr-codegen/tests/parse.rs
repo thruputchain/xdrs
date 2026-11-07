@@ -154,6 +154,14 @@ fn comment_mid_line_trails_the_previous_token() {
 }
 
 #[test]
+fn trailing_block_comment_may_end_in_several_stars() {
+    // x23c rejects this: its rule for a trailing `/* */` comment ends in
+    // `\*\/` rather than `\*+\/`.
+    let item = only("const A = 1; /* x **/\n");
+    assert_eq!(item.comment, format!("{}/* x **/\n", " ".repeat(13)));
+}
+
+#[test]
 fn enum_member_comments() {
     let item = only("enum E {\n  // Leads A.\n  A = 0, // trails A\n  B = 1 // trails B\n};\n");
     let members = &enum_body(&item).members;
