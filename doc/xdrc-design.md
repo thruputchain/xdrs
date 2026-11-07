@@ -159,7 +159,8 @@ Out of scope:
 ### Hand-written lexer and parser
 
 The lexer and the recursive-descent parser are written by hand, with no
-parsing dependencies.
+parsing dependencies. The lexer is a table of regular expressions copied
+from x23c's flex rules and matched with `regex-automata` (see below).
 
 - **The grammar is small and LL(1).** `parse.yy` has about 30 rules. Only a
   few constructs need care, and each needs at most one token of lookahead:
@@ -182,6 +183,16 @@ parsing dependencies.
   handles warnings with exact source positions directly.
 - **Cost.** The estimate is 500–700 lines, with no build-time code
   generation and no added compile time.
+- **The lexer as a rule table.** At first the lexer was written as one
+  matching function per rule. That code was harder to read and to change
+  than x23c's `lex.ll`, where each rule is one line and flex does the
+  matching. The lexer was therefore rewritten as a table of regular
+  expressions with flex's semantics, using `regex-automata`: at each
+  position, the longest match wins, and ties go to the earlier rule.
+  - `regex-automata` is a regex engine, not a parser generator, and it was
+    already in the workspace's dependency graph.
+  - Running every rule at every position is slow, but `.x` files are small
+    and speed is not a priority.
 
 Alternatives considered:
 

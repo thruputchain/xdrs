@@ -2,7 +2,7 @@
 
 How xdrc's parser and Rust backend work, where they differ from x23c, and
 how they have been checked. The rationale is in
-[design-xdrc.md](design-xdrc.md).
+[xdrc-design.md](xdrc-design.md).
 
 ## Layout
 
@@ -28,17 +28,31 @@ diagnostic if there was an error. `xdr_codegen::rust::generate` turns a
 
 ### Tokens
 
-At each position the lexer takes the longest match among its rules. On a
-tie it prefers the earlier rule, in this order:
+The lexer is a table of regular expressions, `RULES` in `src/lexer.rs`,
+taken from x23c's `lex.ll`. Each rule is compiled with `regex-automata`
+using `MatchKind::All`, so that an anchored search returns its longest
+match, as flex does, rather than its first. At each position the lexer
+takes the longest match among the rules, preferring the earlier rule on a
+tie. `(?m:^)` anchors a rule to the start of a line, like flex's `^`; the
+search sees the text before the position, so the anchor works mid-file.
+The rules, in order:
 
 1. newline
 2. spaces, tabs, carriage returns and form feeds
 3. a leading comment, at the start of a line only (see below)
 4. a `%` line, at the start of a line only
 5. a trailing comment
-6. a keyword or identifier
-7. a number
-8. punctuation
+6. each keyword
+7. a reserved word
+8. an identifier
+9. a number
+10. punctuation
+
+Where no rule matches, a fallback pattern takes the unexpected character
+and what follows it up to the next space, newline or `;`.
+
+Each rule's action lives in `Lexer::apply`. The comment attachment there
+corresponds to the token loop in x23c's `x23c.cc`, not to its scanner.
 
 These follow x23c's flex rules, which give some unusual results:
 
@@ -52,6 +66,10 @@ These follow x23c's flex rules, which give some unusual results:
 - **Unexpected characters:** an unexpected character is an error, and the
   lexer skips to the next space, newline or `;`. x23c's recovery differs in
   detail, but every error is fatal in both.
+- **Comments ending in `**/`:** x23c's trailing-comment rule ends in
+  `\*\/` rather than `\*+\/`, so x23c rejects `int a; /* x **/`. xdrc's
+  rule ends in `\*+/` and accepts it. x23c's leading-comment rule already
+  allows it.
 - **Columns** in diagnostics count a tab as advancing to the next multiple
   of 8 plus one, as x23c does.
 
