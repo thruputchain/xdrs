@@ -1651,6 +1651,73 @@ fn unsigned_discriminant_const_matches_runtime() {
     assert_eq!(decoded, UD_OTHER);
 }
 
+// A default arm switched on an enum newtype, as x23c emits enums. The const
+// writers write its stored discriminant through the newtype's own const
+// writer, so it encodes as the signed int the runtime writer emits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(transparent)]
+struct Kind(i32);
+
+impl Kind {
+    const LOW: Kind = Kind(-1);
+    const HIGH: Kind = Kind(40);
+}
+
+impl xdrs::XDRDiscriminant for Kind {
+    const ENCODING: xdrs::DiscriminantEncoding = xdrs::DiscriminantEncoding::Signed;
+    fn discriminant(&self) -> i32 {
+        self.0
+    }
+    fn from_discriminant(d: i32) -> Self {
+        Kind(d)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, xdrs::ConstWriteXDR, xdrs::WriteXDR, xdrs::ReadXDR)]
+#[repr(i32)]
+#[xdr(discriminant = "Kind")]
+#[allow(dead_code)]
+enum ByKind {
+    Low(u32) = Kind::LOW.0,
+    High = Kind::HIGH.0,
+    #[xdr(default_variant)]
+    Other(Kind, u32),
+}
+
+const BK_HIGH: ByKind = ByKind::High;
+const BK_OTHER: ByKind = ByKind::Other(Kind(32), 7);
+
+const BK_HIGH_CXS: [u8; BK_HIGH.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ BK_HIGH.const_cxs_size() }>::new();
+    BK_HIGH.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const BK_OTHER_CXS: [u8; BK_OTHER.const_cxs_size()] = {
+    let mut w = xdrs::cxs::ConstWriter::<{ BK_OTHER.const_cxs_size() }>::new();
+    BK_OTHER.const_write_cxs(&mut w);
+    w.into_bytes()
+};
+
+const BK_OTHER_TXS: [u8; BK_OTHER.const_txs_size()] = {
+    let mut w = xdrs::txs::ConstWriter::<{ BK_OTHER.const_txs_size() }>::new();
+    BK_OTHER.const_write_txs(&mut w);
+    w.into_bytes()
+};
+
+#[test]
+fn enum_newtype_default_discriminant_const_matches_runtime() {
+    // 32 is signed in CXS: two bytes, where an unsigned 32 would take one.
+    assert_eq!(BK_OTHER_CXS, [0x3f, 0x20, 0x07]);
+    assert_eq!(&BK_OTHER_CXS, cxs_runtime_encode(&BK_OTHER).as_slice());
+    assert_eq!(&BK_OTHER_TXS, txs_runtime_encode(&BK_OTHER).as_slice());
+    assert_eq!(&BK_HIGH_CXS, cxs_runtime_encode(&BK_HIGH).as_slice());
+    let decoded: ByKind = xdrs::cxs::decode(&BK_OTHER_CXS).unwrap();
+    assert_eq!(decoded, BK_OTHER);
+    let decoded: ByKind = xdrs::txs::decode(&BK_OTHER_TXS).unwrap();
+    assert_eq!(decoded, BK_OTHER);
+}
+
 // -- Derive macro tests: VecM / BytesM / StringM containers --
 //
 // With the `alloc` feature, container values cannot be used inside const

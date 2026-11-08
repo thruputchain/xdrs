@@ -152,9 +152,11 @@ use proc_macro::TokenStream;
 ///   serializing.
 /// - `#[xdr(via = "Type")]` - Same as above (also implies `from_type`).
 /// - `#[xdr(default_variant)]` - On an enum variant: mark it as the union's
-///   default arm. The variant must be the trailing variant and must not
-///   specify a discriminant, and its first field must be `i32`, which stores
-///   the wire discriminant and is emitted verbatim when encoding.
+///   default arm. The variant must be the trailing variant. Its first field
+///   has the union's switch type (`i32` unless `#[xdr(discriminant = "T")]`
+///   names another) and stores the wire discriminant, which is emitted
+///   verbatim when encoding. An explicit Rust discriminant on the variant
+///   never goes on the wire.
 /// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
 ///
@@ -173,8 +175,8 @@ use proc_macro::TokenStream;
 ///   parameters. For example, `#[xdr(into_type = "VecM<T, 8>")]` on a generic
 ///   `Wrapper<T>` will not automatically add `T: WriteXDR`; you must supply the
 ///   bound yourself.
-/// - **Default variant discriminant is not validated.** When a `Default(i32, ..)`
-///   variant is encoded, the writer emits the stored discriminant without
+/// - **Default variant discriminant is not validated.** When a default
+///   variant is encoded, the writer emits its stored discriminant without
 ///   checking whether it collides with a concrete variant. Encoding a `Default`
 ///   with a known discriminant value will produce bytes that the reader decodes
 ///   as the concrete variant, not as `Default`.
@@ -201,7 +203,8 @@ pub fn derive_write_xdr(input: TokenStream) -> TokenStream {
 /// - `#[xdr(default_variant)]` - On an enum variant (which must be the
 ///   trailing variant): mark it as the union's default arm. Discriminants that
 ///   match no other variant decode to this variant, with the wire discriminant
-///   stored in its first field (which must be `i32`). Without a default
+///   stored in its first field, which has the union's switch type (`i32`
+///   unless `#[xdr(discriminant = "T")]` names another). Without a default
 ///   variant, unknown discriminants fail with a decode error.
 /// - `#[xdr(crate = "path::to::xdrs")]` - Override the path to the `xdrs` crate
 ///   (useful when re-exporting from another crate).
@@ -336,6 +339,12 @@ pub fn derive_xdr(input: TokenStream) -> TokenStream {
 /// - Likewise `Box<T>` values can only be constructed in const contexts in
 ///   no-`alloc` builds, where `Box::new` is const and the value is inline;
 ///   with `alloc` the generated methods still compile and run at runtime
+/// - A union's default arm writes the wire discriminant stored in its first
+///   field as a value of that field's type, under the same rules as any
+///   field: a primitive named directly (`i32`, `u32`, `bool`), or a type with
+///   its own const methods. So an enum newtype used as the switch type must
+///   also derive `ConstWriteXDR`, and an alias of a primitive isn't recognized
+///   (see "Generated code hygiene" below)
 ///
 /// # Generated code hygiene
 ///
