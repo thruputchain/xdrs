@@ -281,6 +281,14 @@ These have the same shapes as x23c's output:
     `_0x10`, a member name, `TRUE` or `FALSE`, or `_CONST`.
   - The default variant's tag is computed by rustc in a const block, as the
     least `i32` that no case uses.
+  - The default variant's first field, which holds the discriminant, has
+    the switch type. When that type is an alias, defined in the same file,
+    of `int`, `unsigned int` or `bool`, possibly through other aliases, the
+    field gets the primitive instead. The derived const writers (since
+    xdrs#381) write the field directly only when its type is named as a
+    primitive; for an alias they would look for const methods that a
+    primitive does not have. An alias from another file cannot be resolved,
+    and keeps this problem.
   - An accessor named after the switch variable returns the discriminant.
 - **Programs:** for each version, the trait `P_V`, `P_V_Dispatcher` and
   `P_V_Client`, against `thruput_rpc_api`.

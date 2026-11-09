@@ -496,6 +496,25 @@ mod tests {
         w.into_bytes()
     };
 
+    const ALIAS_DEFAULT: ConstAliasDefault = ConstAliasDefault::Default { i: 7 };
+    const ALIAS_DEFAULT_TXS: [u8; ALIAS_DEFAULT.const_txs_size()] = {
+        let mut w = xdrs::txs::ConstWriter::<{ ALIAS_DEFAULT.const_txs_size() }>::new();
+        ALIAS_DEFAULT.const_write_txs(&mut w);
+        w.into_bytes()
+    };
+
+    #[test]
+    fn const_writers_on_a_default_arm_switched_on_an_alias() {
+        assert_eq!(ALIAS_DEFAULT_TXS, [0, 0, 0, 7]);
+        assert_eq!(ALIAS_DEFAULT_TXS.as_slice(), txs(&ALIAS_DEFAULT).as_slice());
+        let i: Index = ALIAS_DEFAULT.i();
+        assert_eq!(i, 7);
+        assert_eq!(
+            xdrs::txs::decode::<ConstAliasDefault>(&ALIAS_DEFAULT_TXS).unwrap(),
+            ALIAS_DEFAULT
+        );
+    }
+
     #[test]
     fn const_writers_and_inline_unions() {
         assert_eq!(CONST_MAX_TXS, [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 5]);
