@@ -41,6 +41,18 @@ fn rejects() {
         error("struct S { opaque a<-1>; };\n"),
         "t.x:1:21: error: a length cannot be negative\n"
     );
+    // A procedure's client method would collide.
+    assert_eq!(
+        error(
+            "program P { version V { void new(void) = 0; void prog_vers(void) = 1; } = 1; } = 9;\n"
+        ),
+        "t.x:1:30: error: a procedure cannot be named `new`, which the Rust client uses\n\
+         t.x:1:50: error: a procedure cannot be named `prog_vers`, which the Rust client uses\n"
+    );
+    assert_eq!(
+        error("program P { version V { void f(void) = 0; void f(int) = 1; } = 1; } = 9;\n"),
+        "t.x:1:48: error: duplicate procedure `f` in version `V`\n"
+    );
 }
 
 #[test]

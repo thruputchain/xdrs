@@ -12,6 +12,8 @@
 //!   arguments, sends the call and decodes the reply. Scalar arguments go
 //!   by value; others are borrowed as anything that encodes like them.
 
+use std::collections::HashSet;
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -44,7 +46,26 @@ impl Gen<'_> {
         let mut trait_fns = Vec::new();
         let mut dispatch_arms = Vec::new();
         let mut client_fns = Vec::new();
+        let mut names = HashSet::new();
         for proc in &version.procs {
+            // The client's methods share a scope with its helpers. Renaming
+            // the helpers would change the API x23c generates.
+            let pname = proc.name.name.as_str();
+            if CLIENT_HELPERS.contains(&pname) {
+                self.error(
+                    proc.name.span,
+                    format!("a procedure cannot be named `{pname}`, which the Rust client uses"),
+                );
+            }
+            if !names.insert(pname) {
+                self.error(
+                    proc.name.span,
+                    format!(
+                        "duplicate procedure `{pname}` in version `{}`",
+                        version.name.name
+                    ),
+                );
+            }
             let name = self.name(&proc.name);
             let number = self.value(&proc.value);
             let result = match &proc.result {
@@ -187,6 +208,9 @@ impl Gen<'_> {
         });
     }
 }
+
+/// The client's own methods, which a procedure's method would duplicate.
+const CLIENT_HELPERS: &[&str] = &["new", "prog_vers"];
 
 /// Whether a client passes an argument of type `t` by value.
 fn is_scalar(t: &TypeSpec) -> bool {
