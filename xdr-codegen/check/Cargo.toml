@@ -14,9 +14,9 @@ serde = ["dep:serde", "xdrs/serde"]
 
 [dependencies]
 async-trait = "0.1.89"
-thruput-rpc-api = { path = "../../rpc/rpc_api" }
 schemars = "1"
 serde = { version = "1", features = ["derive"], optional = true }
+thruput-rpc-api = { workspace = true }
 xdr-common = { workspace = true }
 xdrs = { workspace = true, features = ["alloc", "derive", "schemars"] }
 

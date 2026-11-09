@@ -38,6 +38,8 @@ fn usage_error(message: &str) -> String {
     format!("xdrc: {message}\n{USAGE}")
 }
 
+/// Fails with a message for `main` to print, or with an empty one when the
+/// diagnostics have already been printed.
 fn run() -> Result<(), String> {
     let mut options = Options::default();
     let mut strict = false;
