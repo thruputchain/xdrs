@@ -97,7 +97,7 @@ impl Gen<'_> {
                     Case::Bool(b) if is_bool => quote! { #b },
                     Case::Bool(b) => quote! { #b as #switch },
                     Case::Number(n) => {
-                        let n = self.int(n);
+                        let n = Self::int(n);
                         quote! { #n as #switch }
                     }
                     Case::Const(c) => {

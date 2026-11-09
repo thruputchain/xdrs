@@ -311,7 +311,7 @@ impl Gen<'_> {
     }
 
     /// An integer literal, keeping its base and separators.
-    fn int(&mut self, n: &Number) -> TokenStream {
+    fn int(n: &Number) -> TokenStream {
         let (negative, digits) = match n.text.strip_prefix('-') {
             Some(d) => (true, d),
             None => (false, n.text.trim_start_matches('+')),
@@ -334,7 +334,7 @@ impl Gen<'_> {
 
     fn value(&mut self, v: &Value) -> TokenStream {
         match v {
-            Value::Number(n) => self.int(n),
+            Value::Number(n) => Self::int(n),
             Value::Ident(i) => {
                 let i = self.name(i);
                 quote! { #i }
@@ -557,7 +557,7 @@ impl Gen<'_> {
         } else {
             quote! { u32 }
         };
-        let value = self.int(&c.value);
+        let value = Self::int(&c.value);
         let doc = comment.attrs();
         self.items
             .push(quote! { #doc pub const #name: #ty = #value; });
