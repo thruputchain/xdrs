@@ -165,7 +165,8 @@ impl Gen<'_> {
     /// The module's inner attributes and imports.
     fn prelude(&self) -> TokenStream {
         let std_io = self.gated("std", quote! { use std::io::{Read, Write}; });
-        let xdrs = self.gated("xdrs", quote! { use xdrs::*; });
+        // The derive macros, which `derive(XDR)` needs as well.
+        let xdrs = self.gated_any(&["xdrs", "spec"], quote! { use xdrs::*; });
         let spec = self.gated("spec", quote! { use xdrs::xdr_repr::*; });
         let serde = self.gated("serde", quote! { use ::serde::{Deserialize, Serialize}; });
         quote! {
@@ -209,6 +210,42 @@ impl Gen<'_> {
             Mode::On => quote! { #[#attr] },
             Mode::Off => quote! {},
             Mode::Gated => quote! { #[cfg_attr(feature = #feature, #attr)] },
+        }
+    }
+
+    /// The condition for something any of `features` needs: `None` if all
+    /// are off, `Some(None)` if one is on, and otherwise `Some(Some(cfg))`,
+    /// gated on any of those not off.
+    fn any_cfg(&self, features: &[&str]) -> Option<Option<TokenStream>> {
+        if features.iter().any(|f| self.mode(f) == Mode::On) {
+            return Some(None);
+        }
+        let gated: Vec<&str> = features
+            .iter()
+            .copied()
+            .filter(|f| self.mode(f) == Mode::Gated)
+            .collect();
+        match gated.as_slice() {
+            [] => None,
+            [feature] => Some(Some(quote! { feature = #feature })),
+            features => Some(Some(quote! { any(#(feature = #features),*) })),
+        }
+    }
+
+    /// The attribute `#[attr]`, for whatever any of `features` enables.
+    fn attr_any(&self, features: &[&str], attr: TokenStream) -> TokenStream {
+        match self.any_cfg(features) {
+            None => quote! {},
+            Some(None) => quote! { #[#attr] },
+            Some(Some(cfg)) => quote! { #[cfg_attr(#cfg, #attr)] },
+        }
+    }
+
+    /// `item`, for whatever any of `features` enables.
+    fn gated_any(&self, features: &[&str], item: TokenStream) -> Option<TokenStream> {
+        match self.any_cfg(features)? {
+            None => Some(item),
+            Some(cfg) => Some(quote! { #[cfg(#cfg)] #item }),
         }
     }
 

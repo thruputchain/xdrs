@@ -101,3 +101,67 @@ fn features_can_be_forced() {
     assert!(!code.contains("XDR)]"), "{code}");
     assert!(code.contains("#[cfg_attr(feature = \"schema\""), "{code}");
 }
+
+/// The first line containing `needle` in the code for a union with a
+/// default arm, generated with the features `on` and `off`.
+fn line_with(needle: &str, on: &[&str], off: &[&str]) -> Option<String> {
+    let src = "union U switch (int k) { case 1: int v; default: void; };\n";
+    let spec = xdr_codegen::parse(src).expect("parses").spec;
+    let options = Options {
+        features_on: on.iter().map(|s| s.to_string()).collect(),
+        features_off: off.iter().map(|s| s.to_string()).collect(),
+        ..Options::default()
+    };
+    let code = generate(&spec, &options).expect("generates");
+    let mut lines = code.lines();
+    let found = lines.find(|l| l.contains(needle))?;
+    // A gated item's `#[cfg]` is on the line before it.
+    let cfg = code
+        .lines()
+        .zip(code.lines().skip(1))
+        .find(|(_, next)| *next == found)
+        .map(|(prev, _)| prev)
+        .filter(|prev| prev.starts_with("#[cfg("));
+    Some(match cfg {
+        Some(cfg) => format!("{cfg} {}", found.trim()),
+        None => found.trim().to_owned(),
+    })
+}
+
+fn default_variant_attr(on: &[&str], off: &[&str]) -> Option<String> {
+    line_with("default_variant", on, off)
+}
+
+#[test]
+fn default_variant_serves_both_derives() {
+    // `derive(XDR)` reads it too, so `spec` alone keeps it.
+    assert_eq!(
+        default_variant_attr(&["spec"], &["xdrs"]).as_deref(),
+        Some("#[xdr(default_variant)]")
+    );
+    assert_eq!(
+        default_variant_attr(&[], &["xdrs"]).as_deref(),
+        Some(r#"#[cfg_attr(feature = "spec", xdr(default_variant))]"#)
+    );
+    assert_eq!(
+        default_variant_attr(&[], &[]).as_deref(),
+        Some(r#"#[cfg_attr(any(feature = "xdrs", feature = "spec"), xdr(default_variant))]"#)
+    );
+    assert_eq!(
+        default_variant_attr(&[], &["spec"]).as_deref(),
+        Some(r#"#[cfg_attr(feature = "xdrs", xdr(default_variant))]"#)
+    );
+    assert_eq!(default_variant_attr(&[], &["xdrs", "spec"]), None);
+
+    // So does the import of the derive macros.
+    let import = |on: &[&str], off: &[&str]| line_with("use xdrs::*;", on, off);
+    assert_eq!(
+        import(&["spec"], &["xdrs"]).as_deref(),
+        Some("use xdrs::*;")
+    );
+    assert_eq!(
+        import(&[], &[]).as_deref(),
+        Some(r#"#[cfg(any(feature = "xdrs", feature = "spec"))] use xdrs::*;"#)
+    );
+    assert_eq!(import(&[], &["xdrs", "spec"]), None);
+}
