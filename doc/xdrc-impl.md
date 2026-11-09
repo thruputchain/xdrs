@@ -257,7 +257,9 @@ with `#[cfg_attr(feature = ...)]` or `#[cfg(feature = ...)]`.
 `--rust-no-feature F` leaves it out. The module prelude repeats x23c's
 `#![allow(...)]` list and its imports: `use crate::*`, `Deref`/`DerefMut`,
 `Option`, and the gated `std::io`, `xdrs::*`, `xdrs::xdr_repr::*` and
-serde imports.
+serde imports. `use xdrs::*`, which brings the derive macros, and a
+union's `#[xdr(default_variant)]` serve both `xdrs` and `spec`, so they are
+gated on either.
 
 ### Output by definition kind
 
@@ -315,6 +317,11 @@ None of these changes the public API of protocol-rs; see Verification.
   variant `_K` and value `K as Switch`. x23c takes it for an enum member,
   which does not compile. A label that is not a constant of the file is
   still taken for an enum member.
+- **`spec` without `xdrs`:** `use xdrs::*` and `#[xdr(default_variant)]`
+  are gated on either feature, as `derive(XDR)` needs them too. x23c gated
+  them on `xdrs` alone, so with only `spec` its output did not compile, and
+  without the attribute the derive would describe the default arm as an
+  ordinary case holding the discriminant.
 - **Lowercase `true` and `false` case labels** are `TRUE` and `FALSE`, with
   a warning, whatever the switch type: variant `TRUE`, value `true as
   Switch`. x23c crashed on them in a `bool` switch, and in other switches

@@ -123,7 +123,8 @@ impl Gen<'_> {
         }
 
         if let Some((doc, payload)) = default {
-            let attr = self.attr("xdrs", quote! { xdr(default_variant) });
+            // Both the encoding derives and `derive(XDR)` read it.
+            let attr = self.attr_any(&["xdrs", "spec"], quote! { xdr(default_variant) });
             let payload = payload.map(|p| quote! { , #p });
             // The derived const writers write this field through its type's
             // own const methods, or directly if the type is named as a
