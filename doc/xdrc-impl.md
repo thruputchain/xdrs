@@ -356,6 +356,13 @@ None of these changes the public API of protocol-rs; see Verification.
     helper of the generated client. The helpers keep x23c's names, so the
     client's API is unchanged.
   - two procedures of the same name in one version
+  - a case value outside the switch type's range, for an `int` or
+    `unsigned int` switch, directly or through aliases, when the value is a
+    number or a constant of the file. Rust rejects such a literal, but
+    x23c's `K as u32` silently truncated a constant: `4294967296` from a
+    `#[rust(const=u64)]` constant became `0`, and a `u32` constant above
+    `i32::MAX` wrapped on an `int` switch. Values that fit are generated as
+    before, keeping the bit pattern of unsigned values in the `i32` tag.
 - **Raw identifiers:** xdrc escapes every Rust keyword, including reserved
   ones such as `try`, `gen` and `box`, as a raw identifier. x23c's list was
   shorter.

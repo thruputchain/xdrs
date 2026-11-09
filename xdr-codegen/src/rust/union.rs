@@ -87,6 +87,7 @@ impl Gen<'_> {
                 let Some(case) = self.case(value, &body.switch_type, switch_named) else {
                     continue;
                 };
+                self.check_case_range(&case, value, &body.switch_type);
                 let variant = self.ident(&variant_name(&case), value.span());
                 let case_value = match &case {
                     Case::Member(m) => {
@@ -208,6 +209,36 @@ impl Gen<'_> {
         None
     }
 
+    /// Reports a case value that does not fit the switch type, when both
+    /// are known: a number or a constant of this file, and a switch that
+    /// is `int` or `unsigned int`, directly or through aliases. Rust would
+    /// reject a literal that does not fit, but truncate a constant.
+    fn check_case_range(&mut self, case: &Case<'_>, value: &Value, switch: &TypeSpec) {
+        let v = match case {
+            Case::Number(n) => n.value,
+            Case::Const(c) => match self.consts.get(&c.name) {
+                Some(&v) => v,
+                None => return,
+            },
+            _ => return,
+        };
+        let (range, ty) = match self.primitive(switch) {
+            Some(TypeSpec::Int) => (i128::from(i32::MIN)..=i128::from(i32::MAX), "int"),
+            Some(TypeSpec::UnsignedInt) => (0..=i128::from(u32::MAX), "unsigned int"),
+            _ => return,
+        };
+        if !range.contains(&v) {
+            let shown = match case {
+                Case::Const(c) => format!("`{}` ({v})", c.name),
+                _ => format!("`{v}`"),
+            };
+            self.error(
+                value.span(),
+                format!("case value {shown} does not fit the switch type `{ty}`"),
+            );
+        }
+    }
+
     /// Classifies a `case` label of a union switched on `switch`.
     fn case<'v>(
         &mut self,
@@ -232,7 +263,7 @@ impl Gen<'_> {
             Value::Number(n) => Some(Case::Number(n)),
             // A name that is no constant of this file is taken for a member
             // of the switch type, which may be defined in another file.
-            Value::Ident(i) if switch_named && !self.consts.contains(&i.name) => {
+            Value::Ident(i) if switch_named && !self.consts.contains_key(&i.name) => {
                 Some(Case::Member(i))
             }
             Value::Ident(i) => Some(Case::Const(i)),
