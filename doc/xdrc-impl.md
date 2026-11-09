@@ -320,6 +320,11 @@ None of these changes the public API of protocol-rs; see Verification.
     `pub type T = T;`.
   - An inline type under `*`, `[]` or `<>` is named consistently. x23c
     produced `S_Option<...>`.
+  - An enum member's value may be a name: another member of the same enum
+    (`Self(Self::A.0)`), a member of another enum in the file
+    (`Self(Other::X.0)`), or a constant (`Self(K as i32)`). x23c emitted
+    the bare name, `Self(A)` or `Self(K)`, which does not compile. A name
+    the file does not define is taken for a constant from another file.
 - **Newtypes:** a fixed opaque newtype whose length is a named constant gets
   a `JsonSchema` and no `Default`. x23c threw an exception on such a
   length.

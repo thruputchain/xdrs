@@ -489,6 +489,14 @@ mod tests {
         assert!(xdrs::txs::decode::<ByCode>(&[0, 0, 0, 1]).is_err());
     }
 
+    #[test]
+    fn enum_values_may_be_names() {
+        assert_eq!(Aliased::SAME, Aliased::FIRST);
+        assert_eq!(Aliased::SAME.0, 7);
+        assert_eq!(Aliased::OTHER.0, Status::REJECTED.0);
+        assert_eq!(Aliased::CONSTANT.0, MAX_BATCH as i32);
+    }
+
     const CONST_MAX: ConstUnsigned = ConstUnsigned::_4294967295 { v: 5 };
     const CONST_MAX_TXS: [u8; CONST_MAX.const_txs_size()] = {
         let mut w = xdrs::txs::ConstWriter::<{ CONST_MAX.const_txs_size() }>::new();
