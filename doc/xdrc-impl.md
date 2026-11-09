@@ -225,14 +225,15 @@ line.
 - **`/** */`** becomes a doc comment.
 
 Each comment line becomes its own line, without x23c's relative
-re-indentation. Blank lines in a comment are dropped. `comment::plain` uses
+re-indentation. An empty comment line, which separates paragraphs, is
+kept, except at the start or end of a `/* */` comment. `comment::plain` uses
 the same mechanism for comments that xdrc itself writes, such as the
 SAFETY note on RPC client methods.
 
 ### Markers
 
 Markers are found anywhere in a definition's comment and removed from the
-output. A comment line left empty by the removal is dropped.
+output. A comment line that held only markers is dropped.
 
 | Marker | Where | Effect |
 |---|---|---|

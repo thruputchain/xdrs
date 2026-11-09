@@ -74,49 +74,67 @@ impl Comment {
     }
 
     /// Parses a comment as the AST keeps it, removing its markers.
+    ///
+    /// A line that holds only markers is dropped. An empty comment line is
+    /// kept, as it separates paragraphs, except at the start or end of a
+    /// `/* */` comment.
     pub(crate) fn parse(text: &str) -> Self {
         let mut markers = Markers::default();
-        let mut text = text.to_owned();
-        for (marker, set) in MARKERS {
-            if text.contains(marker) {
-                set(&mut markers);
-                text = text.replace(marker, "");
-            }
-        }
-
         let mut lines = Vec::new();
-        let mut block: Option<bool> = None; // Inside `/* */`: whether `/**`.
+        // Inside `/* */`: whether `/**`, and where its lines start.
+        let mut block: Option<(bool, usize)> = None;
         for line in text.lines() {
+            let mut line = line.to_owned();
+            let mut had_marker = false;
+            for (marker, set) in MARKERS {
+                if line.contains(marker) {
+                    set(&mut markers);
+                    line = line.replace(marker, "");
+                    had_marker = true;
+                }
+            }
             let t = line.trim_start();
-            if let Some(doc) = block {
+            if let Some((doc, start)) = block {
                 let (body, closed) = match t.find("*/") {
                     Some(i) => (&t[..i], true),
                     None => (t, false),
                 };
-                push(&mut lines, doc, body.trim_start_matches('*'));
+                if !(had_marker && body.trim_matches(['*', ' ', '\t']).is_empty()) {
+                    push(&mut lines, doc, body.trim_start_matches('*'), true);
+                }
                 if closed {
+                    trim_blank(&mut lines, start);
                     block = None;
                 }
             } else if let Some(rest) = t.strip_prefix("/*") {
                 let doc = rest.starts_with('*') && !rest.starts_with("*/");
                 let rest = rest.trim_start_matches('*');
                 match rest.find("*/") {
-                    Some(i) => push(&mut lines, doc, &rest[..i]),
+                    Some(i) => push(&mut lines, doc, &rest[..i], false),
                     None => {
-                        push(&mut lines, doc, rest);
-                        block = Some(doc);
+                        let start = lines.len();
+                        push(&mut lines, doc, rest, true);
+                        block = Some((doc, start));
                     }
                 }
             } else if let Some(rest) = t.strip_prefix("///").filter(|r| !r.starts_with('/')) {
-                lines.push(Line::Doc(rest.trim_end().to_owned()));
+                if !(had_marker && rest.trim().is_empty()) {
+                    lines.push(Line::Doc(rest.trim_end().to_owned()));
+                }
             } else if let Some(rest) = t.strip_prefix("//") {
-                // A line left empty by a removed marker is dropped.
-                if !rest.trim().is_empty() {
+                if rest.trim().is_empty() {
+                    if !had_marker {
+                        lines.push(Line::Plain(String::new()));
+                    }
+                } else {
                     lines.push(Line::Plain(rest.trim_end().to_owned()));
                 }
             } else if !t.is_empty() {
                 lines.push(Line::Plain(format!(" {}", t.trim_end())));
             }
+        }
+        if let Some((_, start)) = block {
+            trim_blank(&mut lines, start);
         }
         Self { markers, lines }
     }
@@ -142,17 +160,36 @@ pub(crate) fn plain(lines: &[&str]) -> TokenStream {
     quote! { #(#[doc = #lines])* }
 }
 
-fn push(lines: &mut Vec<Line>, doc: bool, body: &str) {
-    let body = body.trim_end();
-    if body.trim().is_empty() {
+/// Adds a line of a `/* */` comment. An empty one is kept only if
+/// `keep_empty`, for a comment of several lines.
+fn push(lines: &mut Vec<Line>, doc: bool, body: &str, keep_empty: bool) {
+    let body = body.trim();
+    if body.is_empty() && !keep_empty {
         return;
     }
-    let body = format!(" {}", body.trim_start());
+    let body = if body.is_empty() {
+        String::new()
+    } else {
+        format!(" {body}")
+    };
     lines.push(if doc {
         Line::Doc(body)
     } else {
         Line::Plain(body)
     });
+}
+
+/// Removes the empty lines at the start and end of `lines[start..]`, the
+/// lines of one `/* */` comment.
+fn trim_blank(lines: &mut Vec<Line>, start: usize) {
+    let is_blank = |l: &Line| match l {
+        Line::Doc(t) | Line::Plain(t) => t.is_empty(),
+    };
+    while lines.len() > start && lines.last().is_some_and(is_blank) {
+        lines.pop();
+    }
+    let leading = lines[start..].iter().take_while(|l| is_blank(l)).count();
+    lines.drain(start..start + leading);
 }
 
 /// Turns the doc comments that stand for plain comments into `//` comments.
@@ -210,6 +247,39 @@ mod tests {
         assert_eq!(
             c.lines,
             [Line::Doc(" A thing.".into()), Line::Plain("  more".into())]
+        );
+    }
+
+    #[test]
+    fn empty_lines_separate_paragraphs() {
+        assert_eq!(
+            lines("// One.\n//\n// Two.\n///\n/// Doc.\n"),
+            [
+                Line::Plain(" One.".into()),
+                Line::Plain("".into()),
+                Line::Plain(" Two.".into()),
+                Line::Doc("".into()),
+                Line::Doc(" Doc.".into()),
+            ]
+        );
+        // Not at the edges of a `/* */` comment.
+        assert_eq!(
+            lines("/*\n * One.\n *\n * Two.\n */\n"),
+            [
+                Line::Plain(" One.".into()),
+                Line::Plain("".into()),
+                Line::Plain(" Two.".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn marker_lines_are_dropped() {
+        let c = Comment::parse("// One.\n// #[rust(newtype)]\n//\n/// #[doc(hidden)]\n");
+        assert!(c.markers.newtype && c.markers.doc_hidden);
+        assert_eq!(
+            c.lines,
+            [Line::Plain(" One.".into()), Line::Plain("".into())]
         );
     }
 
