@@ -279,7 +279,8 @@ These have the same shapes as x23c's output:
   only `void` becomes `pub struct NAME();`.
 - **Inline types:** named `PARENT_FIELD` and emitted before their parent.
 - **Union:** `#[repr(i32)] #[non_exhaustive]`, with
-  `#[xdr(discriminant = "SWITCH")]`.
+  `#[xdr(discriminant = "SWITCH")]`. A fixed opaque arm serializes as hex,
+  with a matching schemars attribute, as a struct field does.
   - Variants are named as listed in `src/rust/union.rs`: `_5`, `_neg1`,
     `_0x10`, a member name, `TRUE` or `FALSE`, or `_CONST`.
   - The default variant's tag is computed by rustc in a const block, as the
@@ -322,6 +323,10 @@ None of these changes the public API of protocol-rs; see Verification.
   them on `xdrs` alone, so with only `spec` its output did not compile, and
   without the attribute the derive would describe the default arm as an
   ordinary case holding the discriminant.
+- **Fixed opaque union arms** serialize as hex, with a matching schemars
+  attribute, as struct fields do. x23c left them bare `[u8; N]`, which with
+  `serde` did not compile beyond 32 bytes, and up to 32 serialized as an
+  array of numbers rather than a hex string.
 - **Lowercase `true` and `false` case labels** are `TRUE` and `FALSE`, with
   a warning, whatever the switch type: variant `TRUE`, value `true as
   Switch`. x23c crashed on them in a `bool` switch, and in other switches

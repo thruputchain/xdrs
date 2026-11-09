@@ -490,6 +490,15 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "serde")]
+    fn opaque_arms_serialize_as_hex() {
+        let sig = Sig::_0 { sig: [0xab; 64] };
+        let json = serde_json::to_string(&sig).unwrap();
+        assert_eq!(json, format!(r#"{{"_0":{{"sig":"{}"}}}}"#, "ab".repeat(64)));
+        assert_eq!(serde_json::from_str::<Sig>(&json).unwrap(), sig);
+    }
+
+    #[test]
     fn lowercase_booleans_are_true_and_false() {
         assert!(LowerBool::TRUE { v: 1 }.b());
         assert!(!LowerBool::FALSE.b());

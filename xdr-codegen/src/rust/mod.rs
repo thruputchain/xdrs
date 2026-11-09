@@ -711,6 +711,30 @@ impl Gen<'_> {
         );
     }
 
+    /// For a fixed opaque field, of a struct or a union arm: serde as a hex
+    /// string, as serde has no impls for arrays longer than 32, and a
+    /// matching schema. Nothing for any other field.
+    fn opaque_attrs(&mut self, ty: &DeclType) -> TokenStream {
+        let DeclType::Opaque { len } = ty else {
+            return quote! {};
+        };
+        let serde = self.attr("serde", quote! { serde(with = "xdr_common::serde_hex") });
+        // schemars borrows a schema from serde(with)'s type, so describe the
+        // hex string itself.
+        let n = self.bound(len);
+        let schema = self.attr(
+            "schema",
+            quote! {
+                schemars(
+                    with = "String",
+                    length(equal = 2 * (#n as usize)),
+                    extend("contentEncoding" = "hex", "contentMediaType" = "application/binary")
+                )
+            },
+        );
+        quote! { #serde #schema }
+    }
+
     fn struct_def(&mut self, name: &str, span: Span, body: &StructBody, comment: &Comment) {
         let markers = comment.markers;
         let mut fields = Vec::new();
@@ -727,27 +751,7 @@ impl Gen<'_> {
             );
             let field = self.name(&decl.name);
             let doc = field_comment.attrs();
-            let hex = match &decl.ty {
-                DeclType::Opaque { len } => {
-                    let serde =
-                        self.attr("serde", quote! { serde(with = "xdr_common::serde_hex") });
-                    // schemars borrows a schema from serde(with)'s type, so
-                    // describe the hex string itself.
-                    let n = self.bound(len);
-                    let schema = self.attr(
-                        "schema",
-                        quote! {
-                            schemars(
-                                with = "String",
-                                length(equal = 2 * (#n as usize)),
-                                extend("contentEncoding" = "hex", "contentMediaType" = "application/binary")
-                            )
-                        },
-                    );
-                    quote! { #serde #schema }
-                }
-                _ => quote! {},
-            };
+            let hex = self.opaque_attrs(&decl.ty);
             fields.push(quote! { #doc #hex pub #field: #ty });
         }
 
