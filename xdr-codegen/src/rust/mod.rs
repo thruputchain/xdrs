@@ -20,7 +20,7 @@ mod comment;
 mod rpc;
 mod union;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 use proc_macro2::{Span as Pm2Span, TokenStream};
 use quote::{format_ident, quote};
@@ -45,7 +45,7 @@ pub struct Options {
 
 /// Generates a Rust module from `spec`, or returns the reasons it cannot.
 pub fn generate(spec: &Spec, options: &Options) -> Result<String, Vec<Diagnostic>> {
-    let mut consts = HashSet::new();
+    let mut consts = HashMap::new();
     let mut aliases = HashMap::new();
     let mut members = HashMap::new();
     collect_names(&spec.items, &mut consts, &mut aliases, &mut members);
@@ -83,14 +83,14 @@ pub fn generate(spec: &Spec, options: &Options) -> Result<String, Vec<Diagnostic
 /// members of its named enums.
 fn collect_names(
     items: &[Item],
-    consts: &mut HashSet<String>,
+    consts: &mut HashMap<String, i128>,
     aliases: &mut HashMap<String, TypeSpec>,
     members: &mut HashMap<String, Ident>,
 ) {
     for item in items {
         match &item.kind {
             ItemKind::Const(c) => {
-                consts.insert(c.name.name.clone());
+                consts.insert(c.name.name.clone(), c.value.value);
             }
             ItemKind::Typedef(Declaration {
                 name,
@@ -137,8 +137,8 @@ enum Mode {
 
 pub(crate) struct Gen<'o> {
     options: &'o Options,
-    /// The names of the file's constants.
-    consts: HashSet<String>,
+    /// The file's constants, with their values.
+    consts: HashMap<String, i128>,
     /// The file's typedefs that become type aliases of `int`,
     /// `unsigned int`, `bool` or another name, by name.
     aliases: HashMap<String, TypeSpec>,

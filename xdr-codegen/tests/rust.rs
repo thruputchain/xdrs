@@ -41,6 +41,23 @@ fn rejects() {
         error("struct S { opaque a<-1>; };\n"),
         "t.x:1:21: error: a length cannot be negative\n"
     );
+    // A case value must fit the switch type, whether a number or a
+    // constant, which Rust would truncate rather than reject.
+    assert_eq!(
+        error("union U switch (unsigned int k) { case 4294967296: void; case -1: void; };\n"),
+        "t.x:1:40: error: case value `4294967296` does not fit the switch type `unsigned int`\n\
+         t.x:1:63: error: case value `-1` does not fit the switch type `unsigned int`\n"
+    );
+    assert_eq!(
+        error("const K = 3000000000;\nunion U switch (int k) { case K: void; };\n"),
+        "t.x:2:31: error: case value `K` (3000000000) does not fit the switch type `int`\n"
+    );
+    assert_eq!(
+        error(
+            "typedef unsigned int T;\nconst K = 4294967296;\nunion U switch (T k) { case K: void; };\n"
+        ),
+        "t.x:3:29: error: case value `K` (4294967296) does not fit the switch type `unsigned int`\n"
+    );
     // A procedure's client method would collide.
     assert_eq!(
         error(
