@@ -3,6 +3,7 @@ use darling::{FromDeriveInput, FromField, FromVariant};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
 use syn::Result;
+use syn::ext::IdentExt;
 
 #[derive(Clone, Debug, FromField, FromDeriveInput, FromVariant)]
 #[darling(attributes(xdr))]
@@ -107,7 +108,10 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let attrs = Attrs::from_derive_input(input)?;
     let ty_ident = &input.ident;
     // The XDR struct has the same name as the rust type, unless the attrs override that
-    let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
+    let ty_name = attrs
+        .name
+        .clone()
+        .unwrap_or_else(|| ty_ident.unraw().to_string());
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let type_reference_methods = named_type_reference_methods(ty_name.clone());
     let declare_fields = if item.fields.is_empty() {
@@ -157,7 +161,10 @@ fn from_enum_fieldless(
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
+    let ty_name = attrs
+        .name
+        .clone()
+        .unwrap_or_else(|| ty_ident.unraw().to_string());
     let type_reference_methods = named_type_reference_methods(ty_name.clone());
 
     let enum_typedef = enum_typedef(input, item, attrs)?;
@@ -181,7 +188,10 @@ fn from_enum_with_fields(
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let ty_name = attrs.name.clone().unwrap_or_else(|| ty_ident.to_string());
+    let ty_name = attrs
+        .name
+        .clone()
+        .unwrap_or_else(|| ty_ident.unraw().to_string());
     let type_reference_methods = named_type_reference_methods(ty_name.clone());
 
     let mut impls = vec![];
@@ -207,7 +217,7 @@ fn from_enum_with_fields(
         // No existing discriminant type was provided, so we also define
         // an XDR enumeration to serve as the discriminant
 
-        let rust_enum_name = ty_ident.to_string();
+        let rust_enum_name = ty_ident.unraw().to_string();
         let attrs = Attrs {
             name: Some(attrs.discrim_type_name(&rust_enum_name)),
             ..attrs.clone()
@@ -248,7 +258,7 @@ fn enum_typedef(
     let enum_name = attrs
         .name
         .clone()
-        .unwrap_or_else(|| input.ident.to_string());
+        .unwrap_or_else(|| input.ident.unraw().to_string());
 
     let declare_variants: Vec<TokenStream> = item
         .variants
@@ -284,10 +294,10 @@ fn union_typedef(
     let ty_name = attrs
         .name
         .clone()
-        .unwrap_or_else(|| input.ident.to_string());
+        .unwrap_or_else(|| input.ident.unraw().to_string());
 
     // The discriminant type name is based on the Rust type name, not the custom XDR name
-    let rust_enum_name = input.ident.to_string();
+    let rust_enum_name = input.ident.unraw().to_string();
     let discrim_type_name = attrs.discrim_type_name(&rust_enum_name);
     let discrim_typespec = quote! { __xdrs::named_type(#discrim_type_name) };
     let discrim_var = attrs.discrim_var_name();
@@ -324,7 +334,9 @@ fn variant_case_spec(variant: &syn::Variant) -> Result<Option<TokenStream>> {
     }
 
     let attrs = Attrs::from_variant(variant)?;
-    let variant_name = attrs.name.unwrap_or_else(|| variant.ident.to_string());
+    let variant_name = attrs
+        .name
+        .unwrap_or_else(|| variant.ident.unraw().to_string());
     let decl = variant_fields_decl(variant)?;
 
     Ok(Some(quote! {
@@ -334,7 +346,7 @@ fn variant_case_spec(variant: &syn::Variant) -> Result<Option<TokenStream>> {
 
 fn variant_fields_decl(variant: &syn::Variant) -> Result<TokenStream> {
     let fields = &variant.fields;
-    let variant_name = variant.ident.to_string().to_lowercase();
+    let variant_name = variant.ident.unraw().to_string().to_lowercase();
 
     match fields {
         syn::Fields::Unit => Ok(quote! { __xdrs::Declaration::Void }),
@@ -349,7 +361,7 @@ fn variant_fields_decl(variant: &syn::Variant) -> Result<TokenStream> {
                 let field_name = attrs.name.unwrap_or_else(|| {
                     field.ident
                         .as_ref()
-                        .map(|i| i.to_string())
+                        .map(|i| i.unraw().to_string())
                         .unwrap_or("inner".to_string())
                 });
                 Ok(quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) })
@@ -393,7 +405,7 @@ fn default_variant_payload_decl(variant: &syn::Variant) -> Result<TokenStream> {
             if payload_fields.is_empty() {
                 return Ok(quote! { __xdrs::declare_void() });
             }
-            let variant_name = variant.ident.to_string().to_lowercase();
+            let variant_name = variant.ident.unraw().to_string().to_lowercase();
             let decls = payload_fields
                 .iter()
                 .map(|field| {
@@ -402,7 +414,7 @@ fn default_variant_payload_decl(variant: &syn::Variant) -> Result<TokenStream> {
                     let field_name = attrs.name.unwrap_or_else(|| {
                         field.ident
                             .as_ref()
-                            .map(|i| i.to_string())
+                            .map(|i| i.unraw().to_string())
                             .unwrap_or("inner".to_string())
                     });
                     Ok(quote! { <#field_ty as __xdrs::Declare>::declare(__xdrs::ident(#field_name)) })
@@ -422,7 +434,7 @@ fn default_variant_payload_decl(variant: &syn::Variant) -> Result<TokenStream> {
             if payload_fields.is_empty() {
                 return Ok(quote! { __xdrs::declare_void() });
             }
-            let variant_name = variant.ident.to_string().to_lowercase();
+            let variant_name = variant.ident.unraw().to_string().to_lowercase();
             let decls: Vec<_> = payload_fields
                 .iter()
                 .enumerate()
@@ -451,7 +463,7 @@ fn declare_struct_field(i: usize, field: &syn::Field) -> Result<TokenStream> {
     let ty = &field.ty;
     let attrs = Attrs::from_field(field)?;
     let ident = field.ident.clone().unwrap_or(format_ident!("f{}", i));
-    let name = attrs.name.unwrap_or_else(|| ident.to_string());
+    let name = attrs.name.unwrap_or_else(|| ident.unraw().to_string());
 
     Ok(quote! {
         {
@@ -468,7 +480,9 @@ fn declare_enum_variant(index: usize, variant: &syn::Variant) -> Result<TokenStr
     }
 
     let attrs = Attrs::from_variant(variant)?;
-    let ident = attrs.name.unwrap_or_else(|| variant.ident.to_string());
+    let ident = attrs
+        .name
+        .unwrap_or_else(|| variant.ident.unraw().to_string());
 
     let index = index as i32;
     let index_expr = quote! { #index };
