@@ -556,6 +556,48 @@ impl ConstUnsigned {
     }
 }
 
+// A default arm switched on a typedef'd primitive. Its field has the
+// primitive's type, which the const writers recognize; they would not
+// recognize the alias.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(ReadXDR, WriteXDR, ConstWriteXDR, ConstXDRSize)]
+#[xdr(discriminant = "Index")]
+#[derive(schemars::JsonSchema)]
+#[repr(i32)]
+#[non_exhaustive]
+pub enum ConstAliasDefault {
+    _1 { v: i32 } = 1 as Index as i32,
+    #[xdr(default_variant)]
+    Default {
+        i: u32,
+    } = {
+        const __XDR_CASES: &[i32] = &[1 as Index as i32];
+        let mut tag = i32::MIN;
+        let mut i = 0;
+        while i < __XDR_CASES.len() {
+            if __XDR_CASES[i] == tag {
+                tag += 1;
+                i = 0;
+            } else {
+                i += 1;
+            }
+        }
+        tag
+    },
+}
+
+impl ConstAliasDefault {
+    /// The discriminant.
+    #[allow(clippy::match_single_binding)]
+    pub fn i(&self) -> Index {
+        match self {
+            ConstAliasDefault::_1 { .. } => 1 as Index,
+            ConstAliasDefault::Default { i, .. } => *i,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]

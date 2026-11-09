@@ -125,6 +125,15 @@ impl Gen<'_> {
         if let Some((doc, payload)) = default {
             let attr = self.attr("xdrs", quote! { xdr(default_variant) });
             let payload = payload.map(|p| quote! { , #p });
+            // The derived const writers write this field through its type's
+            // own const methods, or directly if the type is named as a
+            // primitive, which an alias of one is not.
+            let field_ty = match self.primitive(&body.switch_type) {
+                Some(TypeSpec::Int) => quote! { i32 },
+                Some(TypeSpec::UnsignedInt) => quote! { u32 },
+                Some(TypeSpec::Bool) => quote! { bool },
+                _ => switch.clone(),
+            };
             // The tag never goes on the wire, as the variant holds the
             // discriminant, but it must differ from every case's. The cases
             // may be enum members or constants from other files, so rustc
@@ -132,7 +141,7 @@ impl Gen<'_> {
             variants.push(quote! {
                 #doc
                 #attr
-                Default { #switch_id: #switch #payload } = {
+                Default { #switch_id: #field_ty #payload } = {
                     const __XDR_CASES: &[i32] = &[#(#tags),*];
                     let mut tag = i32::MIN;
                     let mut i = 0;
@@ -179,6 +188,22 @@ impl Gen<'_> {
                 }
             }
         });
+    }
+
+    /// The primitive that `ty` is, following the file's type aliases:
+    /// `int`, `unsigned int` or `bool`, or `None` for any other type,
+    /// including a name defined in another file.
+    fn primitive(&self, ty: &TypeSpec) -> Option<TypeSpec> {
+        let mut ty = ty;
+        // Bounded, in case the aliases form a cycle.
+        for _ in 0..=self.aliases.len() {
+            match ty {
+                TypeSpec::Int | TypeSpec::UnsignedInt | TypeSpec::Bool => return Some(ty.clone()),
+                TypeSpec::Named(i) => ty = self.aliases.get(&i.name)?,
+                _ => return None,
+            }
+        }
+        None
     }
 
     /// Classifies a `case` label of a union switched on `switch`.

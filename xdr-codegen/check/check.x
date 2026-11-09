@@ -149,6 +149,17 @@ case 0xA:
   void;
 };
 
+// A default arm switched on a typedef'd primitive. Its field has the
+// primitive's type, which the const writers recognize; they would not
+// recognize the alias.
+// #[rust(ConstWriteXDR)]
+union ConstAliasDefault switch (Index i) {
+case 1:
+  int v;
+default:
+  void;
+};
+
 // An anonymous union inside a struct.
 struct Tagged {
   union switch (unsigned int k) {

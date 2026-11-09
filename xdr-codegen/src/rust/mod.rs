@@ -20,7 +20,7 @@ mod comment;
 mod rpc;
 mod union;
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use proc_macro2::{Span as Pm2Span, TokenStream};
 use quote::{format_ident, quote};
@@ -46,10 +46,12 @@ pub struct Options {
 /// Generates a Rust module from `spec`, or returns the reasons it cannot.
 pub fn generate(spec: &Spec, options: &Options) -> Result<String, Vec<Diagnostic>> {
     let mut consts = HashSet::new();
-    collect_consts(&spec.items, &mut consts);
+    let mut aliases = HashMap::new();
+    collect_names(&spec.items, &mut consts, &mut aliases);
     let mut g = Gen {
         options,
         consts,
+        aliases,
         items: Vec::new(),
         diags: Vec::new(),
     };
@@ -74,13 +76,31 @@ pub fn generate(spec: &Spec, options: &Options) -> Result<String, Vec<Diagnostic
     Ok(out)
 }
 
-fn collect_consts(items: &[Item], consts: &mut HashSet<String>) {
+/// Collects the names of the file's constants, and its typedefs that
+/// become type aliases of `int`, `unsigned int`, `bool` or another name.
+fn collect_names(
+    items: &[Item],
+    consts: &mut HashSet<String>,
+    aliases: &mut HashMap<String, TypeSpec>,
+) {
     for item in items {
         match &item.kind {
             ItemKind::Const(c) => {
                 consts.insert(c.name.name.clone());
             }
-            ItemKind::Namespace(ns) => collect_consts(&ns.body, consts),
+            ItemKind::Typedef(Declaration {
+                name,
+                ty:
+                    DeclType::Plain(
+                        ty @ (TypeSpec::Int
+                        | TypeSpec::UnsignedInt
+                        | TypeSpec::Bool
+                        | TypeSpec::Named(_)),
+                    ),
+            }) if !Comment::parse(&item.comment).markers.newtype => {
+                aliases.insert(name.name.clone(), ty.clone());
+            }
+            ItemKind::Namespace(ns) => collect_names(&ns.body, consts, aliases),
             _ => {}
         }
     }
@@ -106,6 +126,9 @@ pub(crate) struct Gen<'o> {
     options: &'o Options,
     /// The names of the file's constants.
     consts: HashSet<String>,
+    /// The file's typedefs that become type aliases of `int`,
+    /// `unsigned int`, `bool` or another name, by name.
+    aliases: HashMap<String, TypeSpec>,
     /// Top-level Rust items, each printed separately.
     items: Vec<TokenStream>,
     diags: Vec<Diagnostic>,
