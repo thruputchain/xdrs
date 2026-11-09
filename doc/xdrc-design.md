@@ -339,8 +339,12 @@ xdrc emits:
 
 - `discriminant = "<switch type>"`, using the source's typedef name, as x23c
   does. rustc resolves the name.
-- `discrim_var = "<switch id>"`, so that `derive(XDR)` keeps the name of the
-  switch variable. x23c does not emit it today.
+- not `discrim_var`, which x23c does not emit either. So `derive(XDR)`
+  names every switch variable `which`, not the source's name. That is
+  deferred along with names generally: the derived spec only has to match
+  the source on the wire, and nothing consumes `::spec()` from protocol
+  types today. Both derives accept `discrim_var`, so it can be emitted,
+  gated on `spec`, once a consumer needs the names.
 - never the older `discrim_type`.
 
 We decided against inferring an unsigned switch from `#[repr(u32)]`. A repr
