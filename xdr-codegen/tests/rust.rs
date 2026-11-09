@@ -58,6 +58,12 @@ fn rejects() {
         ),
         "t.x:3:29: error: case value `K` (4294967296) does not fit the switch type `unsigned int`\n"
     );
+    // So must an enum value fit an `int`.
+    assert_eq!(
+        error("const K = 3000000000;\nenum E { A = K, B = -2147483649 };\n"),
+        "t.x:2:14: error: enum value `K` (3000000000) does not fit an `int`\n\
+         t.x:2:21: error: enum value `-2147483649` does not fit an `int`\n"
+    );
     // A procedure's client method would collide.
     assert_eq!(
         error(

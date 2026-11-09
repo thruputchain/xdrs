@@ -345,8 +345,26 @@ impl Gen<'_> {
     /// The `i32` value of an enum member in `body`. A name may be another
     /// member of the enum, a member of another enum in the file, or a
     /// constant, which is `u32` or `u64` in Rust. A name the file does not
-    /// define is taken for a constant from another file.
+    /// define is taken for a constant from another file. A number, or a
+    /// constant of the file, must fit an `i32`: Rust would reject such a
+    /// literal, but wrap the constant.
     fn member_value(&mut self, v: &Value, body: &EnumBody) -> TokenStream {
+        let known = match v {
+            Value::Number(n) => Some((n.value, format!("`{}`", n.text))),
+            Value::Ident(i) if !body.members.iter().any(|m| m.name.name == i.name) => self
+                .consts
+                .get(&i.name)
+                .map(|&value| (value, format!("`{}` ({value})", i.name))),
+            Value::Ident(_) => None,
+        };
+        if let Some((value, shown)) = known
+            && i32::try_from(value).is_err()
+        {
+            self.error(
+                v.span(),
+                format!("enum value {shown} does not fit an `int`"),
+            );
+        }
         let Value::Ident(i) = v else {
             return self.value(v);
         };

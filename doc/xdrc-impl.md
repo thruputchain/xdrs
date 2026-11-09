@@ -341,6 +341,8 @@ None of these changes the public API of protocol-rs; see Verification.
     (`Self(Other::X.0)`), or a constant (`Self(K as i32)`). x23c emitted
     the bare name, `Self(A)` or `Self(K)`, which does not compile. A name
     the file does not define is taken for a constant from another file.
+    A number or a constant of the file must fit an `int`, or xdrc reports
+    an error, rather than letting `K as i32` wrap.
 - **Newtypes:** a fixed opaque newtype whose length is a named constant gets
   a `JsonSchema` and no `Default`. x23c threw an exception on such a
   length.
