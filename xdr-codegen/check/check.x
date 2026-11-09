@@ -106,6 +106,22 @@ case FALSE:
   void;
 };
 
+// Lowercase `true` and `false` are accepted, with a warning, as `TRUE` and
+// `FALSE`, whatever the switch type.
+union LowerBool switch (bool b) {
+case true:
+  int v;
+case false:
+  void;
+};
+
+union LowerInt switch (int k) {
+case true:
+  int v;
+case 2:
+  void;
+};
+
 // The accessor's default arm, and several cases sharing an arm.
 union UnsignedDefault switch (unsigned int k) {
 case 4294967295:

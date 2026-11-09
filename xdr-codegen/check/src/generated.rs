@@ -400,6 +400,54 @@ impl ByFlag {
     }
 }
 
+// Lowercase `true` and `false` are accepted, with a warning, as `TRUE` and
+// `FALSE`, whatever the switch type.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[xdr(discriminant = "bool")]
+#[derive(schemars::JsonSchema)]
+#[repr(i32)]
+#[non_exhaustive]
+pub enum LowerBool {
+    TRUE { v: i32 } = true as i32,
+    FALSE = false as i32,
+}
+
+impl LowerBool {
+    /// The discriminant.
+    #[allow(clippy::match_single_binding)]
+    pub fn b(&self) -> bool {
+        match self {
+            LowerBool::TRUE { .. } => true,
+            LowerBool::FALSE => false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[xdr(discriminant = "i32")]
+#[derive(schemars::JsonSchema)]
+#[repr(i32)]
+#[non_exhaustive]
+pub enum LowerInt {
+    TRUE { v: i32 } = true as i32,
+    _2 = 2 as i32,
+}
+
+impl LowerInt {
+    /// The discriminant.
+    #[allow(clippy::match_single_binding)]
+    pub fn k(&self) -> i32 {
+        match self {
+            LowerInt::TRUE { .. } => true as i32,
+            LowerInt::_2 => 2 as i32,
+        }
+    }
+}
+
 // The accessor's default arm, and several cases sharing an arm.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
