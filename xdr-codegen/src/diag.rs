@@ -54,17 +54,14 @@ impl<'s> LineIndex<'s> {
 
     /// The line and column of byte offset `offset`.
     pub fn line_col(&self, offset: usize) -> LineCol {
-        let line = self.starts.partition_point(|&s| s <= offset) - 1;
-        let start = self.starts[line];
+        let line = self.line(offset);
+        let start = self.starts[line - 1];
         let end = offset.min(self.src.len());
         let col = self.src[start..end].chars().fold(1, |col, c| match c {
             '\t' => col + 8 - (col - 1) % 8,
             _ => col + 1,
         });
-        LineCol {
-            line: line + 1,
-            col,
-        }
+        LineCol { line, col }
     }
 
     /// The line of byte offset `offset`, from 1.
