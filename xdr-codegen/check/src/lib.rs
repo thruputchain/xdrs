@@ -490,6 +490,15 @@ mod tests {
     }
 
     #[test]
+    fn lowercase_booleans_are_true_and_false() {
+        assert!(LowerBool::TRUE { v: 1 }.b());
+        assert!(!LowerBool::FALSE.b());
+        assert_eq!(txs(&LowerBool::TRUE { v: 3 }), [0, 0, 0, 1, 0, 0, 0, 3]);
+        assert_eq!(LowerInt::TRUE { v: 0 }.k(), 1);
+        assert_eq!(txs(&LowerInt::_2), [0, 0, 0, 2]);
+    }
+
+    #[test]
     fn enum_values_may_be_names() {
         assert_eq!(Aliased::SAME, Aliased::FIRST);
         assert_eq!(Aliased::SAME.0, 7);

@@ -315,6 +315,10 @@ None of these changes the public API of protocol-rs; see Verification.
   variant `_K` and value `K as Switch`. x23c takes it for an enum member,
   which does not compile. A label that is not a constant of the file is
   still taken for an enum member.
+- **Lowercase `true` and `false` case labels** are `TRUE` and `FALSE`, with
+  a warning, whatever the switch type: variant `TRUE`, value `true as
+  Switch`. x23c crashed on them in a `bool` switch, and in other switches
+  named the variant `_true`.
 - **Constructs x23c mishandles, now generated correctly:**
   - `typedef struct { ... } T;` defines `T` itself. x23c emitted
     `pub type T = T;`.

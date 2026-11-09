@@ -215,8 +215,10 @@ impl Gen<'_> {
     ) -> Option<Case<'v>> {
         let is_bool = *switch == TypeSpec::Bool;
         match value {
-            Value::Ident(i) if i.name == "TRUE" || i.name == "FALSE" => {
-                Some(Case::Bool(i.name == "TRUE"))
+            // Lowercase `true` and `false` are accepted, with a warning, as
+            // misspellings of `TRUE` and `FALSE`.
+            Value::Ident(i) if matches!(i.name.as_str(), "TRUE" | "FALSE" | "true" | "false") => {
+                Some(Case::Bool(i.name.eq_ignore_ascii_case("true")))
             }
             _ if is_bool => {
                 self.error(
