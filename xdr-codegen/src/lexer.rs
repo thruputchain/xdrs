@@ -54,6 +54,23 @@ pub(crate) enum Tok {
 }
 
 impl Tok {
+    /// The keyword or punctuation token that `text` lexes as, for writing
+    /// terminals in the parser as they appear in the grammar.
+    ///
+    /// # Panics
+    ///
+    /// If `text` is not exactly one keyword or punctuation character.
+    pub(crate) fn literal(text: &str) -> Tok {
+        match longest_match(&RULES_DFA, text, 0) {
+            Some((rule, len)) if len == text.len() => match RULES[rule].0 {
+                Rule::Punct => Tok::Punct(text.as_bytes()[0]),
+                Rule::Tok(kind) if !matches!(kind, Tok::Ident | Tok::Number | Tok::Literal) => kind,
+                _ => panic!("`{text}` is not a keyword or punctuation"),
+            },
+            _ => panic!("`{text}` is not a keyword or punctuation"),
+        }
+    }
+
     /// How the token is described in a syntax error.
     pub(crate) fn describe(self) -> &'static str {
         match self {

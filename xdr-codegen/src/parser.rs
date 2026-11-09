@@ -1,10 +1,82 @@
 //! Parses the tokens of a `.x` file into a [`Spec`].
-
-use std::collections::HashSet;
+//!
+//! The parser is recursive descent, one function per nonterminal.
+//! Following is the accepted grammar in EBNF, where terminals are quoted
+//! and `ID` and `NUMBER` are the identifier and number tokens:
+//!
+//! ```text
+//! spec        = item* EOF
+//! item        = namespace | typedef | type_def | constant | program
+//! namespace   = "namespace" ID "{" item* "}"
+//! typedef     = "typedef" declaration ";"
+//! type_def    = ("enum" ID enum_body | "struct" ID struct_body
+//!               | "union" ID union_body) ";"
+//! constant    = "const" ID "=" NUMBER ";"
+//! program     = "program" ID "{" version+ "}" "=" value ";"
+//! version     = "version" ID "{" procedure+ "}" "=" value ";"
+//! procedure   = ("void" | scalar_type) ID "(" args ")" "=" value ";"
+//! args        = "void" | scalar_type ("," scalar_type)*
+//! enum_body   = "{" enum_member ("," enum_member)* [","] "}"
+//! enum_member = ID "=" value
+//! struct_body = "{" member+ "}"
+//! union_body  = "switch" "(" scalar_type ID ")" "{" arm+ "}"
+//! arm         = ("case" value ":")* ["default" ":"] member
+//! member      = ("void" | declaration) ";"
+//! declaration = "opaque" ID length
+//!             | "string" ID "<" [value] ">"
+//!             | type_spec "*" ID
+//!             | type_spec ID [length]
+//! length      = "[" value "]" | "<" [value] ">"
+//! type_spec   = "enum" enum_body | "struct" struct_body
+//!             | "union" union_body | scalar_type
+//! scalar_type = "int" | "hyper" | "float" | "double" | "quadruple"
+//!             | "bool" | "unsigned" ["int" | "hyper"] | ID
+//! value       = ID | NUMBER
+//! ```
+//!
+//! Beyond the EBNF, an arm has at least one label, and only the last arm
+//! can be the default. `%` lines may appear between any two tokens; they
+//! become items of their own (see [`Parser::items`]).
+//!
+//! Three deviations from RFC 4506 are accepted with a warning, where the
+//! grammar allows them: a trailing comma in an enum, `case` labels on the
+//! default arm, and `unsigned` alone. Checks on names and values are made
+//! after parsing, in [`crate::check`].
+//!
+//! Each node takes the comments of particular tokens; see [`crate::ast`].
 
 use crate::ast::*;
 use crate::diag::{Diagnostic, Span};
 use crate::lexer::{Tok, Token};
+
+/// Parses a sequence of grammar symbols, in order, binding the named ones:
+///
+/// ```text
+/// seq!(self; kw: "const", name: ident, "=", value: number, semi: ";");
+/// ```
+///
+/// - `"text"` is a terminal, a keyword or punctuation, and its value is
+///   the [`Token`]: `self.lit("text")?`.
+/// - `method` or `method(args)` is a nonterminal: `self.method(args)?`.
+/// - `name: symbol` binds the symbol's value to `name` in the enclosing
+///   scope.
+macro_rules! seq {
+    (@one $p:ident; $name:tt; $lit:literal $(, $($rest:tt)*)?) => {
+        let $name = $p.lit($lit)?;
+        seq!($p; $($($rest)*)?);
+    };
+    (@one $p:ident; $name:tt; $method:ident $(($($arg:expr),*))? $(, $($rest:tt)*)?) => {
+        let $name = $p.$method($($($arg),*)?)?;
+        seq!($p; $($($rest)*)?);
+    };
+    ($p:ident;) => {};
+    ($p:ident; $name:ident : $($rest:tt)*) => {
+        seq!(@one $p; $name; $($rest)*);
+    };
+    ($p:ident; $($rest:tt)*) => {
+        seq!(@one $p; _; $($rest)*);
+    };
+}
 
 /// Parsing stops at the first syntax error, which has been recorded.
 struct Stop;
@@ -17,8 +89,6 @@ pub(crate) struct Parser<'s, 'd> {
     pos: usize,
     /// `%` lines read but not yet placed in the tree.
     literals: String,
-    /// Names given to types, which must be distinct across the file.
-    type_names: HashSet<String>,
     diags: &'d mut Vec<Diagnostic>,
 }
 
@@ -29,15 +99,15 @@ impl<'s, 'd> Parser<'s, 'd> {
             tokens,
             pos: 0,
             literals: String::new(),
-            type_names: HashSet::new(),
             diags,
         }
     }
 
-    /// Parses the whole file, or returns `None` after a syntax error.
+    /// `spec = item* EOF`
+    ///
+    /// Returns `None` after a syntax error.
     pub(crate) fn parse(mut self) -> Option<Vec<Item>> {
-        let items = self.items(Tok::Eof).ok()?;
-        Some(items)
+        self.items(Tok::Eof).ok()
     }
 
     // ---- tokens -----------------------------------------------------------
@@ -58,6 +128,11 @@ impl<'s, 'd> Parser<'s, 'd> {
         self.peek().kind
     }
 
+    /// The token most recently read.
+    fn prev(&self) -> &Token {
+        &self.tokens[self.pos - 1]
+    }
+
     fn bump(&mut self) -> Token {
         let token = self.peek().clone();
         if token.kind != Tok::Eof {
@@ -70,19 +145,27 @@ impl<'s, 'd> Parser<'s, 'd> {
         &self.src[token.span.start..token.span.end]
     }
 
-    fn eat(&mut self, kind: Tok) -> Option<Token> {
-        (self.peek_kind() == kind).then(|| self.bump())
+    /// Whether the next token is the terminal `text`.
+    fn at(&mut self, text: &str) -> bool {
+        self.peek_kind() == Tok::literal(text)
+    }
+
+    /// Reads the terminal `text` if it is next.
+    fn eat(&mut self, text: &str) -> Option<Token> {
+        self.at(text).then(|| self.bump())
+    }
+
+    /// Reads the terminal `text`, which must be next.
+    fn lit(&mut self, text: &str) -> PResult<Token> {
+        self.expect(Tok::literal(text))
     }
 
     fn expect(&mut self, kind: Tok) -> PResult<Token> {
-        match self.eat(kind) {
-            Some(token) => Ok(token),
-            None => self.unexpected(kind.describe()),
+        if self.peek_kind() == kind {
+            Ok(self.bump())
+        } else {
+            self.unexpected(kind.describe())
         }
-    }
-
-    fn expect_punct(&mut self, c: u8) -> PResult<Token> {
-        self.expect(Tok::Punct(c))
     }
 
     /// Records a syntax error at the next token.
@@ -103,6 +186,85 @@ impl<'s, 'd> Parser<'s, 'd> {
         self.diags.push(Diagnostic::warning(span, message));
     }
 
+    // ---- repetition -------------------------------------------------------
+
+    /// `x*`, where each `x` starts with the terminal `start`.
+    fn many_while<T>(
+        &mut self,
+        start: &str,
+        mut x: impl FnMut(&mut Self) -> PResult<T>,
+    ) -> PResult<Vec<T>> {
+        let mut xs = Vec::new();
+        while self.at(start) {
+            xs.push(x(self)?);
+        }
+        Ok(xs)
+    }
+
+    /// `x+`, where each `x` after the first starts with the terminal
+    /// `start`.
+    fn many1_while<T>(
+        &mut self,
+        start: &str,
+        mut x: impl FnMut(&mut Self) -> PResult<T>,
+    ) -> PResult<Vec<T>> {
+        let mut xs = vec![x(self)?];
+        while self.at(start) {
+            xs.push(x(self)?);
+        }
+        Ok(xs)
+    }
+
+    /// `x+`, followed by the terminal `end`, which is left unread.
+    fn many1_until<T>(
+        &mut self,
+        end: &str,
+        mut x: impl FnMut(&mut Self) -> PResult<T>,
+    ) -> PResult<Vec<T>> {
+        let mut xs = vec![x(self)?];
+        while !self.at(end) {
+            xs.push(x(self)?);
+        }
+        Ok(xs)
+    }
+
+    /// `x ("," x)*`
+    fn comma_list<T>(&mut self, mut x: impl FnMut(&mut Self) -> PResult<T>) -> PResult<Vec<T>> {
+        let mut xs = vec![x(self)?];
+        while self.eat(",").is_some() {
+            xs.push(x(self)?);
+        }
+        Ok(xs)
+    }
+
+    /// `"void" | x`, as `None` for `void`.
+    fn void_or<T>(&mut self, x: impl FnOnce(&mut Self) -> PResult<T>) -> PResult<Option<T>> {
+        match self.eat("void") {
+            Some(_) => Ok(None),
+            None => x(self).map(Some),
+        }
+    }
+
+    // ---- definitions ------------------------------------------------------
+
+    /// `item*`, up to the token `end`, which is left unread.
+    ///
+    /// `%` lines become items of their own: those read within a definition
+    /// go before it, and those before a namespace stay outside it.
+    fn items(&mut self, end: Tok) -> PResult<Vec<Item>> {
+        let mut items = Vec::new();
+        while self.peek_kind() != end {
+            if self.at("namespace") {
+                self.flush_literals(&mut items);
+            }
+            let item = self.item()?;
+            self.flush_literals(&mut items);
+            items.push(item);
+        }
+        self.flush_literals(&mut items);
+        Ok(items)
+    }
+
     /// Places the `%` lines read so far in `items`.
     fn flush_literals(&mut self, items: &mut Vec<Item>) {
         if !self.literals.is_empty() {
@@ -114,53 +276,31 @@ impl<'s, 'd> Parser<'s, 'd> {
         }
     }
 
-    // ---- definitions ------------------------------------------------------
-
-    /// Definitions up to `end`, which is left unread.
-    fn items(&mut self, end: Tok) -> PResult<Vec<Item>> {
-        let mut items = Vec::new();
-        loop {
-            let kind = self.peek_kind();
-            if kind == end {
-                self.flush_literals(&mut items);
-                return Ok(items);
-            }
-            let item = match kind {
-                Tok::Namespace => {
-                    // `%` lines before the namespace stay outside it.
-                    self.flush_literals(&mut items);
-                    self.namespace()?
-                }
-                Tok::Typedef => self.typedef()?,
-                Tok::Enum | Tok::Struct | Tok::Union => self.type_definition()?,
-                Tok::Const => self.constant()?,
-                Tok::Program => self.program()?,
-                _ => return self.unexpected("a definition"),
-            };
-            // `%` lines read within a definition go before it.
-            self.flush_literals(&mut items);
-            items.push(item);
+    /// `item = namespace | typedef | type_def | constant | program`
+    fn item(&mut self) -> PResult<Item> {
+        match self.peek_kind() {
+            Tok::Namespace => self.namespace(),
+            Tok::Typedef => self.typedef(),
+            Tok::Enum | Tok::Struct | Tok::Union => self.type_def(),
+            Tok::Const => self.constant(),
+            Tok::Program => self.program(),
+            _ => self.unexpected("a definition"),
         }
     }
 
+    /// `namespace = "namespace" ID "{" item* "}"`
     fn namespace(&mut self) -> PResult<Item> {
-        let kw = self.expect(Tok::Namespace)?;
-        let name = self.ident()?;
-        self.expect_punct(b'{')?;
-        let items = self.items(Tok::Punct(b'}'))?;
-        let close = self.expect_punct(b'}')?;
+        seq!(self; kw: "namespace", name: ident, "{", body: items(Tok::literal("}")), close: "}");
         Ok(Item {
             comment: kw.leading,
-            kind: ItemKind::Namespace(Named { name, body: items }),
+            kind: ItemKind::Namespace(Named { name, body }),
             span: kw.span.to(close.span),
         })
     }
 
+    /// `typedef = "typedef" declaration ";"`
     fn typedef(&mut self) -> PResult<Item> {
-        let kw = self.expect(Tok::Typedef)?;
-        let (_, decl) = self.declaration()?;
-        let semi = self.expect_punct(b';')?;
-        self.declare_type(&decl.name, "typedef", kw.span);
+        seq!(self; kw: "typedef", decl: declaration, semi: ";");
         Ok(Item {
             comment: combine(&kw.leading, &semi.trailing),
             kind: ItemKind::Typedef(decl),
@@ -168,35 +308,26 @@ impl<'s, 'd> Parser<'s, 'd> {
         })
     }
 
-    /// `enum`, `struct` or `union NAME BODY;`
-    fn type_definition(&mut self) -> PResult<Item> {
-        let kw = self.bump();
-        let name = self.ident()?;
-        let (kind, what) = match kw.kind {
-            Tok::Enum => (
-                ItemKind::Enum(Named {
-                    name: name.clone(),
-                    body: self.enum_body()?,
-                }),
-                "enum",
-            ),
-            Tok::Struct => (
-                ItemKind::Struct(Named {
-                    name: name.clone(),
-                    body: self.struct_body()?,
-                }),
-                "struct",
-            ),
-            _ => (
-                ItemKind::Union(Named {
-                    name: name.clone(),
-                    body: self.union_body()?,
-                }),
-                "union",
-            ),
+    /// ```text
+    /// type_def = ("enum" ID enum_body | "struct" ID struct_body
+    ///            | "union" ID union_body) ";"
+    /// ```
+    fn type_def(&mut self) -> PResult<Item> {
+        let (kw, kind) = match self.peek_kind() {
+            Tok::Enum => {
+                seq!(self; kw: "enum", name: ident, body: enum_body);
+                (kw, ItemKind::Enum(Named { name, body }))
+            }
+            Tok::Struct => {
+                seq!(self; kw: "struct", name: ident, body: struct_body);
+                (kw, ItemKind::Struct(Named { name, body }))
+            }
+            _ => {
+                seq!(self; kw: "union", name: ident, body: union_body);
+                (kw, ItemKind::Union(Named { name, body }))
+            }
         };
-        let semi = self.expect_punct(b';')?;
-        self.declare_type(&name, what, kw.span);
+        seq!(self; semi: ";");
         Ok(Item {
             comment: kw.leading,
             kind,
@@ -204,22 +335,9 @@ impl<'s, 'd> Parser<'s, 'd> {
         })
     }
 
-    /// Records a type's name, reporting it if it is already taken.
-    fn declare_type(&mut self, name: &Ident, what: &str, span: Span) {
-        if !self.type_names.insert(name.name.clone()) {
-            self.diags.push(Diagnostic::error(
-                span,
-                format!("duplicate declaration of {what} `{}`", name.name),
-            ));
-        }
-    }
-
+    /// `constant = "const" ID "=" NUMBER ";"`
     fn constant(&mut self) -> PResult<Item> {
-        let kw = self.expect(Tok::Const)?;
-        let name = self.ident()?;
-        self.expect_punct(b'=')?;
-        let value = self.number()?;
-        let semi = self.expect_punct(b';')?;
+        seq!(self; kw: "const", name: ident, "=", value: number, semi: ";");
         Ok(Item {
             comment: combine(&kw.leading, &semi.trailing),
             kind: ItemKind::Const(Const { name, value }),
@@ -227,18 +345,13 @@ impl<'s, 'd> Parser<'s, 'd> {
         })
     }
 
+    /// `program = "program" ID "{" version+ "}" "=" value ";"`
     fn program(&mut self) -> PResult<Item> {
-        let kw = self.expect(Tok::Program)?;
-        let name = self.ident()?;
-        self.expect_punct(b'{')?;
-        let mut versions = vec![self.version()?];
-        while self.peek_kind() == Tok::Version {
-            versions.push(self.version()?);
-        }
-        self.expect_punct(b'}')?;
-        self.expect_punct(b'=')?;
-        let value = self.value()?;
-        let semi = self.expect_punct(b';')?;
+        seq!(self;
+            kw: "program", name: ident,
+            "{", versions: many1_while("version", Self::version), "}",
+            "=", value: value, semi: ";",
+        );
         Ok(Item {
             comment: kw.leading,
             kind: ItemKind::Program(Program {
@@ -250,40 +363,24 @@ impl<'s, 'd> Parser<'s, 'd> {
         })
     }
 
+    /// `version = "version" ID "{" procedure+ "}" "=" value ";"`
     fn version(&mut self) -> PResult<Version> {
-        self.expect(Tok::Version)?;
-        let name = self.ident()?;
-        self.expect_punct(b'{')?;
-        let mut procs = vec![self.procedure()?];
-        while self.peek_kind() != Tok::Punct(b'}') {
-            procs.push(self.procedure()?);
-        }
-        self.expect_punct(b'}')?;
-        self.expect_punct(b'=')?;
-        let value = self.value()?;
-        self.expect_punct(b';')?;
+        seq!(self;
+            "version", name: ident,
+            "{", procs: many1_until("}", Self::procedure), "}",
+            "=", value: value, ";",
+        );
         Ok(Version { name, value, procs })
     }
 
+    /// `procedure = ("void" | scalar_type) ID "(" args ")" "=" value ";"`
     fn procedure(&mut self) -> PResult<Procedure> {
         let leading = self.peek().leading.clone();
-        let result = match self.eat(Tok::Void) {
-            Some(_) => None,
-            None => Some(self.scalar_type()?.0),
-        };
-        let name = self.ident()?;
-        self.expect_punct(b'(')?;
-        let mut args = Vec::new();
-        if self.eat(Tok::Void).is_none() {
-            args.push(self.scalar_type()?.0);
-            while self.eat(Tok::Punct(b',')).is_some() {
-                args.push(self.scalar_type()?.0);
-            }
-        }
-        self.expect_punct(b')')?;
-        self.expect_punct(b'=')?;
-        let value = self.value()?;
-        let semi = self.expect_punct(b';')?;
+        seq!(self;
+            result: void_or(Self::scalar_type), name: ident,
+            "(", args: args, ")",
+            "=", value: value, semi: ";",
+        );
         Ok(Procedure {
             comment: combine(&leading, &semi.trailing),
             name,
@@ -293,93 +390,56 @@ impl<'s, 'd> Parser<'s, 'd> {
         })
     }
 
+    /// `args = "void" | scalar_type ("," scalar_type)*`
+    fn args(&mut self) -> PResult<Vec<TypeSpec>> {
+        let args = self.void_or(|p| p.comma_list(Self::scalar_type))?;
+        Ok(args.unwrap_or_default())
+    }
+
     // ---- types ------------------------------------------------------------
 
+    /// `enum_body = "{" enum_member ("," enum_member)* [","] "}"`
     fn enum_body(&mut self) -> PResult<EnumBody> {
-        self.expect_punct(b'{')?;
-        let mut members = vec![self.enum_member()?];
-        while let Some(comma) = self.eat(Tok::Punct(b',')) {
+        seq!(self; "{", first: enum_member);
+        let mut members = vec![first];
+        while let Some(comma) = self.eat(",") {
+            // A comment after the comma trails the member before it.
             let prev = members.last_mut().expect("an enum has a member");
             prev.comment = combine(&prev.comment, &comma.trailing);
-            if self.peek_kind() == Tok::Punct(b'}') {
+            if self.at("}") {
                 self.warn(comma.span, "RFC 4506 does not allow a trailing comma");
                 break;
             }
             members.push(self.enum_member()?);
         }
-        self.expect_punct(b'}')?;
+        seq!(self; "}");
         Ok(EnumBody { members })
     }
 
+    /// `enum_member = ID "=" value`
     fn enum_member(&mut self) -> PResult<EnumMember> {
         let leading = self.peek().leading.clone();
-        let name = self.ident()?;
-        self.expect_punct(b'=')?;
-        let trailing = self.peek().trailing.clone();
-        let value = self.value()?;
+        seq!(self; name: ident, "=", value: value);
         Ok(EnumMember {
-            comment: combine(&leading, &trailing),
+            comment: combine(&leading, &self.prev().trailing),
             name,
             value,
         })
     }
 
+    /// `struct_body = "{" member+ "}"`
     fn struct_body(&mut self) -> PResult<StructBody> {
-        self.expect_punct(b'{')?;
-        let mut fields = vec![self.member()?];
-        while self.peek_kind() != Tok::Punct(b'}') {
-            fields.push(self.member()?);
-        }
-        self.expect_punct(b'}')?;
+        seq!(self; "{", fields: many1_until("}", Self::member), "}");
         Ok(StructBody { fields })
     }
 
+    /// `union_body = "switch" "(" scalar_type ID ")" "{" arm+ "}"`, where
+    /// only the last arm can be the default.
     fn union_body(&mut self) -> PResult<UnionBody> {
-        self.expect(Tok::Switch)?;
-        self.expect_punct(b'(')?;
-        let (switch_type, _) = self.scalar_type()?;
-        let switch_name = self.ident()?;
-        self.expect_punct(b')')?;
-        self.expect_punct(b'{')?;
-        let mut arms = Vec::new();
-        loop {
-            let mut cases = Vec::new();
-            while self.eat(Tok::Case).is_some() {
-                let value = self.value()?;
-                if let Value::Ident(i) = &value
-                    && (i.name == "true" || i.name == "false")
-                {
-                    let span = i.span;
-                    self.warn(span, "RFC 4506 spells the boolean constants TRUE and FALSE");
-                }
-                cases.push(value);
-                self.expect_punct(b':')?;
-            }
-            let is_default = match self.eat(Tok::Default) {
-                Some(kw) => {
-                    if !cases.is_empty() {
-                        self.warn(
-                            kw.span,
-                            "RFC 4506 does not allow case labels on the default arm",
-                        );
-                    }
-                    self.expect_punct(b':')?;
-                    true
-                }
-                None if cases.is_empty() => return self.unexpected("`case` or `default`"),
-                None => false,
-            };
-            arms.push(Arm {
-                cases,
-                is_default,
-                member: self.member()?,
-            });
-            // The default arm comes last, and there is at least one arm.
-            if is_default || self.peek_kind() == Tok::Punct(b'}') {
-                break;
-            }
-        }
-        self.expect_punct(b'}')?;
+        seq!(self;
+            "switch", "(", switch_type: scalar_type, switch_name: ident, ")",
+            "{", arms: arms, "}",
+        );
         Ok(UnionBody {
             switch_type,
             switch_name,
@@ -387,14 +447,52 @@ impl<'s, 'd> Parser<'s, 'd> {
         })
     }
 
-    /// A struct field or union arm: a declaration or `void`, then `;`.
+    /// `arm+`, up to `}` or the default arm.
+    fn arms(&mut self) -> PResult<Vec<Arm>> {
+        let mut arms = Vec::new();
+        loop {
+            let arm = self.arm()?;
+            let is_default = arm.is_default;
+            arms.push(arm);
+            if is_default || self.at("}") {
+                return Ok(arms);
+            }
+        }
+    }
+
+    /// `arm = ("case" value ":")* ["default" ":"] member`, with at least one
+    /// label.
+    fn arm(&mut self) -> PResult<Arm> {
+        let cases = self.many_while("case", |p| {
+            seq!(p; "case", value: value, ":");
+            Ok(value)
+        })?;
+        let is_default = match self.eat("default") {
+            Some(kw) => {
+                if !cases.is_empty() {
+                    self.warn(
+                        kw.span,
+                        "RFC 4506 does not allow case labels on the default arm",
+                    );
+                }
+                seq!(self; ":");
+                true
+            }
+            None if cases.is_empty() => return self.unexpected("`case` or `default`"),
+            None => false,
+        };
+        seq!(self; member: member);
+        Ok(Arm {
+            cases,
+            is_default,
+            member,
+        })
+    }
+
+    /// `member = ("void" | declaration) ";"`
     fn member(&mut self) -> PResult<Member> {
         let first = self.peek().clone();
-        let decl = match self.eat(Tok::Void) {
-            Some(_) => None,
-            None => Some(self.declaration()?.1),
-        };
-        let semi = self.expect_punct(b';')?;
+        seq!(self; decl: void_or(Self::declaration), semi: ";");
         Ok(Member {
             comment: combine(&first.leading, &semi.trailing),
             decl,
@@ -402,149 +500,120 @@ impl<'s, 'd> Parser<'s, 'd> {
         })
     }
 
-    /// A declaration, with the span of its first token.
-    fn declaration(&mut self) -> PResult<(Span, Declaration)> {
-        let first = self.peek().span;
-        let decl = match self.peek_kind() {
+    /// ```text
+    /// declaration = "opaque" ID length
+    ///             | "string" ID "<" [value] ">"
+    ///             | type_spec "*" ID
+    ///             | type_spec ID [length]
+    /// ```
+    fn declaration(&mut self) -> PResult<Declaration> {
+        let (name, ty) = match self.peek_kind() {
             Tok::Opaque => {
-                self.bump();
-                let name = self.ident()?;
-                let ty = if self.eat(Tok::Punct(b'[')).is_some() {
-                    let len = self.value()?;
-                    self.expect_punct(b']')?;
-                    DeclType::Opaque { len }
-                } else if self.eat(Tok::Punct(b'<')).is_some() {
-                    DeclType::VarOpaque { max: self.bound()? }
-                } else {
-                    return self.unexpected("`[` or `<`");
+                seq!(self; "opaque", name: ident);
+                let ty = match self.length()? {
+                    Some(Length::Fixed(len)) => DeclType::Opaque { len },
+                    Some(Length::Max(max)) => DeclType::VarOpaque { max },
+                    None => return self.unexpected("`[` or `<`"),
                 };
-                Declaration { name, ty }
+                (name, ty)
             }
             Tok::String => {
-                self.bump();
-                let name = self.ident()?;
-                self.expect_punct(b'<')?;
-                let max = self.bound()?;
-                Declaration {
-                    name,
-                    ty: DeclType::String { max },
-                }
+                seq!(self; "string", name: ident, "<", max: opt_value(">"), ">");
+                (name, DeclType::String { max })
             }
             _ => {
-                let elem = self.type_spec()?;
-                if self.eat(Tok::Punct(b'*')).is_some() {
-                    Declaration {
-                        name: self.ident()?,
-                        ty: DeclType::Optional(elem),
-                    }
+                seq!(self; elem: type_spec);
+                if self.eat("*").is_some() {
+                    seq!(self; name: ident);
+                    (name, DeclType::Optional(elem))
                 } else {
-                    let name = self.ident()?;
-                    let ty = if self.eat(Tok::Punct(b'[')).is_some() {
-                        let len = self.value()?;
-                        self.expect_punct(b']')?;
-                        DeclType::Array { elem, len }
-                    } else if self.eat(Tok::Punct(b'<')).is_some() {
-                        DeclType::VarArray {
-                            elem,
-                            max: self.bound()?,
-                        }
-                    } else {
-                        DeclType::Plain(elem)
+                    seq!(self; name: ident);
+                    let ty = match self.length()? {
+                        Some(Length::Fixed(len)) => DeclType::Array { elem, len },
+                        Some(Length::Max(max)) => DeclType::VarArray { elem, max },
+                        None => DeclType::Plain(elem),
                     };
-                    Declaration { name, ty }
+                    (name, ty)
                 }
             }
         };
-        Ok((first, decl))
+        Ok(Declaration { name, ty })
     }
 
-    /// The rest of `<MAX>` or `<>`, after the `<`.
-    fn bound(&mut self) -> PResult<Option<Value>> {
-        let max = match self.peek_kind() {
-            Tok::Punct(b'>') => None,
-            _ => Some(self.value()?),
-        };
-        self.expect_punct(b'>')?;
-        Ok(max)
-    }
-
-    fn type_spec(&mut self) -> PResult<TypeSpec> {
-        match self.peek_kind() {
-            Tok::Enum => {
-                self.bump();
-                Ok(TypeSpec::Enum(self.enum_body()?))
-            }
-            Tok::Struct => {
-                self.bump();
-                Ok(TypeSpec::Struct(self.struct_body()?))
-            }
-            Tok::Union => {
-                self.bump();
-                Ok(TypeSpec::Union(Box::new(self.union_body()?)))
-            }
-            _ => Ok(self.scalar_type()?.0),
+    /// `[length]`, where `length = "[" value "]" | "<" [value] ">"`.
+    fn length(&mut self) -> PResult<Option<Length>> {
+        if self.at("[") {
+            seq!(self; "[", len: value, "]");
+            Ok(Some(Length::Fixed(len)))
+        } else if self.at("<") {
+            seq!(self; "<", max: opt_value(">"), ">");
+            Ok(Some(Length::Max(max)))
+        } else {
+            Ok(None)
         }
     }
 
-    /// A built-in or named type, with its first token.
-    fn scalar_type(&mut self) -> PResult<(TypeSpec, Token)> {
-        let token = self.peek().clone();
-        let ty = match token.kind {
+    /// ```text
+    /// type_spec = "enum" enum_body | "struct" struct_body
+    ///           | "union" union_body | scalar_type
+    /// ```
+    fn type_spec(&mut self) -> PResult<TypeSpec> {
+        match self.peek_kind() {
+            Tok::Enum => {
+                seq!(self; "enum", body: enum_body);
+                Ok(TypeSpec::Enum(body))
+            }
+            Tok::Struct => {
+                seq!(self; "struct", body: struct_body);
+                Ok(TypeSpec::Struct(body))
+            }
+            Tok::Union => {
+                seq!(self; "union", body: union_body);
+                Ok(TypeSpec::Union(Box::new(body)))
+            }
+            _ => self.scalar_type(),
+        }
+    }
+
+    /// ```text
+    /// scalar_type = "int" | "hyper" | "float" | "double" | "quadruple"
+    ///             | "bool" | "unsigned" ["int" | "hyper"] | ID
+    /// ```
+    fn scalar_type(&mut self) -> PResult<TypeSpec> {
+        let ty = match self.peek_kind() {
             Tok::Int => TypeSpec::Int,
             Tok::Hyper => TypeSpec::Hyper,
             Tok::Float => TypeSpec::Float,
             Tok::Double => TypeSpec::Double,
             Tok::Quadruple => TypeSpec::Quadruple,
             Tok::Bool => TypeSpec::Bool,
-            Tok::Unsigned => {
-                self.bump();
-                return Ok((
-                    match self.peek_kind() {
-                        Tok::Int => {
-                            self.bump();
-                            TypeSpec::UnsignedInt
-                        }
-                        Tok::Hyper => {
-                            self.bump();
-                            TypeSpec::UnsignedHyper
-                        }
-                        _ => {
-                            self.warn(
-                                token.span,
-                                "RFC 4506 requires `int` or `hyper` after `unsigned` \
-                                 (assuming `unsigned int`)",
-                            );
-                            TypeSpec::UnsignedInt
-                        }
-                    },
-                    token,
-                ));
-            }
-            Tok::Ident => {
-                let ident = self.ident()?;
-                let instead = match ident.name.as_str() {
-                    "int32_t" => Some("int"),
-                    "uint32_t" => Some("unsigned int"),
-                    "int64_t" => Some("hyper"),
-                    "uint64_t" => Some("unsigned hyper"),
-                    _ => None,
-                };
-                if let Some(instead) = instead {
-                    self.warn(
-                        ident.span,
-                        format!("use `{instead}` in XDR source to get `{}`", ident.name),
-                    );
-                }
-                return Ok((TypeSpec::Named(ident), token));
-            }
+            Tok::Unsigned => return self.unsigned(),
+            Tok::Ident => return Ok(TypeSpec::Named(self.ident()?)),
             _ => return self.unexpected("a type"),
         };
         self.bump();
-        Ok((ty, token))
+        Ok(ty)
+    }
+
+    /// `"unsigned" ["int" | "hyper"]`
+    fn unsigned(&mut self) -> PResult<TypeSpec> {
+        seq!(self; kw: "unsigned");
+        if self.eat("int").is_some() {
+            Ok(TypeSpec::UnsignedInt)
+        } else if self.eat("hyper").is_some() {
+            Ok(TypeSpec::UnsignedHyper)
+        } else {
+            self.warn(
+                kw.span,
+                "RFC 4506 requires `int` or `hyper` after `unsigned` (assuming `unsigned int`)",
+            );
+            Ok(TypeSpec::UnsignedInt)
+        }
     }
 
     // ---- names and values -------------------------------------------------
 
+    /// `ID`
     fn ident(&mut self) -> PResult<Ident> {
         let token = self.expect(Tok::Ident)?;
         Ok(Ident {
@@ -553,6 +622,7 @@ impl<'s, 'd> Parser<'s, 'd> {
         })
     }
 
+    /// `value = ID | NUMBER`
     fn value(&mut self) -> PResult<Value> {
         match self.peek_kind() {
             Tok::Ident => Ok(Value::Ident(self.ident()?)),
@@ -561,6 +631,16 @@ impl<'s, 'd> Parser<'s, 'd> {
         }
     }
 
+    /// `[value]`, followed by the terminal `end`, which is left unread.
+    fn opt_value(&mut self, end: &str) -> PResult<Option<Value>> {
+        if self.at(end) {
+            Ok(None)
+        } else {
+            self.value().map(Some)
+        }
+    }
+
+    /// `NUMBER`, which must be a valid 64-bit integer.
     fn number(&mut self) -> PResult<Number> {
         let token = self.expect(Tok::Number)?;
         let text = self.text(&token);
@@ -579,6 +659,14 @@ impl<'s, 'd> Parser<'s, 'd> {
             }
         }
     }
+}
+
+/// A `length` in a declaration.
+enum Length {
+    /// `"[" value "]"`
+    Fixed(Value),
+    /// `"<" [value] ">"`
+    Max(Option<Value>),
 }
 
 /// The value of an integer literal: decimal, hexadecimal after `0x`, or

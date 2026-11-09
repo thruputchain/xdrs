@@ -183,18 +183,21 @@ from x23c's flex rules and matched with `regex-automata` (see below).
   handles warnings with exact source positions directly.
 - **Cost.** The estimate is 500–700 lines, with no build-time code
   generation and no added compile time.
-- **The lexer as a rule table.** At first the lexer was written as one
-  matching function per rule. That code was harder to read and to change
-  than x23c's `lex.ll`, where each rule is one line and flex does the
-  matching. The lexer was therefore rewritten as a table of regular
-  expressions with flex's semantics, using `regex-automata`: at each
-  position, the longest match wins, and ties go to the earlier rule. As in
-  flex, the rules are compiled into one DFA, whose match states record which
-  rules match.
+- **The lexer is a rule table.**
+  It's a table of regular expressions with flex's semantics, using
+  `regex-automata`: at each position, the longest match wins, and ties go
+  to the earlier rule. As in flex, the rules are compiled into one DFA,
+  whose match states record which rules match.
   - `regex-automata` is a regex engine, not a parser generator, and it was
     already in the workspace's dependency graph.
   - Building the DFA takes a moment at startup, which does not matter for
     a code generator.
+- **The parser is shaped like the grammar.**
+  - The grammar is written out in EBNF in the parser's module docs, and
+    each parse function is headed by its production.
+  - A `seq!` macro and a few repetition helpers let most productions be one
+    statement, with terminals quoted as in the EBNF.
+  - Checks on names and values moved to a pass after parsing.
 
 Alternatives considered:
 

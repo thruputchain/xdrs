@@ -13,7 +13,8 @@ unpublished until xdrc can replace x23c's Rust backend. It contains:
 |---|---|
 | `src/diag.rs` | Byte spans, line and column lookup, diagnostics |
 | `src/lexer.rs` | Tokens and comment attachment |
-| `src/parser.rs` | Recursive-descent parser |
+| `src/parser.rs` | Recursive-descent parser, with the grammar in its module docs |
+| `src/check.rs` | Checks on names and values after parsing |
 | `src/ast.rs` | The syntax tree |
 | `src/rust/` | The Rust backend: `mod.rs` for types, constants and typedefs; `union.rs`; `rpc.rs`; `comment.rs` |
 | `src/bin/xdrc.rs` | The `xdrc` command |
@@ -121,6 +122,33 @@ removed, or `b` unchanged if `a` is empty.
 
 Comments before a `case` label, and on `version` definitions, are dropped.
 
+### Grammar
+
+The module docs of `src/parser.rs` give the whole grammar in EBNF, about
+25 lines. The parser has one function per nonterminal, each headed by its
+production, and is written to read like it:
+
+- **`seq!`** parses a sequence of symbols and binds the named ones in the
+  enclosing scope, so a production is one statement:
+  `seq!(self; kw: "const", name: ident, "=", value: number, semi: ";")`.
+  A quoted string is a terminal, which `Tok::literal` resolves by running
+  the text through the lexer's own DFA, so the grammar and the lexer
+  cannot disagree about a keyword. A bare name, or a name with arguments,
+  is a call to another parse function.
+- **Repetition helpers** stand for EBNF's `*` and `+`: `many_while`,
+  `many1_while`, `many1_until`, `comma_list` and `void_or`. Each stops on a
+  single token of lookahead.
+- **Alternatives** are a `match` on the next token, as in an LL(1) table.
+- **What the grammar does not express** is kept out of the productions:
+  - Name and value checks run afterwards in `src/check.rs`. These are
+    duplicate type names, `int32_t` and the like as type names, and
+    lowercase `true` and `false` as case labels.
+  - Comment attachment is the code after each `seq!`, which picks which
+    tokens' comments a node takes.
+  - The three warnings that are about syntax stay in the parser, at the
+    point where the grammar allows the deviation: a trailing comma, labels
+    on the default arm, and `unsigned` alone.
+
 ### Definitions
 
 - **`%` lines** keep their order relative to definitions. Consecutive lines
@@ -128,7 +156,10 @@ Comments before a `case` label, and on `version` definitions, are dropped.
   before a `namespace` stays outside it.
 - **Namespaces** nest in the tree.
 - **Duplicate type names** are errors across the whole file, including
-  across namespaces. Duplicate `const` names are not, as in x23c.
+  across namespaces. Duplicate `const` names are not, as in x23c. Like the
+  other checks in `src/check.rs`, this one runs only on a file that
+  parses, so a file with a syntax error reports only that error and any
+  lexical errors.
 - **A union** has at least one arm. The default arm must be the last.
 - **A struct** has at least one field, which may be `void`.
 - **Syntax errors** stop parsing at the first one.
