@@ -347,6 +347,10 @@ None of these changes the public API of protocol-rs; see Verification.
   - a negative length
   - a name that cannot be a Rust identifier: `self`, `Self`, `super`,
     `crate` or `_`
+  - a procedure named `new` or `prog_vers`, which would duplicate a
+    helper of the generated client. The helpers keep x23c's names, so the
+    client's API is unchanged.
+  - two procedures of the same name in one version
 - **Raw identifiers:** xdrc escapes every Rust keyword, including reserved
   ones such as `try`, `gen` and `box`, as a raw identifier. x23c's list was
   shorter.
