@@ -371,3 +371,18 @@ pub mod boxed_fields {
             "};"
     }
 }
+
+// A field named after a Rust keyword, as XDR allows, is declared under its
+// plain name, not as `r#type`.
+#[derive(XDR)]
+pub struct RawField {
+    pub r#type: u32,
+}
+
+check_format! { derive_raw_field
+    RawField::def()
+    =>
+        "struct RawField {"
+        "	unsigned int type;"
+        "};"
+}
