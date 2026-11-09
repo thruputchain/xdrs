@@ -266,13 +266,13 @@ impl Gen<'_> {
 
     /// The derives most generated types share.
     fn derives(&self, markers: Markers) -> TokenStream {
-        let xdrs = if markers.const_write_xdr {
+        let xdrs_derive = if markers.const_write_xdr {
             quote! { derive(ReadXDR, WriteXDR, ConstWriteXDR, ConstXDRSize) }
         } else {
             quote! { derive(ReadXDR, WriteXDR, ConstXDRSize) }
         };
         let serde = self.attr("serde", quote! { derive(Serialize, Deserialize) });
-        let xdrs = self.attr("xdrs", xdrs);
+        let xdrs = self.attr("xdrs", xdrs_derive);
         let spec = self.attr("spec", quote! { derive(XDR) });
         quote! { #serde #xdrs #spec }
     }

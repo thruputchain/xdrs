@@ -31,6 +31,15 @@ struct CrateAttr {
     krate: Option<syn::Path>,
 }
 
+/// The XDR name of an item: its `#[xdr(name)]`, or else its Rust name,
+/// without any `r#`.
+fn xdr_name(attrs: &Attrs, ident: &syn::Ident) -> String {
+    attrs
+        .name
+        .clone()
+        .unwrap_or_else(|| ident.unraw().to_string())
+}
+
 impl Attrs {
     /// Returns the XDR name for the auto-generated discriminant enum.
     /// Defaults to `{RustEnumName}Type`.  Do not set `#[xdr(name)]` to
@@ -108,10 +117,7 @@ fn from_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Result<Token
     let attrs = Attrs::from_derive_input(input)?;
     let ty_ident = &input.ident;
     // The XDR struct has the same name as the rust type, unless the attrs override that
-    let ty_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| ty_ident.unraw().to_string());
+    let ty_name = xdr_name(&attrs, ty_ident);
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let type_reference_methods = named_type_reference_methods(ty_name.clone());
     let declare_fields = if item.fields.is_empty() {
@@ -161,10 +167,7 @@ fn from_enum_fieldless(
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let ty_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| ty_ident.unraw().to_string());
+    let ty_name = xdr_name(attrs, ty_ident);
     let type_reference_methods = named_type_reference_methods(ty_name.clone());
 
     let enum_typedef = enum_typedef(input, item, attrs)?;
@@ -188,10 +191,7 @@ fn from_enum_with_fields(
 ) -> Result<TokenStream> {
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-    let ty_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| ty_ident.unraw().to_string());
+    let ty_name = xdr_name(attrs, ty_ident);
     let type_reference_methods = named_type_reference_methods(ty_name.clone());
 
     let mut impls = vec![];
@@ -255,10 +255,7 @@ fn enum_typedef(
     attrs: &Attrs,
 ) -> Result<TokenStream> {
     // The XDR enum has the same name as the rust type, unless the attrs override that
-    let enum_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| input.ident.unraw().to_string());
+    let enum_name = xdr_name(attrs, &input.ident);
 
     let declare_variants: Vec<TokenStream> = item
         .variants
@@ -291,10 +288,7 @@ fn union_typedef(
     attrs: &Attrs,
 ) -> Result<TokenStream> {
     // The XDR union has the same name as the rust type, unless the attrs override that
-    let ty_name = attrs
-        .name
-        .clone()
-        .unwrap_or_else(|| input.ident.unraw().to_string());
+    let ty_name = xdr_name(attrs, &input.ident);
 
     // The discriminant type name is based on the Rust type name, not the custom XDR name
     let rust_enum_name = input.ident.unraw().to_string();
@@ -334,9 +328,7 @@ fn variant_case_spec(variant: &syn::Variant) -> Result<Option<TokenStream>> {
     }
 
     let attrs = Attrs::from_variant(variant)?;
-    let variant_name = attrs
-        .name
-        .unwrap_or_else(|| variant.ident.unraw().to_string());
+    let variant_name = xdr_name(&attrs, &variant.ident);
     let decl = variant_fields_decl(variant)?;
 
     Ok(Some(quote! {
@@ -463,7 +455,7 @@ fn declare_struct_field(i: usize, field: &syn::Field) -> Result<TokenStream> {
     let ty = &field.ty;
     let attrs = Attrs::from_field(field)?;
     let ident = field.ident.clone().unwrap_or(format_ident!("f{}", i));
-    let name = attrs.name.unwrap_or_else(|| ident.unraw().to_string());
+    let name = xdr_name(&attrs, &ident);
 
     Ok(quote! {
         {
@@ -480,9 +472,7 @@ fn declare_enum_variant(index: usize, variant: &syn::Variant) -> Result<TokenStr
     }
 
     let attrs = Attrs::from_variant(variant)?;
-    let ident = attrs
-        .name
-        .unwrap_or_else(|| variant.ident.unraw().to_string());
+    let ident = xdr_name(&attrs, &variant.ident);
 
     let index = index as i32;
     let index_expr = quote! { #index };
