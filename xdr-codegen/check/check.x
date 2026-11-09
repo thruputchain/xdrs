@@ -9,6 +9,15 @@ enum Status {
   REJECTED = 1
 };
 
+// An enum value may name a member of the same enum or of another, or a
+// constant.
+enum Aliased {
+  FIRST = 7,
+  SAME = FIRST,
+  OTHER = REJECTED,
+  CONSTANT = MAX_BATCH
+};
+
 // #[rust(newtype)]
 typedef opaque Hash[32];
 

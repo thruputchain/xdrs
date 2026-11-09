@@ -47,11 +47,13 @@ pub struct Options {
 pub fn generate(spec: &Spec, options: &Options) -> Result<String, Vec<Diagnostic>> {
     let mut consts = HashSet::new();
     let mut aliases = HashMap::new();
-    collect_names(&spec.items, &mut consts, &mut aliases);
+    let mut members = HashMap::new();
+    collect_names(&spec.items, &mut consts, &mut aliases, &mut members);
     let mut g = Gen {
         options,
         consts,
         aliases,
+        members,
         items: Vec::new(),
         diags: Vec::new(),
     };
@@ -76,12 +78,14 @@ pub fn generate(spec: &Spec, options: &Options) -> Result<String, Vec<Diagnostic
     Ok(out)
 }
 
-/// Collects the names of the file's constants, and its typedefs that
-/// become type aliases of `int`, `unsigned int`, `bool` or another name.
+/// Collects the names of the file's constants, its typedefs that become
+/// type aliases of `int`, `unsigned int`, `bool` or another name, and the
+/// members of its named enums.
 fn collect_names(
     items: &[Item],
     consts: &mut HashSet<String>,
     aliases: &mut HashMap<String, TypeSpec>,
+    members: &mut HashMap<String, Ident>,
 ) {
     for item in items {
         match &item.kind {
@@ -100,7 +104,16 @@ fn collect_names(
             }) if !Comment::parse(&item.comment).markers.newtype => {
                 aliases.insert(name.name.clone(), ty.clone());
             }
-            ItemKind::Namespace(ns) => collect_names(&ns.body, consts, aliases),
+            ItemKind::Enum(Named { name, body })
+            | ItemKind::Typedef(Declaration {
+                name,
+                ty: DeclType::Plain(TypeSpec::Enum(body)),
+            }) => {
+                for m in &body.members {
+                    members.insert(m.name.name.clone(), name.clone());
+                }
+            }
+            ItemKind::Namespace(ns) => collect_names(&ns.body, consts, aliases, members),
             _ => {}
         }
     }
@@ -129,6 +142,8 @@ pub(crate) struct Gen<'o> {
     /// The file's typedefs that become type aliases of `int`,
     /// `unsigned int`, `bool` or another name, by name.
     aliases: HashMap<String, TypeSpec>,
+    /// The members of the file's named enums, each with its enum's name.
+    members: HashMap<String, Ident>,
     /// Top-level Rust items, each printed separately.
     items: Vec<TokenStream>,
     diags: Vec<Diagnostic>,
@@ -287,6 +302,25 @@ impl Gen<'_> {
                 let i = self.name(i);
                 quote! { #i }
             }
+        }
+    }
+
+    /// The `i32` value of an enum member in `body`. A name may be another
+    /// member of the enum, a member of another enum in the file, or a
+    /// constant, which is `u32` or `u64` in Rust. A name the file does not
+    /// define is taken for a constant from another file.
+    fn member_value(&mut self, v: &Value, body: &EnumBody) -> TokenStream {
+        let Value::Ident(i) = v else {
+            return self.value(v);
+        };
+        let rust = self.name(i);
+        if body.members.iter().any(|m| m.name.name == i.name) {
+            quote! { Self::#rust.0 }
+        } else if let Some(other) = self.members.get(&i.name).cloned() {
+            let other = self.name(&other);
+            quote! { #other::#rust.0 }
+        } else {
+            quote! { #rust as i32 }
         }
     }
 
@@ -725,7 +759,7 @@ impl Gen<'_> {
         for member in &body.members {
             let doc = Comment::parse(&member.comment).attrs();
             let ident = self.name(&member.name);
-            let value = self.value(&member.value);
+            let value = self.member_value(&member.value, body);
             consts.push(quote! { #doc pub const #ident: Self = Self(#value); });
             let shown = format!("{name}::{}", member.name.name);
             arms.push(quote! { x if x == Self::#ident.0 => f.write_str(#shown), });

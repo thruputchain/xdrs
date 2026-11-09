@@ -64,6 +64,53 @@ impl core::fmt::Display for Status {
     }
 }
 
+// An enum value may name a member of the same enum or of another, or a
+// constant.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[cfg_attr(feature = "serde", serde(transparent))]
+#[derive(schemars::JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Copy)]
+#[repr(transparent)]
+pub struct Aliased(pub i32);
+
+impl Aliased {
+    pub const FIRST: Self = Self(7);
+    pub const SAME: Self = Self(Self::FIRST.0);
+    pub const OTHER: Self = Self(Status::REJECTED.0);
+    pub const CONSTANT: Self = Self(MAX_BATCH as i32);
+}
+
+impl From<i32> for Aliased {
+    fn from(v: i32) -> Self {
+        Self(v)
+    }
+}
+
+impl xdrs::XDRDiscriminant for Aliased {
+    const ENCODING: xdrs::DiscriminantEncoding = xdrs::DiscriminantEncoding::Signed;
+    fn discriminant(&self) -> i32 {
+        self.0
+    }
+    fn from_discriminant(d: i32) -> Self {
+        Self(d)
+    }
+}
+
+#[cfg(feature = "std")]
+impl core::fmt::Display for Aliased {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self.0 {
+            x if x == Self::FIRST.0 => f.write_str("Aliased::FIRST"),
+            x if x == Self::SAME.0 => f.write_str("Aliased::SAME"),
+            x if x == Self::OTHER.0 => f.write_str("Aliased::OTHER"),
+            x if x == Self::CONSTANT.0 => f.write_str("Aliased::CONSTANT"),
+            _ => write!(f, "Aliased({})", self.0),
+        }
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
