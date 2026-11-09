@@ -693,6 +693,39 @@ impl ConstAliasDefault {
     }
 }
 
+// A fixed opaque arm, longer than serde's array impls allow, is a hex
+// string, as a struct field is.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[xdr(discriminant = "i32")]
+#[derive(schemars::JsonSchema)]
+#[repr(i32)]
+#[non_exhaustive]
+pub enum Sig {
+    _0 {
+        #[cfg_attr(feature = "serde", serde(with = "xdr_common::serde_hex"))]
+        #[schemars(
+            with = "String",
+            length(equal = 2*(64 as usize)),
+            extend("contentEncoding" = "hex", "contentMediaType" = "application/binary")
+        )]
+        sig: [u8; 64],
+    } = 0 as i32,
+    _1 = 1 as i32,
+}
+
+impl Sig {
+    /// The discriminant.
+    #[allow(clippy::match_single_binding)]
+    pub fn k(&self) -> i32 {
+        match self {
+            Sig::_0 { .. } => 0 as i32,
+            Sig::_1 => 1 as i32,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]

@@ -185,6 +185,15 @@ default:
   void;
 };
 
+// A fixed opaque arm, longer than serde's array impls allow, is a hex
+// string, as a struct field is.
+union Sig switch (int k) {
+case 0:
+  opaque sig[64];
+case 1:
+  void;
+};
+
 // An anonymous union inside a struct.
 struct Tagged {
   union switch (unsigned int k) {

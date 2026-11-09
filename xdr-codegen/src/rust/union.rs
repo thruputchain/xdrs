@@ -77,7 +77,8 @@ impl Gen<'_> {
                         markers,
                     );
                     let field = self.name(&decl.name);
-                    Some(quote! { #field: #ty })
+                    let hex = self.opaque_attrs(&decl.ty);
+                    Some(quote! { #hex #field: #ty })
                 }
                 None => None,
             };
