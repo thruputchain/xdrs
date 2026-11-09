@@ -162,6 +162,13 @@ impl Gen<'_> {
             accessor.push(quote! { #rust_name::Default { #switch_id, .. } => *#switch_id, });
         }
 
+        // An enum with no fields derives as an XDR enum; with fields, as a
+        // union with a specification.
+        let has_fields = body
+            .arms
+            .iter()
+            .any(|a| a.is_default || a.member.decl.is_some());
+        self.derives_xdr(&rust_name, has_fields);
         let doc = comment.attrs();
         let std_derives = Self::std_derives(markers);
         let derives = self.derives(markers);

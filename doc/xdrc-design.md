@@ -252,7 +252,10 @@ and positions. That gives:
 - **A canonical printed form** of any `.x` file, through xdr-repr's
   `Display`. It drops comments, so it is a canonical form, not a formatter.
 
-**"Same wire format" is defined by a normalizer in xdr-repr.** It:
+**"Same wire format" is defined by a normalizer.** It is implemented
+in xdr-codegen (`xdr_codegen::repr::wire_shapes`) rather than in xdr-repr,
+so as not to grow that `no_std` crate; it can move if another consumer
+needs it. It:
 
 - resolves typedefs
 - replaces named constants with their values
@@ -262,6 +265,11 @@ and positions. That gives:
 
 Names may count later if JSON and serde names become part of the contract.
 The check may also encode sample values with both sides.
+
+The round trip checks xdrc's choice of Rust types, not the wire derives:
+`derive(XDR)` and xdr-repr's `Declare` impls are implemented separately
+from `ReadXDR`/`WriteXDR`. See "Round trip through `derive(XDR)`" in
+[xdrc-impl.md](xdrc-impl.md) for what it found.
 
 **The derived spec only has to match the source on the wire.** It
 does not have to reproduce real `enum`s or named bounds. protocol-rs

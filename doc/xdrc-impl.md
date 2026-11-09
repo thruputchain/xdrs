@@ -16,10 +16,11 @@ unpublished until xdrc can replace x23c's Rust backend. It contains:
 | `src/parser.rs` | Recursive-descent parser, with the grammar in its module docs |
 | `src/check.rs` | Checks on names and values after parsing |
 | `src/ast.rs` | The syntax tree |
+| `src/repr.rs` | Lowering to `xdr_repr::Specification`, and wire shapes for comparing specifications |
 | `src/rust/` | The Rust backend: `mod.rs` for types, constants and typedefs; `union.rs`; `rpc.rs`; `comment.rs` |
 | `src/bin/xdrc.rs` | The `xdrc` command |
 | `tests/` | Unit tests, the corpus test and the golden test |
-| `check/` | The crate `thruput-xdrc-check`, which compiles and tests generated code against this workspace |
+| `check/` | The crate `thruput-xdrc-check`, which compiles and tests generated code against this workspace, and compares what `derive(XDR)` gives it with the source |
 
 `xdr_codegen::parse` returns a `Spec` and its warnings, or every
 diagnostic if there was an error. `xdr_codegen::rust::generate` turns a
@@ -261,6 +262,11 @@ serde imports. `use xdrs::*`, which brings the derive macros, and a
 union's `#[xdr(default_variant)]` serve both `xdrs` and `spec`, so they are
 gated on either.
 
+Under `spec`, each module also gets `xdr_spec()`, which collects what
+`derive(XDR)` gives each of its types: a type's `def()`, or for an enum
+with fields its `spec()`, which adds the switch enum the derive
+synthesizes. See "Round trip through `derive(XDR)`" below.
+
 ### Output by definition kind
 
 These have the same shapes as x23c's output:
@@ -403,13 +409,13 @@ XDRC_CORPUS=../thruput-protocol:../hogd/x23/tests \
 `check/check.x` and `check/plain.x` are hogd's `x23/tests/rust_check`
 fixtures, along with its `src/lib.rs`. `tests/golden.rs` regenerates
 `check/src/generated.rs` and `check/src/plain.rs`, with the same feature
-flags as hogd's `check.sh`, and fails if they differ from the committed
-files. After changing the generator, run it with `XDRC_BLESS=1` and review
-the diff.
+flags as hogd's `check.sh`, except that `generated.rs` also has `spec` on,
+and fails if they differ from the committed files. After changing the
+generator, run it with `XDRC_BLESS=1` and review the diff.
 
 The `thruput-xdrc-check` crate compiles those modules against this
-workspace's `xdrs` and `thruput-rpc-api`, then runs their 12 tests, with
-all features and with none.
+workspace's `xdrs` and `thruput-rpc-api`, then runs the tests adapted from
+hogd's, with all features and with none, and the round-trip tests below.
 
 ### protocol-rs, regenerated with xdrc
 
@@ -435,5 +441,69 @@ All passed:
   identical.
 - hogd's `x23/tests/rust_check/check.sh`, run with xdrc: 12 tests pass.
 
-The API comparison script is not in the repository. A `cargo xtask` or a
-CI job could make this regeneration repeatable.
+protocol-rs now generates with a pinned xdrc, and its
+`scripts/compare-xdrc-api.sh` repeats the API comparison against x23c.
+
+### Round trip through `derive(XDR)`
+
+`xdr_codegen::repr::lower` turns a parsed file into an
+`xdr_repr::Specification`. It flattens namespaces, drops programs, `%`
+lines and comments, and writes `<>` as a maximum of `u32::MAX`, as
+xdr-repr does. `xdr_codegen::repr::wire_shapes` reduces a specification
+to a `Shape` per named type, which ignores everything that does not reach
+the wire:
+
+- names, typedefs, constants and inline-versus-named types are resolved
+- `int`, `unsigned int`, `bool` and every enum are one 32-bit `Word`
+- a struct is its fields in order, flattened into an enclosing struct, so
+  a newtype is its one field
+- a union is its arms keyed by the 32 bits of each case value, plus its
+  default arm. Labels are looked up first among the members of the switch
+  type, as the derive reuses member names across the switch enums it
+  synthesizes. A union whose arms are all `void`, with no default, is a
+  `Word`, as its Rust enum derives as an XDR enum.
+- a recursive reference and an undefined type are kept by name
+
+A type that uses an undefined constant cannot be reduced; `wire_shapes`
+reports it and goes on.
+
+`check/tests/repr.rs` compares `check.x`, lowered, with the check crate's
+`xdr_spec()`. Every type but the plain typedefs, which become Rust
+aliases, matches on the wire. A second test changes a bound, a field's
+width and a case value in the source, and checks that each is caught.
+
+**What it covers.** The derived spec is built by `derive(XDR)` and
+xdr-repr's `Declare` impls, which do not share code with
+`ReadXDR`/`WriteXDR`, beyond helpers that validate an enum and find its
+default variant. So a match says that xdrc chose Rust types whose
+*described* format is the source's: the right bounds, widths, field order,
+case values and optionality. It does not show that the wire derives encode
+those types as described; that rests on xdrs's own tests.
+
+**protocol-rs.** Done once, by hand, on 2026-11-09, in a scratch copy:
+`generate.sh` with `--rust-feature spec`, xdrs's `repr` feature on, and a
+test merging every module's `xdr_spec()`. The comparison ran per crate, as
+type names are not unique across crates (`ContractType` is an enum in
+thruput-xdr and a union in thruput-spec). Each crate's own definitions came
+first, then thruput-xdr's, then the other crates', with thruput-spec's
+last.
+
+- **480 types match on the wire, and none differ.** 83 more are plain
+  typedefs, which become Rust aliases with no definition of their own.
+- **5 types in thruput-trace could not be compared.** `SyscallTraceBody`
+  and the 4 types that contain it switch on `SyscallNo`, whose members
+  are defined in Rust, not in the source.
+- **A bug in `derive(XDR)`, fixed:** it named a field or variant by its
+  Rust identifier, so a field xdrc emits as `r#type`, which XDR allows as
+  `type`, panicked in `xdr_repr::ident` at run time. It now uses
+  `unraw()`. `tests/repr/derive_structs.rs` covers it.
+- **Name collisions in the derived spec, open:** `derive(XDR)` ignores
+  `#[xdr(discriminant = ...)]` and describes each union's switch by an enum
+  it synthesizes, named `{Union}Type`. 10 protocol unions switch on a real
+  enum of exactly that name (`union AuthClaim switch (AuthClaimType t)`),
+  so their `xdr_spec()` defines the name twice, differently: once as the
+  real enum, which as a newtype is `struct { int f0; }`, and once as the
+  synthesized enum. Both are 32 bits, so the wire is unaffected, but the
+  derived spec is inconsistent. Describing the switch by its
+  `discriminant` type, as #379 does, would remove the synthesized enum.
+  The comparison kept the last definition of each name.

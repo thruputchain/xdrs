@@ -55,9 +55,11 @@ pub fn generate(spec: &Spec, options: &Options) -> Result<String, Vec<Diagnostic
         aliases,
         members,
         items: Vec::new(),
+        spec_definitions: Vec::new(),
         diags: Vec::new(),
     };
     g.items(&spec.items);
+    g.xdr_spec();
     if !g.diags.is_empty() {
         return Err(g.diags);
     }
@@ -146,6 +148,9 @@ pub(crate) struct Gen<'o> {
     members: HashMap<String, Ident>,
     /// Top-level Rust items, each printed separately.
     items: Vec<TokenStream>,
+    /// For `xdr_spec`, a statement per type that derives `XDR`, adding the
+    /// definitions the derive makes for it to `spec`.
+    spec_definitions: Vec<TokenStream>,
     diags: Vec<Diagnostic>,
 }
 
@@ -275,6 +280,41 @@ impl Gen<'_> {
         let xdrs = self.attr("xdrs", xdrs_derive);
         let spec = self.attr("spec", quote! { derive(XDR) });
         quote! { #serde #xdrs #spec }
+    }
+
+    /// Records that the type `name` derives `XDR`, for `xdr_spec`. The
+    /// derive gives a type a definition, and an enum with fields also a
+    /// specification, which adds the enum it synthesizes for the switch.
+    fn derives_xdr(&mut self, name: &syn::Ident, has_specification: bool) {
+        self.spec_definitions.push(if has_specification {
+            quote! {
+                spec.definitions.extend(
+                    <#name as xdrs::xdr_repr::HasSpecification>::spec().definitions,
+                );
+            }
+        } else {
+            quote! { spec.definitions.push(<#name as xdrs::xdr_repr::XDR>::def()); }
+        });
+    }
+
+    /// `xdr_spec()`, gated on `spec`: every definition that `derive(XDR)`
+    /// gives the file's types, to compare with the source.
+    fn xdr_spec(&mut self) {
+        let definitions = core::mem::take(&mut self.spec_definitions);
+        self.push_gated(
+            "spec",
+            quote! {
+                /// The XDR definitions that `derive(XDR)` gives this module's
+                /// types, which describe the same wire format as the source.
+                pub fn xdr_spec() -> xdrs::xdr_repr::Specification {
+                    let mut spec = xdrs::xdr_repr::Specification {
+                        definitions: Default::default(),
+                    };
+                    #(#definitions)*
+                    spec
+                }
+            },
+        );
     }
 
     fn schema_derive(&self) -> TokenStream {
@@ -631,6 +671,7 @@ impl Gen<'_> {
         let transparent = self.attr("serde", quote! { serde(transparent) });
         let hex = opaque_len
             .map(|_| self.attr("serde", quote! { serde(with = "xdr_common::serde_hex") }));
+        self.derives_xdr(&name, false);
         self.items.push(quote! {
             #doc
             #derives
@@ -784,6 +825,7 @@ impl Gen<'_> {
         } else {
             quote! { { #(#fields,)* } }
         };
+        self.derives_xdr(&rust_name, false);
         self.items.push(quote! {
             #doc
             #derives
@@ -802,6 +844,7 @@ impl Gen<'_> {
         let schema = self.schema_derive();
         let std_derives = Self::std_derives(markers);
         let transparent = self.attr("serde", quote! { serde(transparent) });
+        self.derives_xdr(&rust_name, false);
         self.items.push(quote! {
             #doc
             #derives

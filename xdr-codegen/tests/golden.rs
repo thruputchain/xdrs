@@ -38,11 +38,12 @@ fn check(input: &str, output: &str, options: &Options) {
 
 #[test]
 fn check_x() {
-    // As generated crates use it.
+    // As generated crates use it, plus `spec`, so that the check crate can
+    // compare what `derive(XDR)` gives with the source.
     check(
         "check.x",
         "generated.rs",
-        &options(&["xdrs", "schema"], &["spec"]),
+        &options(&["xdrs", "schema", "spec"], &[]),
     );
 }
 

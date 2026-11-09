@@ -936,6 +936,7 @@ dependencies = [
  "quote",
  "regex-automata",
  "syn 3.0.5",
+ "thruput-xdr-repr",
 ]
 
 [[package]]
@@ -980,6 +981,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thruput-rpc-api",
+ "thruput-xdr-codegen",
  "thruput-xdr-common",
  "thruput-xdrs",
 ]

@@ -28,3 +28,4 @@ proc-macro2 = { version = "1.0.105", default-features = false }
 quote = { version = "1.0.43", default-features = false }
 regex-automata = "0.4.13"
 syn = { version = "3.0.3", default-features = false, features = ["full", "parsing", "printing"] }
+xdr-repr = { workspace = true }
