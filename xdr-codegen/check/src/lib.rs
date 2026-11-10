@@ -606,6 +606,38 @@ mod tests {
         assert!(xdrs::cxs::decode::<BoolDefault>(&[0x02]).is_err());
     }
 
+    // An enum's schema is the XDR enum, with its members' names and values,
+    // not the newtype's one-field struct, so a union switched on it, directly
+    // or through a typedef, takes its case labels from it.
+    #[test]
+    fn enums_describe_themselves_as_enums() {
+        use xdrs::xdr_repr::{HasSpecification, XDR};
+        assert_eq!(
+            Status::def().to_string(),
+            "enum Status {\n\tOK = 0,\n\tREJECTED = 1,\n};\n"
+        );
+        // Members that name another member or a constant take its value.
+        assert_eq!(
+            Aliased::def().to_string(),
+            "enum Aliased {\n\tFIRST = 7,\n\tSAME = 7,\n\tOTHER = 1,\n\tCONSTANT = 4,\n};\n"
+        );
+        assert_eq!(
+            Outcome::spec().to_string(),
+            "union Outcome switch (Status which)\n{\ncase OK:\n\tHash hash;\n\
+             case REJECTED:\n\tvoid;\n};\n\n"
+        );
+        assert_eq!(
+            ByVerdict::spec().to_string(),
+            "union ByVerdict switch (Status which)\n{\ncase OK:\n\tint n;\n\
+             case REJECTED:\n\tvoid;\n};\n\n"
+        );
+        assert_eq!(
+            BySignal::spec().to_string(),
+            "union BySignal switch (Signal which)\n{\ncase IDLE:\n\tint n;\n\
+             case DOWN:\n\tvoid;\ndefault:\n\tvoid;\n};\n\n"
+        );
+    }
+
     // Without the xdrs derives, a default arm is a plain variant.
     #[test]
     fn default_arms_without_the_xdrs_derives() {

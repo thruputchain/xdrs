@@ -256,7 +256,8 @@ There are three representations of a protocol type:
    the Rust types carry:
    - Named bounds become plain numbers.
    - Rust type aliases such as `pub type GasAmount = u64` disappear.
-   - An XDR enum emitted as a newtype loses its enumerators.
+   - An XDR enum emitted as a newtype keeps its enumerators only because
+     xdrc writes its `HasTypeDef` by hand (see below).
    - Comments are gone.
 
    It describes the same wire format as the source, but it is a smaller
@@ -326,9 +327,13 @@ switches:
 - **#379** makes `derive(XDR)` describe the switch by that type, through
   `SwitchType`: `i32` and `u32` cases by number, `bool` as `TRUE`/`FALSE`,
   and an enum by member name, which it finds in the type's `HasTypeDef`.
-  An XDR enum that xdrc emits is an open newtype, whose `HasTypeDef` is
-  not an enum, so with `spec` a union switched on one panics when its spec
-  is built (see TODO.md).
+  An XDR enum that xdrc emits is an open newtype, and `derive(XDR)` would
+  describe it as a struct with one `int` field, `struct E { int f0; }`.
+  With `spec`, building the spec of a union switched on it would then
+  panic: "XDR union switch type E is not an enum". So xdrc doesn't derive
+  `XDR` for an enum. It writes a `HasTypeDef` impl, gated on `spec`, that
+  describes the XDR enum, with each member's XDR name and the value of its
+  associated constant.
 
 As of hogd#4724, #4738 and #4739, x23c follows #375. It:
 

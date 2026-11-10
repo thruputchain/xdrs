@@ -32,26 +32,6 @@ when Rust-first code needs a closed enum to switch a union. xdrc would then
 change its impls in the same step, to `-> Option<Self> { Some(Self(d)) }`
 or to the derive.
 
-## Derived spec for enums
-
-Since xdrs#379, `derive(XDR)` describes a union's switch by its
-`#[xdr(discriminant)]` type and labels each case through `SwitchType`. For
-an enum, `SwitchType::case_label` looks the tag up among the members in
-the type's `HasTypeDef`. But xdrc emits an XDR enum as an open newtype,
-`struct E(pub i32)`, whose derived `HasTypeDef` is a typedef of `int`, not
-an enum. So with the `spec` feature, the generated code compiles, but
-building the spec of a union switched on an XDR enum, directly or through a
-typedef, panics: "XDR union switch type E is not an enum". In `check.x`,
-`Outcome`, `ByVerdict` and `BySignal` do this; unions switched on `int`,
-`unsigned int`, `bool` or aliases of them are fine. x23c's output has the
-same problem.
-
-The fix is for the newtype to describe itself as an enum: an
-`#[xdr(enum)]`-style attribute on the newtype listing its members, or a
-`HasTypeDef` impl that xdrc emits in place of the derive. Nothing builds
-the spec of generated protocol types yet; protocol-rs generates without
-`spec`.
-
 ## Names in the derived spec
 
 xdrc does not emit `#[xdr(discrim_var = ...)]`, so `derive(XDR)` names every

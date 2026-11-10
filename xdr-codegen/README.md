@@ -194,7 +194,7 @@ The module is written to be included in a crate that provides:
 | `const` | `pub const NAME: u32 = VALUE;`, or `u64` with the marker |
 | `typedef` | `pub type NAME = TYPE;` |
 | `typedef` with `#[rust(newtype)]` | `pub struct NAME { inner: T }` with `From`, `new`, `into_inner`, `Deref` and `DerefMut`. A fixed opaque newtype also gets `AsRef<[u8]>`, hex serde, a hex-string `JsonSchema` and `Copy`. |
-| `enum` | An open newtype `pub struct NAME(pub i32)`, with an associated constant per member, `From<i32>`, `XDRDiscriminant` and `Display`. Decoding accepts any `i32`. |
+| `enum` | An open newtype `pub struct NAME(pub i32)`, with an associated constant per member, `From<i32>`, `XDRDiscriminant` and `Display`, and under `spec` a `HasTypeDef` that describes the XDR enum. Decoding accepts any `i32`. |
 | `struct` | A `#[repr(C)]` struct with `pub` fields |
 | `union` | A `#[repr(i32)] #[non_exhaustive]` enum with one variant per case label, and an accessor named after the switch variable that returns the discriminant |
 | An inline `struct`, `union` or `enum` | A type named `PARENT_FIELD`, emitted before its parent |
@@ -322,6 +322,11 @@ Constructs x23c mishandled, which xdrc generates correctly:
   `JsonSchema` and no `Default`; x23c threw an exception.
 - With `spec` but not `xdrs`, the output compiles: `use xdrs::*` and a
   union's `#[xdr(default_variant)]` are gated on either feature.
+- Under `spec`, an enum gets a `HasTypeDef` impl that describes the XDR
+  enum, where x23c derived `XDR`, which describes the newtype as
+  `struct E { int f0; }`. With xdrs#379, building the spec of a union
+  switched on such an enum panicked. thruputchain/hogd#4748 makes x23c do
+  the same as xdrc.
 - Every Rust keyword, including reserved ones such as `try`, `gen` and
   `box`, becomes a raw identifier. x23c's list was shorter.
 
@@ -344,7 +349,8 @@ cd xdr-codegen/check && cargo test --all-features && cargo test --no-default-fea
   generator, run it with `XDRC_BLESS=1` and review the diff.
 - **Check crate:** `check/` (`thruput-xdrc-check`) compiles those modules
   against this workspace's `xdrs` and `thruput-rpc-api` and runs their
-  tests. Test it with all features and with none.
+  tests. Test it with all features and with none. `generated.rs` has
+  `spec` on, so its tests also build the derived specs.
 - **Corpus test:** `tests/corpus.rs` parses, and generates Rust from, every
   `.x` file under the directories in `XDRC_CORPUS`, separated by `:`. It
   is skipped when `XDRC_CORPUS` is unset:

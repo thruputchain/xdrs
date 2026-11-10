@@ -263,6 +263,13 @@ impl Gen<'_> {
 
     /// The derives most generated types share.
     fn derives(&self, markers: Markers) -> TokenStream {
+        let encoding = self.encoding_derives(markers);
+        let spec = self.attr("spec", quote! { derive(XDR) });
+        quote! { #encoding #spec }
+    }
+
+    /// The serde and xdrs derives, without `derive(XDR)`.
+    fn encoding_derives(&self, markers: Markers) -> TokenStream {
         let xdrs_derive = if markers.const_write_xdr {
             quote! { derive(ReadXDR, WriteXDR, ConstWriteXDR, ConstXDRSize) }
         } else {
@@ -270,8 +277,7 @@ impl Gen<'_> {
         };
         let serde = self.attr("serde", quote! { derive(Serialize, Deserialize) });
         let xdrs = self.attr("xdrs", xdrs_derive);
-        let spec = self.attr("spec", quote! { derive(XDR) });
-        quote! { #serde #xdrs #spec }
+        quote! { #serde #xdrs }
     }
 
     fn schema_derive(&self) -> TokenStream {
@@ -795,7 +801,9 @@ impl Gen<'_> {
         let markers = comment.markers;
         let rust_name = self.ident(name, span);
         let doc = comment.attrs();
-        let derives = self.derives(markers);
+        // Not `derive(XDR)`, which would describe the newtype as a struct
+        // with one `int` field: the `HasTypeDef` impl below describes it.
+        let derives = self.encoding_derives(markers);
         let schema = self.schema_derive();
         let std_derives = Self::std_derives(markers);
         let transparent = self.attr("serde", quote! { serde(transparent) });
@@ -812,6 +820,7 @@ impl Gen<'_> {
 
         let mut consts = Vec::new();
         let mut arms = Vec::new();
+        let mut spec_members = Vec::new();
         for member in &body.members {
             let doc = Comment::parse(&member.comment).attrs();
             let ident = self.name(&member.name);
@@ -819,6 +828,10 @@ impl Gen<'_> {
             consts.push(quote! { #doc pub const #ident: Self = Self(#value); });
             let shown = format!("{name}::{}", member.name.name);
             arms.push(quote! { x if x == Self::#ident.0 => f.write_str(#shown), });
+            let xdr_name = &member.name.name;
+            spec_members.push(quote! {
+                (xdrs::xdr_repr::ident(#xdr_name), xdrs::xdr_repr::signed(Self::#ident.0))
+            });
         }
         self.items.push(quote! { impl #rust_name { #(#consts)* } });
         self.items.push(quote! {
@@ -839,6 +852,19 @@ impl Gen<'_> {
                     }
                     fn from_discriminant(d: i32) -> Self {
                         Self(d)
+                    }
+                }
+            },
+        );
+        // The XDR enum, with its members' names and values. A union that
+        // names this enum as its `#[xdr(discriminant)]` takes its case
+        // labels from it.
+        self.push_gated(
+            "spec",
+            quote! {
+                impl xdrs::xdr_repr::HasTypeDef for #rust_name {
+                    fn type_def() -> xdrs::xdr_repr::TypeDef {
+                        xdrs::xdr_repr::enum_def(#name, [#(#spec_members),*].into())
                     }
                 }
             },
