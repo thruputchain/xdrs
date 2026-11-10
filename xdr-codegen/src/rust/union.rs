@@ -182,7 +182,6 @@ impl Gen<'_> {
         });
         self.items.push(quote! {
             impl #rust_name {
-                /// The discriminant.
                 #[allow(clippy::match_single_binding)]
                 pub fn #switch_id(&self) -> #switch {
                     match self {

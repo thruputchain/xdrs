@@ -182,7 +182,6 @@ impl Gen<'_> {
             }
         });
         self.items.push(quote! {
-            #[allow(non_camel_case_types)]
             #[derive(Clone)]
             pub struct #client {
                 handle: ::std::sync::Arc<dyn #api::RpcSender>,

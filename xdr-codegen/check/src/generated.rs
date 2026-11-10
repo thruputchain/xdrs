@@ -228,7 +228,6 @@ pub enum Outcome {
 }
 
 impl Outcome {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn status(&self) -> Status {
         match self {
@@ -270,7 +269,6 @@ pub enum Reading_last {
 }
 
 impl Reading_last {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn ok(&self) -> bool {
         match self {
@@ -313,7 +311,6 @@ pub enum Unsigned {
 }
 
 impl Unsigned {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn k(&self) -> u32 {
         match self {
@@ -338,7 +335,6 @@ pub enum Signed {
 }
 
 impl Signed {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn k(&self) -> i32 {
         match self {
@@ -367,7 +363,6 @@ pub enum ByIndex {
 }
 
 impl ByIndex {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn i(&self) -> Index {
         match self {
@@ -390,7 +385,6 @@ pub enum ByFlag {
 }
 
 impl ByFlag {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn f(&self) -> Flag {
         match self {
@@ -415,7 +409,6 @@ pub enum LowerBool {
 }
 
 impl LowerBool {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn b(&self) -> bool {
         match self {
@@ -438,7 +431,6 @@ pub enum LowerInt {
 }
 
 impl LowerInt {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn k(&self) -> i32 {
         match self {
@@ -484,7 +476,6 @@ pub enum UnsignedDefault {
 }
 
 impl UnsignedDefault {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn k(&self) -> u32 {
         match self {
@@ -527,7 +518,6 @@ pub enum SignedDefault {
 }
 
 impl SignedDefault {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn k(&self) -> i32 {
         match self {
@@ -567,7 +557,6 @@ pub enum BoolDefault {
 }
 
 impl BoolDefault {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn ok(&self) -> bool {
         match self {
@@ -596,7 +585,6 @@ pub enum ByVerdict {
 }
 
 impl ByVerdict {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn v(&self) -> Verdict {
         match self {
@@ -618,7 +606,6 @@ pub enum ByCode {
 }
 
 impl ByCode {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn c(&self) -> Code {
         match self {
@@ -641,7 +628,6 @@ pub enum ConstUnsigned {
 }
 
 impl ConstUnsigned {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn i(&self) -> Index {
         match self {
@@ -683,7 +669,6 @@ pub enum ConstAliasDefault {
 }
 
 impl ConstAliasDefault {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn i(&self) -> Index {
         match self {
@@ -716,7 +701,6 @@ pub enum Sig {
 }
 
 impl Sig {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn k(&self) -> i32 {
         match self {
@@ -739,7 +723,6 @@ pub enum Tagged_tag {
 }
 
 impl Tagged_tag {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn k(&self) -> u32 {
         match self {
@@ -835,7 +818,6 @@ pub enum BySignal {
 }
 
 impl BySignal {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn s(&self) -> Signal {
         match self {
@@ -885,7 +867,6 @@ pub enum Wrapping {
 }
 
 impl Wrapping {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn k(&self) -> u32 {
         match self {
@@ -1070,7 +1051,6 @@ for check_check_v1_Dispatcher<__Handler> {
     }
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone)]
 pub struct check_check_v1_Client {
     handle: ::std::sync::Arc<dyn ::thruput_rpc_api::RpcSender>,

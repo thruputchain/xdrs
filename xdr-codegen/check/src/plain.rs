@@ -68,7 +68,6 @@ pub enum Reading {
 }
 
 impl Reading {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn l(&self) -> Level {
         match self {
@@ -103,7 +102,6 @@ pub enum Count {
 }
 
 impl Count {
-    /// The discriminant.
     #[allow(clippy::match_single_binding)]
     pub fn n(&self) -> i32 {
         match self {
