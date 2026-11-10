@@ -23,6 +23,9 @@ fn check(input: &str, output: &str, options: &Options) {
     let parsed = xdr_codegen::parse(&src).unwrap_or_else(|d| panic!("{input}: {d:?}"));
     let code = xdr_codegen::rust::generate(&parsed.spec, options)
         .unwrap_or_else(|d| panic!("{input}: {d:?}"));
+    // Leave the commit out of the header, so that the committed files do
+    // not change with every commit.
+    let code = code.replacen(xdr_codegen::VERSION, env!("CARGO_PKG_VERSION"), 1);
     let path = dir.join("src").join(output);
     if std::env::var_os("XDRC_BLESS").is_some() {
         std::fs::write(&path, code).unwrap();

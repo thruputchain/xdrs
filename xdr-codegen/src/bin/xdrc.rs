@@ -63,7 +63,7 @@ fn run() -> Result<(), String> {
                 return Ok(());
             }
             "--version" => {
-                println!("xdrc {}", env!("CARGO_PKG_VERSION"));
+                println!("xdrc {}", xdr_codegen::VERSION);
                 return Ok(());
             }
             "--strict" => strict = true,

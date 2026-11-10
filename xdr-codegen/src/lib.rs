@@ -32,6 +32,16 @@ pub mod rust;
 
 use diag::{Diagnostic, Severity};
 
+/// xdrc's version and the xdrs commit it was built from, as in
+/// `0.18.0 (xdrs 0123abcd...)`. The commit ends in `-dirty` if this crate
+/// had uncommitted changes, and is `unknown` without git.
+pub const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (xdrs ",
+    env!("XDRC_COMMIT"),
+    ")"
+);
+
 /// A successfully parsed file.
 #[derive(Clone, Debug)]
 pub struct Parsed {
