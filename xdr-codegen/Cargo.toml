@@ -10,7 +10,7 @@ license.workspace = true
 publish = false
 repository.workspace = true
 homepage.workspace = true
-readme.workspace = true
+readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
