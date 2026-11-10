@@ -958,6 +958,7 @@ for check_check_v1_Dispatcher<__Handler> {
         data: &[u8],
     ) -> Result<Vec<u8>, ::thruput_rpc_api::RpcError> {
         match proc {
+            // ping
             0 => {
                 let args: () = xdrs::txs::decode(data)
                     .map_err(|_| ::thruput_rpc_api::RpcError::GarbageArguments)?;
@@ -969,6 +970,7 @@ for check_check_v1_Dispatcher<__Handler> {
                 xdrs::txs::encode(&res)
                     .map_err(|_| ::thruput_rpc_api::RpcError::SystemError)
             }
+            // add
             1 => {
                 let args: (i32, u64) = xdrs::txs::decode(data)
                     .map_err(|_| ::thruput_rpc_api::RpcError::GarbageArguments)?;
@@ -980,6 +982,7 @@ for check_check_v1_Dispatcher<__Handler> {
                 xdrs::txs::encode(&res)
                     .map_err(|_| ::thruput_rpc_api::RpcError::SystemError)
             }
+            // submit
             2 => {
                 let args: (TxBatch, bool) = xdrs::txs::decode(data)
                     .map_err(|_| ::thruput_rpc_api::RpcError::GarbageArguments)?;
@@ -991,6 +994,7 @@ for check_check_v1_Dispatcher<__Handler> {
                 xdrs::txs::encode(&res)
                     .map_err(|_| ::thruput_rpc_api::RpcError::SystemError)
             }
+            // credit
             3 => {
                 let args: (Amount, Tx) = xdrs::txs::decode(data)
                     .map_err(|_| ::thruput_rpc_api::RpcError::GarbageArguments)?;
@@ -1002,6 +1006,7 @@ for check_check_v1_Dispatcher<__Handler> {
                 xdrs::txs::encode(&res)
                     .map_err(|_| ::thruput_rpc_api::RpcError::SystemError)
             }
+            // verify
             4 => {
                 let args: (Hash,) = xdrs::txs::decode(data)
                     .map_err(|_| ::thruput_rpc_api::RpcError::GarbageArguments)?;
@@ -1013,6 +1018,7 @@ for check_check_v1_Dispatcher<__Handler> {
                 xdrs::txs::encode(&res)
                     .map_err(|_| ::thruput_rpc_api::RpcError::SystemError)
             }
+            // pending
             5 => {
                 let args: () = xdrs::txs::decode(data)
                     .map_err(|_| ::thruput_rpc_api::RpcError::GarbageArguments)?;
@@ -1024,6 +1030,7 @@ for check_check_v1_Dispatcher<__Handler> {
                 xdrs::txs::encode(&res)
                     .map_err(|_| ::thruput_rpc_api::RpcError::SystemError)
             }
+            // scale
             6 => {
                 let args: (T,) = xdrs::txs::decode(data)
                     .map_err(|_| ::thruput_rpc_api::RpcError::GarbageArguments)?;
@@ -1035,6 +1042,7 @@ for check_check_v1_Dispatcher<__Handler> {
                 xdrs::txs::encode(&res)
                     .map_err(|_| ::thruput_rpc_api::RpcError::SystemError)
             }
+            // ratio
             7 => {
                 let args: (f32, Reading) = xdrs::txs::decode(data)
                     .map_err(|_| ::thruput_rpc_api::RpcError::GarbageArguments)?;

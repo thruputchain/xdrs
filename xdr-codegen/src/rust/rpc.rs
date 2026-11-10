@@ -89,7 +89,10 @@ impl Gen<'_> {
                     > + Send;
             });
 
+            // Names the procedure, as x23c does, for readers of the output.
+            let label = comment::plain(&[pname]);
             dispatch_arms.push(quote! {
+                #label
                 #number => {
                     let args: (#(#args,)*) = xdrs::txs::decode(data)
                         .map_err(|_| #api::RpcError::GarbageArguments)?;
