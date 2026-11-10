@@ -307,7 +307,7 @@ None of these changes the public API of protocol-rs; see Verification.
     the output.
   - Union variants lose x23c's `// case X:` and `//   TYPE NAME;` lines.
 - **Layout:** each union's accessor follows the union, instead of sitting
-  under an "XDR internals" banner. It has a one-line doc comment.
+  under an "XDR internals" banner.
 - **Numbers:**
   - `'` becomes `_` everywhere, not only in constants. A bound such as
     `<1'000>` therefore compiles.
