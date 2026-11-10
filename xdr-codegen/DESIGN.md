@@ -323,9 +323,12 @@ switches:
 - **#375** names a union's switch type with `#[xdr(discriminant = "T")]`, by
   default `i32`. The type decides how the discriminant is encoded, which
   differs under CXS, and the type of the default arm's field.
-- **#379**, not yet merged, makes `derive(XDR)` describe the switch by that
-  type: `i32` and `u32` cases by number, `bool` as `TRUE`/`FALSE`, and an
-  enum by member name.
+- **#379** makes `derive(XDR)` describe the switch by that type, through
+  `SwitchType`: `i32` and `u32` cases by number, `bool` as `TRUE`/`FALSE`,
+  and an enum by member name, which it finds in the type's `HasTypeDef`.
+  An XDR enum that xdrc emits is an open newtype, whose `HasTypeDef` is
+  not an enum, so with `spec` a union switched on one panics when its spec
+  is built (see TODO.md).
 
 As of hogd#4724, #4738 and #4739, x23c follows #375. It:
 

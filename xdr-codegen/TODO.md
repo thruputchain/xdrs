@@ -34,13 +34,23 @@ or to the derive.
 
 ## Derived spec for enums
 
-`derive(XDR)` does not yet read `#[xdr(discriminant)]` (that is xdrs#379),
-so it describes each union's switch as an enum of its own, `{Name}Type`.
-Once it does, a union switched on an XDR enum needs that enum described as
-one, but xdrc emits it as an open newtype, whose members `derive(XDR)`
-cannot see. An `#[xdr(enum)]` attribute listing the members, or a
-`HasTypeDef` impl that xdrc emits, would fill the gap. Nothing builds the
-spec of generated protocol types yet.
+Since xdrs#379, `derive(XDR)` describes a union's switch by its
+`#[xdr(discriminant)]` type and labels each case through `SwitchType`. For
+an enum, `SwitchType::case_label` looks the tag up among the members in
+the type's `HasTypeDef`. But xdrc emits an XDR enum as an open newtype,
+`struct E(pub i32)`, whose derived `HasTypeDef` is a typedef of `int`, not
+an enum. So with the `spec` feature, the generated code compiles, but
+building the spec of a union switched on an XDR enum, directly or through a
+typedef, panics: "XDR union switch type E is not an enum". In `check.x`,
+`Outcome`, `ByVerdict` and `BySignal` do this; unions switched on `int`,
+`unsigned int`, `bool` or aliases of them are fine. x23c's output has the
+same problem.
+
+The fix is for the newtype to describe itself as an enum: an
+`#[xdr(enum)]`-style attribute on the newtype listing its members, or a
+`HasTypeDef` impl that xdrc emits in place of the derive. Nothing builds
+the spec of generated protocol types yet; protocol-rs generates without
+`spec`.
 
 ## Names in the derived spec
 
