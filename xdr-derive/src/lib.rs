@@ -95,10 +95,10 @@
 //!
 //! - **`#[xdr(name = "XdrName")]`**: Use a different name in the XDR
 //!   specification
-//! - **`#[xdr(discrim_type = "TypeName")]`**: Specify a custom discriminant
-//!   type for enums
 //! - **`#[xdr(discrim_var = "field_name")]`**: Specify a custom discriminant
 //!   field name
+//! - **`#[xdr(discriminant = "T")]`**: The union's switch type, which the
+//!   encoding derives also use; see [`XDR`](macro@XDR)
 //!
 //! When deriving `ReadXDR`:
 //!
@@ -254,16 +254,43 @@ pub fn derive_read_xdr(input: TokenStream) -> TokenStream {
 ///
 /// - `#[xdr(name = "XdrName")]` - Use a different name in the XDR
 ///   specification
-/// - `#[xdr(discrim_type = "TypeName")]` - Specify a custom discriminant type
-///   for enums; the value must be a single XDR identifier (e.g. `"MyEnumType"`),
-///   not a multi-word type expression such as `"unsigned int"`. Passing a
-///   multi-word string causes a panic during schema emission.
 /// - `#[xdr(discrim_var = "field_name")]` - Specify a custom discriminant
 ///   field name
+/// - `#[xdr(discriminant = "T")]` - The union's switch type, as for the
+///   encoding derives. `T` must implement `xdr_repr::SwitchType`, as `i32`,
+///   `u32`, `bool` and any type whose `HasTypeDef` is an enum do. The union
+///   is then declared as `switch (T which)`, using `T`'s own type
+///   specification, and no `{Name}Type` enum is generated. Each arm is
+///   labelled with the value of `T` whose tag is the variant's discriminant:
+///   a number for `int` and `unsigned int` (a `u32` tag is reinterpreted, so
+///   `4294967295 as u32 as i32` is labelled `4294967295`), `TRUE` or `FALSE`
+///   for `bool`, and the member name, from the enum's own definition, for an
+///   enum. A variant's `#[xdr(name)]` does not change its label. A fieldless
+///   enum with this attribute is described as a union whose arms are all
+///   `void`. rustc resolves `T`, so it may be an alias or a type from
+///   another crate. Without this attribute, the union is switched on a
+///   generated `{Name}Type` enum, with each arm labelled by its variant
+///   name.
+///
+///   `T` must implement `SwitchType` even when the union's only arm is
+///   `default:`, so a type that can't switch a union is rejected:
+///
+///   ```rust,compile_fail
+///   #[derive(xdrs::XDR)]
+///   #[xdr(discriminant = "i64")]
+///   #[repr(i32)]
+///   pub enum OnlyDefault {
+///       #[xdr(default_variant)]
+///       Other(i64),
+///   }
+///   ```
 /// - `#[xdr(default_variant)]` - On an enum variant: mark it as the union's
 ///   `default:` arm in the generated XDR specification. The variant must be
-///   the trailing variant, must not specify a discriminant, and its first
-///   field must be `i32`.
+///   the trailing variant, and its first field has the union's switch type:
+///   `i32`, or the type named by `discriminant`. An explicit Rust
+///   discriminant on the variant never goes on the wire. The
+///   arm is described as `default:` for any switch type: in a `bool` union
+///   with only a `TRUE` arm, it is the `FALSE` case.
 ///
 /// All three derive macros (`ReadXDR`, `WriteXDR`, `XDR`) accept:
 ///

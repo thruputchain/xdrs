@@ -110,7 +110,7 @@
 //! assert_eq!(expected_status, status_spec);
 //!
 //! #[derive(xdrs::XDR)]
-//! #[xdr(discrim_type = "Status", discrim_var = "stat")]
+//! #[xdr(discriminant = "Status", discrim_var = "stat")]
 //! #[repr(i32)]
 //! pub enum Message {
 //!     Ok { contents: [u8; 100] } = 0,
@@ -118,7 +118,7 @@
 //! }
 //!
 //! let message_spec = Message::spec().to_string();
-//! // The spec contains both the enum and union definitions
+//! // The union switches on `Status` itself, so the spec holds only the union
 //! let expected_message = r#"union Message switch (Status stat)
 //! {
 //! case Ok:
@@ -214,11 +214,13 @@
 //! - **`#[xdr(name = "XdrName")]`**: Use a different name in the XDR specification
 //!   than the Rust type name. Applied to structs or enums.
 //!
-//! - **`#[xdr(discrim_type = "TypeName")]`**: For enums (discriminated unions), specify
-//!   the name of an existing XDR type to use as the discriminant type instead of
-//!   auto-generating one. The default is `{EnumName}Type`.  Rust variant names
-//!   are used as `case` labels in the emitted IDL, so they must match the
-//!   member names of the external discriminant enum.
+//! - **`#[xdr(discriminant = "T")]`**: For enums (discriminated unions), the
+//!   union's switch type: `i32`, `u32`, `bool`, or an enum type that derives
+//!   `XDR`. The union is declared as switched on `T`, and each `case` is
+//!   labelled with the value of `T` that matches the variant's discriminant:
+//!   for an enum, the member name from `T`'s own definition. Without it, the
+//!   derive generates a `{EnumName}Type` enum and labels each `case` with the
+//!   variant name.
 //!
 //! - **`#[xdr(discrim_var = "field_name")]`**: For enums (discriminated unions), specify
 //!   the name of the discriminant field. The default is `"which"`.

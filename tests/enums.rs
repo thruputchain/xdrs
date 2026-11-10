@@ -454,7 +454,6 @@ mod external_discrim {
     }
 
     #[derive(Debug, PartialEq, Eq, xdrs::WriteXDR, xdrs::ReadXDR)]
-    #[xdr(discrim_type = "Status")]
     #[repr(i32)]
     enum Message {
         Ready { value: u32 } = Status::Ready as i32,

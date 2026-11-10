@@ -66,7 +66,7 @@ pub mod separate_discriminant {
     }
 
     #[derive(XDR)]
-    #[xdr(discrim_type = "Status", discrim_var = "stat")]
+    #[xdr(discriminant = "Status", discrim_var = "stat")]
     #[repr(i32)]
     pub enum Message {
         Ok { contents: [u8; 100] } = Status::Ok as i32,
@@ -559,7 +559,7 @@ mod external_discrim {
     }
 
     #[derive(Debug, PartialEq, Eq, xdrs::XDR)]
-    #[xdr(discrim_type = "Status")]
+    #[xdr(discriminant = "Status")]
     #[repr(i32)]
     enum Message {
         Ready { value: u32 } = Status::Ready as i32,

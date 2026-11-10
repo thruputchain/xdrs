@@ -170,7 +170,7 @@ fn write_field(index: usize, field: &syn::Field, mode: Mode) -> Result<TokenStre
 
 fn write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_repr(input)?;
-    check_variants(input, item, has_xdr_discrim_type(input))?;
+    check_variants(input, item)?;
 
     if let Some(toks) = write_enum_fast(input, item) {
         return Ok(toks);
@@ -575,7 +575,7 @@ fn read_field(_index: usize, field: &syn::Field) -> Result<TokenStream> {
 
 fn read_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_repr(input)?;
-    check_variants(input, item, has_xdr_discrim_type(input))?;
+    check_variants(input, item)?;
     let default_variant = find_default_variant(item);
     let discrim_ty = InputAttrs::from_derive_input(input)?.discriminant_type();
 

@@ -291,6 +291,15 @@ pub fn single_case_spec(case: &str, decl: Declaration) -> CaseSpec {
     }
 }
 
+/// Creates a case specification for a single case label, such as one from
+/// [`SwitchType::case_label`](crate::SwitchType::case_label).
+pub fn case_spec(case: Value, decl: Declaration) -> CaseSpec {
+    CaseSpec {
+        cases: vec![case],
+        decl,
+    }
+}
+
 /// Creates a constant definition.
 pub fn def_const(name: &str, constant: Constant) -> Definition {
     Definition::Const(ConstDef {

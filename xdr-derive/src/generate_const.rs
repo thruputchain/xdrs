@@ -205,7 +205,7 @@ fn max_size_impl_struct(input: &syn::DeriveInput, item: &syn::DataStruct) -> Res
 
 fn max_size_impl_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_repr(input)?;
-    check_variants(input, item, has_xdr_discrim_type(input))?;
+    check_variants(input, item)?;
 
     let krate = Attrs::from_derive_input(input)?.crate_path();
     let encoding = discriminant_encoding(input, quote! { #krate::XDRDiscriminant })?;
@@ -666,7 +666,7 @@ fn const_write_value_expr(
 
 fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<TokenStream> {
     check_enum_repr(input)?;
-    check_variants(input, item, has_xdr_discrim_type(input))?;
+    check_variants(input, item)?;
 
     let ty_ident = &input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
