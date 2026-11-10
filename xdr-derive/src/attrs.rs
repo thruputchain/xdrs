@@ -12,10 +12,6 @@ pub struct InputAttrs {
     /// The name for the XDR item, if different from the rust name
     pub name: Option<String>,
 
-    /// The name of an existing XDR type to use as the discriminant, instead
-    /// of generating one
-    pub discrim_type: Option<String>,
-
     /// The name of the discriminant variable, if not "which"
     pub discrim_var: Option<String>,
 
