@@ -616,6 +616,16 @@ mod tests {
             Status::def().to_string(),
             "enum Status {\n\tOK = 0,\n\tREJECTED = 1,\n};\n"
         );
+        // A reference to the enum names it without building its members.
+        use xdrs::xdr_repr::{Declaration, HasTypeDef, TypeSpec, ident};
+        assert_eq!(Status::type_ident(), ident("Status"));
+        assert_eq!(
+            Status::named_declaration(ident("s")),
+            Declaration::Named {
+                name: ident("s"),
+                ty: TypeSpec::Ident(ident("Status")),
+            }
+        );
         // Members that name another member or a constant take its value.
         assert_eq!(
             Aliased::def().to_string(),

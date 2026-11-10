@@ -68,6 +68,15 @@ impl xdrs::xdr_repr::HasTypeDef for Status {
                 .into(),
         )
     }
+    fn type_ident() -> xdrs::xdr_repr::Ident {
+        xdrs::xdr_repr::ident("Status")
+    }
+    fn named_declaration(name: xdrs::xdr_repr::Ident) -> xdrs::xdr_repr::Declaration {
+        xdrs::xdr_repr::Declaration::Named {
+            name,
+            ty: xdrs::xdr_repr::TypeSpec::Ident(xdrs::xdr_repr::ident("Status")),
+        }
+    }
 }
 
 #[cfg(feature = "std")]
@@ -130,6 +139,15 @@ impl xdrs::xdr_repr::HasTypeDef for Aliased {
             ]
                 .into(),
         )
+    }
+    fn type_ident() -> xdrs::xdr_repr::Ident {
+        xdrs::xdr_repr::ident("Aliased")
+    }
+    fn named_declaration(name: xdrs::xdr_repr::Ident) -> xdrs::xdr_repr::Declaration {
+        xdrs::xdr_repr::Declaration::Named {
+            name,
+            ty: xdrs::xdr_repr::TypeSpec::Ident(xdrs::xdr_repr::ident("Aliased")),
+        }
     }
 }
 
@@ -845,6 +863,15 @@ impl xdrs::xdr_repr::HasTypeDef for Signal {
             ]
                 .into(),
         )
+    }
+    fn type_ident() -> xdrs::xdr_repr::Ident {
+        xdrs::xdr_repr::ident("Signal")
+    }
+    fn named_declaration(name: xdrs::xdr_repr::Ident) -> xdrs::xdr_repr::Declaration {
+        xdrs::xdr_repr::Declaration::Named {
+            name,
+            ty: xdrs::xdr_repr::TypeSpec::Ident(xdrs::xdr_repr::ident("Signal")),
+        }
     }
 }
 

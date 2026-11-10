@@ -866,6 +866,21 @@ impl Gen<'_> {
                     fn type_def() -> xdrs::xdr_repr::TypeDef {
                         xdrs::xdr_repr::enum_def(#name, [#(#spec_members),*].into())
                     }
+
+                    // By name, so that a reference to the enum doesn't build
+                    // its members, as the defaults would through `type_def`.
+                    fn type_ident() -> xdrs::xdr_repr::Ident {
+                        xdrs::xdr_repr::ident(#name)
+                    }
+
+                    fn named_declaration(
+                        name: xdrs::xdr_repr::Ident,
+                    ) -> xdrs::xdr_repr::Declaration {
+                        xdrs::xdr_repr::Declaration::Named {
+                            name,
+                            ty: xdrs::xdr_repr::TypeSpec::Ident(xdrs::xdr_repr::ident(#name)),
+                        }
+                    }
                 }
             },
         );
