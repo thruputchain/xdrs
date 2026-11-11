@@ -1,21 +1,29 @@
 # Releases every published crate in this repository to crates.io in one
 # idempotent pass, with the shared thruputchain/actions release actions.
 #
-# The crates release as two groups, in dependency order:
+# The crates release as three groups, each with its own version and tag, in
+# dependency order:
 #
 #   1. `thruput-rpc-api` (library `rpc_api`): the stable API boundary crate
-#      (sender/handler traits and shared response/error types). It versions
-#      independently of the workspace, releases under its own
-#      `rpc_api-v<version>` tag, and is skipped when a release doesn't bump
-#      it (and its package is unchanged since its tag).
+#      (sender/handler traits and shared response/error types), tagged
+#      `rpc_api-v<version>`.
 #   2. The workspace-versioned crates, `thruput-xdr-common`,
-#      `thruput-xdr-derive`, `thruput-xdr-repr`, `thruput-xdrs` and
-#      `thruput-rpc-driver`, under the shared `v<version>` tag.
-#      `thruput-rpc-driver` depends on the published `thruput-xdrs` and
-#      `thruput-rpc-api`, so it goes last.
+#      `thruput-xdr-derive`, `thruput-xdr-repr` and `thruput-xdrs`, under the
+#      shared `v<version>` tag.
+#   3. `thruput-rpc-driver`, tagged `rpc_driver-v<version>`. It depends on
+#      the published `thruput-xdrs` and `thruput-rpc-api`, so it goes last.
 #
-# Nothing is tagged until the dry run and both groups' checks pass, so a run
-# that fails before tagging leaves the repository untouched. Publishing skips
+# A run releases whichever groups were bumped. A group whose tag already
+# sits on an older commit is skipped, provided its version is on crates.io
+# and its package is unchanged since the tag; a group that changed without a
+# version bump fails the run. Each group's version bump is checked against
+# its own previous release with cargo-semver-checks, so a patch bump that
+# breaks the API fails the run too (see "Versioning and releases" in the
+# README).
+#
+# Nothing is tagged until the semver checks, the dry run and every group's
+# checks pass, so a run that fails before tagging leaves the repository
+# untouched. Publishing skips
 # versions crates.io already has, so a run that fails partway is resumed by
 # dispatching it again on the tagged commit.
 #
@@ -60,7 +68,11 @@ env:
     thruput-xdr-derive
     thruput-xdr-repr
     thruput-xdrs
-    thruput-rpc-driver
+  # Versioned independently of the workspace, published under its own
+  # `rpc_driver-v<version>` tag.
+  DRIVER_PACKAGES: thruput-rpc-driver
+  # Pinned so a new lint release can't fail a release without a repo change.
+  SEMVER_CHECKS_VERSION: '0.50.0'
 
 permissions:
   contents: read
@@ -108,20 +120,50 @@ jobs:
           fi
           cargo hack --version
 
+      # Each group's version against its own previous release (the nearest
+      # tag with its prefix): the bump must be large enough for the API
+      # changes since then. A group with no release tag yet is skipped with a
+      # notice. These must run before the dry run, which extracts every crate
+      # into ./vendor/, where cargo-semver-checks would see each package
+      # defined twice; and before tagging, after which the baseline would be
+      # the new tag itself.
+      - name: Semver check (workspace crates)
+        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          tag-pattern: 'v[0-9]*.[0-9]*.[0-9]*'
+          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
+
+      - name: Semver check (thruput-rpc-api)
+        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          packages: ${{ env.API_PACKAGES }}
+          tag-pattern: 'rpc_api-v[0-9]*.[0-9]*.[0-9]*'
+          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
+
+      - name: Semver check (thruput-rpc-driver)
+        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          packages: ${{ env.DRIVER_PACKAGES }}
+          tag-pattern: 'rpc_driver-v[0-9]*.[0-9]*.[0-9]*'
+          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
+
       # Verifies every crate offline, in dependency order: the action
       # packages each listed crate into vendor/ before the next one resolves
-      # against it, so thruput-rpc-api and thruput-xdrs must precede thruput-rpc-driver.
+      # against it, so thruput-rpc-api and thruput-xdrs must precede
+      # thruput-rpc-driver.
       - name: Publish dry run
         uses: thruputchain/actions/cargo-publish-dry-run@484be875e4e630d26594110bcc0ab6bf42eeaba7
         with:
-          packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
+          packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }} ${{ env.DRIVER_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
           registry-name: crates-io
 
-      # Both groups' checks run before anything is tagged. thruput-rpc-api's tag
+      # Every group's check runs before anything is tagged. A group's tag
       # legitimately sits on an older commit when a release doesn't bump it:
       # skip-if-published then reports release=false, provided the version is
-      # on crates.io and its package is unchanged since the tag.
+      # on crates.io and its package is unchanged since the tag. A package
+      # that changed without a version bump fails the check.
       - name: Check thruput-rpc-api release
         id: check-api
         uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
@@ -132,14 +174,23 @@ jobs:
           on-existing-tag: skip-if-published
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
 
-      # `v<version>` must be free or already on HEAD: a new commit needs a
-      # version bump.
       - name: Check workspace crates release
         id: check-primary
         uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
         with:
           mode: check
           packages: ${{ env.PRIMARY_PACKAGES }}
+          on-existing-tag: skip-if-published
+          bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
+
+      - name: Check thruput-rpc-driver release
+        id: check-driver
+        uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          mode: check
+          packages: ${{ env.DRIVER_PACKAGES }}
+          tag-prefix: 'rpc_driver-v'
+          on-existing-tag: skip-if-published
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
 
       - name: Tag thruput-rpc-api
@@ -157,6 +208,15 @@ jobs:
         uses: thruputchain/actions/cargo-release-tag@484be875e4e630d26594110bcc0ab6bf42eeaba7
         with:
           packages: ${{ env.PRIMARY_PACKAGES }}
+          github-token: ${{ github.token }}
+
+      - name: Tag thruput-rpc-driver
+        id: tag-driver
+        if: ${{ inputs.dry_run == false && steps.check-driver.outputs.release == 'true' }}
+        uses: thruputchain/actions/cargo-release-tag@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          packages: ${{ env.DRIVER_PACKAGES }}
+          tag-prefix: 'rpc_driver-v'
           github-token: ${{ github.token }}
 
       # Unlike the dry run, publishing resolves deps against crates.io, hence
@@ -180,5 +240,16 @@ jobs:
           mode: publish
           packages: ${{ env.PRIMARY_PACKAGES }}
           git-tag: ${{ steps.tag-primary.outputs.tag }}
+          bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
+          crate-owners: ${{ env.CRATE_OWNERS }}
+
+      - name: Publish thruput-rpc-driver
+        if: ${{ inputs.dry_run == false && steps.check-driver.outputs.release == 'true' }}
+        uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          mode: publish
+          packages: ${{ env.DRIVER_PACKAGES }}
+          tag-prefix: 'rpc_driver-v'
+          git-tag: ${{ steps.tag-driver.outputs.tag }}
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
           crate-owners: ${{ env.CRATE_OWNERS }}

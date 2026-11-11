@@ -37,9 +37,10 @@ xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=
 xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.18.0" }
 xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=0.18.0" }
 xdrs = { package = "thruput-xdrs", path = ".", version = "0.18.0" }
+# rpc_driver and rpc_api version independently of the workspace (rpc_api is
+# the stable API boundary crate; the driver releases on its own schedule); the
+# versions here must match rpc/rpc_driver/Cargo.toml and rpc/rpc_api/Cargo.toml.
 thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.18.0" }
-# rpc_api versions independently of the workspace (it is the stable API
-# boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
 thruput-rpc-api = { path = "rpc/rpc_api", version = "0.4.0" }
 
 pretty_assertions = "1.4.1"

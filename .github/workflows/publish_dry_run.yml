@@ -13,6 +13,15 @@ env:
     thruput-xdr-repr
     thruput-xdrs
     thruput-rpc-driver
+  # The release groups, as in publish.yml.
+  API_PACKAGES: thruput-rpc-api
+  PRIMARY_PACKAGES: >-
+    thruput-xdr-common
+    thruput-xdr-derive
+    thruput-xdr-repr
+    thruput-xdrs
+  DRIVER_PACKAGES: thruput-rpc-driver
+  SEMVER_CHECKS_VERSION: '0.50.0'
 
 permissions:
   contents: read
@@ -28,6 +37,8 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
+          # Full history and tags: each semver baseline is a release tag.
+          fetch-depth: 0
 
       - name: Install rustup if needed
         run: |
@@ -54,6 +65,29 @@ jobs:
             cargo install cargo-hack --version "=$CARGO_HACK_VERSION" --locked
           fi
           cargo hack --version
+
+      # As in publish.yml: each group against its own previous release, before
+      # the dry run fills ./vendor/.
+      - name: Semver check (workspace crates)
+        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          tag-pattern: 'v[0-9]*.[0-9]*.[0-9]*'
+          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
+
+      - name: Semver check (thruput-rpc-api)
+        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          packages: ${{ env.API_PACKAGES }}
+          tag-pattern: 'rpc_api-v[0-9]*.[0-9]*.[0-9]*'
+          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
+
+      - name: Semver check (thruput-rpc-driver)
+        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        with:
+          packages: ${{ env.DRIVER_PACKAGES }}
+          tag-pattern: 'rpc_driver-v[0-9]*.[0-9]*.[0-9]*'
+          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
 
       - name: dry run
         uses: thruputchain/actions/cargo-publish-dry-run@484be875e4e630d26594110bcc0ab6bf42eeaba7

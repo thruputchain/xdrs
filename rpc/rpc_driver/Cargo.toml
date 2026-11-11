@@ -1,6 +1,11 @@
 [package]
 name = "thruput-rpc-driver"
-version.workspace = true
+# Versioned independently of the workspace, like thruput-rpc-api: the driver
+# changes far more often than the xdrs crates, and a driver-only release must
+# not publish a new thruput-xdrs. It depends on thruput-xdrs and
+# thruput-rpc-api with caret requirements. See "Versioning and releases" in
+# the README.
+version = "0.18.0"
 edition = "2024"
 rust-version.workspace = true
 authors = ["Thruput Team"]
