@@ -1,0 +1,30 @@
+[package]
+name = "thruput-xdr-codegen"
+description = "Parser and code generator for XDR specifications"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+# Not published until xdrc can replace x23c's Rust backend.
+publish = false
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "xdr_codegen"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+
+[dependencies]
+prettyplease = "0.3.0"
+proc-macro2 = { version = "1.0.105", default-features = false }
+quote = { version = "1.0.43", default-features = false }
+regex-automata = "0.4.13"
+syn = { version = "3.0.3", default-features = false, features = ["full", "parsing", "printing"] }
