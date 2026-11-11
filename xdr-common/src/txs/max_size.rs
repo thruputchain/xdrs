@@ -1,6 +1,6 @@
-//! Worst-case CXS size bounds.
+//! Worst-case TXS size bounds.
 //!
-//! [`ConstMaxSize`] reports, per type, the worst-case CXS encoded size over
+//! [`ConstMaxSize`] reports, per type, the worst-case TXS encoded size over
 //! all values of the type as an associated const — usable in const contexts
 //! (e.g. sizing a static buffer) without a value in hand.
 //!
@@ -22,11 +22,11 @@ use super::const_writer::{
     max_size_u16, max_size_u32, max_size_u64, size_i32,
 };
 use super::const_writer::{max_size_i128, max_size_u128};
+use crate::{BytesM, StaticIfNoAlloc, StringM, VecM};
 use core::convert::Infallible;
 use core::marker::PhantomData;
-use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
 
-/// Worst-case CXS encoded size over all values of a type.
+/// Worst-case TXS encoded size over all values of a type.
 ///
 /// `MAX_SIZE` is `Some(bound)` when a finite bound exists, or `None` when
 /// the type is unbounded, reached through indirection (`&T`, `Box<T>`,
@@ -35,7 +35,7 @@ use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
 /// Implemented for user types via `#[derive(ConstXDRSize)]`; implement
 /// manually for foreign types.
 pub trait ConstMaxSize {
-    /// Worst-case CXS encoded size in bytes, or `None` if unbounded.
+    /// Worst-case TXS encoded size in bytes, or `None` if unbounded.
     const MAX_SIZE: Option<usize>;
 }
 
@@ -91,7 +91,7 @@ impl<T: ?Sized> ConstMaxSize for alloc::boxed::Box<T> {
 // No-`alloc` `Box<T>` holds `T` inline: not a pointer, so it takes `T`'s
 // bound rather than cutting the fold.
 #[cfg(not(feature = "alloc"))]
-impl<T: ConstMaxSize> ConstMaxSize for xdr_common::Box<T> {
+impl<T: ConstMaxSize> ConstMaxSize for crate::Box<T> {
     const MAX_SIZE: Option<usize> = T::MAX_SIZE;
 }
 
@@ -164,23 +164,23 @@ impl<T: ConstMaxSize + StaticIfNoAlloc, const MAX: u32> ConstMaxSize for VecM<T,
 #[cfg(test)]
 mod tests {
     use super::ConstMaxSize;
-    use xdr_common::{BytesM, StringM, VecM};
+    use crate::{BytesM, StringM, VecM};
 
     const fn bound<T: ConstMaxSize>() -> Option<usize> {
         T::MAX_SIZE
     }
 
-    // Primitives: worst-case CXS widths.
-    const _: () = assert!(matches!(bound::<u32>(), Some(5)));
-    const _: () = assert!(matches!(bound::<i64>(), Some(9)));
-    const _: () = assert!(matches!(bound::<bool>(), Some(1)));
+    // Primitives: TXS is fixed-width.
+    const _: () = assert!(matches!(bound::<u32>(), Some(4)));
+    const _: () = assert!(matches!(bound::<i64>(), Some(8)));
+    const _: () = assert!(matches!(bound::<bool>(), Some(4)));
     const _: () = assert!(matches!(bound::<f32>(), Some(4)));
-    const _: () = assert!(matches!(bound::<u16>(), Some(3)));
+    const _: () = assert!(matches!(bound::<u16>(), Some(4)));
 
-    // Fixed opaque bytes: no padding in CXS.
-    const _: () = assert!(matches!(bound::<[u8; 5]>(), Some(5)));
+    // Fixed opaque bytes pad to 4 in TXS.
+    const _: () = assert!(matches!(bound::<[u8; 5]>(), Some(8)));
     // Element arrays multiply the element bound.
-    const _: () = assert!(matches!(bound::<[u32; 3]>(), Some(15)));
+    const _: () = assert!(matches!(bound::<[u32; 3]>(), Some(12)));
 
     // Pointer cuts: all references bound to None.
     const _: () = assert!(bound::<&'static u32>().is_none());
@@ -211,14 +211,14 @@ mod tests {
     const _: () = assert!(bound::<Rec>().is_none());
 
     // Option adds the worst-case discriminant; None propagates.
-    const _: () = assert!(matches!(bound::<Option<u32>>(), Some(6)));
+    const _: () = assert!(matches!(bound::<Option<u32>>(), Some(8)));
     const _: () = assert!(bound::<Option<&'static u32>>().is_none());
 
     // Result takes the max arm plus discriminant.
-    const _: () = assert!(matches!(bound::<Result<u32, i64>>(), Some(10)));
+    const _: () = assert!(matches!(bound::<Result<u32, i64>>(), Some(12)));
 
     // Tuples fold element bounds. Unit is zero.
-    const _: () = assert!(matches!(bound::<(u16, i16)>(), Some(6)));
+    const _: () = assert!(matches!(bound::<(u16, i16)>(), Some(8)));
     const _: () = assert!(matches!(bound::<()>(), Some(0)));
 
     // Zero-sized markers.
@@ -228,10 +228,10 @@ mod tests {
     // A zero-length array of unbounded elements still encodes zero bytes.
     const _: () = assert!(matches!(bound::<[&'static [u8]; 0]>(), Some(0)));
 
-    // Bounded byte containers: exact. size_u32(16) == 1 in CXS.
-    const _: () = assert!(matches!(bound::<BytesM<16>>(), Some(17)));
-    const _: () = assert!(matches!(bound::<StringM<8>>(), Some(9)));
-    const _: () = assert!(matches!(bound::<VecM<u8, 4>>(), Some(5)));
+    // Bounded byte containers: 4-byte length prefix + padded payload.
+    const _: () = assert!(matches!(bound::<BytesM<16>>(), Some(20)));
+    const _: () = assert!(matches!(bound::<StringM<8>>(), Some(12)));
+    const _: () = assert!(matches!(bound::<VecM<u8, 4>>(), Some(8)));
 
     // Element-generic VecM is heap indirection: literal None even with MAX.
     const _: () = assert!(bound::<VecM<u32, 5>>().is_none());
@@ -240,17 +240,17 @@ mod tests {
     #[cfg(target_pointer_width = "64")]
     const _: () = assert!(matches!(
         bound::<BytesM>(),
-        Some(n) if n == 5 + u32::MAX as usize
+        Some(n) if n == 4 + u32::MAX as usize + 1
     ));
 
-    const _: () = assert!(matches!(bound::<i128>(), Some(18)));
-    const _: () = assert!(matches!(bound::<u128>(), Some(18)));
+    const _: () = assert!(matches!(bound::<i128>(), Some(16)));
+    const _: () = assert!(matches!(bound::<u128>(), Some(16)));
 
     #[test]
     fn bounds_are_stable() {
         // Const asserts above are the real test; exercise at runtime too.
-        assert_eq!(bound::<u32>(), Some(5));
-        assert_eq!(bound::<Option<u32>>(), Some(6));
+        assert_eq!(bound::<u32>(), Some(4));
+        assert_eq!(bound::<Option<u32>>(), Some(8));
         assert_eq!(bound::<VecM<u32, 5>>(), None);
     }
 }

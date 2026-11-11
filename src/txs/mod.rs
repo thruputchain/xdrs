@@ -50,5 +50,5 @@ mod put;
 
 // The const writer and worst-case size bounds are part of the stable trait
 // layer (derived types name them in their public API), so they live in
-// `xdrs_core`.
-pub use xdrs_core::txs::{ConstMaxSize, ConstWriter, const_writer, max_size};
+// `xdr_common`.
+pub use xdr_common::txs::{ConstMaxSize, ConstWriter, const_writer, max_size};

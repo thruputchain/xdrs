@@ -1,21 +1,21 @@
 [package]
-name = "xdrs-core-fixture"
+name = "xdr-common-fixture"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "Consumer fixture proving derived XDR types need only xdrs-core, not the xdrs codecs"
+description = "Consumer fixture proving derived XDR types need only xdr-common, not the xdrs codecs"
 
 # The lib target mimics generated protocol types and must depend on
-# xdrs-core (plus the derive macro, which is never part of a public API)
+# xdr-common (plus the derive macro, which is never part of a public API)
 # ONLY. Adding thruput-xdrs to [dependencies] defeats the fixture's purpose:
 # it is what proves that everything derived code names lives in the stable
 # crate, so a codec release can't change these types' public API. The
 # integration tests encode and decode through the real codecs via
 # [dev-dependencies].
 [dependencies]
-xdrs-core = { workspace = true, features = ["alloc"] }
+xdr-common = { workspace = true, features = ["alloc"] }
 xdr-derive = { workspace = true }
 
 [dev-dependencies]

@@ -6,7 +6,7 @@
 //! instead of first building an owned `X`.
 
 use crate::write_xdr::WriteXDR;
-use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
+use crate::{BytesM, StaticIfNoAlloc, StringM, VecM};
 
 /// Types whose XDR encoding can stand in for an `X`.
 ///
@@ -63,7 +63,7 @@ impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for &U {}
 impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for alloc::boxed::Box<U> {}
 
 #[cfg(not(feature = "alloc"))]
-impl<X: ?Sized, U: EncodesAs<X>> EncodesAs<X> for xdr_common::Box<U> {}
+impl<X: ?Sized, U: EncodesAs<X>> EncodesAs<X> for crate::Box<U> {}
 
 #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]

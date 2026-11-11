@@ -22,9 +22,9 @@
 //!   - [CXS](cxs) ("Compact XDR Serialization")
 //!   - [TXS](txs) ("Traditional XDR Serialization")
 //!
-//! The traits, the [`Reader`]/[`Writer`] interfaces and the const size
-//! bounds come from `thruput-xdrs-core` (library `xdrs_core`), re-exported
-//! here at the same paths. That crate is versioned separately, as the stable
+//! The bounded collections, the traits, the [`Reader`]/[`Writer`] interfaces
+//! and the const size bounds come from `thruput-xdr-common` (library
+//! `xdr_common`), re-exported here at the same paths. That crate is versioned separately, as the stable
 //! boundary that derived types implement, so this crate's codecs can make
 //! breaking releases without breaking the public API of crates that derive
 //! XDR. See "Versioning and releases" in the README.
@@ -96,12 +96,12 @@ compile_error!("xdrs does not support 16-bit targets");
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-// The stable trait layer: `ReadXDR`/`WriteXDR`, `EncodesAs`, `XDRDiscriminant`,
-// the `Reader`/`Writer` interfaces, their errors, and the `xdr_common` types,
-// at the paths they have always had here (`xdrs::read_xdr::ReadXDR`,
+// The stable layer: `VecM`/`BytesM`/`StringM`, `ReadXDR`/`WriteXDR`,
+// `EncodesAs`, `XDRDiscriminant`, the `Reader`/`Writer` interfaces and their
+// errors, at the paths they have always had here (`xdrs::read_xdr::ReadXDR`,
 // `xdrs::serialize::reader::Reader`, ...). The `cxs` and `txs` modules below
-// shadow the core crate's and re-export its const-context items themselves.
-pub use xdrs_core::*;
+// shadow xdr_common's and re-export its const-context items themselves.
+pub use xdr_common::*;
 
 // Variable-length data written from separate chunks
 pub mod chunked;

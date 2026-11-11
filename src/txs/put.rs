@@ -48,7 +48,7 @@ macro_rules! write_int {
 }
 
 // One impl per buffer type, rather than a blanket impl over `P: Put`:
-// `Writer` is defined in `xdrs_core`, and the orphan rule forbids a
+// `Writer` is defined in `xdr_common`, and the orphan rule forbids a
 // foreign trait's blanket impl over an uncovered type parameter.
 macro_rules! impl_writer_via_put {
     ($t:ty) => {
@@ -155,7 +155,7 @@ macro_rules! write_int_unchecked {
 }
 
 // One impl per buffer type, rather than a blanket impl over `P: PutUnchecked`:
-// `WriterUnchecked` is defined in `xdrs_core`, and the orphan rule forbids a
+// `WriterUnchecked` is defined in `xdr_common`, and the orphan rule forbids a
 // foreign trait's blanket impl over an uncovered type parameter.
 macro_rules! impl_writer_unchecked_via_put {
     ($t:ty) => {

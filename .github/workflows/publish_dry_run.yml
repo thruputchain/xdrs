@@ -9,7 +9,6 @@ env:
   PUBLISH_PACKAGES: >-
     thruput-rpc-api
     thruput-xdr-common
-    thruput-xdrs-core
     thruput-xdr-derive
     thruput-xdr-repr
     thruput-xdrs

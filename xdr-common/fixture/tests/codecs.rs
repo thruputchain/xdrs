@@ -1,8 +1,8 @@
-//! The fixture's types, derived against xdrs-core alone, encode and decode
-//! through the codecs in xdrs: the traits xdrs re-exports are xdrs-core's.
+//! The fixture's types, derived against xdr-common alone, encode and decode
+//! through the codecs in xdrs: the traits xdrs re-exports are xdr-common's.
 
-use xdrs_core::{BytesM, StringM, VecM};
-use xdrs_core_fixture::{Borrowed, ExtensionPoint, Header, Inner, Message, send_header};
+use xdr_common::{BytesM, StringM, VecM};
+use xdr_common_fixture::{Borrowed, ExtensionPoint, Header, Inner, Message, send_header};
 
 fn header() -> Header {
     Header {
@@ -62,10 +62,10 @@ fn const_writers_match_the_runtime_encoders() {
 }
 
 #[test]
-fn size_bounds_are_the_core_traits() {
+fn size_bounds_are_the_xdr_common_traits() {
     // The same trait, named through either crate.
     fn bound<T: xdrs::txs::ConstMaxSize>() -> Option<usize> {
-        <T as xdrs_core::txs::ConstMaxSize>::MAX_SIZE
+        <T as xdr_common::txs::ConstMaxSize>::MAX_SIZE
     }
     assert_eq!(bound::<Inner>(), Some(12));
     // Boxed fields are pointer cuts.

@@ -940,13 +940,15 @@ dependencies = [
 
 [[package]]
 name = "thruput-xdr-common"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "escape-bytes",
+ "heapless",
  "regex-lite",
  "schemars",
  "serde",
  "serde_json",
+ "thruput-xdrs",
 ]
 
 [[package]]
@@ -995,16 +997,6 @@ dependencies = [
  "thruput-xdr-common",
  "thruput-xdr-derive",
  "thruput-xdr-repr",
- "thruput-xdrs-core",
-]
-
-[[package]]
-name = "thruput-xdrs-core"
-version = "0.1.0"
-dependencies = [
- "heapless",
- "thruput-xdr-common",
- "thruput-xdrs",
 ]
 
 [[package]]
@@ -1217,12 +1209,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "xdrs-core-fixture"
+name = "xdr-common-fixture"
 version = "0.0.0"
 dependencies = [
+ "thruput-xdr-common",
  "thruput-xdr-derive",
  "thruput-xdrs",
- "thruput-xdrs-core",
 ]
 
 [[package]]

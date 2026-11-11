@@ -370,7 +370,6 @@ const _: () = {
     use super::*;
     use crate::serialize::writer::Writer;
     use crate::serialize::writer_unchecked::WriterUnchecked;
-    use xdr_common::*;
 
     impl<const MAX: u32> WriteXDR for BytesM<MAX> {
         fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
@@ -484,7 +483,7 @@ const _: () = {
         }
     }
 
-    // On the heap `Box` itself rather than the `xdr_common::Box` alias, whose
+    // On the heap `Box` itself rather than the `crate::Box` alias, whose
     // parameter is implicitly `Sized`: `?Sized` admits `Box<[T]>` and
     // `Box<str>`, as for `&T` and `Arc<T>`.
     #[cfg(feature = "alloc")]
@@ -502,7 +501,7 @@ const _: () = {
 };
 
 #[cfg(not(feature = "alloc"))]
-impl<T: WriteXDR> WriteXDR for xdr_common::Box<T> {
+impl<T: WriteXDR> WriteXDR for crate::Box<T> {
     fn write_xdr<F, W: Writer<F>>(&self, w: &mut W) -> WriteResult<()> {
         (**self).write_xdr(w)
     }

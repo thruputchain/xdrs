@@ -1,7 +1,7 @@
 # Releases every published crate in this repository to crates.io in one
 # idempotent pass, with the shared thruputchain/actions release actions.
 #
-# The crates release as four groups, in dependency order. The first three
+# The crates release as three groups, in dependency order. The first two
 # are stable boundary crates (see "Versioning and releases" in the README):
 # each versions independently of the workspace, releases under its own tag,
 # and is skipped when a release doesn't bump it (and its package is unchanged
@@ -9,14 +9,13 @@
 #
 #   1. `thruput-rpc-api` (library `rpc_api`): the RPC sender/handler traits
 #      and shared response/error types, tagged `rpc_api-v<version>`.
-#   2. `thruput-xdr-common`: `VecM`/`BytesM`/`StringM`, tagged
+#   2. `thruput-xdr-common`: the bounded collections, the XDR traits, the
+#      reader/writer interfaces and the const size bounds, tagged
 #      `xdr_common-v<version>`.
-#   3. `thruput-xdrs-core`: the XDR traits, reader/writer interfaces and
-#      const size bounds, tagged `xdrs_core-v<version>`. Depends on 2.
-#   4. The workspace-versioned crates, `thruput-xdr-derive`,
+#   3. The workspace-versioned crates, `thruput-xdr-derive`,
 #      `thruput-xdr-repr`, `thruput-xdrs` and `thruput-rpc-driver`, under the
-#      shared `v<version>` tag. `thruput-xdrs` depends on the published 2 and
-#      3; `thruput-rpc-driver` depends on the published `thruput-xdrs` and
+#      shared `v<version>` tag. `thruput-xdrs` depends on the published 2;
+#      `thruput-rpc-driver` depends on the published `thruput-xdrs` and
 #      `thruput-rpc-api`, so it goes last.
 #
 # Nothing is tagged until the dry run and both groups' checks pass, so a run
@@ -59,7 +58,6 @@ env:
   # workspace and published under its own `<prefix>-v<version>` tag.
   API_PACKAGES: thruput-rpc-api
   COMMON_PACKAGES: thruput-xdr-common
-  CORE_PACKAGES: thruput-xdrs-core
   # Workspace-versioned crates published under the `v<version>` tag, in
   # dependency order.
   PRIMARY_PACKAGES: >-
@@ -116,13 +114,12 @@ jobs:
 
       # Verifies every crate offline, in dependency order: the action
       # packages each listed crate into vendor/ before the next one resolves
-      # against it, so thruput-xdr-common and thruput-xdrs-core must precede
-      # thruput-xdrs, and thruput-rpc-api and thruput-xdrs must precede
-      # thruput-rpc-driver.
+      # against it, so thruput-xdr-common must precede thruput-xdrs, and
+      # thruput-rpc-api and thruput-xdrs must precede thruput-rpc-driver.
       - name: Publish dry run
         uses: thruputchain/actions/cargo-publish-dry-run@484be875e4e630d26594110bcc0ab6bf42eeaba7
         with:
-          packages: ${{ env.API_PACKAGES }} ${{ env.COMMON_PACKAGES }} ${{ env.CORE_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
+          packages: ${{ env.API_PACKAGES }} ${{ env.COMMON_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
           registry-name: crates-io
 
@@ -148,16 +145,6 @@ jobs:
           mode: check
           packages: ${{ env.COMMON_PACKAGES }}
           tag-prefix: 'xdr_common-v'
-          on-existing-tag: skip-if-published
-          bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
-
-      - name: Check thruput-xdrs-core release
-        id: check-core
-        uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
-        with:
-          mode: check
-          packages: ${{ env.CORE_PACKAGES }}
-          tag-prefix: 'xdrs_core-v'
           on-existing-tag: skip-if-published
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
 
@@ -187,15 +174,6 @@ jobs:
         with:
           packages: ${{ env.COMMON_PACKAGES }}
           tag-prefix: 'xdr_common-v'
-          github-token: ${{ github.token }}
-
-      - name: Tag thruput-xdrs-core
-        id: tag-core
-        if: ${{ inputs.dry_run == false && steps.check-core.outputs.release == 'true' }}
-        uses: thruputchain/actions/cargo-release-tag@484be875e4e630d26594110bcc0ab6bf42eeaba7
-        with:
-          packages: ${{ env.CORE_PACKAGES }}
-          tag-prefix: 'xdrs_core-v'
           github-token: ${{ github.token }}
 
       - name: Tag workspace crates
@@ -228,17 +206,6 @@ jobs:
           packages: ${{ env.COMMON_PACKAGES }}
           tag-prefix: 'xdr_common-v'
           git-tag: ${{ steps.tag-common.outputs.tag }}
-          bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
-          crate-owners: ${{ env.CRATE_OWNERS }}
-
-      - name: Publish thruput-xdrs-core
-        if: ${{ inputs.dry_run == false && steps.check-core.outputs.release == 'true' }}
-        uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
-        with:
-          mode: publish
-          packages: ${{ env.CORE_PACKAGES }}
-          tag-prefix: 'xdrs_core-v'
-          git-tag: ${{ steps.tag-core.outputs.tag }}
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
           crate-owners: ${{ env.CRATE_OWNERS }}
 
