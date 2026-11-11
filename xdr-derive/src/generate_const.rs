@@ -6,8 +6,12 @@ use quote::quote;
 use std::collections::HashSet;
 use syn::Result;
 
+// The same `#[xdr(...)]` / `#[xdrs(...)]` namespaces as the other derives, so
+// `#[xdr(crate = "...")]` and the `into_type`/`via` rejection reach the const
+// derives too. Only the keys these derives act on are read; the rest belong to
+// ReadXDR/WriteXDR, which validate them.
 #[derive(Clone, Debug, Default, FromDeriveInput, FromField)]
-#[darling(attributes(xdrs), default)]
+#[darling(attributes(xdr, xdrs), default, allow_unknown_fields)]
 struct Attrs {
     pub into_type: Option<syn::Type>,
     pub via: Option<syn::Type>,
@@ -736,10 +740,39 @@ fn const_write_enum(input: &syn::DeriveInput, item: &syn::DataEnum) -> Result<To
 
 #[cfg(test)]
 mod tests {
-    use super::const_write_xdr;
+    use super::{const_write_xdr, const_xdr_size};
 
     fn normalize_tokens(tokens: &str) -> String {
         tokens.chars().filter(|c| !c.is_whitespace()).collect()
+    }
+
+    // The const derives used to read only `#[xdrs(...)]`, so these attributes,
+    // written the way the other derives document them, were silently ignored.
+    #[test]
+    fn xdr_crate_attribute_sets_the_path() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            #[xdr(crate = "my_sdk::xdrs", discriminant = "u32")]
+            struct S {
+                a: u32,
+            }
+        };
+        for toks in [const_write_xdr(&input), const_xdr_size(&input)] {
+            let toks = normalize_tokens(&toks.unwrap().to_string());
+            assert!(toks.contains("usemy_sdk::xdrs::cxs;"), "{toks}");
+            assert!(!toks.contains("use::xdrs::"), "{toks}");
+        }
+    }
+
+    #[test]
+    fn xdr_conversion_attributes_are_rejected() {
+        let input: syn::DeriveInput = syn::parse_quote! {
+            struct S {
+                #[xdr(via = "u32")]
+                a: Wrapper,
+            }
+        };
+        assert!(const_write_xdr(&input).is_err());
+        assert!(const_xdr_size(&input).is_err());
     }
 
     #[test]
