@@ -1,0 +1,48 @@
+[package]
+name = "thruput-xdrs-core"
+# Versioned independently of the workspace: this crate is the stable API
+# boundary that derived and generated XDR types implement (the traits, the
+# reader/writer interfaces, the const size bounds), and it releases only when
+# that boundary itself changes. The codecs in `thruput-xdrs` can then make
+# breaking releases without breaking the crates whose public types implement
+# these traits. See "Versioning and releases" in the README.
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Stable trait layer of XDRS: ReadXDR/WriteXDR, the Reader/Writer interfaces, and const size bounds"
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories = ["encoding", "no-std", "no-std::no-alloc"]
+
+[lib]
+name = "xdrs_core"
+doctest = true
+
+[dependencies]
+xdr-common = { workspace = true }
+heapless = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Doctests show the traits through the codecs. A dev-dependency cycle is fine
+# for doctests and integration tests, which link this crate's normal build;
+# unit tests (`cfg(test)`) must not use `xdrs`, whose traits would come from a
+# different build of this crate.
+xdrs = { workspace = true, features = ["alloc", "derive"] }
+
+[features]
+default = ["detailed-errors"]
+detailed-errors = [] # retain precise ReadError variants and diagnostic payloads
+alloc = ["xdr-common/alloc"] # enable allocating interfaces
+heapless = ["dep:heapless"] # trait impls for types from the `heapless` package
+
+[lints.rust]
+unsafe_code = "allow"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

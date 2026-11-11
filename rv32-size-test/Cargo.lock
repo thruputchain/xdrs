@@ -27,4 +27,12 @@ name = "thruput-xdrs"
 version = "0.18.0"
 dependencies = [
  "thruput-xdr-common",
+ "thruput-xdrs-core",
+]
+
+[[package]]
+name = "thruput-xdrs-core"
+version = "0.1.0"
+dependencies = [
+ "thruput-xdr-common",
 ]

@@ -3,7 +3,8 @@
 This package provides:
 
 - Traits `ReadXDR` and `WriteXDR`, for converting between Rust values
-  and the [XDR][RFC-4506] data model
+  and the [XDR][RFC-4506] data model (defined in `thruput-xdrs-core` and
+  re-exported here; see [Versioning and releases](#versioning-and-releases))
 
 - Derive-macros `ReadXDR`, `WriteXDR`, `XDR`, and `ConstWriteXDR`
   (see crate `xdr_derive`)
@@ -45,10 +46,56 @@ the full API.
 [`rpc/`](rpc/README.md).
 
 On crates.io every crate here is published with a `thruput-` prefix:
-`thruput-xdrs`, `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr`,
-`thruput-rpc-api` and `thruput-rpc-driver`. The `xdr` crates keep their
-library names (`xdrs::`); the rpc crates are imported by package name
-(`thruput_rpc_api::`, `thruput_rpc_driver::`).
+`thruput-xdrs`, `thruput-xdrs-core`, `thruput-xdr-common`, `thruput-xdr-derive`,
+`thruput-xdr-repr`, `thruput-rpc-api` and `thruput-rpc-driver`. The `xdr`
+crates keep their library names (`xdrs::`, `xdrs_core::`); the rpc crates are
+imported by package name (`thruput_rpc_api::`, `thruput_rpc_driver::`).
+
+## Versioning and releases
+
+A crate whose public types derive XDR exposes some of this repository in its
+own API: its types implement `ReadXDR`/`WriteXDR`, its fields are `VecM`s,
+its RPC signatures take `impl EncodesAs<T>`. A breaking release of whatever
+crate defines those items is a breaking release for that crate too. So the
+items live in boundary crates that version independently and release only
+when they change:
+
+| Crate | Holds | Tag |
+|---|---|---|
+| `thruput-xdrs-core` | `ReadXDR`, `WriteXDR`, `EncodesAs`, `XDRDiscriminant`, the `Reader`/`Writer` interfaces and their errors, `cxs`/`txs` `ConstMaxSize` and `ConstWriter` | `xdrs_core-v<version>` |
+| `thruput-xdr-common` | `VecM`, `BytesM`, `StringM`, `serde_hex` | `xdr_common-v<version>` |
+| `thruput-rpc-api` | the RPC sender/handler traits and response/error types | `rpc_api-v<version>` |
+
+Everything else (`thruput-xdrs`'s codecs, `thruput-xdr-derive`,
+`thruput-xdr-repr`, `thruput-rpc-driver`) shares the workspace version and the
+`v<version>` tag. `thruput-xdrs` re-exports `xdrs_core` at the paths these
+items have always had (`xdrs::ReadXDR`, `xdrs::serialize::reader::Reader`,
+`xdrs::txs::ConstMaxSize`, ...), so depending crates need no changes.
+
+What this buys: a breaking `thruput-xdrs` release (0.18 → 0.19) that keeps
+the same `thruput-xdrs-core` is not a breaking change for a crate whose types
+derive XDR. Its public API names only `xdrs_core` items, which are the same
+items whichever `thruput-xdrs` a downstream crate uses, so it can move to the
+new codecs in a patch release, or not at all. The derive macro's version never
+matters: proc-macro output is not part of a crate's public API.
+
+`xdrs-core/fixture` keeps the boundary honest: its types derive every macro
+against `xdrs_core` alone (`#[xdr(crate = "xdrs_core")]`), so a derive that
+starts emitting a codec-only path fails to compile there.
+
+Releasing:
+
+- A change to a boundary crate is a release of that crate: bump the version
+  in its `Cargo.toml` and the matching requirement in the root
+  `[workspace.dependencies]`. Additive changes are patch releases (`0.1.x`);
+  a breaking change (a new required trait item, a changed signature) is a
+  minor release and is breaking for every crate that derives XDR, so batch
+  those.
+- A workspace release bumps `[workspace.package] version` and the `=` pins of
+  `thruput-xdr-derive` and `thruput-xdr-repr`. It does not touch the boundary
+  crates.
+- `publish.yml` releases every group in one pass, skipping a boundary crate
+  whose version is already tagged and published.
 
 ## TODOs
 

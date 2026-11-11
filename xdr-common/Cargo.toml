@@ -1,6 +1,10 @@
 [package]
 name = "thruput-xdr-common"
-version.workspace = true
+# Versioned independently of the workspace: its types (VecM, BytesM, StringM)
+# appear in the public API of every crate with XDR types, so like
+# thruput-xdrs-core it releases only when it changes itself. See "Versioning
+# and releases" in the README.
+version = "0.18.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

@@ -27,8 +27,8 @@ use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
 /// - **Pointers**: `&U`, `Box<U>` and `Arc<U>` are `EncodesAs<X>` whenever
 ///   `U: EncodesAs<X>`.
 /// - **Slices**: `[U]` is `EncodesAs<VecM<X, N>>` whenever `U: EncodesAs<X>`.
-/// - **Chunks**: [`ChunkedBytes<_, N>`](crate::ChunkedBytes) is
-///   `EncodesAs<BytesM<N>>`, and [`ChunkedVec<_, N>`](crate::ChunkedVec) is
+/// - **Chunks**: `xdrs::ChunkedBytes<_, N>` is
+///   `EncodesAs<BytesM<N>>`, and `xdrs::ChunkedVec<_, N>` is
 ///   `EncodesAs<VecM<X, N>>` whenever its elements are `EncodesAs<X>`.
 ///
 /// There is no blanket identity `impl<X: WriteXDR> EncodesAs<X> for X`:

@@ -35,6 +35,10 @@ cargo test --locked -p thruput-xdr-common --features alloc
 cargo test --locked -p thruput-xdr-common --features serde
 cargo test --locked -p thruput-xdr-common --features schemars
 
+# Test xdrs-core on its own, without alloc and with every feature
+cargo test --locked -p thruput-xdrs-core --no-default-features
+cargo test --locked -p thruput-xdrs-core --no-default-features --features alloc,heapless
+
 # Compile Serde support for a target with no standard library.
 rustup target add thumbv7em-none-eabi
 cargo check --locked -p thruput-xdr-common --no-default-features --features serde --target thumbv7em-none-eabi
@@ -58,9 +62,10 @@ cargo test --locked --doc --features "alloc,derive,repr,ns"
 
 cargo clippy --locked --workspace --all-features
 
-# RPC crates (rpc/) deny clippy warnings outright
+# RPC crates (rpc/) and the boundary fixtures deny clippy warnings outright
 cargo clippy --all-targets --locked \
     -p thruput-rpc-api -p thruput-rpc-driver -p rpc-smoke -p rpc-api-fixture -p bench-compare \
+    -p xdrs-core-fixture \
     -- -D warnings
 
 # xdrs linked into an rv32 binary with the thruput-sdk-rs contract config

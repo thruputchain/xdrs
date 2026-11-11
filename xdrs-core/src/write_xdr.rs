@@ -604,21 +604,3 @@ const _: () = {
         }
     }
 };
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use core::mem::MaybeUninit;
-
-    #[test]
-    fn tuple_unchecked_writes_txs() {
-        let mut buf = [MaybeUninit::uninit(); 8];
-        let mut w = crate::txs::unchecked_buf_writer::UncheckedBufWriter::new(&mut buf);
-        // SAFETY: two u32s occupy exactly the 8-byte buffer.
-        unsafe { (1u32, 2u32).write_xdr_unchecked(&mut w) };
-        assert_eq!(w.written(), 8);
-        // SAFETY: the first 8 bytes were just initialized.
-        let bytes = unsafe { buf[..8].assume_init_ref() };
-        assert_eq!(bytes, [0, 0, 0, 1, 0, 0, 0, 2]);
-    }
-}

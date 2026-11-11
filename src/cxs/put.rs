@@ -24,142 +24,150 @@ pub(crate) trait Put {
 
 pub struct CXS;
 
-impl<P> Writer<CXS> for P
-where
-    P: Put,
-{
-    #[inline]
-    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
-        debug_assert!(bytes.len() <= u32::MAX as usize);
-        self.put_bytes(bytes)
-    }
+// One impl per buffer type, rather than a blanket impl over `P: Put`:
+// `Writer` is defined in `xdrs_core`, and the orphan rule forbids a
+// foreign trait's blanket impl over an uncovered type parameter.
+macro_rules! impl_writer_via_put {
+    ($t:ty) => {
+        impl Writer<CXS> for $t {
+            #[inline]
+            fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
+                debug_assert!(bytes.len() <= u32::MAX as usize);
+                self.put_bytes(bytes)
+            }
 
-    #[inline]
-    fn write_opaque_unpadded(&mut self, bytes: &[u8]) -> WriteResult<()> {
-        self.put_bytes(bytes)
-    }
+            #[inline]
+            fn write_opaque_unpadded(&mut self, bytes: &[u8]) -> WriteResult<()> {
+                self.put_bytes(bytes)
+            }
 
-    // CXS does not pad opaques.
-    #[inline]
-    fn write_opaque_padding(&mut self, _len: usize) -> WriteResult<()> {
-        Ok(())
-    }
+            // CXS does not pad opaques.
+            #[inline]
+            fn write_opaque_padding(&mut self, _len: usize) -> WriteResult<()> {
+                Ok(())
+            }
 
-    // inline here slows down benchmarks
-    fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
-        if bytes.len() > u32::MAX as usize {
-            return Err(WriteError::InvalidArrayLength);
+            // inline here slows down benchmarks
+            fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
+                if bytes.len() > u32::MAX as usize {
+                    return Err(WriteError::InvalidArrayLength);
+                }
+
+                self.write_u32(bytes.len() as u32)?;
+                self.put_bytes(bytes)
+            }
+
+            #[inline]
+            fn write_bool(&mut self, v: bool) -> WriteResult<()> {
+                self.write_i32(if v { 1 } else { 0 })
+            }
+
+            #[inline]
+            fn write_i64(&mut self, n: i64) -> WriteResult<()> {
+                if n > i32::MAX as i64 || n < i32::MIN as i64 {
+                    // Use the 8-byte representation
+                    let h = V_MULTIBYTE | S_8BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+                    self.put_bytes(&combined)
+                } else {
+                    self.write_i32(n as i32)
+                }
+            }
+
+            #[inline]
+            fn write_i32(&mut self, n: i32) -> WriteResult<()> {
+                if n > i16::MAX as i32 || n < i16::MIN as i32 {
+                    // use 4-byte repr
+                    let h = V_MULTIBYTE | S_4BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1], b[2], b[3]];
+                    self.put_bytes(&combined)
+                } else {
+                    self.write_i16(n as i16)
+                }
+            }
+
+            #[inline]
+            fn write_i16(&mut self, n: i16) -> WriteResult<()> {
+                if n > i8::MAX as i16 || n < i8::MIN as i16 {
+                    // use 2-byte repr
+                    let h = V_MULTIBYTE | S_2BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1]];
+                    self.put_bytes(&combined)
+                } else {
+                    write_i8(self, n as i8)
+                }
+            }
+
+            #[inline]
+            fn write_u64(&mut self, n: u64) -> WriteResult<()> {
+                if n > u32::MAX as u64 {
+                    // Use 8-byte representation
+                    let h = V_MULTIBYTE | S_8BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+                    self.put_bytes(&combined)
+                } else {
+                    self.write_u32(n as u32)
+                }
+            }
+
+            #[inline]
+            fn write_u32(&mut self, n: u32) -> WriteResult<()> {
+                if n > u16::MAX as u32 {
+                    // Use 4-byte representation
+                    let h = V_MULTIBYTE | S_4BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1], b[2], b[3]];
+                    self.put_bytes(&combined)
+                } else {
+                    self.write_u16(n as u16)
+                }
+            }
+
+            #[inline]
+            fn write_u16(&mut self, n: u16) -> WriteResult<()> {
+                if n > u8::MAX as u16 {
+                    // Use 2-byte representation
+                    let h = V_MULTIBYTE | S_2BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1]];
+                    self.put_bytes(&combined)
+                } else {
+                    write_u8(self, n as u8)
+                }
+            }
+
+            /// Writes a 32-bit IEEE 754 float as raw little-endian bytes.
+            ///
+            /// Unlike integers, floats are not compressed with CXS variable-width
+            /// encoding — the bit pattern is written as-is. Little-endian byte order
+            /// follows CXS convention (not RFC 4506 big-endian).
+            #[inline]
+            fn write_f32(&mut self, n: f32) -> WriteResult<()> {
+                let bytes: [u8; 4] = n.to_le_bytes();
+                self.put_bytes(&bytes)
+            }
+
+            /// Writes a 64-bit IEEE 754 double as raw little-endian bytes.
+            ///
+            /// Unlike integers, floats are not compressed with CXS variable-width
+            /// encoding — the bit pattern is written as-is. Little-endian byte order
+            /// follows CXS convention (not RFC 4506 big-endian).
+            #[inline]
+            fn write_f64(&mut self, n: f64) -> WriteResult<()> {
+                let bytes: [u8; 8] = n.to_le_bytes();
+                self.put_bytes(&bytes)
+            }
         }
-
-        self.write_u32(bytes.len() as u32)?;
-        self.put_bytes(bytes)
-    }
-
-    #[inline]
-    fn write_bool(&mut self, v: bool) -> WriteResult<()> {
-        self.write_i32(if v { 1 } else { 0 })
-    }
-
-    #[inline]
-    fn write_i64(&mut self, n: i64) -> WriteResult<()> {
-        if n > i32::MAX as i64 || n < i32::MIN as i64 {
-            // Use the 8-byte representation
-            let h = V_MULTIBYTE | S_8BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
-            self.put_bytes(&combined)
-        } else {
-            self.write_i32(n as i32)
-        }
-    }
-
-    #[inline]
-    fn write_i32(&mut self, n: i32) -> WriteResult<()> {
-        if n > i16::MAX as i32 || n < i16::MIN as i32 {
-            // use 4-byte repr
-            let h = V_MULTIBYTE | S_4BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1], b[2], b[3]];
-            self.put_bytes(&combined)
-        } else {
-            self.write_i16(n as i16)
-        }
-    }
-
-    #[inline]
-    fn write_i16(&mut self, n: i16) -> WriteResult<()> {
-        if n > i8::MAX as i16 || n < i8::MIN as i16 {
-            // use 2-byte repr
-            let h = V_MULTIBYTE | S_2BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1]];
-            self.put_bytes(&combined)
-        } else {
-            write_i8(self, n as i8)
-        }
-    }
-
-    #[inline]
-    fn write_u64(&mut self, n: u64) -> WriteResult<()> {
-        if n > u32::MAX as u64 {
-            // Use 8-byte representation
-            let h = V_MULTIBYTE | S_8BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
-            self.put_bytes(&combined)
-        } else {
-            self.write_u32(n as u32)
-        }
-    }
-
-    #[inline]
-    fn write_u32(&mut self, n: u32) -> WriteResult<()> {
-        if n > u16::MAX as u32 {
-            // Use 4-byte representation
-            let h = V_MULTIBYTE | S_4BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1], b[2], b[3]];
-            self.put_bytes(&combined)
-        } else {
-            self.write_u16(n as u16)
-        }
-    }
-
-    #[inline]
-    fn write_u16(&mut self, n: u16) -> WriteResult<()> {
-        if n > u8::MAX as u16 {
-            // Use 2-byte representation
-            let h = V_MULTIBYTE | S_2BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1]];
-            self.put_bytes(&combined)
-        } else {
-            write_u8(self, n as u8)
-        }
-    }
-
-    /// Writes a 32-bit IEEE 754 float as raw little-endian bytes.
-    ///
-    /// Unlike integers, floats are not compressed with CXS variable-width
-    /// encoding — the bit pattern is written as-is. Little-endian byte order
-    /// follows CXS convention (not RFC 4506 big-endian).
-    #[inline]
-    fn write_f32(&mut self, n: f32) -> WriteResult<()> {
-        let bytes: [u8; 4] = n.to_le_bytes();
-        self.put_bytes(&bytes)
-    }
-
-    /// Writes a 64-bit IEEE 754 double as raw little-endian bytes.
-    ///
-    /// Unlike integers, floats are not compressed with CXS variable-width
-    /// encoding — the bit pattern is written as-is. Little-endian byte order
-    /// follows CXS convention (not RFC 4506 big-endian).
-    #[inline]
-    fn write_f64(&mut self, n: f64) -> WriteResult<()> {
-        let bytes: [u8; 8] = n.to_le_bytes();
-        self.put_bytes(&bytes)
-    }
+    };
 }
+
+impl_writer_via_put!(super::into_buf_writer::IntoBufWriter<'_>);
+#[cfg(feature = "alloc")]
+impl_writer_via_put!(super::buf_writer::BufWriter);
 
 #[inline]
 fn write_u8<P>(p: &mut P, n: u8) -> WriteResult<()>
@@ -216,150 +224,156 @@ pub(crate) trait PutUnchecked {
     unsafe fn put_bytes(&mut self, bytes: &[u8]);
 }
 
-impl<P> WriterUnchecked<CXS> for P
-where
-    P: PutUnchecked,
-{
-    #[inline]
-    unsafe fn write_opaque_fixed(&mut self, bytes: &[u8]) {
-        debug_assert!(bytes.len() <= u32::MAX as usize);
-        // SAFETY: forwarded caller contract.
-        unsafe { self.put_bytes(bytes) }
-    }
+// One impl per buffer type, rather than a blanket impl over `P: PutUnchecked`:
+// `WriterUnchecked` is defined in `xdrs_core`, and the orphan rule forbids a
+// foreign trait's blanket impl over an uncovered type parameter.
+macro_rules! impl_writer_unchecked_via_put {
+    ($t:ty) => {
+        impl WriterUnchecked<CXS> for $t {
+            #[inline]
+            unsafe fn write_opaque_fixed(&mut self, bytes: &[u8]) {
+                debug_assert!(bytes.len() <= u32::MAX as usize);
+                // SAFETY: forwarded caller contract.
+                unsafe { self.put_bytes(bytes) }
+            }
 
-    #[inline]
-    unsafe fn write_opaque_unpadded(&mut self, bytes: &[u8]) {
-        // SAFETY: forwarded caller contract.
-        unsafe { self.put_bytes(bytes) }
-    }
+            #[inline]
+            unsafe fn write_opaque_unpadded(&mut self, bytes: &[u8]) {
+                // SAFETY: forwarded caller contract.
+                unsafe { self.put_bytes(bytes) }
+            }
 
-    // CXS does not pad opaques.
-    #[inline]
-    unsafe fn write_opaque_padding(&mut self, _len: usize) {}
+            // CXS does not pad opaques.
+            #[inline]
+            unsafe fn write_opaque_padding(&mut self, _len: usize) {}
 
-    unsafe fn write_opaque_variable(&mut self, bytes: &[u8]) {
-        debug_assert!(bytes.len() <= u32::MAX as usize);
-        // SAFETY: forwarded caller contract.
-        unsafe {
-            self.write_u32(bytes.len() as u32);
-            self.put_bytes(bytes);
+            unsafe fn write_opaque_variable(&mut self, bytes: &[u8]) {
+                debug_assert!(bytes.len() <= u32::MAX as usize);
+                // SAFETY: forwarded caller contract.
+                unsafe {
+                    self.write_u32(bytes.len() as u32);
+                    self.put_bytes(bytes);
+                }
+            }
+
+            #[inline]
+            unsafe fn write_bool(&mut self, v: bool) {
+                // SAFETY: forwarded caller contract.
+                unsafe { self.write_i32(if v { 1 } else { 0 }) }
+            }
+
+            #[inline]
+            unsafe fn write_i64(&mut self, n: i64) {
+                if n > i32::MAX as i64 || n < i32::MIN as i64 {
+                    // Use the 8-byte representation
+                    let h = V_MULTIBYTE | S_8BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.put_bytes(&combined) }
+                } else {
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.write_i32(n as i32) }
+                }
+            }
+
+            #[inline]
+            unsafe fn write_i32(&mut self, n: i32) {
+                if n > i16::MAX as i32 || n < i16::MIN as i32 {
+                    // use 4-byte repr
+                    let h = V_MULTIBYTE | S_4BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1], b[2], b[3]];
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.put_bytes(&combined) }
+                } else {
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.write_i16(n as i16) }
+                }
+            }
+
+            #[inline]
+            unsafe fn write_i16(&mut self, n: i16) {
+                if n > i8::MAX as i16 || n < i8::MIN as i16 {
+                    // use 2-byte repr
+                    let h = V_MULTIBYTE | S_2BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1]];
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.put_bytes(&combined) }
+                } else {
+                    // SAFETY: forwarded caller contract.
+                    unsafe { write_i8_unchecked(self, n as i8) }
+                }
+            }
+
+            #[inline]
+            unsafe fn write_u64(&mut self, n: u64) {
+                if n > u32::MAX as u64 {
+                    // Use 8-byte representation
+                    let h = V_MULTIBYTE | S_8BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.put_bytes(&combined) }
+                } else {
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.write_u32(n as u32) }
+                }
+            }
+
+            #[inline]
+            unsafe fn write_u32(&mut self, n: u32) {
+                if n > u16::MAX as u32 {
+                    // Use 4-byte representation
+                    let h = V_MULTIBYTE | S_4BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1], b[2], b[3]];
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.put_bytes(&combined) }
+                } else {
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.write_u16(n as u16) }
+                }
+            }
+
+            #[inline]
+            unsafe fn write_u16(&mut self, n: u16) {
+                if n > u8::MAX as u16 {
+                    // Use 2-byte representation
+                    let h = V_MULTIBYTE | S_2BYTE;
+                    let b = n.to_le_bytes();
+                    let combined = [h, b[0], b[1]];
+                    // SAFETY: forwarded caller contract.
+                    unsafe { self.put_bytes(&combined) }
+                } else {
+                    // SAFETY: forwarded caller contract.
+                    unsafe { write_u8_unchecked(self, n as u8) }
+                }
+            }
+
+            /// Writes a 32-bit IEEE 754 float as raw little-endian bytes,
+            /// mirroring the checked CXS writer.
+            #[inline]
+            unsafe fn write_f32(&mut self, n: f32) {
+                let bytes: [u8; 4] = n.to_le_bytes();
+                // SAFETY: forwarded caller contract.
+                unsafe { self.put_bytes(&bytes) }
+            }
+
+            /// Writes a 64-bit IEEE 754 double as raw little-endian bytes,
+            /// mirroring the checked CXS writer.
+            #[inline]
+            unsafe fn write_f64(&mut self, n: f64) {
+                let bytes: [u8; 8] = n.to_le_bytes();
+                // SAFETY: forwarded caller contract.
+                unsafe { self.put_bytes(&bytes) }
+            }
         }
-    }
-
-    #[inline]
-    unsafe fn write_bool(&mut self, v: bool) {
-        // SAFETY: forwarded caller contract.
-        unsafe { self.write_i32(if v { 1 } else { 0 }) }
-    }
-
-    #[inline]
-    unsafe fn write_i64(&mut self, n: i64) {
-        if n > i32::MAX as i64 || n < i32::MIN as i64 {
-            // Use the 8-byte representation
-            let h = V_MULTIBYTE | S_8BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
-            // SAFETY: forwarded caller contract.
-            unsafe { self.put_bytes(&combined) }
-        } else {
-            // SAFETY: forwarded caller contract.
-            unsafe { self.write_i32(n as i32) }
-        }
-    }
-
-    #[inline]
-    unsafe fn write_i32(&mut self, n: i32) {
-        if n > i16::MAX as i32 || n < i16::MIN as i32 {
-            // use 4-byte repr
-            let h = V_MULTIBYTE | S_4BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1], b[2], b[3]];
-            // SAFETY: forwarded caller contract.
-            unsafe { self.put_bytes(&combined) }
-        } else {
-            // SAFETY: forwarded caller contract.
-            unsafe { self.write_i16(n as i16) }
-        }
-    }
-
-    #[inline]
-    unsafe fn write_i16(&mut self, n: i16) {
-        if n > i8::MAX as i16 || n < i8::MIN as i16 {
-            // use 2-byte repr
-            let h = V_MULTIBYTE | S_2BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1]];
-            // SAFETY: forwarded caller contract.
-            unsafe { self.put_bytes(&combined) }
-        } else {
-            // SAFETY: forwarded caller contract.
-            unsafe { write_i8_unchecked(self, n as i8) }
-        }
-    }
-
-    #[inline]
-    unsafe fn write_u64(&mut self, n: u64) {
-        if n > u32::MAX as u64 {
-            // Use 8-byte representation
-            let h = V_MULTIBYTE | S_8BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
-            // SAFETY: forwarded caller contract.
-            unsafe { self.put_bytes(&combined) }
-        } else {
-            // SAFETY: forwarded caller contract.
-            unsafe { self.write_u32(n as u32) }
-        }
-    }
-
-    #[inline]
-    unsafe fn write_u32(&mut self, n: u32) {
-        if n > u16::MAX as u32 {
-            // Use 4-byte representation
-            let h = V_MULTIBYTE | S_4BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1], b[2], b[3]];
-            // SAFETY: forwarded caller contract.
-            unsafe { self.put_bytes(&combined) }
-        } else {
-            // SAFETY: forwarded caller contract.
-            unsafe { self.write_u16(n as u16) }
-        }
-    }
-
-    #[inline]
-    unsafe fn write_u16(&mut self, n: u16) {
-        if n > u8::MAX as u16 {
-            // Use 2-byte representation
-            let h = V_MULTIBYTE | S_2BYTE;
-            let b = n.to_le_bytes();
-            let combined = [h, b[0], b[1]];
-            // SAFETY: forwarded caller contract.
-            unsafe { self.put_bytes(&combined) }
-        } else {
-            // SAFETY: forwarded caller contract.
-            unsafe { write_u8_unchecked(self, n as u8) }
-        }
-    }
-
-    /// Writes a 32-bit IEEE 754 float as raw little-endian bytes,
-    /// mirroring the checked CXS writer.
-    #[inline]
-    unsafe fn write_f32(&mut self, n: f32) {
-        let bytes: [u8; 4] = n.to_le_bytes();
-        // SAFETY: forwarded caller contract.
-        unsafe { self.put_bytes(&bytes) }
-    }
-
-    /// Writes a 64-bit IEEE 754 double as raw little-endian bytes,
-    /// mirroring the checked CXS writer.
-    #[inline]
-    unsafe fn write_f64(&mut self, n: f64) {
-        let bytes: [u8; 8] = n.to_le_bytes();
-        // SAFETY: forwarded caller contract.
-        unsafe { self.put_bytes(&bytes) }
-    }
+    };
 }
+
+impl_writer_unchecked_via_put!(super::unchecked_buf_writer::UncheckedBufWriter<'_>);
 
 /// # Safety
 /// The underlying buffer must have space for the encoded form (1-2 bytes).
