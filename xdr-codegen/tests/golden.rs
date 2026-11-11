@@ -45,7 +45,7 @@ fn check_x() {
     check(
         "check.x",
         "generated.rs",
-        &options(&["xdrs", "schema"], &["spec"]),
+        &options(&["xdrs", "schema", "spec"], &[]),
     );
 }
 

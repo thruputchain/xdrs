@@ -16,6 +16,7 @@ use core::option::Option;
 #[cfg(feature = "std")]
 use std::io::{Read, Write};
 use xdrs::*;
+use xdrs::xdr_repr::*;
 #[cfg(feature = "serde")]
 use ::serde::{Deserialize, Serialize};
 
@@ -50,6 +51,31 @@ impl xdrs::XDRDiscriminant for Status {
     }
     fn from_discriminant(d: i32) -> Self {
         Self(d)
+    }
+}
+
+impl xdrs::xdr_repr::HasTypeDef for Status {
+    fn type_def() -> xdrs::xdr_repr::TypeDef {
+        xdrs::xdr_repr::enum_def(
+            "Status",
+            [
+                (xdrs::xdr_repr::ident("OK"), xdrs::xdr_repr::signed(Self::OK.0)),
+                (
+                    xdrs::xdr_repr::ident("REJECTED"),
+                    xdrs::xdr_repr::signed(Self::REJECTED.0),
+                ),
+            ]
+                .into(),
+        )
+    }
+    fn type_ident() -> xdrs::xdr_repr::Ident {
+        xdrs::xdr_repr::ident("Status")
+    }
+    fn named_declaration(name: xdrs::xdr_repr::Ident) -> xdrs::xdr_repr::Declaration {
+        xdrs::xdr_repr::Declaration::Named {
+            name,
+            ty: xdrs::xdr_repr::TypeSpec::Ident(xdrs::xdr_repr::ident("Status")),
+        }
     }
 }
 
@@ -98,6 +124,33 @@ impl xdrs::XDRDiscriminant for Aliased {
     }
 }
 
+impl xdrs::xdr_repr::HasTypeDef for Aliased {
+    fn type_def() -> xdrs::xdr_repr::TypeDef {
+        xdrs::xdr_repr::enum_def(
+            "Aliased",
+            [
+                (xdrs::xdr_repr::ident("FIRST"), xdrs::xdr_repr::signed(Self::FIRST.0)),
+                (xdrs::xdr_repr::ident("SAME"), xdrs::xdr_repr::signed(Self::SAME.0)),
+                (xdrs::xdr_repr::ident("OTHER"), xdrs::xdr_repr::signed(Self::OTHER.0)),
+                (
+                    xdrs::xdr_repr::ident("CONSTANT"),
+                    xdrs::xdr_repr::signed(Self::CONSTANT.0),
+                ),
+            ]
+                .into(),
+        )
+    }
+    fn type_ident() -> xdrs::xdr_repr::Ident {
+        xdrs::xdr_repr::ident("Aliased")
+    }
+    fn named_declaration(name: xdrs::xdr_repr::Ident) -> xdrs::xdr_repr::Declaration {
+        xdrs::xdr_repr::Declaration::Named {
+            name,
+            ty: xdrs::xdr_repr::TypeSpec::Ident(xdrs::xdr_repr::ident("Aliased")),
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 impl core::fmt::Display for Aliased {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -113,6 +166,7 @@ impl core::fmt::Display for Aliased {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(Default, Copy)]
 #[repr(transparent)]
@@ -184,6 +238,7 @@ impl schemars::JsonSchema for Hash {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[derive(schemars::JsonSchema)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
@@ -218,6 +273,7 @@ pub type T = i32;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "Status")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -239,6 +295,7 @@ impl Outcome {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[derive(schemars::JsonSchema)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
@@ -249,6 +306,7 @@ pub struct Receipt {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[derive(schemars::JsonSchema)]
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 #[repr(C)]
@@ -259,6 +317,7 @@ pub struct Reading_sum {
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "bool")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -281,6 +340,7 @@ impl Reading_last {
 // Floats lack Eq, Hash and Ord.  The marker must reach the inline types too.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[derive(schemars::JsonSchema)]
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 #[repr(C)]
@@ -299,6 +359,7 @@ pub const V: u32 = 9;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "u32")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -325,6 +386,7 @@ impl Unsigned {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "i32")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -353,6 +415,7 @@ pub type Flag = bool;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "Index")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -375,6 +438,7 @@ impl ByIndex {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "Flag")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -399,6 +463,7 @@ impl ByFlag {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "bool")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -421,6 +486,7 @@ impl LowerBool {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "i32")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -444,6 +510,7 @@ impl LowerInt {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "u32")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -490,6 +557,7 @@ impl UnsignedDefault {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "i32")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -531,6 +599,7 @@ impl SignedDefault {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "bool")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -575,6 +644,7 @@ pub type Code = i32;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "Verdict")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -597,6 +667,7 @@ impl ByVerdict {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "Code")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -618,6 +689,7 @@ impl ByCode {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstWriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "Index")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -643,6 +715,7 @@ impl ConstUnsigned {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstWriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "Index")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -683,6 +756,7 @@ impl ConstAliasDefault {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "i32")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -713,6 +787,7 @@ impl Sig {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "u32")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -735,6 +810,7 @@ impl Tagged_tag {
 // An anonymous union inside a struct.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[derive(schemars::JsonSchema)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
@@ -776,6 +852,29 @@ impl xdrs::XDRDiscriminant for Signal {
     }
 }
 
+impl xdrs::xdr_repr::HasTypeDef for Signal {
+    fn type_def() -> xdrs::xdr_repr::TypeDef {
+        xdrs::xdr_repr::enum_def(
+            "Signal",
+            [
+                (xdrs::xdr_repr::ident("DOWN"), xdrs::xdr_repr::signed(Self::DOWN.0)),
+                (xdrs::xdr_repr::ident("IDLE"), xdrs::xdr_repr::signed(Self::IDLE.0)),
+                (xdrs::xdr_repr::ident("UP"), xdrs::xdr_repr::signed(Self::UP.0)),
+            ]
+                .into(),
+        )
+    }
+    fn type_ident() -> xdrs::xdr_repr::Ident {
+        xdrs::xdr_repr::ident("Signal")
+    }
+    fn named_declaration(name: xdrs::xdr_repr::Ident) -> xdrs::xdr_repr::Declaration {
+        xdrs::xdr_repr::Declaration::Named {
+            name,
+            ty: xdrs::xdr_repr::TypeSpec::Ident(xdrs::xdr_repr::ident("Signal")),
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 impl core::fmt::Display for Signal {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -791,6 +890,7 @@ impl core::fmt::Display for Signal {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "Signal")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
@@ -834,6 +934,7 @@ pub const CASES: u32 = 11;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(ReadXDR, WriteXDR, ConstXDRSize)]
+#[derive(XDR)]
 #[xdr(discriminant = "u32")]
 #[derive(schemars::JsonSchema)]
 #[repr(i32)]
