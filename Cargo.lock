@@ -940,21 +940,18 @@ dependencies = [
 
 [[package]]
 name = "thruput-xdr-common"
-version = "0.19.0"
+version = "0.18.0"
 dependencies = [
  "escape-bytes",
- "heapless",
  "regex-lite",
  "schemars",
  "serde",
  "serde_json",
- "thruput-xdr-derive",
- "thruput-xdrs",
 ]
 
 [[package]]
 name = "thruput-xdr-derive"
-version = "0.19.0"
+version = "0.18.0"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -1207,14 +1204,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "xdr-common-fixture"
-version = "0.0.0"
-dependencies = [
- "thruput-xdr-common",
- "thruput-xdrs",
 ]
 
 [[package]]

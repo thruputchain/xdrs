@@ -48,7 +48,8 @@ pub mod buf_writer;
 
 mod put;
 
-// The const writer and worst-case size bounds are part of the stable trait
-// layer (derived types name them in their public API), so they live in
-// `xdr_common`.
-pub use xdr_common::txs::{ConstMaxSize, ConstWriter, const_writer, max_size};
+pub mod const_writer;
+pub use const_writer::ConstWriter;
+
+pub mod max_size;
+pub use max_size::ConstMaxSize;

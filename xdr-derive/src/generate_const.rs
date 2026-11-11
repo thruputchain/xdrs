@@ -6,12 +6,8 @@ use quote::quote;
 use std::collections::HashSet;
 use syn::Result;
 
-// The same `#[xdr(...)]` / `#[xdrs(...)]` namespaces as the other derives,
-// so `#[xdr(crate = "...")]` reaches the const derives too. Only the keys
-// these derives act on are read; the rest belong to ReadXDR/WriteXDR, which
-// validate them.
 #[derive(Clone, Debug, Default, FromDeriveInput, FromField)]
-#[darling(attributes(xdr, xdrs), default, allow_unknown_fields)]
+#[darling(attributes(xdrs), default)]
 struct Attrs {
     pub into_type: Option<syn::Type>,
     pub via: Option<syn::Type>,

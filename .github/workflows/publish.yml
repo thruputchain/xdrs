@@ -1,22 +1,16 @@
 # Releases every published crate in this repository to crates.io in one
 # idempotent pass, with the shared thruputchain/actions release actions.
 #
-# The crates release as three groups, in dependency order. The first two
-# are stable boundary crates (see "Versioning and releases" in the README):
-# each versions independently of the workspace, releases under its own tag,
-# and is skipped when a release doesn't bump it (and its package is unchanged
-# since its tag).
+# The crates release as two groups, in dependency order:
 #
-#   1. `thruput-rpc-api` (library `rpc_api`): the RPC sender/handler traits
-#      and shared response/error types, tagged `rpc_api-v<version>`.
-#   2. `thruput-xdr-common` (the bounded collections, the XDR traits, the
-#      reader/writer interfaces and the const size bounds) with
-#      `thruput-xdr-derive`, whose output names only xdr_common items and
-#      which xdr-common pins with `=`. Both carry the same version, tagged
-#      `xdr_common-v<version>`.
-#   3. The workspace-versioned crates, `thruput-xdr-repr`,
-#      `thruput-xdrs` and `thruput-rpc-driver`, under the
-#      shared `v<version>` tag. `thruput-xdrs` depends on the published 2;
+#   1. `thruput-rpc-api` (library `rpc_api`): the stable API boundary crate
+#      (sender/handler traits and shared response/error types). It versions
+#      independently of the workspace, releases under its own
+#      `rpc_api-v<version>` tag, and is skipped when a release doesn't bump
+#      it (and its package is unchanged since its tag).
+#   2. The workspace-versioned crates, `thruput-xdr-common`,
+#      `thruput-xdr-derive`, `thruput-xdr-repr`, `thruput-xdrs` and
+#      `thruput-rpc-driver`, under the shared `v<version>` tag.
 #      `thruput-rpc-driver` depends on the published `thruput-xdrs` and
 #      `thruput-rpc-api`, so it goes last.
 #
@@ -56,16 +50,14 @@ concurrency:
 env:
   # Owners added to each crate a run creates, besides the token's owner.
   CRATE_OWNERS: github:thruputchain:core-maintainers
-  # The stable boundary crates: each versioned independently of the
-  # workspace and published under its own `<prefix>-v<version>` tag.
+  # The stable API boundary crate: versioned independently of the workspace,
+  # published under its own `rpc_api-v<version>` tag.
   API_PACKAGES: thruput-rpc-api
-  # In dependency order: xdr-common's `derive` feature needs the derive.
-  COMMON_PACKAGES: >-
-    thruput-xdr-derive
-    thruput-xdr-common
   # Workspace-versioned crates published under the `v<version>` tag, in
   # dependency order.
   PRIMARY_PACKAGES: >-
+    thruput-xdr-common
+    thruput-xdr-derive
     thruput-xdr-repr
     thruput-xdrs
     thruput-rpc-driver
@@ -118,20 +110,18 @@ jobs:
 
       # Verifies every crate offline, in dependency order: the action
       # packages each listed crate into vendor/ before the next one resolves
-      # against it, so thruput-xdr-common must precede thruput-xdrs, and
-      # thruput-rpc-api and thruput-xdrs must precede thruput-rpc-driver.
+      # against it, so thruput-rpc-api and thruput-xdrs must precede thruput-rpc-driver.
       - name: Publish dry run
         uses: thruputchain/actions/cargo-publish-dry-run@484be875e4e630d26594110bcc0ab6bf42eeaba7
         with:
-          packages: ${{ env.API_PACKAGES }} ${{ env.COMMON_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
+          packages: ${{ env.API_PACKAGES }} ${{ env.PRIMARY_PACKAGES }}
           cargo-hack-feature-options: --feature-powerset
           registry-name: crates-io
 
-      # Every group's checks run before anything is tagged. A boundary
-      # crate's tag legitimately sits on an older commit when a release
-      # doesn't bump it: skip-if-published then reports release=false,
-      # provided the version is on crates.io and its package is unchanged
-      # since the tag.
+      # Both groups' checks run before anything is tagged. thruput-rpc-api's tag
+      # legitimately sits on an older commit when a release doesn't bump it:
+      # skip-if-published then reports release=false, provided the version is
+      # on crates.io and its package is unchanged since the tag.
       - name: Check thruput-rpc-api release
         id: check-api
         uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
@@ -139,16 +129,6 @@ jobs:
           mode: check
           packages: ${{ env.API_PACKAGES }}
           tag-prefix: 'rpc_api-v'
-          on-existing-tag: skip-if-published
-          bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
-
-      - name: Check thruput-xdr-common release
-        id: check-common
-        uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
-        with:
-          mode: check
-          packages: ${{ env.COMMON_PACKAGES }}
-          tag-prefix: 'xdr_common-v'
           on-existing-tag: skip-if-published
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
 
@@ -171,15 +151,6 @@ jobs:
           tag-prefix: 'rpc_api-v'
           github-token: ${{ github.token }}
 
-      - name: Tag thruput-xdr-common
-        id: tag-common
-        if: ${{ inputs.dry_run == false && steps.check-common.outputs.release == 'true' }}
-        uses: thruputchain/actions/cargo-release-tag@484be875e4e630d26594110bcc0ab6bf42eeaba7
-        with:
-          packages: ${{ env.COMMON_PACKAGES }}
-          tag-prefix: 'xdr_common-v'
-          github-token: ${{ github.token }}
-
       - name: Tag workspace crates
         id: tag-primary
         if: ${{ inputs.dry_run == false && steps.check-primary.outputs.release == 'true' }}
@@ -189,8 +160,8 @@ jobs:
           github-token: ${{ github.token }}
 
       # Unlike the dry run, publishing resolves deps against crates.io, hence
-      # the order: the boundary crates must be live before thruput-xdrs's
-      # publish-time verify build, and thruput-xdrs before thruput-rpc-driver's.
+      # the order: thruput-rpc-api and the xdrs crates must be live before
+      # thruput-rpc-driver's publish-time verify build.
       - name: Publish thruput-rpc-api
         if: ${{ inputs.dry_run == false && steps.check-api.outputs.release == 'true' }}
         uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
@@ -199,17 +170,6 @@ jobs:
           packages: ${{ env.API_PACKAGES }}
           tag-prefix: 'rpc_api-v'
           git-tag: ${{ steps.tag-api.outputs.tag }}
-          bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
-          crate-owners: ${{ env.CRATE_OWNERS }}
-
-      - name: Publish thruput-xdr-common
-        if: ${{ inputs.dry_run == false && steps.check-common.outputs.release == 'true' }}
-        uses: thruputchain/actions/crates-io-publish@484be875e4e630d26594110bcc0ab6bf42eeaba7
-        with:
-          mode: publish
-          packages: ${{ env.COMMON_PACKAGES }}
-          tag-prefix: 'xdr_common-v'
-          git-tag: ${{ steps.tag-common.outputs.tag }}
           bootstrap-token: ${{ secrets.CRATESIO_CREATE_PACKAGE_TOKEN }}
           crate-owners: ${{ env.CRATE_OWNERS }}
 

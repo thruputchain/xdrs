@@ -6,7 +6,7 @@
 //! instead of first building an owned `X`.
 
 use crate::write_xdr::WriteXDR;
-use crate::{BytesM, StaticIfNoAlloc, StringM, VecM};
+use xdr_common::{BytesM, StaticIfNoAlloc, StringM, VecM};
 
 /// Types whose XDR encoding can stand in for an `X`.
 ///
@@ -27,8 +27,8 @@ use crate::{BytesM, StaticIfNoAlloc, StringM, VecM};
 /// - **Pointers**: `&U`, `Box<U>` and `Arc<U>` are `EncodesAs<X>` whenever
 ///   `U: EncodesAs<X>`.
 /// - **Slices**: `[U]` is `EncodesAs<VecM<X, N>>` whenever `U: EncodesAs<X>`.
-/// - **Chunks**: `xdrs::ChunkedBytes<_, N>` is
-///   `EncodesAs<BytesM<N>>`, and `xdrs::ChunkedVec<_, N>` is
+/// - **Chunks**: [`ChunkedBytes<_, N>`](crate::ChunkedBytes) is
+///   `EncodesAs<BytesM<N>>`, and [`ChunkedVec<_, N>`](crate::ChunkedVec) is
 ///   `EncodesAs<VecM<X, N>>` whenever its elements are `EncodesAs<X>`.
 ///
 /// There is no blanket identity `impl<X: WriteXDR> EncodesAs<X> for X`:
@@ -63,7 +63,7 @@ impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for &U {}
 impl<X: ?Sized, U: EncodesAs<X> + ?Sized> EncodesAs<X> for alloc::boxed::Box<U> {}
 
 #[cfg(not(feature = "alloc"))]
-impl<X: ?Sized, U: EncodesAs<X>> EncodesAs<X> for crate::Box<U> {}
+impl<X: ?Sized, U: EncodesAs<X>> EncodesAs<X> for xdr_common::Box<U> {}
 
 #[cfg(all(feature = "alloc", target_has_atomic = "ptr"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]

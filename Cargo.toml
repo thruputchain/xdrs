@@ -4,7 +4,6 @@ members = [
     "xdr-codegen/check",
     "xdr-common",
     "xdr-derive",
-    "xdr-common/fixture",
     "xdr-repr",
     "rpc/rpc_api",
     "rpc/rpc_driver",
@@ -34,16 +33,10 @@ categories = ["encoding"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
+xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.18.0" }
 xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.18.0" }
+xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=0.18.0" }
 xdrs = { package = "thruput-xdrs", path = ".", version = "0.18.0" }
-# xdr-common and xdr-derive version together, independently of the workspace
-# (like rpc_api below): the derive's output names only xdr_common items, so the
-# two release as a pair, and xdr-common pins the derive with `=`. xdr-common's
-# requirement is caret: a workspace release must not force a new version of
-# it. The versions here must match xdr-common/Cargo.toml and
-# xdr-derive/Cargo.toml.
-xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "0.19.0" }
-xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.19.0" }
 thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.18.0" }
 # rpc_api versions independently of the workspace (it is the stable API
 # boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
@@ -117,25 +110,25 @@ xdr-common = { workspace = true }
 # Optional dependencies
 xdr-derive = { workspace = true, optional = true }
 xdr-repr = { workspace = true, optional = true }
+heapless = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = "0.6.0"
-heapless = { workspace = true }
 hex = "0.4.3"
 pretty_assertions = { workspace = true }
 
 [features]
 default = ["detailed-errors"]
-detailed-errors = ["xdr-common/detailed-errors"] # retain precise ReadError variants and diagnostic payloads
+detailed-errors = [] # retain precise ReadError variants and diagnostic payloads
 permissive = [] # relax wire validation: CXS minimal integer encoding + TXS non-zero padding
 alloc = ["xdr-common/alloc"] # enable allocating interfaces
 serde = ["xdr-common/serde"] # serde support for xdr-common types
 schemars = ["xdr-common/schemars"] # schemars JsonSchema support for xdr-common types
 
 # Enable optional dependencies
-derive = ["xdr-common/derive", "dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
+derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
 repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
-heapless = ["xdr-common/heapless", "xdr-repr?/heapless"] # serialization and schema support for types from the `heapless` package
+heapless = ["dep:heapless", "xdr-repr?/heapless"] # serialization and schema support for types from the `heapless` package
 
 # Enable optional features of related dependencies
 ns = ["repr", "xdr-repr/ns"]

@@ -1,19 +1,12 @@
 [package]
 name = "thruput-xdr-common"
-# Versioned independently of the workspace: this crate is the stable layer
-# that derived and generated XDR types expose in their public API (the
-# collections, ReadXDR/WriteXDR, the Reader/Writer interfaces, the const size
-# bounds), and it releases only when that layer itself changes. The codecs in
-# thruput-xdrs can then make breaking releases without breaking the crates
-# whose public types implement these traits. See "Versioning and releases" in
-# the README.
-version = "0.19.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Stable layer of XDRS: bounded collections, ReadXDR/WriteXDR, the Reader/Writer interfaces, and const size bounds"
+description.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
@@ -23,17 +16,12 @@ categories = ["encoding", "no-std", "no-std::no-alloc"]
 [lib]
 name = "xdr_common"
 crate-type = ["rlib"]
+doctest = false
 
 [features]
 alloc = ["escape-bytes/alloc"]
 serde = ["alloc", "dep:serde"]
 schemars = ["alloc", "dep:schemars"]
-heapless = ["dep:heapless"] # trait impls for types from the `heapless` package
-derive = ["dep:xdr-derive"] # derive macros ReadXDR, WriteXDR, ConstWriteXDR, ConstXDRSize
-# Retain precise ReadError variants and diagnostic payloads. Not a default
-# here: thruput-xdrs turns it on by default and forwards it, so adding a
-# direct dependency on this crate never changes a build's ReadError.
-detailed-errors = []
 
 [package.metadata.docs.rs]
 all-features = true
@@ -43,14 +31,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 escape-bytes = { version = "0.1.1", default-features = false }
 serde = { version = "1.0.228", default-features = false, features = ["alloc", "derive"], optional = true }
 schemars = { version = "1.2.0", optional = true }
-heapless = { workspace = true, optional = true }
-xdr-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 regex-lite = "0.1.9"
 serde_json = "1.0.149"
-# Doctests show the traits through the codecs. A dev-dependency cycle is fine
-# for doctests and integration tests, which link this crate's normal build;
-# unit tests (`cfg(test)`) must not use `xdrs`, whose traits would come from a
-# different build of this crate.
-xdrs = { workspace = true, features = ["alloc", "derive"] }

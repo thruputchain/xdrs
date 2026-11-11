@@ -47,78 +47,70 @@ macro_rules! write_int {
     };
 }
 
-// One impl per buffer type, rather than a blanket impl over `P: Put`:
-// `Writer` is defined in `xdr_common`, and the orphan rule forbids a
-// foreign trait's blanket impl over an uncovered type parameter.
-macro_rules! impl_writer_via_put {
-    ($t:ty) => {
-        impl Writer<TXS> for $t {
-            #[inline]
-            fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
-                debug_assert!(bytes.len() <= u32::MAX as usize);
-                self.put_opaque_fixed(bytes)
-            }
+impl<P> Writer<TXS> for P
+where
+    P: Put,
+{
+    #[inline]
+    fn write_opaque_fixed(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+        self.put_opaque_fixed(bytes)
+    }
 
-            #[inline]
-            fn write_opaque_unpadded(&mut self, bytes: &[u8]) -> WriteResult<()> {
-                self.put_bytes(bytes)
-            }
+    #[inline]
+    fn write_opaque_unpadded(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        self.put_bytes(bytes)
+    }
 
-            #[inline]
-            fn write_opaque_padding(&mut self, len: usize) -> WriteResult<()> {
-                self.put_bytes(&PADDING[..padding_len(len)])
-            }
+    #[inline]
+    fn write_opaque_padding(&mut self, len: usize) -> WriteResult<()> {
+        self.put_bytes(&PADDING[..padding_len(len)])
+    }
 
-            #[inline]
-            fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
-                if bytes.len() > u32::MAX as usize {
-                    return Err(WriteError::InvalidArrayLength);
-                }
-
-                self.put_opaque_variable(bytes)
-            }
-
-            #[inline]
-            fn write_bool(&mut self, v: bool) -> WriteResult<()> {
-                self.write_i32(if v { 1 } else { 0 })
-            }
-
-            #[inline]
-            fn write_i16(&mut self, n: i16) -> WriteResult<()> {
-                self.write_i32(n as i32)
-            }
-
-            #[inline]
-            fn write_u16(&mut self, n: u16) -> WriteResult<()> {
-                self.write_u32(n as u32)
-            }
-
-            write_int! [
-                write_i64(8): i64,
-                write_i32(4): i32,
-
-                write_u64(8): u64,
-                write_u32(4): u32,
-            ];
-
-            #[inline]
-            fn write_f32(&mut self, n: f32) -> WriteResult<()> {
-                let bytes: [u8; 4] = n.to_be_bytes();
-                self.put_bytes(&bytes)
-            }
-
-            #[inline]
-            fn write_f64(&mut self, n: f64) -> WriteResult<()> {
-                let bytes: [u8; 8] = n.to_be_bytes();
-                self.put_bytes(&bytes)
-            }
+    #[inline]
+    fn write_opaque_variable(&mut self, bytes: &[u8]) -> WriteResult<()> {
+        if bytes.len() > u32::MAX as usize {
+            return Err(WriteError::InvalidArrayLength);
         }
-    };
-}
 
-impl_writer_via_put!(super::into_buf_writer::IntoBufWriter<'_>);
-#[cfg(feature = "alloc")]
-impl_writer_via_put!(super::buf_writer::BufWriter);
+        self.put_opaque_variable(bytes)
+    }
+
+    #[inline]
+    fn write_bool(&mut self, v: bool) -> WriteResult<()> {
+        self.write_i32(if v { 1 } else { 0 })
+    }
+
+    #[inline]
+    fn write_i16(&mut self, n: i16) -> WriteResult<()> {
+        self.write_i32(n as i32)
+    }
+
+    #[inline]
+    fn write_u16(&mut self, n: u16) -> WriteResult<()> {
+        self.write_u32(n as u32)
+    }
+
+    write_int! [
+        write_i64(8): i64,
+        write_i32(4): i32,
+
+        write_u64(8): u64,
+        write_u32(4): u32,
+    ];
+
+    #[inline]
+    fn write_f32(&mut self, n: f32) -> WriteResult<()> {
+        let bytes: [u8; 4] = n.to_be_bytes();
+        self.put_bytes(&bytes)
+    }
+
+    #[inline]
+    fn write_f64(&mut self, n: f64) -> WriteResult<()> {
+        let bytes: [u8; 8] = n.to_be_bytes();
+        self.put_bytes(&bytes)
+    }
+}
 
 /// The unchecked counterpart to [`Put`]: implement these basic byte
 /// operations to get a `WriterUnchecked<TXS>` implementation for free.
@@ -154,79 +146,73 @@ macro_rules! write_int_unchecked {
     };
 }
 
-// One impl per buffer type, rather than a blanket impl over `P: PutUnchecked`:
-// `WriterUnchecked` is defined in `xdr_common`, and the orphan rule forbids a
-// foreign trait's blanket impl over an uncovered type parameter.
-macro_rules! impl_writer_unchecked_via_put {
-    ($t:ty) => {
-        impl WriterUnchecked<TXS> for $t {
-            #[inline]
-            unsafe fn write_opaque_fixed(&mut self, bytes: &[u8]) {
-                debug_assert!(bytes.len() <= u32::MAX as usize);
-                // SAFETY: forwarded caller contract.
-                unsafe { self.put_opaque_fixed(bytes) }
-            }
+impl<P> WriterUnchecked<TXS> for P
+where
+    P: PutUnchecked,
+{
+    #[inline]
+    unsafe fn write_opaque_fixed(&mut self, bytes: &[u8]) {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_opaque_fixed(bytes) }
+    }
 
-            #[inline]
-            unsafe fn write_opaque_unpadded(&mut self, bytes: &[u8]) {
-                // SAFETY: forwarded caller contract.
-                unsafe { self.put_bytes(bytes) }
-            }
+    #[inline]
+    unsafe fn write_opaque_unpadded(&mut self, bytes: &[u8]) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(bytes) }
+    }
 
-            #[inline]
-            unsafe fn write_opaque_padding(&mut self, len: usize) {
-                // SAFETY: forwarded caller contract.
-                unsafe { self.put_bytes(&PADDING[..padding_len(len)]) }
-            }
+    #[inline]
+    unsafe fn write_opaque_padding(&mut self, len: usize) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(&PADDING[..padding_len(len)]) }
+    }
 
-            #[inline]
-            unsafe fn write_opaque_variable(&mut self, bytes: &[u8]) {
-                debug_assert!(bytes.len() <= u32::MAX as usize);
-                // SAFETY: forwarded caller contract.
-                unsafe { self.put_opaque_variable(bytes) }
-            }
+    #[inline]
+    unsafe fn write_opaque_variable(&mut self, bytes: &[u8]) {
+        debug_assert!(bytes.len() <= u32::MAX as usize);
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_opaque_variable(bytes) }
+    }
 
-            #[inline]
-            unsafe fn write_bool(&mut self, v: bool) {
-                // SAFETY: forwarded caller contract.
-                unsafe { self.write_i32(if v { 1 } else { 0 }) }
-            }
+    #[inline]
+    unsafe fn write_bool(&mut self, v: bool) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.write_i32(if v { 1 } else { 0 }) }
+    }
 
-            #[inline]
-            unsafe fn write_i16(&mut self, n: i16) {
-                // SAFETY: forwarded caller contract.
-                unsafe { self.write_i32(n as i32) }
-            }
+    #[inline]
+    unsafe fn write_i16(&mut self, n: i16) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.write_i32(n as i32) }
+    }
 
-            #[inline]
-            unsafe fn write_u16(&mut self, n: u16) {
-                // SAFETY: forwarded caller contract.
-                unsafe { self.write_u32(n as u32) }
-            }
+    #[inline]
+    unsafe fn write_u16(&mut self, n: u16) {
+        // SAFETY: forwarded caller contract.
+        unsafe { self.write_u32(n as u32) }
+    }
 
-            write_int_unchecked![
-                write_i64(8): i64,
-                write_i32(4): i32,
+    write_int_unchecked![
+        write_i64(8): i64,
+        write_i32(4): i32,
 
-                write_u64(8): u64,
-                write_u32(4): u32,
-            ];
+        write_u64(8): u64,
+        write_u32(4): u32,
+    ];
 
-            #[inline]
-            unsafe fn write_f32(&mut self, n: f32) {
-                let bytes: [u8; 4] = n.to_be_bytes();
-                // SAFETY: forwarded caller contract.
-                unsafe { self.put_bytes(&bytes) }
-            }
+    #[inline]
+    unsafe fn write_f32(&mut self, n: f32) {
+        let bytes: [u8; 4] = n.to_be_bytes();
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(&bytes) }
+    }
 
-            #[inline]
-            unsafe fn write_f64(&mut self, n: f64) {
-                let bytes: [u8; 8] = n.to_be_bytes();
-                // SAFETY: forwarded caller contract.
-                unsafe { self.put_bytes(&bytes) }
-            }
-        }
-    };
+    #[inline]
+    unsafe fn write_f64(&mut self, n: f64) {
+        let bytes: [u8; 8] = n.to_be_bytes();
+        // SAFETY: forwarded caller contract.
+        unsafe { self.put_bytes(&bytes) }
+    }
 }
-
-impl_writer_unchecked_via_put!(super::unchecked_buf_writer::UncheckedBufWriter<'_>);

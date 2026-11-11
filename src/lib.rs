@@ -22,13 +22,6 @@
 //!   - [CXS](cxs) ("Compact XDR Serialization")
 //!   - [TXS](txs) ("Traditional XDR Serialization")
 //!
-//! The bounded collections, the traits, the [`Reader`]/[`Writer`] interfaces
-//! and the const size bounds come from `thruput-xdr-common` (library
-//! `xdr_common`), re-exported here at the same paths. That crate is versioned separately, as the stable
-//! boundary that derived types implement, so this crate's codecs can make
-//! breaking releases without breaking the public API of crates that derive
-//! XDR. See "Versioning and releases" in the README.
-//!
 //! The library is `no_std`, but a few extra things can be
 //! enabled with feature `alloc`.
 //!
@@ -96,15 +89,17 @@ compile_error!("xdrs does not support 16-bit targets");
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-// The stable layer: `VecM`/`BytesM`/`StringM`, `ReadXDR`/`WriteXDR`,
-// `EncodesAs`, `XDRDiscriminant`, the `Reader`/`Writer` interfaces and their
-// errors, at the paths they have always had here (`xdrs::read_xdr::ReadXDR`,
-// `xdrs::serialize::reader::Reader`, ...). The `cxs` and `txs` modules below
-// shadow xdr_common's and re-export its const-context items themselves.
-pub use xdr_common::*;
+// Traits for translating Rust values to and from the XDR data model
+pub mod discrim;
+pub mod encodes_as;
+pub mod read_xdr;
+pub mod write_xdr;
 
 // Variable-length data written from separate chunks
 pub mod chunked;
+
+// The abstract interface for serialization formats
+pub mod serialize;
 
 // CXS serialization
 pub mod cxs;
@@ -112,12 +107,42 @@ pub mod cxs;
 // TXS serialization
 pub mod txs;
 
+pub(crate) mod mu;
+
+pub(crate) mod valid_u32;
+
 pub use chunked::*;
+pub use discrim::*;
+pub use encodes_as::*;
+pub use read_xdr::*;
+pub use write_xdr::*;
+
+pub use serialize::reader::ReadError;
+pub use serialize::reader::ReadResult;
+pub use serialize::reader::*;
+
+pub use serialize::writer::WriteError;
+pub use serialize::writer::WriteResult;
+pub use serialize::writer::*;
+
+pub use serialize::writer_unchecked::*;
 
 #[cfg(feature = "repr")]
 #[cfg_attr(docsrs, doc(cfg(feature = "repr")))]
 pub use xdr_repr;
 
+#[cfg(feature = "derive")]
+#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
+pub use xdr_derive::{ConstWriteXDR, ConstXDRSize, ReadXDR, WriteXDR};
+
 #[cfg(all(feature = "derive", feature = "repr"))]
 #[cfg_attr(docsrs, doc(cfg(all(feature = "derive", feature = "repr"))))]
 pub use xdr_derive::XDR;
+
+mod int128;
+
+pub use xdr_common::*;
+
+#[cfg(feature = "heapless")]
+#[cfg_attr(docsrs, doc(cfg(feature = "heapless")))]
+mod heapless;

@@ -34,7 +34,7 @@ use core::convert::Infallible;
 use core::mem::MaybeUninit as MU;
 
 #[cfg(feature = "alloc")]
-use crate::MAX_PREALLOC_BYTES;
+use xdr_common::MAX_PREALLOC_BYTES;
 
 struct PartialInitGuard<'a, T> {
     slice: &'a mut [MU<T>],
@@ -632,7 +632,7 @@ where
 
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-impl<'r, T> ReadXDR<'r> for crate::Box<T>
+impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
 {
@@ -657,7 +657,7 @@ where
 }
 
 #[cfg(not(feature = "alloc"))]
-impl<'r, T> ReadXDR<'r> for crate::Box<T>
+impl<'r, T> ReadXDR<'r> for xdr_common::Box<T>
 where
     T: ReadXDR<'r>,
 {
@@ -833,7 +833,7 @@ const _: () = {
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 const _: () = {
-    use crate::*;
+    use xdr_common::*;
 
     use crate::ReadXDR;
     use crate::serialize::reader::{ReadError, Reader};
@@ -885,7 +885,7 @@ const _: () = {
 const _: () = {
     use crate::ReadXDR;
     use crate::serialize::reader::Reader;
-    use crate::*;
+    use xdr_common::*;
 
     impl<'r, const MAX: u32> ReadXDR<'r> for BytesM<MAX> {
         fn read_xdr<R: Reader<'r>>(_r: &mut R) -> ReadResult<Self> {
