@@ -5,8 +5,9 @@
 //! function, a buffer type), this crate stops compiling: that would make a
 //! codec release a breaking change for every crate deriving XDR.
 
-use xdr_common::{BytesM, EncodesAs, StringM, VecM};
-use xdr_derive::{ConstWriteXDR, ConstXDRSize, ReadXDR, WriteXDR};
+use xdr_common::{
+    BytesM, ConstWriteXDR, ConstXDRSize, EncodesAs, ReadXDR, StringM, VecM, WriteXDR,
+};
 
 /// An extension point, as generated for every protocol struct.
 #[derive(Clone, Debug, PartialEq, Eq, ReadXDR, WriteXDR, ConstWriteXDR, ConstXDRSize)]

@@ -9,11 +9,13 @@
 #
 #   1. `thruput-rpc-api` (library `rpc_api`): the RPC sender/handler traits
 #      and shared response/error types, tagged `rpc_api-v<version>`.
-#   2. `thruput-xdr-common`: the bounded collections, the XDR traits, the
-#      reader/writer interfaces and the const size bounds, tagged
+#   2. `thruput-xdr-common` (the bounded collections, the XDR traits, the
+#      reader/writer interfaces and the const size bounds) with
+#      `thruput-xdr-derive`, whose output names only xdr_common items and
+#      which xdr-common pins with `=`. Both carry the same version, tagged
 #      `xdr_common-v<version>`.
-#   3. The workspace-versioned crates, `thruput-xdr-derive`,
-#      `thruput-xdr-repr`, `thruput-xdrs` and `thruput-rpc-driver`, under the
+#   3. The workspace-versioned crates, `thruput-xdr-repr`,
+#      `thruput-xdrs` and `thruput-rpc-driver`, under the
 #      shared `v<version>` tag. `thruput-xdrs` depends on the published 2;
 #      `thruput-rpc-driver` depends on the published `thruput-xdrs` and
 #      `thruput-rpc-api`, so it goes last.
@@ -57,11 +59,13 @@ env:
   # The stable boundary crates: each versioned independently of the
   # workspace and published under its own `<prefix>-v<version>` tag.
   API_PACKAGES: thruput-rpc-api
-  COMMON_PACKAGES: thruput-xdr-common
+  # In dependency order: xdr-common's `derive` feature needs the derive.
+  COMMON_PACKAGES: >-
+    thruput-xdr-derive
+    thruput-xdr-common
   # Workspace-versioned crates published under the `v<version>` tag, in
   # dependency order.
   PRIMARY_PACKAGES: >-
-    thruput-xdr-derive
     thruput-xdr-repr
     thruput-xdrs
     thruput-rpc-driver

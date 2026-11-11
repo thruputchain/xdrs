@@ -1,6 +1,9 @@
 [package]
 name = "thruput-xdr-derive"
-version.workspace = true
+# Versioned with thruput-xdr-common, not the workspace: the derives' output
+# names only xdr_common items, so the two release as a pair (xdr-common pins
+# this crate with `=`). See "Versioning and releases" in the README.
+version = "0.19.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

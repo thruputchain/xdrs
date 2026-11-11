@@ -38,6 +38,8 @@
 //! - **`schemars`** - JSON Schema generation via schemars (implies `alloc`).
 //! - **`heapless`** - Trait implementations for `heapless::Vec` and
 //!   `heapless::String`.
+//! - **`derive`** - Derive macros `ReadXDR`, `WriteXDR`, `ConstWriteXDR` and
+//!   `ConstXDRSize`.
 //! - **`detailed-errors`** - [`ReadError`] keeps its precise variants and
 //!   diagnostic payloads; without it, it is a unit struct. Off here, and on
 //!   by default in `thruput-xdrs`, so that depending on this crate directly
@@ -158,3 +160,11 @@ mod int128;
 #[cfg(feature = "heapless")]
 #[cfg_attr(docsrs, doc(cfg(feature = "heapless")))]
 mod heapless;
+
+// The derives emit `::xdrs::...` paths unless told otherwise, so a crate that
+// depends on this crate alone derives with `#[xdr(crate = "xdr_common")]`,
+// or names this crate `xdrs` in its Cargo.toml. (`XDR`, which describes a type
+// through `xdr_repr`, stays in `thruput-xdrs`.)
+#[cfg(feature = "derive")]
+#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
+pub use xdr_derive::{ConstWriteXDR, ConstXDRSize, ReadXDR, WriteXDR};

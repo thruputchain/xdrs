@@ -118,10 +118,6 @@ pub use chunked::*;
 #[cfg_attr(docsrs, doc(cfg(feature = "repr")))]
 pub use xdr_repr;
 
-#[cfg(feature = "derive")]
-#[cfg_attr(docsrs, doc(cfg(feature = "derive")))]
-pub use xdr_derive::{ConstWriteXDR, ConstXDRSize, ReadXDR, WriteXDR};
-
 #[cfg(all(feature = "derive", feature = "repr"))]
 #[cfg_attr(docsrs, doc(cfg(all(feature = "derive", feature = "repr"))))]
 pub use xdr_derive::XDR;

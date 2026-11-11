@@ -34,13 +34,16 @@ categories = ["encoding"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.18.0" }
 xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.18.0" }
 xdrs = { package = "thruput-xdrs", path = ".", version = "0.18.0" }
-# xdr-common versions independently of the workspace (like rpc_api below), so
-# its requirement is caret, not `=`: a workspace release must not force a new
-# version of it. The version here must match xdr-common/Cargo.toml.
+# xdr-common and xdr-derive version together, independently of the workspace
+# (like rpc_api below): the derive's output names only xdr_common items, so the
+# two release as a pair, and xdr-common pins the derive with `=`. xdr-common's
+# requirement is caret: a workspace release must not force a new version of
+# it. The versions here must match xdr-common/Cargo.toml and
+# xdr-derive/Cargo.toml.
 xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "0.19.0" }
+xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.19.0" }
 thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.18.0" }
 # rpc_api versions independently of the workspace (it is the stable API
 # boundary crate); the version here must match rpc/rpc_api/Cargo.toml.
@@ -130,7 +133,7 @@ serde = ["xdr-common/serde"] # serde support for xdr-common types
 schemars = ["xdr-common/schemars"] # schemars JsonSchema support for xdr-common types
 
 # Enable optional dependencies
-derive = ["dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
+derive = ["xdr-common/derive", "dep:xdr-derive"] # derive-macros XDR, ReadXDR, WriteXDR
 repr = ["dep:xdr-repr", "alloc"] # XDR-definition datatypes
 heapless = ["xdr-common/heapless", "xdr-repr?/heapless"] # serialization and schema support for types from the `heapless` package
 

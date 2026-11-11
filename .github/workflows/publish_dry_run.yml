@@ -8,8 +8,8 @@ env:
   # before the next one resolves against it. Keep in sync with publish.yml.
   PUBLISH_PACKAGES: >-
     thruput-rpc-api
-    thruput-xdr-common
     thruput-xdr-derive
+    thruput-xdr-common
     thruput-xdr-repr
     thruput-xdrs
     thruput-rpc-driver

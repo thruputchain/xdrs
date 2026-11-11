@@ -62,21 +62,26 @@ when they change themselves:
 
 | Crate | Holds | Tag |
 |---|---|---|
-| `thruput-xdr-common` | `VecM`, `BytesM`, `StringM`; `ReadXDR`, `WriteXDR`, `EncodesAs`, `XDRDiscriminant`; the `Reader`/`Writer` interfaces and their errors; `cxs`/`txs` `ConstMaxSize` and `ConstWriter` | `xdr_common-v<version>` |
+| `thruput-xdr-common` (with `thruput-xdr-derive`) | `VecM`, `BytesM`, `StringM`; `ReadXDR`, `WriteXDR`, `EncodesAs`, `XDRDiscriminant`; the `Reader`/`Writer` interfaces and their errors; `cxs`/`txs` `ConstMaxSize` and `ConstWriter`; the `ReadXDR`/`WriteXDR`/`ConstWriteXDR`/`ConstXDRSize` derives (feature `derive`) | `xdr_common-v<version>` |
 | `thruput-rpc-api` | the RPC sender/handler traits and response/error types | `rpc_api-v<version>` |
 
-Everything else (`thruput-xdrs`'s codecs, `thruput-xdr-derive`,
-`thruput-xdr-repr`, `thruput-rpc-driver`) shares the workspace version and the
+The derive versions with `thruput-xdr-common`, which pins it with `=`: its
+output names only `xdr_common` items. Everything else (`thruput-xdrs`'s
+codecs, `thruput-xdr-repr`, `thruput-rpc-driver`) shares the workspace version
+and the
 `v<version>` tag. `thruput-xdrs` re-exports `xdr_common` at the paths these
 items have always had (`xdrs::ReadXDR`, `xdrs::serialize::reader::Reader`,
 `xdrs::txs::ConstMaxSize`, ...), so depending crates need no changes.
 
-What this buys: a breaking `thruput-xdrs` release (say 0.19 → 0.20) that
-keeps the same `thruput-xdr-common` is not a breaking change for a crate whose
-types derive XDR. Its public API names only `xdr_common` items, which are the
-same items whichever `thruput-xdrs` a downstream crate uses, so it can move to
-the new codecs in a patch release, or not at all. The derive macro's version never
-matters: proc-macro output is not part of a crate's public API.
+What this buys: a crate that only defines XDR types (no encoding or decoding
+of its own) depends on `thruput-xdr-common` with feature `derive`, and not on
+`thruput-xdrs` at all, the way generated RPC bindings depend on
+`thruput-rpc-api` and not on the driver. Whoever encodes and decodes (an
+application, a contract) depends on `thruput-xdrs` and picks its version and
+features. A breaking `thruput-xdrs` release that keeps the same
+`thruput-xdr-common` then needs no release of the types crate at all. A crate
+that does call the codecs still only exposes `xdr_common` items, so moving it
+to a new `thruput-xdrs` is a patch release for it.
 
 `xdr-common/fixture` keeps the boundary honest: its types derive every macro
 against `xdr_common` alone (`#[xdr(crate = "xdr_common")]`), so a derive that
@@ -90,9 +95,10 @@ Releasing:
   a breaking change (a new required trait item, a changed signature) is a
   minor release and is breaking for every crate that derives XDR, so batch
   those.
-- A workspace release bumps `[workspace.package] version` and the `=` pins of
-  `thruput-xdr-derive` and `thruput-xdr-repr`. It does not touch the boundary
-  crates.
+- xdr-common and xdr-derive release together: bump both `Cargo.toml`
+  versions and both root `[workspace.dependencies]` entries.
+- A workspace release bumps `[workspace.package] version` and the `=` pin of
+  `thruput-xdr-repr`. It does not touch the boundary crates.
 - `publish.yml` releases every group in one pass, skipping a boundary crate
   whose version is already tagged and published.
 

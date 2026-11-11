@@ -948,12 +948,13 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "thruput-xdr-derive",
  "thruput-xdrs",
 ]
 
 [[package]]
 name = "thruput-xdr-derive"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -1213,7 +1214,6 @@ name = "xdr-common-fixture"
 version = "0.0.0"
 dependencies = [
  "thruput-xdr-common",
- "thruput-xdr-derive",
  "thruput-xdrs",
 ]
 
