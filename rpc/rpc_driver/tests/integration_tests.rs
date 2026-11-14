@@ -16,24 +16,28 @@ mod tests {
         call
     }
 
-    use async_trait::async_trait;
     use thruput_rpc_driver::{
-        ConnectionConfig, ProgVers, RpcError, RpcSender, RpcServer, connect_client,
-        connect_client_with_config, handler::RpcHandler, tcp_connection::accept,
+        ConnectionConfig, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcSender, RpcServer,
+        connect_client, connect_client_with_config, handler::RpcHandler, tcp_connection::accept,
     };
     use tokio::io::AsyncReadExt;
 
     use super::*;
     struct EchoCallbackService {}
 
-    #[async_trait]
     impl RpcHandler for EchoCallbackService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+        ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
             println!("EchoCallbackService: dispatch: proc={proc}, data={data:?}");
-            Ok(data.to_vec())
+            let reply = reply.with(data);
+            Ok(Box::pin(async move { Ok(reply) }))
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -251,15 +255,20 @@ mod tests {
         delay: std::time::Duration,
     }
 
-    #[async_trait]
     impl RpcHandler for SleepyEchoService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+        ) -> Result<RpcFuture<'_>, RpcError> {
+            let reply = reply.with(data);
             match proc {
-                1 => Ok(data.to_vec()),
-                2 => {
+                1 => Ok(Box::pin(async move { Ok(reply) })),
+                2 => Ok(Box::pin(async move {
                     tokio::time::sleep(self.delay).await;
-                    Ok(data.to_vec())
-                }
+                    Ok(reply)
+                })),
                 _ => Err(RpcError::InvalidProcedure),
             }
         }
@@ -402,19 +411,26 @@ mod tests {
         notify: Arc<tokio::sync::Notify>,
     }
 
-    #[async_trait]
     impl RpcHandler for BlockingEchoService {
-        async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+        fn dispatch(
+            &self,
+            proc: u32,
+            data: &[u8],
+            reply: ReplyBuf,
+        ) -> Result<RpcFuture<'_>, RpcError> {
             if proc != 1 {
                 return Err(RpcError::InvalidProcedure);
             }
             println!(
                 "BlockingEchoService: dispatch: proc={proc}, data={data:?}, waiting for notification"
             );
-            // Wait for notification before returning
-            self.notify.notified().await;
-            println!("BlockingEchoService: notified, returning response");
-            Ok(data.to_vec())
+            let reply = reply.with(data);
+            Ok(Box::pin(async move {
+                // Wait for notification before returning
+                self.notify.notified().await;
+                println!("BlockingEchoService: notified, returning response");
+                Ok(reply)
+            }))
         }
 
         fn prog_vers(&self) -> ProgVers {
@@ -1061,12 +1077,16 @@ mod tests {
             notify: Arc<tokio::sync::Notify>,
         }
 
-        #[async_trait]
         impl RpcHandler for CountingService {
-            async fn dispatch(&self, _proc: u32, _data: &[u8]) -> Result<Vec<u8>, RpcError> {
+            fn dispatch(
+                &self,
+                _proc: u32,
+                _data: &[u8],
+                reply: ReplyBuf,
+            ) -> Result<RpcFuture<'_>, RpcError> {
                 self.count.fetch_add(1, Ordering::SeqCst);
                 self.notify.notify_one();
-                Ok(vec![])
+                Ok(Box::pin(async move { Ok(reply) }))
             }
             fn prog_vers(&self) -> ProgVers {
                 ProgVers::new(1, 1)

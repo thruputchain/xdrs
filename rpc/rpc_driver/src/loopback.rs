@@ -24,10 +24,15 @@
 //! use thruput_rpc_driver::{ProgVers, RpcSender, ServiceMap, loopback::LoopbackLink};
 //! # use thruput_rpc_driver::{RpcError, handler::RpcHandler};
 //! # struct Echo;
-//! # #[async_trait::async_trait]
 //! # impl RpcHandler for Echo {
-//! #     async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
-//! #         Ok(data.to_vec())
+//! #     fn dispatch(
+//! #         &self,
+//! #         _proc: u32,
+//! #         data: &[u8],
+//! #         reply: thruput_rpc_driver::ReplyBuf,
+//! #     ) -> Result<thruput_rpc_driver::RpcFuture<'_>, RpcError> {
+//! #         let reply = reply.with(data);
+//! #         Ok(Box::pin(async move { Ok(reply) }))
 //! #     }
 //! #     fn prog_vers(&self) -> ProgVers { ProgVers::new(100, 1) }
 //! # }
@@ -65,7 +70,7 @@ use async_trait::async_trait;
 use tokio::sync::Notify;
 
 use crate::{
-    CallBuf, ProgVers, RpcError, RpcResponse, RpcSender, ServiceMap,
+    CallBuf, ProgVers, ReplyBuf, RpcError, RpcResponse, RpcSender, ServiceMap,
     connection::{CallSlot, ConnectionState, PendingCall, deliver_reply},
     context::with_peer,
     tasks::dispatch::CatchUnwind,
@@ -192,7 +197,7 @@ impl LoopbackLink {
     }
 }
 
-type HandlerFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcError>> + Send + 'a>>;
+type HandlerFuture<'a> = Pin<Box<dyn Future<Output = Result<ReplyBuf, RpcError>> + Send + 'a>>;
 
 /// Drops the handler under a panic guard, so a destructor that panics
 /// cannot unwind into a caller whose call was poisoned. Panics while
@@ -200,7 +205,7 @@ type HandlerFuture<'a> = Pin<Box<dyn Future<Output = Result<Vec<u8>, RpcError>> 
 struct GuardDrop<'a>(Option<HandlerFuture<'a>>);
 
 impl Future for GuardDrop<'_> {
-    type Output = Result<Vec<u8>, RpcError>;
+    type Output = Result<ReplyBuf, RpcError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.0
@@ -308,11 +313,19 @@ impl LoopbackSender {
         progvers: ProgVers,
         proc: u32,
         call: &CallBuf,
-    ) -> Result<Vec<u8>, RpcError> {
-        let handler = with_peer(
-            self.peer(),
-            self.services().dispatch(2, progvers, proc, call.payload()),
-        );
+    ) -> Result<ReplyBuf, RpcError> {
+        // Decoding runs on the first poll, so a panic there is caught too.
+        let handler = with_peer(self.peer(), async {
+            self.services()
+                .dispatch(
+                    2,
+                    progvers,
+                    proc,
+                    call.payload(),
+                    ReplyBuf::from_spare(crate::connection::take_buffer()),
+                )?
+                .await
+        });
         match CatchUnwind(GuardDrop(Some(Box::pin(handler)))).await {
             Ok(result) => result,
             Err(panic) => {
@@ -341,7 +354,7 @@ impl LoopbackSender {
         let calls = &self.inner.calls[self.to].state;
         // `None`: the call was dropped while its handler finished.
         let _ = match result {
-            Ok(reply) => deliver_reply(calls, xid, Ok(&reply)),
+            Ok(reply) => deliver_reply(calls, xid, Ok(reply.payload())),
             Err(error) => deliver_reply(calls, xid, Err(crate::rpc_error::as_received(error))),
         };
     }
@@ -352,7 +365,7 @@ impl LoopbackSender {
         progvers: ProgVers,
         proc: u32,
         call: &CallBuf,
-    ) -> Result<Vec<u8>, RpcError> {
+    ) -> Result<ReplyBuf, RpcError> {
         self.travel().await;
         let result = self.dispatch(progvers, proc, call).await;
         self.travel().await;

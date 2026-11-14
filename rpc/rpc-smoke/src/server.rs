@@ -25,10 +25,9 @@ mod runtime;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use clap::Parser;
 use thruput_rpc_driver::{
-    ConnectionConfig, ProgVers, RpcError, RpcServer,
+    ConnectionConfig, ProgVers, ReplyBuf, RpcError, RpcFuture, RpcServer,
     handler::{RpcHandler, ServiceMap},
 };
 use tokio::net::TcpListener;
@@ -46,12 +45,30 @@ struct SmokeHandler {
     shared: Arc<SharedState>,
 }
 
-#[async_trait]
 impl RpcHandler for SmokeHandler {
-    async fn dispatch(&self, _proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+    fn dispatch(
+        &self,
+        _proc: u32,
+        data: &[u8],
+        reply: ReplyBuf,
+    ) -> Result<RpcFuture<'_>, RpcError> {
         let (tag, duration_us) = decode_payload(data);
         let dur = Duration::from_micros(duration_us as u64);
+        // Echo the payload back
+        let reply = reply.with(data);
+        Ok(Box::pin(async move {
+            self.simulate(tag, dur).await?;
+            Ok(reply)
+        }))
+    }
 
+    fn prog_vers(&self) -> ProgVers {
+        ProgVers::new(SMOKE_PROG, 1)
+    }
+}
+
+impl SmokeHandler {
+    async fn simulate(&self, tag: u8, dur: Duration) -> Result<(), RpcError> {
         match tag {
             TAG_ECHO => {}
             TAG_SLEEP => {
@@ -92,13 +109,7 @@ impl RpcHandler for SmokeHandler {
                 return Err(RpcError::GarbageArguments);
             }
         }
-
-        // Echo the payload back
-        Ok(data.to_vec())
-    }
-
-    fn prog_vers(&self) -> ProgVers {
-        ProgVers::new(SMOKE_PROG, 1)
+        Ok(())
     }
 }
 

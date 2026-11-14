@@ -11,7 +11,9 @@
 
 use std::sync::Arc;
 
-use thruput_rpc_api::{ProgVers, ProgramError, RpcError, RpcHandler, RpcSender};
+use thruput_rpc_api::{
+    ProgVers, ProgramError, ReplyBuf, RpcError, RpcFuture, RpcHandler, RpcSender,
+};
 
 /// Program number for the fixture echo service.
 pub const ECHO_PROG: u32 = 3123125;
@@ -45,23 +47,29 @@ impl std::fmt::Debug for EchoDispatcher {
     }
 }
 
-#[async_trait::async_trait]
 impl RpcHandler for EchoDispatcher {
     fn prog_vers(&self) -> ProgVers {
         ProgVers::new(ECHO_PROG, ECHO_VERS)
     }
 
-    async fn dispatch(&self, proc: u32, data: &[u8]) -> Result<Vec<u8>, RpcError> {
+    fn dispatch(&self, proc: u32, data: &[u8], reply: ReplyBuf) -> Result<RpcFuture<'_>, RpcError> {
         match proc {
-            0 => {
+            0 => Ok(Box::pin(async move {
                 self.inner.null().await.map_err(|_| RpcError::SystemError)?;
-                Ok(vec![])
+                Ok(reply)
+            })),
+            1 => {
+                // Decode the arguments before the future exists.
+                let data = data.to_vec();
+                Ok(Box::pin(async move {
+                    let echoed = self
+                        .inner
+                        .echo(data)
+                        .await
+                        .map_err(|_| RpcError::SystemError)?;
+                    Ok(reply.with(&echoed))
+                }))
             }
-            1 => self
-                .inner
-                .echo(data.to_vec())
-                .await
-                .map_err(|_| RpcError::SystemError),
             _ => Err(RpcError::InvalidProcedure),
         }
     }
