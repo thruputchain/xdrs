@@ -27,10 +27,9 @@ fn main() {
     // For `-dirty`: any change to this crate's files.
     println!("cargo:rerun-if-changed=.");
 
-    let commit = match vcs_info_commit() {
-        Some(commit) => commit,
-        None => git_commit().unwrap_or_else(|| "unknown".into()),
-    };
+    let commit = vcs_info_commit()
+        .or_else(git_commit)
+        .unwrap_or_else(|| "unknown".into());
     println!("cargo:rustc-env=XDRC_COMMIT={commit}");
 }
 

@@ -55,8 +55,8 @@ thruput-xdr-codegen [OPTIONS] [-o FILE] file.x
 - The options `--rust-feature`, `--rust-no-feature` and
   `--recursive_type` may be repeated. Naming a feature both on and off is
   an error.
-- If writing the output fails, thruput-xdr-codegen removes the partial file,
-  so a build never takes a truncated file as current.
+- If writing the output fails, the partial file is removed, so a build
+  never takes a truncated file as current.
 - Exit status: 0 on success, 1 on any error, including a warning under
   `--strict`.
 
@@ -68,10 +68,9 @@ xdrs commit it was built from, followed by the `.x` file's header comment:
 ```
 
 The commit ends in `-dirty` if `xdr-codegen/` had uncommitted changes when
-thruput-xdr-codegen was built, and is `unknown` if thruput-xdr-codegen was
-built without git. Built from a packaged crate, as from crates.io, it is the
-commit the crate was packaged from. `thruput-xdr-codegen --version` prints
-the same.
+the command was built, and is `unknown` if it was built without git. Built
+from a packaged crate, as from crates.io, it is the commit the crate was
+packaged from. `--version` prints the same.
 
 ### As a library
 

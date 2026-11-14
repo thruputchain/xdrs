@@ -6,15 +6,14 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use xdr_codegen::NAME;
 use xdr_codegen::diag::{LineIndex, Severity};
 use xdr_codegen::rust::Options;
 
-/// The command's name, which prefixes its own error messages.
-const NAME: &str = env!("CARGO_BIN_NAME");
-
 const USAGE: &str = concat!(
     "usage: ",
-    env!("CARGO_BIN_NAME"),
+    // `NAME`, spelled out because `concat!` takes only literals.
+    env!("CARGO_PKG_NAME"),
     " [OPTIONS] [-o FILE] file.x
   --help                      print usage and exit
   --version                   print version and exit
