@@ -5,11 +5,18 @@ replaces the Rust backend of x23c, the C++ compiler in hogd's `x23/x23c`,
 and accepts the same dialect and the same options as `x23c --rust`. Its
 output has the same public API as x23c's, with tidier code.
 
-The crate is `thruput-xdr-codegen` (library `xdr_codegen`). It is not
-published. Why xdrc exists and how it is built are in [DESIGN.md](DESIGN.md);
+The crate is `thruput-xdr-codegen` (library `xdr_codegen`). It is
+published on crates.io with this workspace's other crates, at the same
+version. Why xdrc exists and how it is built are in [DESIGN.md](DESIGN.md);
 deferred work is in [TODO.md](TODO.md).
 
 ## Installing
+
+From crates.io:
+
+```shell
+cargo install --locked thruput-xdr-codegen@VERSION --bin xdrc
+```
 
 From a checkout of this repository:
 
@@ -59,8 +66,9 @@ it was built from, followed by the `.x` file's header comment:
 ```
 
 The commit ends in `-dirty` if `xdr-codegen/` had uncommitted changes when
-xdrc was built, and is `unknown` if xdrc was built without git. `xdrc
---version` prints the same.
+xdrc was built, and is `unknown` if xdrc was built without git. Built from
+a packaged crate, as from crates.io, it is the commit the crate was
+packaged from. `xdrc --version` prints the same.
 
 ### As a library
 

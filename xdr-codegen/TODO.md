@@ -57,5 +57,3 @@ members.
   emits for programs. Generate it from a `.x` fixture with xdrc.
 - **Remove x23c's Rust backend** (`gen_rs.cc` and `--rust`) from hogd,
   once nothing generates Rust with it.
-- **Publish the crate**, which is `publish = false` until xdrc replaces
-  x23c's Rust backend.
