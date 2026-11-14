@@ -1,6 +1,6 @@
 [package]
 name = "thruput-xdrc-check"
-description = "Compiles and tests xdrc's Rust output against this workspace's crates"
+description = "Compiles and tests thruput-xdr-codegen's Rust output against this workspace's crates"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true

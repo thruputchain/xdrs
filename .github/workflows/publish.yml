@@ -8,7 +8,7 @@
 #      independently of the workspace, releases under its own
 #      `rpc_api-v<version>` tag, and is skipped when a release doesn't bump
 #      it (and its package is unchanged since its tag).
-#   2. The workspace-versioned crates, `thruput-xdr-codegen` (xdrc),
+#   2. The workspace-versioned crates, `thruput-xdr-codegen` (the compiler),
 #      `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr`,
 #      `thruput-xdrs` and `thruput-rpc-driver`, under the shared
 #      `v<version>` tag. `thruput-xdr-codegen` depends on none of the

@@ -49,8 +49,8 @@ On crates.io every crate here is published with a `thruput-` prefix:
 `thruput-xdr-codegen`, `thruput-rpc-api` and `thruput-rpc-driver`. The `xdr`
 crates keep their library names (`xdrs::`, `xdr_codegen::`); the rpc crates
 are imported by package name (`thruput_rpc_api::`, `thruput_rpc_driver::`).
-`thruput-xdr-codegen` also installs `xdrc`, the XDR-to-Rust compiler (see
-[`xdr-codegen/`](xdr-codegen/README.md)).
+`thruput-xdr-codegen` is also the XDR-to-Rust compiler, and installs a
+command of the same name (see [`xdr-codegen/`](xdr-codegen/README.md)).
 
 ## TODOs
 
