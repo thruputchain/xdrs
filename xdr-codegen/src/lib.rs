@@ -32,7 +32,11 @@ pub mod rust;
 
 use diag::{Diagnostic, Severity};
 
-/// xdrc's version and the xdrs commit it was built from, as in
+/// The generator's name, which is also its command's: the header of every
+/// generated file and `--version` give it with [`VERSION`].
+pub const NAME: &str = env!("CARGO_PKG_NAME");
+
+/// This crate's version and the xdrs commit it was built from, as in
 /// `0.18.0 (xdrs 0123abcd...)`. The commit ends in `-dirty` if this crate
 /// had uncommitted changes, and is `unknown` without git.
 pub const VERSION: &str = concat!(

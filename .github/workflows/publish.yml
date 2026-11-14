@@ -8,11 +8,12 @@
 #      independently of the workspace, releases under its own
 #      `rpc_api-v<version>` tag, and is skipped when a release doesn't bump
 #      it (and its package is unchanged since its tag).
-#   2. The workspace-versioned crates, `thruput-xdr-common`,
-#      `thruput-xdr-derive`, `thruput-xdr-repr`, `thruput-xdrs` and
-#      `thruput-rpc-driver`, under the shared `v<version>` tag.
-#      `thruput-rpc-driver` depends on the published `thruput-xdrs` and
-#      `thruput-rpc-api`, so it goes last.
+#   2. The workspace-versioned crates, `thruput-xdr-codegen` (the compiler),
+#      `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr`,
+#      `thruput-xdrs` and `thruput-rpc-driver`, under the shared
+#      `v<version>` tag. `thruput-xdr-codegen` depends on none of the
+#      others. `thruput-rpc-driver` depends on the published `thruput-xdrs`
+#      and `thruput-rpc-api`, so it goes last.
 #
 # Nothing is tagged until the dry run and both groups' checks pass, so a run
 # that fails before tagging leaves the repository untouched. Publishing skips
@@ -56,6 +57,7 @@ env:
   # Workspace-versioned crates published under the `v<version>` tag, in
   # dependency order.
   PRIMARY_PACKAGES: >-
+    thruput-xdr-codegen
     thruput-xdr-common
     thruput-xdr-derive
     thruput-xdr-repr

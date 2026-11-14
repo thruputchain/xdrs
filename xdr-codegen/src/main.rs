@@ -1,4 +1,4 @@
-//! `xdrc`: compiles a `.x` file to Rust.
+//! `thruput-xdr-codegen`: compiles a `.x` file to Rust.
 //!
 //! Accepts the options `x23c --rust` does, so it can replace it in build
 //! scripts.
@@ -6,11 +6,15 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use xdr_codegen::NAME;
 use xdr_codegen::diag::{LineIndex, Severity};
 use xdr_codegen::rust::Options;
 
-const USAGE: &str = "\
-usage: xdrc [OPTIONS] [-o FILE] file.x
+const USAGE: &str = concat!(
+    "usage: ",
+    // `NAME`, spelled out because `concat!` takes only literals.
+    env!("CARGO_PKG_NAME"),
+    " [OPTIONS] [-o FILE] file.x
   --help                      print usage and exit
   --version                   print version and exit
   --strict                    fail if there are any warnings
@@ -20,7 +24,8 @@ usage: xdrc [OPTIONS] [-o FILE] file.x
   --recursive_type TYPE       box TYPE wherever it appears
   --rust-feature FEATURE      treat FEATURE as on, instead of gating on it
   --rust-no-feature FEATURE   treat FEATURE as off, leaving out what it gates
-";
+"
+);
 
 fn main() -> ExitCode {
     match run() {
@@ -35,7 +40,7 @@ fn main() -> ExitCode {
 }
 
 fn usage_error(message: &str) -> String {
-    format!("xdrc: {message}\n{USAGE}")
+    format!("{NAME}: {message}\n{USAGE}")
 }
 
 /// Fails with a message for `main` to print, or with an empty one when the
@@ -63,7 +68,7 @@ fn run() -> Result<(), String> {
                 return Ok(());
             }
             "--version" => {
-                println!("xdrc {}", xdr_codegen::VERSION);
+                println!("{NAME} {}", xdr_codegen::VERSION);
                 return Ok(());
             }
             "--strict" => strict = true,
@@ -119,7 +124,7 @@ fn run() -> Result<(), String> {
             .iter()
             .any(|d| d.severity == Severity::Warning)
     {
-        return Err("xdrc: --strict: warnings are treated as errors".into());
+        return Err(format!("{NAME}: --strict: warnings are treated as errors"));
     }
     let code = xdr_codegen::rust::generate(&parsed.spec, &options).map_err(|diags| {
         report(&diags);
