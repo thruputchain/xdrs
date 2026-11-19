@@ -46,9 +46,11 @@ the full API.
 
 On crates.io every crate here is published with a `thruput-` prefix:
 `thruput-xdrs`, `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr`,
-`thruput-rpc-api` and `thruput-rpc-driver`. The `xdr` crates keep their
-library names (`xdrs::`); the rpc crates are imported by package name
-(`thruput_rpc_api::`, `thruput_rpc_driver::`).
+`thruput-xdr-codegen`, `thruput-rpc-api` and `thruput-rpc-driver`. The `xdr`
+crates keep their library names (`xdrs::`, `xdr_codegen::`); the rpc crates
+are imported by package name (`thruput_rpc_api::`, `thruput_rpc_driver::`).
+`thruput-xdr-codegen` is also the XDR-to-Rust compiler, and installs a
+command of the same name (see [`xdr-codegen/`](xdr-codegen/README.md)).
 
 ## Versioning and releases
 
@@ -56,7 +58,7 @@ The crates release in three groups, each with its own version and tag:
 
 | Group | Crates | Tag |
 |---|---|---|
-| workspace | `thruput-xdrs`, `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr` | `v<version>` |
+| workspace | `thruput-xdrs`, `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr`, `thruput-xdr-codegen` | `v<version>` |
 | rpc_api | `thruput-rpc-api` | `rpc_api-v<version>` |
 | rpc_driver | `thruput-rpc-driver` | `rpc_driver-v<version>` |
 

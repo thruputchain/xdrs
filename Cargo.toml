@@ -44,7 +44,7 @@ thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.18.0" }
 thruput-rpc-api = { path = "rpc/rpc_api", version = "0.4.0" }
 
 pretty_assertions = "1.4.1"
-heapless = "0.9.3"
+heapless = "0.9.4"
 
 # Workspace lints are the RPC crates' policy (rpc/*). The xdrs crates set
 # their own `[lints]` tables and don't inherit these.
@@ -80,6 +80,25 @@ redundant_pub_crate = "warn"
 upper_case_acronyms = "allow"
 match_single_binding = "allow"
 
+# Build and test share one profile, so these keep both small: without them,
+# each of the ~100 test and bench executables carries its own copy of every
+# dependency's full DWARF, about 90% of its size. (thruput-protocol-rs uses the
+# same settings.) Use --release for optimized binaries.
+[profile.dev]
+# On Linux, leave the DWARF in per-object .dwo files instead of copying it into
+# every linked binary. Debuggers and backtraces still find it; macOS already
+# defaults to this.
+split-debuginfo = "unpacked"
+
+# Dependencies keep file:line for backtraces; only stepping into their source
+# in a debugger degrades. Workspace crates keep full debuginfo.
+[profile.dev.package."*"]
+debug = "line-tables-only"
+
+# Build scripts and proc macros are build-time machinery nobody debugs.
+[profile.dev.build-override]
+debug = false
+
 [package]
 name = "thruput-xdrs"
 version.workspace = true
@@ -114,8 +133,13 @@ xdr-repr = { workspace = true, optional = true }
 heapless = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = "0.6.0"
+# Without the default `plotters` feature: it only draws the HTML report's
+# charts, and pulls in wasm-bindgen, js-sys and web-sys. Reports still get
+# gnuplot charts where gnuplot is installed; measurements are unchanged.
+criterion = { version = "0.6.0", default-features = false, features = ["cargo_bench_support", "rayon"] }
 hex = "0.4.3"
+# Used through check_format! (xdr-repr), which expands to pretty_assertions
+# in the calling crate; cargo-shear can't see that.
 pretty_assertions = { workspace = true }
 
 [features]

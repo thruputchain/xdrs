@@ -8,6 +8,7 @@ env:
   # before the next one resolves against it. Keep in sync with publish.yml.
   PUBLISH_PACKAGES: >-
     thruput-rpc-api
+    thruput-xdr-codegen
     thruput-xdr-common
     thruput-xdr-derive
     thruput-xdr-repr
@@ -16,6 +17,7 @@ env:
   # The release groups, as in publish.yml.
   API_PACKAGES: thruput-rpc-api
   PRIMARY_PACKAGES: >-
+    thruput-xdr-codegen
     thruput-xdr-common
     thruput-xdr-derive
     thruput-xdr-repr
@@ -69,21 +71,21 @@ jobs:
       # As in publish.yml: each group against its own previous release, before
       # the dry run fills ./vendor/.
       - name: Semver check (workspace crates)
-        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
         with:
           packages: ${{ env.PRIMARY_PACKAGES }}
           tag-pattern: 'v[0-9]*.[0-9]*.[0-9]*'
           semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
 
       - name: Semver check (thruput-rpc-api)
-        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
         with:
           packages: ${{ env.API_PACKAGES }}
           tag-pattern: 'rpc_api-v[0-9]*.[0-9]*.[0-9]*'
           semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
 
       - name: Semver check (thruput-rpc-driver)
-        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
         with:
           packages: ${{ env.DRIVER_PACKAGES }}
           tag-pattern: 'rpc_driver-v[0-9]*.[0-9]*.[0-9]*'

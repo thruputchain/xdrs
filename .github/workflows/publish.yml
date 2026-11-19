@@ -7,9 +7,10 @@
 #   1. `thruput-rpc-api` (library `rpc_api`): the stable API boundary crate
 #      (sender/handler traits and shared response/error types), tagged
 #      `rpc_api-v<version>`.
-#   2. The workspace-versioned crates, `thruput-xdr-common`,
-#      `thruput-xdr-derive`, `thruput-xdr-repr` and `thruput-xdrs`, under the
-#      shared `v<version>` tag.
+#   2. The workspace-versioned crates, `thruput-xdr-codegen` (the compiler),
+#      `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr` and
+#      `thruput-xdrs`, under the shared `v<version>` tag.
+#      `thruput-xdr-codegen` depends on none of the others.
 #   3. `thruput-rpc-driver`, tagged `rpc_driver-v<version>`. It depends on
 #      the published `thruput-xdrs` and `thruput-rpc-api`, so it goes last.
 #
@@ -64,6 +65,7 @@ env:
   # Workspace-versioned crates published under the `v<version>` tag, in
   # dependency order.
   PRIMARY_PACKAGES: >-
+    thruput-xdr-codegen
     thruput-xdr-common
     thruput-xdr-derive
     thruput-xdr-repr
@@ -123,26 +125,28 @@ jobs:
       # Each group's version against its own previous release (the nearest
       # tag with its prefix): the bump must be large enough for the API
       # changes since then. A group with no release tag yet is skipped with a
-      # notice. These must run before the dry run, which extracts every crate
+      # notice. A package its baseline doesn't have yet (a crate
+      # published for the first time) is skipped too, which needs this
+      # action at 3e0d08d, one commit past the pin of the other steps. These must run before the dry run, which extracts every crate
       # into ./vendor/, where cargo-semver-checks would see each package
       # defined twice; and before tagging, after which the baseline would be
       # the new tag itself.
       - name: Semver check (workspace crates)
-        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
         with:
           packages: ${{ env.PRIMARY_PACKAGES }}
           tag-pattern: 'v[0-9]*.[0-9]*.[0-9]*'
           semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
 
       - name: Semver check (thruput-rpc-api)
-        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
         with:
           packages: ${{ env.API_PACKAGES }}
           tag-pattern: 'rpc_api-v[0-9]*.[0-9]*.[0-9]*'
           semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
 
       - name: Semver check (thruput-rpc-driver)
-        uses: thruputchain/actions/cargo-semver-checks@484be875e4e630d26594110bcc0ab6bf42eeaba7
+        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
         with:
           packages: ${{ env.DRIVER_PACKAGES }}
           tag-pattern: 'rpc_driver-v[0-9]*.[0-9]*.[0-9]*'

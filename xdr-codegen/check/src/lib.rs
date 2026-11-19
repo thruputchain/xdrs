@@ -1,6 +1,6 @@
-//! Compiles and tests xdrc's Rust output for check.x and plain.x, which
-//! `xdr-codegen/tests/golden.rs` keeps current. Adapted from hogd's
-//! `x23/tests/rust_check`.
+//! Compiles and tests thruput-xdr-codegen's Rust output for check.x and
+//! plain.x, which `xdr-codegen/tests/golden.rs` keeps current. Adapted from
+//! hogd's `x23/tests/rust_check`.
 
 #[rustfmt::skip]
 mod generated;
