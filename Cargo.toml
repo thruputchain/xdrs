@@ -16,7 +16,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.18.0"
+version = "0.19.0"
 edition = "2024"
 rust-version = "1.96"
 authors = ["Thruput Team"]
@@ -33,9 +33,9 @@ categories = ["encoding"]
 # Cargo requires explicit versions for dependencies when publishing,
 # as path specifications are stripped out. Remember to keep this in sync.
 [workspace.dependencies]
-xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.18.0" }
-xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.18.0" }
-xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=0.18.0" }
+xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.19.0" }
+xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.19.0" }
+xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=0.19.0" }
 # The caret requirements below (`xdrs`, `thruput-rpc-driver`,
 # `thruput-rpc-api`) are minimum compatible versions, not the current ones:
 # raise one only for a breaking (minor) release of that crate, or when a
@@ -44,11 +44,11 @@ xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=
 # depends on xdrs and thruput-rpc-api), so raising one for a patch release
 # changes those crates' packages too and forces them to release. A path
 # dependency still builds against the local crate.
-xdrs = { package = "thruput-xdrs", path = ".", version = "0.18.0" }
+xdrs = { package = "thruput-xdrs", path = ".", version = "0.19.0" }
 # thruput-rpc-driver and thruput-rpc-api version independently of the
 # workspace (rpc-api is the stable API boundary crate; the driver releases on
 # its own schedule).
-thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.18.0" }
+thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.19.0" }
 thruput-rpc-api = { path = "rpc/rpc_api", version = "0.4.0" }
 
 pretty_assertions = "1.4.1"

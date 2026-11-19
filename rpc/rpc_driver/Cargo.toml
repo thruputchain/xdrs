@@ -5,7 +5,7 @@ name = "thruput-rpc-driver"
 # not publish a new thruput-xdrs. It depends on thruput-xdrs and
 # thruput-rpc-api with caret requirements. See "Versioning and releases" in
 # the README.
-version = "0.18.0"
+version = "0.19.0"
 edition = "2024"
 rust-version.workspace = true
 authors = ["Thruput Team"]
