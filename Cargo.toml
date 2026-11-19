@@ -43,7 +43,7 @@ thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.18.0" }
 thruput-rpc-api = { path = "rpc/rpc_api", version = "0.4.0" }
 
 pretty_assertions = "1.4.1"
-heapless = "0.9.3"
+heapless = "0.9.4"
 
 # Workspace lints are the RPC crates' policy (rpc/*). The xdrs crates set
 # their own `[lints]` tables and don't inherit these.
