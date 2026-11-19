@@ -132,8 +132,13 @@ xdr-repr = { workspace = true, optional = true }
 heapless = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = "0.6.0"
+# Without the default `plotters` feature: it only draws the HTML report's
+# charts, and pulls in wasm-bindgen, js-sys and web-sys. Reports still get
+# gnuplot charts where gnuplot is installed; measurements are unchanged.
+criterion = { version = "0.6.0", default-features = false, features = ["cargo_bench_support", "rayon"] }
 hex = "0.4.3"
+# Used through check_format! (xdr-repr), which expands to pretty_assertions
+# in the calling crate; cargo-shear can't see that.
 pretty_assertions = { workspace = true }
 
 [features]
