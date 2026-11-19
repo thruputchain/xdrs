@@ -81,7 +81,7 @@ breaking level:
   change to what an existing type encodes to. protocol-rs then has to bump
   every crate, so batch breaking changes into as few releases as possible.
 
-`publish.yml` (and the "Release dry run checks" workflow) runs
+`publish.yml` (and `publish_dry_run.yml`) runs
 cargo-semver-checks on each group against that group's previous release tag,
 so a patch bump over an API break fails before anything is tagged. It
 cannot see a changed wire encoding behind an unchanged API (like encoding a

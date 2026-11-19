@@ -24,9 +24,8 @@
 #
 # Nothing is tagged until the semver checks, the dry run and every group's
 # checks pass, so a run that fails before tagging leaves the repository
-# untouched. Publishing skips
-# versions crates.io already has, so a run that fails partway is resumed by
-# dispatching it again on the tagged commit.
+# untouched. Publishing skips versions crates.io already has, so a run that
+# fails partway is resumed by dispatching it again on the tagged commit.
 #
 # Authentication: crates.io trusted publishing (GitHub OIDC) for existing
 # crates; see crates-io-publish's README in thruputchain/actions. The job runs
@@ -125,24 +124,26 @@ jobs:
       # Each group's version against its own previous release (the nearest
       # tag with its prefix): the bump must be large enough for the API
       # changes since then. A group with no release tag yet is skipped with a
-      # notice. A package its baseline doesn't have yet (a crate
-      # published for the first time) is skipped too, which needs this
-      # action at 3e0d08d, one commit past the pin of the other steps. These must run before the dry run, which extracts every crate
-      # into ./vendor/, where cargo-semver-checks would see each package
-      # defined twice; and before tagging, after which the baseline would be
-      # the new tag itself.
-      - name: Semver check (workspace crates)
-        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
-        with:
-          packages: ${{ env.PRIMARY_PACKAGES }}
-          tag-pattern: 'v[0-9]*.[0-9]*.[0-9]*'
-          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
-
+      # notice. A package its baseline doesn't have yet (a crate published
+      # for the first time) is skipped too, which needs this action at
+      # 3e0d08d, one commit past the pin of the other steps.
+      #
+      # These must run before the dry run, which extracts every crate into
+      # ./vendor/, where cargo-semver-checks would see each package defined
+      # twice; and before tagging, after which the baseline would be the new
+      # tag itself.
       - name: Semver check (thruput-rpc-api)
         uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
         with:
           packages: ${{ env.API_PACKAGES }}
           tag-pattern: 'rpc_api-v[0-9]*.[0-9]*.[0-9]*'
+          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
+
+      - name: Semver check (workspace crates)
+        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          tag-pattern: 'v[0-9]*.[0-9]*.[0-9]*'
           semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
 
       - name: Semver check (thruput-rpc-driver)

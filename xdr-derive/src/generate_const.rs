@@ -756,10 +756,10 @@ mod tests {
                 a: u32,
             }
         };
-        for toks in [const_write_xdr(&input), const_xdr_size(&input)] {
-            let toks = normalize_tokens(&toks.unwrap().to_string());
-            assert!(toks.contains("usemy_sdk::xdrs::cxs;"), "{toks}");
-            assert!(!toks.contains("use::xdrs::"), "{toks}");
+        for generated in [const_write_xdr(&input), const_xdr_size(&input)] {
+            let tokens = normalize_tokens(&generated.unwrap().to_string());
+            assert!(tokens.contains("usemy_sdk::xdrs::cxs;"), "{tokens}");
+            assert!(!tokens.contains("use::xdrs::"), "{tokens}");
         }
     }
 

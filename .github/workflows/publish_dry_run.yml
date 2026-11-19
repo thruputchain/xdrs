@@ -23,6 +23,7 @@ env:
     thruput-xdr-repr
     thruput-xdrs
   DRIVER_PACKAGES: thruput-rpc-driver
+  # Pinned so a new lint release can't fail a release without a repo change.
   SEMVER_CHECKS_VERSION: '0.50.0'
 
 permissions:
@@ -70,18 +71,18 @@ jobs:
 
       # As in publish.yml: each group against its own previous release, before
       # the dry run fills ./vendor/.
-      - name: Semver check (workspace crates)
-        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
-        with:
-          packages: ${{ env.PRIMARY_PACKAGES }}
-          tag-pattern: 'v[0-9]*.[0-9]*.[0-9]*'
-          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
-
       - name: Semver check (thruput-rpc-api)
         uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
         with:
           packages: ${{ env.API_PACKAGES }}
           tag-pattern: 'rpc_api-v[0-9]*.[0-9]*.[0-9]*'
+          semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
+
+      - name: Semver check (workspace crates)
+        uses: thruputchain/actions/cargo-semver-checks@3e0d08d054591a349331ab57fe72197d6ccc0cf3
+        with:
+          packages: ${{ env.PRIMARY_PACKAGES }}
+          tag-pattern: 'v[0-9]*.[0-9]*.[0-9]*'
           semver-checks-version: ${{ env.SEMVER_CHECKS_VERSION }}
 
       - name: Semver check (thruput-rpc-driver)
