@@ -79,6 +79,25 @@ redundant_pub_crate = "warn"
 upper_case_acronyms = "allow"
 match_single_binding = "allow"
 
+# Build and test share one profile, so these keep both small: without them,
+# each of the ~100 test and bench executables carries its own copy of every
+# dependency's full DWARF, about 90% of its size. (thruput-protocol-rs uses the
+# same settings.) Use --release for optimized binaries.
+[profile.dev]
+# On Linux, leave the DWARF in per-object .dwo files instead of copying it into
+# every linked binary. Debuggers and backtraces still find it; macOS already
+# defaults to this.
+split-debuginfo = "unpacked"
+
+# Dependencies keep file:line for backtraces; only stepping into their source
+# in a debugger degrades. Workspace crates keep full debuginfo.
+[profile.dev.package."*"]
+debug = "line-tables-only"
+
+# Build scripts and proc macros are build-time machinery nobody debugs.
+[profile.dev.build-override]
+debug = false
+
 [package]
 name = "thruput-xdrs"
 version.workspace = true
