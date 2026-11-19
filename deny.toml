@@ -7,7 +7,22 @@
 all-features = true
 
 [advisories]
-ignore = []
+# heapless 0.9.3 (2026-11-18 advisories, all fixed in 0.9.4). 0.9.4 was
+# published 2026-11-18, so cooldown.toml's 15-day minimum publish age keeps
+# it out until 2026-12-03: then run `cargo update -p heapless` and remove
+# these entries. None of the affected APIs is used here: xdrs uses only
+# heapless::Vec and heapless::String, by reference.
+ignore = [
+    { id = "RUSTSEC-2026-0574", reason = "heapless < 0.9.4; xdrs never uses sorted_linked_list::FindMutView::pop" },
+    { id = "RUSTSEC-2026-0575", reason = "heapless < 0.9.4; xdrs never uses spsc::Spsc::peek" },
+    { id = "RUSTSEC-2026-0576", reason = "heapless < 0.9.4; xdrs never uses index_map::IndexMap::truncate" },
+    { id = "RUSTSEC-2026-0577", reason = "heapless < 0.9.4; xdrs never uses the affected Deque/HistoryBuf/IndexMap methods or vec::IntoIter (it never consumes a heapless::Vec by value)" },
+    { id = "RUSTSEC-2026-0578", reason = "heapless < 0.9.4; xdrs never uses sorted_linked_list::SortedLinkedList::zeroize" },
+    { id = "RUSTSEC-2026-0579", reason = "heapless < 0.9.4; xdrs never uses Deque::try_from" },
+    { id = "RUSTSEC-2026-0580", reason = "heapless < 0.9.4; xdrs never uses arc_pool, box_pool or object_pool" },
+    { id = "RUSTSEC-2026-0581", reason = "heapless < 0.9.4; xdrs never uses deque::Deque::make_contiguous" },
+    { id = "RUSTSEC-2026-0582", reason = "heapless < 0.9.4; xdrs never uses index_map::IndexMap::insert" },
+]
 # Informational advisories (unsound, unmaintained) default to workspace-direct
 # dependencies only.
 unsound = "all"
