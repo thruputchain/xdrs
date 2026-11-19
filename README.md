@@ -88,11 +88,18 @@ cannot see a changed wire encoding behind an unchanged API (like encoding a
 union's discriminant by its switch type); that one is on the reviewer.
 
 To release: bump the group's version (the workspace group:
-`[workspace.package] version` plus the `=` pins and the `xdrs` entry under
-`[workspace.dependencies]`; rpc_api and rpc_driver: their own `Cargo.toml`
-plus their `[workspace.dependencies]` entry) and dispatch `publish.yml`. It
-releases every group whose version moved and skips the others; a group that
-changed without a bump fails the run.
+`[workspace.package] version` plus the `=` pins under
+`[workspace.dependencies]`; rpc_api and rpc_driver: their own `Cargo.toml`)
+and dispatch `publish.yml`. It releases every group whose version moved and
+skips the others; a group that changed without a bump fails the run.
+
+Leave the caret requirements under `[workspace.dependencies]` (`xdrs`,
+`thruput-rpc-api`, `thruput-rpc-driver`) alone for a patch release. They are
+minimum compatible versions, and they are written into the published
+manifests of the crates that depend on them: raising `xdrs` for an xdrs
+patch would change the driver's package and make it release too. Raise one
+only for a breaking release of that crate, which its dependents have to
+follow anyway, or when a dependent needs something a later patch added.
 
 ## TODOs
 

@@ -36,10 +36,16 @@ categories = ["encoding"]
 xdr-derive = { package = "thruput-xdr-derive", path = "xdr-derive", version = "=0.18.0" }
 xdr-repr = { package = "thruput-xdr-repr", path = "xdr-repr", version = "=0.18.0" }
 xdr-common = { package = "thruput-xdr-common", path = "xdr-common", version = "=0.18.0" }
+# The caret requirements below (xdrs, rpc_driver, rpc_api) are the minimum
+# compatible version, not the current one: raise one only for a breaking
+# (minor) release of that crate, or when a dependent needs something a later
+# patch added. They end up in the published manifests of the crates that
+# depend on them (thruput-rpc-driver depends on xdrs and rpc_api), so raising
+# one for a patch release changes those crates' packages too and forces them
+# to release. A path dependency still builds against the local crate.
 xdrs = { package = "thruput-xdrs", path = ".", version = "0.18.0" }
 # rpc_driver and rpc_api version independently of the workspace (rpc_api is
-# the stable API boundary crate; the driver releases on its own schedule); the
-# versions here must match rpc/rpc_driver/Cargo.toml and rpc/rpc_api/Cargo.toml.
+# the stable API boundary crate; the driver releases on its own schedule).
 thruput-rpc-driver = { path = "rpc/rpc_driver", version = "0.18.0" }
 thruput-rpc-api = { path = "rpc/rpc_api", version = "0.4.0" }
 
