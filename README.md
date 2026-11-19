@@ -52,6 +52,55 @@ are imported by package name (`thruput_rpc_api::`, `thruput_rpc_driver::`).
 `thruput-xdr-codegen` is also the XDR-to-Rust compiler, and installs a
 command of the same name (see [`xdr-codegen/`](xdr-codegen/README.md)).
 
+## Versioning and releases
+
+The crates release in three groups, each with its own version and tag:
+
+| Group | Crates | Tag |
+|---|---|---|
+| workspace | `thruput-xdrs`, `thruput-xdr-common`, `thruput-xdr-derive`, `thruput-xdr-repr`, `thruput-xdr-codegen` | `v<version>` |
+| rpc_api | `thruput-rpc-api` | `rpc_api-v<version>` |
+| rpc_driver | `thruput-rpc-driver` | `rpc_driver-v<version>` |
+
+A driver release doesn't publish new xdrs crates, and the driver depends on
+`thruput-xdrs` and `thruput-rpc-api` with caret requirements, so an xdrs patch
+release doesn't need a driver release either.
+
+Every crate whose types derive XDR (all of protocol-rs) exposes the xdrs
+traits in its public API, so a breaking xdrs release is a breaking release for
+those crates too. Pick the bump accordingly. Pre-1.0, the middle number is the
+breaking level:
+
+- **Patch** (`0.18.0` → `0.18.1`) for anything that doesn't break a caller:
+  new items, new trait impls, new trait methods with defaults, new derive
+  attributes, fixes, performance. Dependents that ask for `"0.18.0"` pick it
+  up with `cargo update`; protocol-rs doesn't need to release. This should be
+  the usual case.
+- **Minor** (`0.18.x` → `0.19.0`) for a breaking change: a removed or renamed
+  item or feature, a new required trait item, a changed signature, or a
+  change to what an existing type encodes to. protocol-rs then has to bump
+  every crate, so batch breaking changes into as few releases as possible.
+
+`publish.yml` (and `publish_dry_run.yml`) runs
+cargo-semver-checks on each group against that group's previous release tag,
+so a patch bump over an API break fails before anything is tagged. It
+cannot see a changed wire encoding behind an unchanged API (like encoding a
+union's discriminant by its switch type); that one is on the reviewer.
+
+To release: bump the group's version (the workspace group:
+`[workspace.package] version` plus the `=` pins under
+`[workspace.dependencies]`; rpc_api and rpc_driver: their own `Cargo.toml`)
+and dispatch `publish.yml`. It releases every group whose version moved and
+skips the others; a group that changed without a bump fails the run.
+
+Leave the caret requirements under `[workspace.dependencies]` (`xdrs`,
+`thruput-rpc-api`, `thruput-rpc-driver`) alone for a patch release. They are
+minimum compatible versions, and they are written into the published
+manifests of the crates that depend on them: raising `xdrs` for an xdrs
+patch would change the driver's package and make it release too. Raise one
+only for a breaking release of that crate, which its dependents have to
+follow anyway, or when a dependent needs something a later patch added.
+
 ## TODOs
 
 - Optional recursion depth limit for decoding recursive datastructures (see
