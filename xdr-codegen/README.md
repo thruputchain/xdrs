@@ -203,7 +203,7 @@ The module is written to be included in a crate that provides:
 |---|---|
 | `const` | `pub const NAME: u32 = VALUE;`, or `u64` with the marker |
 | `typedef` | `pub type NAME = TYPE;` |
-| `typedef` with `#[rust(newtype)]` | `pub struct NAME { inner: T }` with `From`, `new`, `into_inner`, `Deref` and `DerefMut`. A fixed opaque newtype also gets `AsRef<[u8]>`, hex serde, a hex-string `JsonSchema` and `Copy`. |
+| `typedef` with `#[rust(newtype)]` | `pub struct NAME { inner: T }` with `From`, `new`, `into_inner`, `as_inner`, `Deref` and `DerefMut`. `new` and `as_inner` are `const fn`s, so a newtype can be built and read in a constant. A fixed opaque newtype also gets `AsRef<[u8]>`, hex serde, a hex-string `JsonSchema` and `Copy`. |
 | `enum` | An open newtype `pub struct NAME(pub i32)`, with an associated constant per member, `From<i32>`, `XDRDiscriminant` and `Display`, and under `spec` a `HasTypeDef` that describes the XDR enum. Decoding accepts any `i32`. |
 | `struct` | A `#[repr(C)]` struct with `pub` fields |
 | `union` | A `#[repr(i32)] #[non_exhaustive]` enum with one variant per case label, and an accessor named after the switch variable that returns the discriminant |

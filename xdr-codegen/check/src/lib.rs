@@ -414,6 +414,14 @@ mod tests {
     }
 
     #[test]
+    fn newtypes_are_built_and_read_in_constants() {
+        const HASH: Hash = Hash::new([7; 32]);
+        const FIRST: u8 = HASH.as_inner()[0];
+        assert_eq!(FIRST, 7);
+        assert_eq!(HASH.as_inner(), &HASH.into_inner());
+    }
+
+    #[test]
     fn case_values_keep_the_switch_type() {
         let max = Unsigned::_4294967295 { v: 1 };
         let bytes = xdrs::txs::encode(&max).unwrap();

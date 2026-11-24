@@ -186,6 +186,9 @@ impl Hash {
     pub fn into_inner(self) -> [u8; 32] {
         self.inner
     }
+    pub const fn as_inner(&self) -> &[u8; 32] {
+        &self.inner
+    }
     pub const fn new(_inner: [u8; 32]) -> Self {
         Self { inner: _inner }
     }

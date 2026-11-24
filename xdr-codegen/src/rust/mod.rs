@@ -663,6 +663,9 @@ impl Gen<'_> {
                 pub fn into_inner(self) -> #inner {
                     self.inner
                 }
+                pub const fn as_inner(&self) -> &#inner {
+                    &self.inner
+                }
                 pub const fn new(_inner: #inner) -> Self {
                     Self { inner: _inner }
                 }
